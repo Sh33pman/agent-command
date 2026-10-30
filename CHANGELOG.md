@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/brettmostert/agent-command/compare/v0.1.0...v0.1.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **release:** run goreleaser via make so syft is on PATH ([89b0214](https://github.com/brettmostert/agent-command/commit/89b0214f84e19eb66e4aaa5dd5ef7b2c4f1eebfe))
+
 ## 0.1.0 (2026-10-30)
 
 

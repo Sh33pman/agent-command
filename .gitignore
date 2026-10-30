@@ -31,3 +31,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# agent-command build output and pinned tools
+/bin/
+/dist/
+/build/
+/notes.md
+/tap/

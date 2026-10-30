@@ -1,0 +1,24 @@
+# Integration tests against a real Kitty (SPEC §13.4). Manual only for now;
+# a weekly schedule is enabled in M2 once Kitty integration tests exist
+# (each run costs ~100 billed macOS minutes).
+name: integration
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "0 6 * * 1" # Mondays 06:00 UTC (enable in M2)
+
+permissions:
+  contents: read
+
+jobs:
+  kitty:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: brew install --cask kitty
+      - run: make it-kitty

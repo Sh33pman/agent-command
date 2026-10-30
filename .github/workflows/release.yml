@@ -1,0 +1,140 @@
+# Release pipeline (SPEC §13.4):
+#   1. release-please keeps a release PR open; merging it tags vX.Y.Z and
+#      creates the (private) GitHub Release.
+#   2. In the same workflow (tags created by tokens don't trigger workflows):
+#      gate -> goreleaser -> publish binaries to the public tap -> formula.
+# Nothing is published if the gate fails.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+      version: ${{ steps.rp.outputs.version }}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: brettmostert
+          repositories: agent-command
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: rp
+        with:
+          token: ${{ steps.app.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Gate + publish in one macOS job: one VM boot (macOS minutes bill at 10x).
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ needs.release-please.outputs.tag }}
+      VERSION: ${{ needs.release-please.outputs.version }}
+      TAP_REPO: brettmostert/homebrew-tap
+      TAP_TAG: agent-command-${{ needs.release-please.outputs.tag }}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: brettmostert
+          repositories: agent-command,homebrew-tap
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Restore/save split: actions/cache only saves on job success, so a failing
+      # later step would otherwise force a full tool rebuild (~4 min) next run.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: tools-cache
+        with:
+          path: bin
+          key: tools-all-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'go.mod') }}
+      - name: build tools (cache miss)
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        run: make tools
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        with:
+          path: bin
+          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
+
+      # ---- gate: re-run every check on the exact release commit ----
+      - name: gate - lint, test, vuln, build
+        run: make ci
+      - name: gate - fuzz
+        run: make fuzz FUZZTIME=30s
+      - name: gate - snapshot + formula
+        run: make snapshot formula-test
+
+      # ---- publish ----
+      - name: goreleaser (private release assets)
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+        run: bin/goreleaser release --clean
+
+      - name: publish binaries to the public tap
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          gh release create "$TAP_TAG" --repo "$TAP_REPO" --title "agent-command $VERSION" \
+            --notes-file notes.md \
+            dist/agent-command_${VERSION}_darwin_*.tar.gz dist/checksums.txt dist/*.sbom.json
+
+      - name: render + test formula against the public release
+        run: |
+          url="https://github.com/${TAP_REPO}/releases/download/${TAP_TAG}/agent-command_${VERSION}_darwin_all.tar.gz"
+          sha=$(shasum -a 256 "dist/agent-command_${VERSION}_darwin_all.tar.gz" | awk '{print $1}')
+          scripts/render-formula.sh "$url" "$sha" build/agent-command.rb
+          scripts/test-formula.sh --formula build/agent-command.rb
+
+      - name: commit formula to the tap
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          bot_id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
+          git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Formula
+          cp build/agent-command.rb tap/Formula/agent-command.rb
+          cd tap
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git add Formula/agent-command.rb
+          git commit -m "agent-command ${VERSION}"
+          git push origin HEAD
+
+      - name: mark release as failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease \
+            --title "[FAILED] $TAG" \
+            --notes "$(printf '> **Release failed; nothing was published to the tap.** See %s. The fix ships as the next patch version.\n\n%s' "$run_url" "$body")"

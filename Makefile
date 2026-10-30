@@ -75,8 +75,13 @@ fmt: ## Check formatting (gofmt)
 tidy-check: ## Fail if go.mod/go.sum are not tidy
 	go mod tidy -diff
 
+.PHONY: workflow-check
+workflow-check: ## Fail if a workflow runs a ./bin tool directly (bypasses make's PATH, see v0.1.0)
+	@if grep -nE 'run: *(\./)?bin/' .github/workflows/*.yml; then \
+	  echo "workflows must call tools via make targets, not bin/<tool>"; exit 1; fi
+
 .PHONY: lint
-lint: fmt tidy-check bin/golangci-lint ## gofmt, go vet, go mod tidy check, golangci-lint
+lint: fmt tidy-check workflow-check bin/golangci-lint ## gofmt, go vet, go mod tidy check, golangci-lint
 	go vet ./...
 	$(BIN)/golangci-lint config verify
 	$(BIN)/golangci-lint run
@@ -111,6 +116,10 @@ snapshot: bin/goreleaser bin/syft ## Full release dry-run (no publish) into ./di
 	$(BIN)/goreleaser check
 	$(BIN)/goreleaser release --snapshot --clean
 	scripts/check-dist.sh $(DIST)
+
+.PHONY: release
+release: bin/goreleaser bin/syft ## CI only: publish the tagged release with GoReleaser (needs GITHUB_TOKEN)
+	$(BIN)/goreleaser release --clean
 
 .PHONY: formula-test
 formula-test: ## Install the snapshot universal tarball via a throwaway local tap and run brew test

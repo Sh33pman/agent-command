@@ -94,7 +94,7 @@ jobs:
       - name: goreleaser (private release assets)
         env:
           GITHUB_TOKEN: ${{ steps.app.outputs.token }}
-        run: bin/goreleaser release --clean
+        run: make release # via make so ./bin (syft) is on PATH
 
       - name: publish binaries to the public tap
         env:

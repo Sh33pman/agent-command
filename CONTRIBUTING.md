@@ -21,7 +21,7 @@ macOS minutes are billed at 10× against the free 2,000 min/month, so the macOS 
 ## Releases
 
 1. Merge PRs with Conventional Commit titles.
-2. release-please keeps a PR titled `chore: release X.Y.Z` up to date, with the version bump and `CHANGELOG.md`.
+2. release-please keeps a PR titled `chore(main): release X.Y.Z` up to date, with the version bump and `CHANGELOG.md`.
 3. Before merging it, run `make it-ghostty` locally (Ghostty integration can't run in CI).
 4. Merge it. The `release` workflow tags `vX.Y.Z`, runs the gate, publishes the private GitHub Release assets and the public tap release `agent-command-vX.Y.Z`, and updates `Formula/agent-command.rb` in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap).
 5. If the gate fails, nothing is published and the release is marked `[FAILED]`. Fix it and ship the next patch version. Never move or reuse tags.

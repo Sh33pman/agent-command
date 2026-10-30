@@ -10,6 +10,6 @@
 - [ ] Tests added/updated for the change
 - [ ] SPEC.md updated if behaviour or design changed
 
-<!-- Release PRs (chore: release x.y.z) only:
+<!-- Release PRs (chore(main): release x.y.z) only:
 - [ ] `make it-ghostty` passed locally (can't run in CI)
 -->

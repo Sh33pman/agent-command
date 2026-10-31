@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/brettmostert/agent-command/compare/v0.5.0...v0.6.0) (2026-10-31)
+
+
+### Features
+
+* **setup:** add config editors for Claude hooks and Kitty ([#20](https://github.com/brettmostert/agent-command/issues/20)) ([08a8b8d](https://github.com/brettmostert/agent-command/commit/08a8b8d96162908f171e7acaa770084710f53b9e))
+
+
+### Bug Fixes
+
+* **reconcile:** don't pause sessions Claude hasn't listed yet ([#22](https://github.com/brettmostert/agent-command/issues/22)) ([349da43](https://github.com/brettmostert/agent-command/commit/349da435c3f188eb4f8077c41a73edee51b4e5f4))
+
 ## [0.5.0](https://github.com/brettmostert/agent-command/compare/v0.4.0...v0.5.0) (2026-10-31)
 
 

@@ -268,6 +268,7 @@ func (v *viewClient) Resume(ctx context.Context, id string) (*core.Session, erro
 // ---- acmd new (SPEC §6.1) ----
 
 type newOptions struct {
+	groupID     string // a known group (sidebar); else group is resolved by name
 	group       string
 	noCreate    bool
 	cwd         string
@@ -303,7 +304,7 @@ func newNewCmd() *cobra.Command {
 					if dir == "" {
 						dir = newFolder(snap, v)
 					}
-					return newFromShortcut(cmd.Context(), cmd, v, dir)
+					return newFromShortcut(cmd.Context(), cmd, v, "", dir)
 				})
 			}
 			if o.cwd == "" {
@@ -335,6 +336,8 @@ func newNewCmd() *cobra.Command {
 	f.BoolVar(&noFollow, "no-follow", false, "don't switch the current view to it")
 	f.StringVar(&viewID, "view", "", "the view to show it in")
 	_ = f.MarkHidden("view")
+	f.StringVar(&o.groupID, "group-id", "", "the group's id (used by the sidebar)")
+	_ = f.MarkHidden("group-id")
 	kittyWindowFlag(cmd, &win)
 	return cmd
 }
@@ -364,7 +367,7 @@ func startSession(ctx context.Context, cmd *cobra.Command, o newOptions) (*core.
 	}
 	var s core.Session
 	err = withClient(ctx, func(c *client, snap ipc.Snapshot) error {
-		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Args: cfg.ClaudeArgs, Prompt: o.prompt, ShowIn: o.showIn}
+		req := ipc.NewRequest{GroupID: o.groupID, Cwd: dir, Name: o.name, Description: o.description, Args: cfg.ClaudeArgs, Prompt: o.prompt, ShowIn: o.showIn}
 		if o.group != "" {
 			g, err := resolveGroup(snap, o.group)
 			if err != nil && o.noCreate {

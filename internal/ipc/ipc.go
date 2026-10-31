@@ -57,6 +57,7 @@ const (
 	MutGroupArchive   = "group.archive"     // GroupID (archives its sessions too)
 	MutGroupUnarchive = "group.unarchive"   // GroupID, Flag = also unarchive sessions
 	MutGroupCollapse  = "group.collapse"    // GroupID ("" = all), Flag = collapsed
+	MutGroupMove      = "group.move"        // GroupID, Flag = down (else up)
 	MutViewMode       = "view.mode"         // Text: groups|list
 	MutViewSort       = "view.sort"         // Text: key, Flag = descending
 	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)

@@ -214,3 +214,25 @@ func TestResolve(t *testing.T) {
 		t.Errorf("ambiguous: %v", err)
 	}
 }
+
+func TestNextAttention(t *testing.T) {
+	mk := func(id string, st Status, unseen bool, n int, group string) *Session {
+		return &Session{ID: id, Status: st, Unseen: unseen, GroupID: group, CreatedAt: time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC)}
+	}
+	groups := []*Group{{ID: "default", Name: "Default", IsDefault: true}, {ID: "g", Name: "G", SortKey: 1, Collapsed: true}}
+	done, seen, errS, wait := mk("done", StatusDone, true, 1, "default"), mk("seen", StatusDone, false, 2, "default"),
+		mk("err", StatusError, false, 3, "default"), mk("wait", StatusWaiting, false, 4, "g")
+	ss := []*Session{done, seen, errS, wait}
+	vs := ViewState{Mode: "groups", Sort: "created", Filter: "nothing", FocusedGroup: "default"}
+	for shown, want := range map[string]string{"": "wait", "wait": "err", "err": "wait"} {
+		if got := NextAttention(ss, groups, vs, shown); got == nil || got.ID != want {
+			t.Errorf("shown %q: got %v, want %s", shown, got, want)
+		}
+	}
+	if got := NextAttention([]*Session{done, seen}, groups, vs, "done"); got != nil {
+		t.Errorf("only the shown one needs attention: got %s", got.ID)
+	}
+	if got := NextAttention([]*Session{done}, groups, vs, ""); got == nil || got.ID != "done" {
+		t.Errorf("unseen done: %v", got)
+	}
+}

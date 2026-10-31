@@ -10,8 +10,8 @@ import (
 	"strings"
 	"syscall"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
-	"golang.org/x/sys/unix"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
@@ -19,7 +19,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/kitty"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
-	"github.com/brettmostert/agent-command/internal/view"
+	"github.com/brettmostert/agent-command/internal/sidebar"
 )
 
 // Kitty integration (SPEC §7.2, M2b): the view's sidebar split and the
@@ -140,47 +140,85 @@ func newSidebarCmd() *cobra.Command {
 			}
 			own := 0
 			_, _ = fmt.Sscan(os.Getenv("KITTY_WINDOW_ID"), &own)
-			sb := &view.Sidebar{
-				ViewID: viewID, Client: vc, Out: cmd.OutOrStdout(), Keys: &view.TermKeys{In: os.Stdin}, Home: homeDir(),
-				Panes: &kittyPanes{k: kittyAt(v.Pane.KittySocket), view: v.Pane.KittyWindow, sidebar: own, width: sidebarWidth()},
-				Size:  func() (int, int) { return termSize(os.Stdout) },
-				New: func(ctx context.Context, dir string) error {
-					return newFromShortcut(ctx, cmd, v, dir)
-				},
+			act := &sidebarActions{vc: vc, cmd: cmd, view: v,
+				panes: &kittyPanes{k: kittyAt(v.Pane.KittySocket), view: v.Pane.KittyWindow, sidebar: own, width: sidebarWidth()}}
+			model := sidebar.New(ctx, act, viewID, homeDir())
+			if _, err := tea.NewProgram(model, tea.WithContext(ctx)).Run(); err != nil && ctx.Err() == nil && model.Err() == nil {
+				return err
 			}
-			err = sb.Run(ctx)
-			switch {
-			case errors.Is(err, view.ErrClosed) || ctx.Err() != nil:
+			switch err := model.Err(); {
+			case err == nil, errors.Is(err, sidebar.ErrClosed), ctx.Err() != nil:
 				return nil
 			case errors.Is(err, errNewerDaemon):
 				return reexec("sidebar", "--view", viewID) // keeps the pane
+			default:
+				return err
 			}
-			return err
 		},
 	}
 	cmd.Flags().StringVar(&viewID, "view", "", "the view this sidebar belongs to")
 	return cmd
 }
 
-func termSize(f *os.File) (int, int) {
-	ws, err := unix.IoctlGetWinsize(int(f.Fd()), unix.TIOCGWINSZ)
-	if err != nil {
-		return 32, 40
-	}
-	return int(ws.Col), int(ws.Row)
+// sidebarActions implements sidebar.Actions.
+type sidebarActions struct {
+	vc    *viewClient
+	cmd   *cobra.Command
+	view  *core.View
+	panes *kittyPanes
 }
+
+func (a *sidebarActions) Watch(ctx context.Context, rev uint64, wait bool) (ipc.WatchResponse, error) {
+	req := ipc.WatchRequest{ViewID: a.view.ID, Rev: rev, Passive: true}
+	if wait {
+		req.WaitMS = 25000
+	}
+	return a.vc.Watch(ctx, req)
+}
+
+func (a *sidebarActions) Snapshot(ctx context.Context) (ipc.Snapshot, error) {
+	return a.vc.Snapshot(ctx)
+}
+
+func (a *sidebarActions) Mutate(ctx context.Context, m ipc.Mutation, out any) error {
+	return a.vc.call(ctx, ipc.OpMutate, m, out)
+}
+
+func (a *sidebarActions) Show(ctx context.Context, s *core.Session) error {
+	if s.Kind == core.KindExternal {
+		if s.External == nil {
+			return errors.New("don't know which pane that session is in")
+		}
+		return focusExternal(ctx, *s.External)
+	}
+	if err := a.vc.Select(ctx, a.view.ID, s.ID); err != nil {
+		return err
+	}
+	return a.panes.FocusView(ctx)
+}
+
+func (a *sidebarActions) New(ctx context.Context, groupID, dir string) error {
+	return newFromShortcut(ctx, a.cmd, a.view, groupID, dir)
+}
+
+func (a *sidebarActions) FocusView(ctx context.Context) error     { return a.panes.FocusView(ctx) }
+func (a *sidebarActions) ToggleSidebar(ctx context.Context) error { return a.panes.ToggleSidebar(ctx) }
+func (a *sidebarActions) FitWidth(ctx context.Context) error      { return a.panes.FitWidth(ctx) }
 
 // newFromShortcut starts a session for the sidebar or a keybinding (no
 // terminal of its own). An untrusted folder opens Claude's trust prompt
 // in an overlay over the view pane, which then starts the session.
-func newFromShortcut(ctx context.Context, cmd *cobra.Command, v *core.View, dir string) error {
-	_, err := startSession(ctx, cmd, newOptions{cwd: dir, showIn: v.ID})
+func newFromShortcut(ctx context.Context, cmd *cobra.Command, v *core.View, groupID, dir string) error {
+	_, err := startSession(ctx, cmd, newOptions{groupID: groupID, cwd: dir, showIn: v.ID})
 	var untrusted *errUntrusted
 	if !errors.As(err, &untrusted) || v.Pane.Terminal != "kitty" {
 		return err
 	}
-	return kittyAt(v.Pane.KittySocket).Overlay(ctx, v.Pane.KittyWindow,
-		[]string{acmdPath(), "new", "--cwd", dir, "--view", v.ID}, nil)
+	argv := []string{acmdPath(), "new", "--cwd", dir, "--view", v.ID}
+	if groupID != "" {
+		argv = append(argv, "--group-id", groupID)
+	}
+	return kittyAt(v.Pane.KittySocket).Overlay(ctx, v.Pane.KittyWindow, argv, nil)
 }
 
 // ---- global shortcuts (SPEC §8.3) ----
@@ -313,30 +351,9 @@ func newNextAttentionCmd() *cobra.Command {
 	return cmd
 }
 
-// nextAttention picks the most urgent session other than the shown one,
-// in sidebar order within each urgency (SPEC §8.2 Tab).
+// nextAttention is core.NextAttention over a snapshot.
 func nextAttention(snap ipc.Snapshot, shown string) *core.Session {
-	vs := snap.ViewState
-	vs.Filter, vs.FocusedGroup = "", ""
-	order := core.Layout(snap.Sessions, snap.Groups, vs)
-	for _, want := range []func(*core.Session) bool{
-		func(s *core.Session) bool { return s.Status == core.StatusWaiting },
-		func(s *core.Session) bool { return s.Status == core.StatusError },
-		func(s *core.Session) bool { return s.Status == core.StatusDone && s.Unseen },
-	} {
-		for _, r := range order {
-			if r.Session != nil && r.Session.ID != shown && want(r.Session) {
-				return r.Session
-			}
-		}
-		// Sessions in collapsed groups aren't laid out: check them too.
-		for _, s := range snap.Sessions {
-			if s.ID != shown && s.Status != core.StatusArchived && want(s) {
-				return s
-			}
-		}
-	}
-	return nil
+	return core.NextAttention(snap.Sessions, snap.Groups, snap.ViewState, shown)
 }
 
 // show makes view v show s (external sessions: focus their own pane).

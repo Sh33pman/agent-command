@@ -314,3 +314,28 @@ func groupNamed(t *testing.T, c *ipc.Conn, name string) string {
 	}
 	return g.ID
 }
+
+func TestMoveGroup(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	a, b, cc := groupNamed(t, c, "A"), groupNamed(t, c, "B"), groupNamed(t, c, "C")
+	order := func() string {
+		snap := snapshot(t, c)
+		var names []string
+		for _, r := range core.Layout(nil, snap.Groups, core.ViewState{Mode: "groups"}) {
+			names = append(names, r.Group.Name)
+		}
+		return strings.Join(names, ",")
+	}
+	_ = a
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: cc})            // up
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: b, Flag: true}) // down
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: b, Flag: true}) // edge: no-op
+	if got := order(); !strings.HasPrefix(got, "A,C,B") {
+		t.Errorf("order %s", got)
+	}
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: "default"}, nil); err == nil {
+		t.Error("moved Default")
+	}
+}

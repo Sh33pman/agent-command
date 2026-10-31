@@ -376,3 +376,28 @@ func Resolve(rows []Row, all []*Session, sel string) (*Session, error) {
 		return nil, fmt.Errorf("%w %q: %s", ErrAmbiguous, sel, strings.Join(names, ", "))
 	}
 }
+
+// NextAttention picks the most urgent session other than shown: waiting,
+// then error, then unseen done, each in sidebar order (filter and focus
+// ignored; sessions in collapsed groups count too) (SPEC §8.2 Tab).
+func NextAttention(sessions []*Session, groups []*Group, vs ViewState, shown string) *Session {
+	vs.Filter, vs.FocusedGroup = "", ""
+	order := Layout(sessions, groups, vs)
+	for _, want := range []func(*Session) bool{
+		func(s *Session) bool { return s.Status == StatusWaiting },
+		func(s *Session) bool { return s.Status == StatusError },
+		func(s *Session) bool { return s.Status == StatusDone && s.Unseen },
+	} {
+		for _, r := range order {
+			if r.Session != nil && r.Session.ID != shown && want(r.Session) {
+				return r.Session
+			}
+		}
+		for _, s := range sessions {
+			if s.ID != shown && s.Status != StatusArchived && want(s) {
+				return s
+			}
+		}
+	}
+	return nil
+}

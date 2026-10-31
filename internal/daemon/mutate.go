@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -124,6 +125,8 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			}
 		}
 		return nil, nil
+	case ipc.MutGroupMove:
+		return nil, d.moveGroup(ctx, m.GroupID, m.Flag)
 	case ipc.MutViewMode:
 		if m.Text != "groups" && m.Text != "list" {
 			return nil, fmt.Errorf("view mode must be groups or list, not %q", m.Text)
@@ -219,4 +222,45 @@ func (d *Daemon) focus(ctx context.Context, groupID string) error {
 		}
 	}
 	return d.store.PutViewState(ctx, vs)
+}
+
+// moveGroup swaps a group with its neighbor in the sidebar order (SPEC
+// §8.2 K/J). Default stays last.
+func (d *Daemon) moveGroup(ctx context.Context, id string, down bool) error {
+	groups, err := d.store.Groups(ctx, false)
+	if err != nil {
+		return err
+	}
+	var order []*core.Group
+	for _, g := range groups {
+		if !g.IsDefault {
+			order = append(order, g)
+		}
+	}
+	sort.SliceStable(order, func(i, j int) bool { return order[i].SortKey < order[j].SortKey })
+	at := -1
+	for i, g := range order {
+		if g.ID == id {
+			at = i
+		}
+	}
+	if at < 0 {
+		return errors.New("that group can't be moved")
+	}
+	to := at - 1
+	if down {
+		to = at + 1
+	}
+	if to < 0 || to >= len(order) {
+		return nil // already at the edge
+	}
+	order[at], order[to] = order[to], order[at]
+	for i, g := range order {
+		if g.SortKey != i+1 {
+			if err := d.store.SetGroupSortKey(ctx, g.ID, i+1); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

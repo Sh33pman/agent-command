@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
+	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/hook"
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -33,11 +35,16 @@ func newDaemonCmd() *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			err = daemon.Run(ctx, daemon.Config{
-				Paths:   p,
-				Version: version.Get().Version,
-				Log:     log.New(cmd.ErrOrStderr(), "acmd daemon: ", log.LstdFlags),
-			})
+			logger := log.New(cmd.ErrOrStderr(), "acmd daemon: ", log.LstdFlags)
+			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger}
+			// The claude path is resolved from PATH for now; `acmd init` pins
+			// an absolute path in config (M3).
+			if claude, err := exec.LookPath("claude"); err == nil {
+				cfg.Agents = claudecli.New(claude, os.Environ())
+			} else {
+				logger.Printf("claude not found on PATH; reconciliation disabled: %v", err)
+			}
+			err = daemon.Run(ctx, cfg)
 			if errors.Is(err, daemon.ErrAlreadyRunning) {
 				return nil // another daemon won the race; fine
 			}

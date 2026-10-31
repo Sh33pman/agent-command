@@ -8,9 +8,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -39,12 +41,16 @@ type running struct {
 	Err    error
 }
 
-func start(t *testing.T, p paths.Paths) *running {
+func start(t *testing.T, p paths.Paths, opts ...func(*Config)) *running {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &running{cancel: cancel, Done: make(chan struct{})}
+	cfg := Config{Paths: p, Version: testVersion, Log: log.New(io.Discard, "", 0)}
+	for _, o := range opts {
+		o(&cfg)
+	}
 	go func() {
-		r.Err = Run(ctx, Config{Paths: p, Version: testVersion, Log: log.New(io.Discard, "", 0)})
+		r.Err = Run(ctx, cfg)
 		close(r.Done)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
@@ -250,3 +256,72 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// fakeAgents is read by the daemon's background loop while the test
+// changes it, so access is locked and readers get a copy.
+type fakeAgents struct {
+	mu     sync.Mutex
+	agents []claudecli.Agent
+}
+
+func (f *fakeAgents) Agents(context.Context) ([]claudecli.Agent, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]claudecli.Agent(nil), f.agents...), nil
+}
+
+func (f *fakeAgents) add(a claudecli.Agent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.agents = append(f.agents, a)
+}
+
+func TestDaemonBackgroundLoops(t *testing.T) {
+	p := testPaths(t)
+	transcript := filepath.Join(p.StateDir, "t.jsonl")
+	must(t, p.Ensure())
+	must(t, os.WriteFile(transcript, []byte("{\"type\":\"user\"}\n"), 0o600))
+	idle := "idle"
+	pid := 777
+	agents := &fakeAgents{agents: []claudecli.Agent{{SessionID: "bg-1", ID: "bbbbbbbb", Kind: "background", Name: "found it", Status: &idle, Pid: &pid, Cwd: "/w"}}}
+	start(t, p, func(c *Config) {
+		c.Agents = agents
+		c.ReconcileEvery = 50 * time.Millisecond
+		c.TailEvery = 50 * time.Millisecond
+	})
+	c := dial(t, p)
+	now := time.Now()
+	view := ipc.HookContext{ViewID: "v"}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"esc-1","source":"startup","transcript_path":"`+transcript+`"}`, now, view), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("PreToolUse", `{"session_id":"esc-1","tool_name":"Bash"}`, now.Add(time.Millisecond), view), nil))
+	agents.add(claudecli.Agent{SessionID: "esc-1", ID: "eeeeeeee", Kind: "background", Status: ptr("busy"), Pid: &pid})
+
+	// Let the tail record the transcript's size, then append the Esc marker.
+	time.Sleep(200 * time.Millisecond)
+	f, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600)
+	must(t, err)
+	_, err = f.WriteString(`{"type":"user","message":"[Request interrupted by user for tool use]"}` + "\n")
+	must(t, err)
+	must(t, f.Close())
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		st, err := store.Open(context.Background(), p.DB())
+		must(t, err)
+		esc, err1 := st.SessionByClaudeID(context.Background(), "esc-1")
+		found, err2 := st.SessionByClaudeID(context.Background(), "bg-1")
+		st.Close()
+		if err1 == nil && err2 == nil && esc.Status == core.StatusDone && found.Name == "found it" {
+			if esc.BgID != "eeeeeeee" || !esc.Unseen || found.Status != core.StatusDone {
+				t.Errorf("esc=%+v found=%+v", esc, found)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("loops didn't converge: esc=%+v (%v) found=%+v (%v)", esc, err1, found, err2)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }

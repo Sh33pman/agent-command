@@ -21,6 +21,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/reconcile"
 	"github.com/brettmostert/agent-command/internal/store"
 )
 
@@ -33,6 +34,12 @@ type Config struct {
 	Version string
 	Log     *log.Logger
 	Now     func() time.Time
+	// Agents lists Claude sessions for the reconciler (claudecli.CLI); nil
+	// disables reconciliation (e.g. claude not found).
+	Agents reconcile.Lister
+	// ReconcileEvery and TailEvery default to 3 s and 1 s (SPEC §6.7, §5.4).
+	ReconcileEvery time.Duration
+	TailEvery      time.Duration
 }
 
 // Daemon is a running daemon.
@@ -53,6 +60,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.ReconcileEvery == 0 {
+		cfg.ReconcileEvery = 3 * time.Second
+	}
+	if cfg.TailEvery == 0 {
+		cfg.TailEvery = time.Second
 	}
 	if err := cfg.Paths.Ensure(); err != nil {
 		return err
@@ -86,6 +99,7 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.Log.Printf("drain spool: %v", err)
 	}
 	cfg.Log.Printf("listening on %s (version %s, pid %d)", sock, cfg.Version, os.Getpid())
+	go d.background(ctx)
 
 	go func() {
 		select {
@@ -215,6 +229,78 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
 		Detail: string(sess.Status), ToolName: e.ToolName,
 	})
+}
+
+// background runs the reconciler and the transcript tail until the daemon
+// stops. Both take d.mu, like hook handling, so updates never interleave.
+func (d *Daemon) background(ctx context.Context) {
+	var rec *reconcile.Reconciler
+	if d.cfg.Agents != nil {
+		rec = &reconcile.Reconciler{Store: d.store, Agents: d.cfg.Agents, Now: d.cfg.Now}
+	}
+	tail := reconcile.NewTailer()
+	reconcileT := time.NewTicker(d.cfg.ReconcileEvery)
+	tailT := time.NewTicker(d.cfg.TailEvery)
+	defer reconcileT.Stop()
+	defer tailT.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.stop:
+			return
+		case <-reconcileT.C:
+			if rec == nil {
+				continue
+			}
+			d.mu.Lock()
+			res, err := rec.Once(ctx)
+			d.mu.Unlock()
+			if err != nil {
+				d.cfg.Log.Printf("reconcile: %v", err)
+			} else if res.Discovered+res.Updated > 0 {
+				d.cfg.Log.Printf("reconcile: %d discovered, %d updated", res.Discovered, res.Updated)
+			}
+		case <-tailT.C:
+			if err := d.tailOnce(ctx, tail); err != nil {
+				d.cfg.Log.Printf("transcript tail: %v", err)
+			}
+		}
+	}
+}
+
+// tailOnce checks busy sessions' transcripts for an Esc interrupt (no Stop
+// hook fires for it, M0 A12) and marks them done.
+func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	sessions, err := d.store.Sessions(ctx, false)
+	if err != nil {
+		return err
+	}
+	for _, s := range sessions {
+		if s.Status != core.StatusBusy {
+			tail.Forget(s.TranscriptPath)
+			continue
+		}
+		hit, err := tail.Interrupted(s.TranscriptPath)
+		if err != nil || !hit {
+			continue
+		}
+		tr := core.Apply(s, core.Event{Kind: core.EventInterrupted, Time: d.cfg.Now()})
+		if !tr.Changed() {
+			continue
+		}
+		s.Unseen = true
+		if err := d.store.UpdateSession(ctx, s); err != nil {
+			return err
+		}
+		if err := d.store.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID, ClaudeSessionID: s.ClaudeSessionID,
+			Kind: string(core.EventInterrupted), Detail: string(s.Status)}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // newSession creates the row for a Claude session acmd hasn't seen yet.

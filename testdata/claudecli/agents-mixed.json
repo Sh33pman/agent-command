@@ -1,0 +1,6 @@
+[
+  {"pid": 63434, "id": "9df2c810", "kind": "background", "startedAt": 1793379715789, "sessionId": "9df2c810-bd4d-4db9-90ce-2ea000b7917c", "name": "exact word reply hello", "status": "idle", "state": "done", "cwd": "/work/project"},
+  {"pid": 63591, "id": "c95849b2", "kind": "background", "startedAt": 1793379716468, "sessionId": "c95849b2-1a6b-4d75-b4a6-9160270b9fc9", "name": "red-blue-preference-question", "status": "waiting", "state": "blocked", "cwd": "/work/project"},
+  {"pid": null, "id": "77d411e3", "kind": "background", "startedAt": 1793380000000, "sessionId": "77d411e3-6d72-4c37-890f-76c3f97f965c", "name": "ready reply", "status": null, "state": "done", "cwd": "/work/project"},
+  {"pid": 48439, "id": null, "kind": "interactive", "startedAt": 1793380100000, "sessionId": "7604da5f-0000-4000-8000-000000000000", "name": "clean-test", "status": "idle", "cwd": "/work/other"}
+]

@@ -1,0 +1,1 @@
+Workspace not trusted. Run `claude` in /work/untrusted once and accept the trust prompt, then retry.

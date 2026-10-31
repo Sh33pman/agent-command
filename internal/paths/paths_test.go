@@ -10,6 +10,7 @@ import (
 func TestDefault(t *testing.T) {
 	t.Setenv("ACMD_STATE_DIR", "")
 	t.Setenv("ACMD_RUNTIME_DIR", "")
+	t.Setenv("ACMD_CONFIG_DIR", "")
 	p, err := Default()
 	if err != nil {
 		t.Fatal(err)
@@ -21,7 +22,10 @@ func TestDefault(t *testing.T) {
 	if !strings.Contains(p.RuntimeDir, "agent-command-") || len(p.Socket()) >= maxSunPath {
 		t.Errorf("RuntimeDir = %s (socket %d bytes)", p.RuntimeDir, len(p.Socket()))
 	}
-	for _, f := range []string{p.Socket(), p.Lock(), p.DB(), p.Spool(), p.DaemonLog()} {
+	if p.Config() != filepath.Join(home, ".config", "agent-command", "config.toml") {
+		t.Errorf("Config = %s", p.Config())
+	}
+	for _, f := range []string{p.Socket(), p.Lock(), p.DB(), p.Spool(), p.DaemonLog(), p.Env(), p.Setup(), p.Backups()} {
 		if !filepath.IsAbs(f) {
 			t.Errorf("%s is not absolute", f)
 		}
@@ -31,7 +35,8 @@ func TestDefault(t *testing.T) {
 func TestDefaultOverridesAndLongTmpdir(t *testing.T) {
 	t.Setenv("ACMD_STATE_DIR", "/x/state")
 	t.Setenv("ACMD_RUNTIME_DIR", "/x/run")
-	if p, _ := Default(); p.StateDir != "/x/state" || p.RuntimeDir != "/x/run" {
+	t.Setenv("ACMD_CONFIG_DIR", "/x/config")
+	if p, _ := Default(); p.StateDir != "/x/state" || p.RuntimeDir != "/x/run" || p.ConfigDir != "/x/config" {
 		t.Errorf("overrides ignored: %+v", p)
 	}
 	t.Setenv("ACMD_RUNTIME_DIR", "")

@@ -1,6 +1,6 @@
 // Package paths resolves where acmd keeps its state and runtime files
-// (SPEC §4.4). ACMD_STATE_DIR and ACMD_RUNTIME_DIR override the defaults
-// (tests, and running several isolated instances).
+// (SPEC §4.4). ACMD_STATE_DIR, ACMD_RUNTIME_DIR and ACMD_CONFIG_DIR
+// override the defaults (tests, and running several isolated instances).
 package paths
 
 import (
@@ -16,17 +16,22 @@ const maxSunPath = 104
 type Paths struct {
 	StateDir   string // ~/.local/state/agent-command
 	RuntimeDir string // $TMPDIR/agent-command-$UID (0700)
+	ConfigDir  string // ~/.config/agent-command
 }
 
 // Default resolves the paths for the current user.
 func Default() (Paths, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Paths{}, err
+	}
 	state := os.Getenv("ACMD_STATE_DIR")
 	if state == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return Paths{}, err
-		}
 		state = filepath.Join(home, ".local", "state", "agent-command")
+	}
+	config := os.Getenv("ACMD_CONFIG_DIR")
+	if config == "" {
+		config = filepath.Join(home, ".config", "agent-command")
 	}
 	runtime := os.Getenv("ACMD_RUNTIME_DIR")
 	if runtime == "" {
@@ -35,7 +40,7 @@ func Default() (Paths, error) {
 			runtime = fmt.Sprintf("/tmp/agent-command-%d", os.Getuid())
 		}
 	}
-	return Paths{StateDir: state, RuntimeDir: runtime}, nil
+	return Paths{StateDir: state, RuntimeDir: runtime, ConfigDir: config}, nil
 }
 
 // Ensure creates both directories with mode 0700.
@@ -66,3 +71,15 @@ func (p Paths) Spool() string { return filepath.Join(p.StateDir, "events.spool.j
 
 // DaemonLog is the daemon's log file.
 func (p Paths) DaemonLog() string { return filepath.Join(p.StateDir, "daemon.log") }
+
+// Config is the user's config.toml (SPEC §10).
+func (p Paths) Config() string { return filepath.Join(p.ConfigDir, "config.toml") }
+
+// Env is the captured login-shell environment (SPEC §9.4).
+func (p Paths) Env() string { return filepath.Join(p.StateDir, "env.json") }
+
+// Setup records the last `acmd init` (what it configured, and that it ran).
+func (p Paths) Setup() string { return filepath.Join(p.StateDir, "setup.json") }
+
+// Backups holds copies of config files from before acmd edited them.
+func (p Paths) Backups() string { return filepath.Join(p.StateDir, "backups") }

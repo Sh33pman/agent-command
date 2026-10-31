@@ -2,20 +2,26 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/claudecli"
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/hook"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/procenv"
+	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -37,13 +43,11 @@ func newDaemonCmd() *cobra.Command {
 			defer stop()
 			logger := log.New(cmd.ErrOrStderr(), "acmd daemon: ", log.LstdFlags)
 			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger}
-			// The claude path is resolved from PATH for now; `acmd init` pins
-			// an absolute path in config (M3).
-			if claude, err := exec.LookPath("claude"); err == nil {
-				cli := claudecli.New(claude, os.Environ())
+			if claude, env, err := claudeCommand(p); err == nil {
+				cli := claudecli.New(claude, env)
 				cfg.Agents, cfg.Stopper = cli, cli
 			} else {
-				logger.Printf("claude not found on PATH; reconciliation disabled: %v", err)
+				logger.Printf("claude not found; reconciliation disabled: %v", err)
 			}
 			err = daemon.Run(ctx, cfg)
 			if errors.Is(err, daemon.ErrAlreadyRunning) {
@@ -78,4 +82,38 @@ func debugf(cmd *cobra.Command, format string, a ...any) {
 	if os.Getenv("ACMD_DEBUG") != "" {
 		fmt.Fprintf(cmd.ErrOrStderr(), "acmd: "+format+"\n", a...)
 	}
+}
+
+// claudeCommand is the claude binary and environment for processes acmd
+// starts: config's claude_command (pinned to an absolute path by `acmd
+// init`) and the saved login-shell environment, falling back to PATH and
+// this process's environment. CLAUDE* variables are always stripped (M0 C5).
+func claudeCommand(p paths.Paths) (string, []string, error) {
+	cfg, err := config.Load(p.Config())
+	if err != nil {
+		return "", nil, err
+	}
+	env := os.Environ()
+	if b, err := os.ReadFile(p.Env()); err == nil {
+		var saved setup.LoginEnv
+		if err := json.Unmarshal(b, &saved); err == nil && saved["PATH"] != "" {
+			env = saved.Environ()
+		}
+	}
+	env = procenv.Scrub(env)
+	claude := cfg.ClaudeCommand
+	if !filepath.IsAbs(claude) {
+		pathList := ""
+		for _, kv := range env {
+			if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+				pathList = v
+			}
+		}
+		if claude, err = setup.LookPathIn(claude, pathList); err != nil {
+			if claude, err = exec.LookPath(cfg.ClaudeCommand); err != nil {
+				return "", nil, err
+			}
+		}
+	}
+	return claude, env, nil
 }

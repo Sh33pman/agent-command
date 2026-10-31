@@ -298,8 +298,11 @@ func TestParseKittyConfigAndConflicts(t *testing.T) {
 		t.Errorf("unexpected conflicts: %v", skip)
 	}
 
-	out := RenderKittyConf(binds, skip)
+	out := RenderKittyConf(binds, skip, KittyConfig{})
 	golden(t, "agent-command.conf", []byte(out))
+	if kept := RenderKittyConf(binds, skip, kc); strings.Contains(kept, "allow_remote_control") || !strings.Contains(kept, "listen_on unix:kitty-acmd-{kitty_pid}") {
+		t.Errorf("the user's allow_remote_control yes should be kept:\n%s", kept)
+	}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, "map ") && strings.Contains(line, "#") {
 			t.Errorf("inline comment in Kitty map line (Kitty doesn't support them): %s", line)
@@ -311,6 +314,36 @@ func TestParseKittyConfigAndConflicts(t *testing.T) {
 	}
 	if _, err := ParseKittyConfig(conf, func(string) ([]byte, error) { return nil, errors.New("denied") }); err == nil {
 		t.Error("read error should surface")
+	}
+}
+
+func TestKittyRemoteSettings(t *testing.T) {
+	cases := []struct {
+		settings  map[string]string
+		lines     string
+		noteParts []string
+	}{
+		{nil, "allow_remote_control socket-only|listen_on unix:kitty-acmd-{kitty_pid}", nil},
+		{map[string]string{"allow_remote_control": "socket-only"}, "listen_on unix:kitty-acmd-{kitty_pid}", []string{"keeping your allow_remote_control socket-only"}},
+		{map[string]string{"allow_remote_control": "No"}, "allow_remote_control socket-only|listen_on unix:kitty-acmd-{kitty_pid}", []string{"No is overridden"}},
+		{map[string]string{"allow_remote_control": "password"}, "listen_on unix:kitty-acmd-{kitty_pid}", []string{"password-free"}},
+		{map[string]string{"listen_on": "unix:/tmp/mykitty"}, "allow_remote_control socket-only", []string{"keeping your listen_on unix:/tmp/mykitty"}},
+		{map[string]string{"listen_on": "none"}, "allow_remote_control socket-only|listen_on unix:kitty-acmd-{kitty_pid}", nil},
+	}
+	for _, c := range cases {
+		lines, notes := KittyRemoteSettings(KittyConfig{Settings: c.settings})
+		if got := strings.Join(lines, "|"); got != c.lines {
+			t.Errorf("%v: lines %q, want %q", c.settings, got, c.lines)
+		}
+		all := strings.Join(notes, "\n")
+		if len(c.noteParts) == 0 && all != "" {
+			t.Errorf("%v: unexpected notes %q", c.settings, all)
+		}
+		for _, part := range c.noteParts {
+			if !strings.Contains(all, part) {
+				t.Errorf("%v: notes %q lack %q", c.settings, all, part)
+			}
+		}
 	}
 }
 

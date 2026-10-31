@@ -25,8 +25,18 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	root.SetErr(stderr)
 	root.AddCommand(newVersionCmd(), newDaemonCmd(), newHookCmd(),
 		newListCmd(), newRenameCmd(), newDescribeCmd(), newArchiveCmd(), newUnarchiveCmd(), newMoveCmd(),
-		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd())
+		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd(),
+		newInitCmd(), newUninstallCmd(), newEditorCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
+
+	// Using acmd for the first time offers setup (SPEC §9).
+	for _, c := range root.Commands() {
+		switch c.Name() {
+		case "list", "rename", "describe", "archive", "unarchive", "move", "group", "view-mode", "sort", "focus-group":
+			c.Annotations = map[string]string{needsSetup: "yes"}
+		}
+	}
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error { return autoInit(cmd) }
 	return root
 }
 
@@ -57,6 +67,7 @@ func newVersionCmd() *cobra.Command {
 // Execute runs the command tree with the given arguments. argv0 is the
 // path the binary was invoked as.
 func Execute(argv0 string, args []string, stdout, stderr io.Writer) error {
+	invokedAs = argv0
 	root := NewRootCmd(filepath.Base(argv0), stdout, stderr)
 	root.SetArgs(args)
 	return root.Execute()

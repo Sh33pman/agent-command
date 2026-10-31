@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/brettmostert/agent-command/compare/v0.2.0...v0.3.0) (2026-10-31)
+
+
+### Features
+
+* **store:** add SQLite state store with migrations ([118a968](https://github.com/brettmostert/agent-command/commit/118a9688f7851318aedc886fb903ab727a28f5a4))
+
 ## [0.2.0](https://github.com/brettmostert/agent-command/compare/v0.1.1...v0.2.0) (2026-10-31)
 
 

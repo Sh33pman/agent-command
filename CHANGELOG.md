@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/brettmostert/agent-command/compare/v0.3.0...v0.4.0) (2026-10-31)
+
+
+### Features
+
+* **daemon:** add daemon, socket protocol and acmd hook ([5d2e74a](https://github.com/brettmostert/agent-command/commit/5d2e74a3ba41c7e87d47d012d28de4a37ae9c294))
+
 ## [0.3.0](https://github.com/brettmostert/agent-command/compare/v0.2.0...v0.3.0) (2026-10-31)
 
 

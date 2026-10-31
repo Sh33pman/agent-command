@@ -6,15 +6,24 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 MODULE  := github.com/brettmostert/agent-command
-BIN     := $(CURDIR)/bin
+# Tools live in $(TOOLS_DIR)/<versions>: a new pinned version gets a fresh
+# directory instead of a stale binary. In GitHub Actions they go to the
+# runner's tool cache, which on the self-hosted runner persists outside the
+# checkout (so `git clean` doesn't wipe them).
+ifdef RUNNER_TOOL_CACHE
+TOOLS_DIR ?= $(RUNNER_TOOL_CACHE)/acmd-tools
+else
+TOOLS_DIR ?= $(CURDIR)/bin
+endif
 DIST    := $(CURDIR)/dist
-export PATH := $(BIN):$(PATH)
 
 # Pinned tool versions (Dependabot doesn't track these; bump deliberately).
 GOLANGCI_LINT_VERSION := v2.15.0
 GORELEASER_VERSION    := v2.19.0
 GOVULNCHECK_VERSION   := v1.9.0
 SYFT_VERSION          := v1.55.0
+BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GORELEASER_VERSION)_$(GOVULNCHECK_VERSION)_$(SYFT_VERSION)
+export PATH := $(BIN):$(PATH)
 
 # Coverage gates (SPEC §12 Testing).
 COVER_MIN_TOTAL := 60
@@ -49,20 +58,20 @@ define go_install
 	done; exit 1
 endef
 
-bin/golangci-lint:
+$(BIN)/golangci-lint:
 	$(call go_install,github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION))
 
-bin/goreleaser:
+$(BIN)/goreleaser:
 	$(call go_install,github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION))
 
-bin/govulncheck:
+$(BIN)/govulncheck:
 	$(call go_install,golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION))
 
-bin/syft:
+$(BIN)/syft:
 	$(call go_install,github.com/anchore/syft/cmd/syft@$(SYFT_VERSION))
 
 .PHONY: tools
-tools: bin/golangci-lint bin/goreleaser bin/govulncheck bin/syft ## Install pinned tools into ./bin
+tools: $(BIN)/golangci-lint $(BIN)/goreleaser $(BIN)/govulncheck $(BIN)/syft ## Install pinned tools into $(TOOLS_DIR)
 
 ##@ Checks
 
@@ -81,7 +90,7 @@ workflow-check: ## Fail if a workflow runs a ./bin tool directly (bypasses make'
 	  echo "workflows must call tools via make targets, not bin/<tool>"; exit 1; fi
 
 .PHONY: lint
-lint: fmt tidy-check workflow-check bin/golangci-lint ## gofmt, go vet, go mod tidy check, golangci-lint
+lint: fmt tidy-check workflow-check $(BIN)/golangci-lint ## gofmt, go vet, go mod tidy check, golangci-lint
 	go vet ./...
 	$(BIN)/golangci-lint config verify
 	$(BIN)/golangci-lint run
@@ -96,7 +105,7 @@ fuzz: ## Run each fuzz target briefly (FUZZTIME=30s)
 	scripts/fuzz.sh $${FUZZTIME:-30s}
 
 .PHONY: vuln
-vuln: bin/govulncheck ## Scan for known vulnerabilities
+vuln: $(BIN)/govulncheck ## Scan for known vulnerabilities
 	$(BIN)/govulncheck ./...
 
 .PHONY: ci
@@ -112,13 +121,13 @@ build: ## Build ./dist/agent-command (+ acmd symlink) for this machine
 	$(DIST)/acmd version
 
 .PHONY: snapshot
-snapshot: bin/goreleaser bin/syft ## Full release dry-run (no publish) into ./dist
+snapshot: $(BIN)/goreleaser $(BIN)/syft ## Full release dry-run (no publish) into ./dist
 	$(BIN)/goreleaser check
 	$(BIN)/goreleaser release --snapshot --clean
 	scripts/check-dist.sh $(DIST)
 
 .PHONY: release
-release: bin/goreleaser bin/syft ## CI only: publish the tagged release with GoReleaser (needs GITHUB_TOKEN)
+release: $(BIN)/goreleaser $(BIN)/syft ## CI only: publish the tagged release with GoReleaser (needs GITHUB_TOKEN)
 	$(BIN)/goreleaser release --clean
 
 .PHONY: formula-test

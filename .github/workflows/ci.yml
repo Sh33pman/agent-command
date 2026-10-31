@@ -1,15 +1,20 @@
 # PR checks (SPEC §13.4). Runs on pull requests only: pushes to main are
-# re-verified by the release gate before anything is published, which keeps
-# macOS minutes within the free allowance.
+# re-verified by the release gate before anything is published.
+# All jobs run on the self-hosted runner on the maintainer's Mac (label
+# `acmd`), which isn't metered (SPEC §13.6). Dependabot PRs only run once
+# the `ok-to-test` label is added: they'd execute updated dependencies on
+# that Mac.
 name: ci
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths-ignore:
       - "**.md"
       - "docs/**"
       - "LICENSE"
   workflow_dispatch:
+
 
 permissions:
   contents: read
@@ -20,58 +25,39 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, acmd]
+    if: >-
+      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
+      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # Restore/save split: actions/cache only saves on job success, so a failing
-      # later step would otherwise force a full tool rebuild (~4 min) next run.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: tools-cache
-        with:
-          path: bin
-          key: tools-golangci-lint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'go.mod') }}
-      - name: build tools (cache miss)
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        run: make bin/golangci-lint
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        with:
-          path: bin
-          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
+          cache: false # the self-hosted runner keeps Go's caches between runs
       - run: make lint
 
   vuln:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, acmd]
+    if: >-
+      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
+      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # Restore/save split: actions/cache only saves on job success, so a failing
-      # later step would otherwise force a full tool rebuild (~4 min) next run.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: tools-cache
-        with:
-          path: bin
-          key: tools-govulncheck-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'go.mod') }}
-      - name: build tools (cache miss)
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        run: make bin/govulncheck
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        with:
-          path: bin
-          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
+          cache: false # the self-hosted runner keeps Go's caches between runs
       - run: make vuln
 
-  # One macOS job (one VM boot, one cache restore): macOS minutes bill at 10x.
+  # The macOS-only steps (snapshot, brew formula check).
   macos:
-    runs-on: macos-latest
+    runs-on: [self-hosted, acmd]
+    if: >-
+      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
+      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -80,21 +66,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # Restore/save split: actions/cache only saves on job success, so a failing
-      # later step would otherwise force a full tool rebuild (~4 min) next run.
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: tools-cache
-        with:
-          path: bin
-          key: tools-all-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile', 'go.mod') }}
-      - name: build tools (cache miss)
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        run: make tools
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.tools-cache.outputs.cache-hit != 'true'
-        with:
-          path: bin
-          key: ${{ steps.tools-cache.outputs.cache-primary-key }}
+          cache: false # the self-hosted runner keeps Go's caches between runs
       - name: test (race + coverage gate)
         run: make test
       - name: fuzz (short)

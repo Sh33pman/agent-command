@@ -16,7 +16,7 @@
 | `release.yml` | push to `main` | release-please; on a release: gate (`make ci fuzz snapshot formula-test` on the tag) → GoReleaser → binaries to the public tap → tested formula commit |
 | `integration.yml` | manual (weekly from M2) | Kitty integration tests |
 
-macOS minutes are billed at 10× against the free 2,000 min/month, so the macOS work is one job per workflow. Docs-only PRs skip CI.
+All workflows run on a **self-hosted runner** on the maintainer's Mac (label `acmd`; SPEC §13.6), so CI isn't metered, but it waits while that Mac is asleep. Docs-only PRs skip CI. **Dependabot PRs need the `ok-to-test` label** before CI runs, because CI would execute the updated dependencies on that Mac. The Homebrew formula check never installs on a self-hosted runner (safe mode).
 
 ## Releases
 

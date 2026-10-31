@@ -46,10 +46,8 @@ type state struct {
 
 func main() {
 	path := os.Getenv("FAKECLAUDE_STATE")
-	st := load(path)
 	args := os.Args[1:]
-	st.Calls = append(st.Calls, strings.Join(args, " "))
-	save(path, st)
+	st := update(path, func(st *state) { st.Calls = append(st.Calls, strings.Join(args, " ")) })
 	cwd, _ := os.Getwd()
 
 	switch {
@@ -74,18 +72,18 @@ func main() {
 				}
 			}
 		}
-		st = load(path)
-		pid := 4000 + len(st.Agents)
-		replaced := false
-		for i, a := range st.Agents {
-			if a.SessionID == sid {
-				st.Agents[i].Pid, st.Agents[i].Status, replaced = &pid, "idle", true
+		update(path, func(st *state) {
+			pid := 4000 + len(st.Agents)
+			replaced := false
+			for i, a := range st.Agents {
+				if a.SessionID == sid {
+					st.Agents[i].Pid, st.Agents[i].Status, replaced = &pid, "idle", true
+				}
 			}
-		}
-		if !replaced {
-			st.Agents = append(st.Agents, agent{ID: sid[:8], SessionID: sid, Kind: "background", Cwd: cwd, Name: name, Status: "idle", Pid: &pid})
-		}
-		save(path, st)
+			if !replaced {
+				st.Agents = append(st.Agents, agent{ID: sid[:8], SessionID: sid, Kind: "background", Cwd: cwd, Name: name, Status: "idle", Pid: &pid})
+			}
+		})
 		fmt.Printf("backgrounded · %s · claude attach %s\n", sid[:8], sid[:8])
 	case args[0] == "attach" && len(args) == 2:
 		found := false
@@ -103,12 +101,13 @@ func main() {
 	case args[0] == "agents":
 		_ = json.NewEncoder(os.Stdout).Encode(st.Agents)
 	case args[0] == "stop" && len(args) == 2:
-		for i, a := range st.Agents {
-			if a.ID == args[1] {
-				st.Agents[i].Pid = nil
+		update(path, func(st *state) {
+			for i, a := range st.Agents {
+				if a.ID == args[1] {
+					st.Agents[i].Pid = nil
+				}
 			}
-		}
-		save(path, st)
+		})
 	default:
 		fmt.Fprintf(os.Stderr, "fakeclaude: unsupported %q\n", args)
 		os.Exit(2)
@@ -119,9 +118,7 @@ func main() {
 func trustPrompt(path, cwd string) {
 	fmt.Println("TRUST PROMPT for " + cwd)
 	if waitForEnd("accept", true) {
-		st := load(path)
-		st.Trusted = append(st.Trusted, cwd)
-		save(path, st)
+		update(path, func(st *state) { st.Trusted = append(st.Trusted, cwd) })
 		if f := os.Getenv("FAKECLAUDE_TRUST_FILE"); f != "" {
 			b, _ := json.Marshal(map[string]any{"projects": map[string]any{cwd: map[string]bool{"hasTrustDialogAccepted": true}}})
 			_ = os.WriteFile(f, b, 0o600) // #nosec G703 -- test helper
@@ -179,6 +176,21 @@ func newID() string {
 	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
 
+// update changes the state file under an exclusive lock (several fake
+// claude processes run at once: the daemon polls `agents` constantly).
+func update(path string, fn func(*state)) state {
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 G703 -- test helper
+	if err == nil {
+		defer lock.Close()
+		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX)
+		defer func() { _ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) }()
+	}
+	st := load(path)
+	fn(&st)
+	save(path, st)
+	return st
+}
+
 func load(path string) state {
 	var st state
 	if b, err := os.ReadFile(path); err == nil { // #nosec G304 G703 -- test helper
@@ -187,7 +199,11 @@ func load(path string) state {
 	return st
 }
 
+// save writes atomically, so readers never see a partial file.
 func save(path string, st state) {
 	b, _ := json.MarshalIndent(st, "", "  ")
-	_ = os.WriteFile(path, b, 0o600) // #nosec G703 -- test helper
+	tmp := path + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil { // #nosec G703 -- test helper
+		_ = os.Rename(tmp, path) // #nosec G703 -- test helper
+	}
 }

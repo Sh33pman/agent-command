@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/brettmostert/agent-command/compare/v0.4.0...v0.5.0) (2026-10-31)
+
+
+### Features
+
+* **cli:** add list, rename, archive, move, group and view commands ([47171af](https://github.com/brettmostert/agent-command/commit/47171af956219746535a8e2227426f504fb4af73))
+* **reconcile:** add claude CLI wrapper, reconciler and Esc detection ([5c7893c](https://github.com/brettmostert/agent-command/commit/5c7893c2cb6965e55c9b73fe3a4897c69380a47d))
+
 ## [0.4.0](https://github.com/brettmostert/agent-command/compare/v0.3.0...v0.4.0) (2026-10-31)
 
 

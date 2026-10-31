@@ -206,14 +206,15 @@ func TestAgreement(t *testing.T) {
 func TestUnlistedSessions(t *testing.T) {
 	r, st, _, c := setup(t)
 	fresh := create(t, st, &core.Session{ClaudeSessionID: "new", Status: core.StatusStarting, CreatedAt: c.t})
-	gone := create(t, st, &core.Session{ClaudeSessionID: "gone", Status: core.StatusDone, Pid: 3})
+	freshHook := create(t, st, &core.Session{ClaudeSessionID: "hook", Status: core.StatusDone, CreatedAt: c.t}) // first seen through hooks
+	gone := create(t, st, &core.Session{ClaudeSessionID: "gone", Status: core.StatusDone, Pid: 3, CreatedAt: c.t.Add(-time.Hour)})
 	extAlive := create(t, st, &core.Session{ClaudeSessionID: "ea", Kind: core.KindExternal, Status: core.StatusBusy, Pid: 100})
 	extDead := create(t, st, &core.Session{ClaudeSessionID: "ed", Kind: core.KindExternal, Status: core.StatusDone, Pid: 200})
 	paused := create(t, st, &core.Session{ClaudeSessionID: "p", Status: core.StatusPaused})
 	r.Alive = func(pid int) bool { return pid == 100 }
 
 	once(t, r)
-	for id, want := range map[string]core.Status{fresh.ID: core.StatusStarting, gone.ID: core.StatusPaused,
+	for id, want := range map[string]core.Status{fresh.ID: core.StatusStarting, freshHook.ID: core.StatusDone, gone.ID: core.StatusPaused,
 		extAlive.ID: core.StatusBusy, extDead.ID: core.StatusPaused, paused.ID: core.StatusPaused} {
 		if got := get(t, st, id); got.Status != want {
 			t.Errorf("%s: %s, want %s", got.ClaudeSessionID, got.Status, want)
@@ -224,8 +225,10 @@ func TestUnlistedSessions(t *testing.T) {
 	}
 	c.advance(time.Minute)
 	once(t, r)
-	if got := get(t, st, fresh.ID); got.Status != core.StatusPaused {
-		t.Errorf("starting session never listed: %s, want paused after startup grace", got.Status)
+	for _, s := range []*core.Session{fresh, freshHook} {
+		if got := get(t, st, s.ID); got.Status != core.StatusPaused {
+			t.Errorf("%s never listed: %s, want paused after startup grace", got.ClaudeSessionID, got.Status)
+		}
 	}
 }
 

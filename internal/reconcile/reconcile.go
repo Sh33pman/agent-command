@@ -37,8 +37,8 @@ type Reconciler struct {
 	Now    func() time.Time
 	// Grace is how long hooks and Claude may disagree before Claude wins.
 	Grace time.Duration
-	// StartupGrace protects freshly created sessions that Claude hasn't
-	// listed yet from being marked paused.
+	// StartupGrace protects freshly created sessions (starting, or first
+	// seen through hooks) that Claude hasn't listed yet from being paused.
 	StartupGrace time.Duration
 	// Alive reports whether a pid is running (default: kill(pid, 0)).
 	Alive func(pid int) bool
@@ -177,7 +177,9 @@ func (r *Reconciler) unlisted(s *core.Session) bool {
 		}
 		return false
 	}
-	if s.Status == core.StatusStarting && r.Now().Sub(s.CreatedAt) < r.StartupGrace {
+	// Claude's listing can lag a session's first hooks: don't pause a
+	// session we only just learned about, whatever its status.
+	if r.Now().Sub(s.CreatedAt) < r.StartupGrace {
 		return false
 	}
 	s.Pid = 0

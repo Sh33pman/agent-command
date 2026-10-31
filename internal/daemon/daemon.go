@@ -39,6 +39,8 @@ type Config struct {
 	Agents reconcile.Lister
 	// Stopper stops background sessions on archive (claudecli.CLI).
 	Stopper Stopper
+	// Claude starts and resumes background sessions (claudecli.CLI).
+	Claude Claude
 	// ReconcileEvery and TailEvery default to 3 s and 1 s (SPEC §6.7, §5.4).
 	ReconcileEvery time.Duration
 	TailEvery      time.Duration
@@ -52,6 +54,9 @@ type Daemon struct {
 	mu    sync.Mutex // serializes state changes
 	stop  chan struct{}
 	once  sync.Once
+
+	changes changes // bumped on every state change (OpWatch)
+	seen    seen    // view heartbeats
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks
@@ -94,7 +99,8 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = ln.Close()
 		return err
 	}
-	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{})}
+	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}),
+		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}}
 	defer os.Remove(sock)
 
 	if err := d.drainSpool(ctx); err != nil {
@@ -147,6 +153,9 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 			return
 		}
 		data, err := d.handle(ctx, req)
+		if err == nil && changesState(req.Op) {
+			d.changes.bump()
+		}
 		resp := ipc.Response{OK: err == nil}
 		if err != nil {
 			resp.Error = err.Error()
@@ -166,6 +175,15 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 			return
 		}
 	}
+}
+
+// changesState reports whether a successful request may have changed state.
+func changesState(op string) bool {
+	switch op {
+	case ipc.OpEvent, ipc.OpMutate, ipc.OpNew, ipc.OpResume:
+		return true
+	}
+	return false
 }
 
 func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
@@ -188,6 +206,24 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 			return nil, fmt.Errorf("bad mutation: %w", err)
 		}
 		return d.mutate(ctx, m)
+	case ipc.OpWatch:
+		w, err := decode[ipc.WatchRequest](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.watch(ctx, w)
+	case ipc.OpNew:
+		n, err := decode[ipc.NewRequest](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.newSession(ctx, n)
+	case ipc.OpResume:
+		m, err := decode[ipc.Mutation](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.resume(ctx, m.ID)
 	case ipc.OpStatus:
 		sessions, err := d.store.Sessions(ctx, true)
 		if err != nil {
@@ -214,22 +250,27 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	defer d.mu.Unlock()
 
 	sess, err := d.store.SessionByClaudeID(ctx, e.SessionID)
+	linked := false
+	if errors.Is(err, store.ErrNotFound) && len(e.SessionID) >= 8 {
+		// A session acmd started: linked by Claude's short id (M0 A3).
+		if sess, err = d.store.SessionByBgID(ctx, e.SessionID[:8]); err == nil {
+			sess.ClaudeSessionID, linked = e.SessionID, true
+		}
+	}
 	isNew := errors.Is(err, store.ErrNotFound)
 	if err != nil && !isNew {
 		return err
 	}
 	if isNew {
-		sess = newSession(e, ev.Context, d.cfg.Now())
+		sess = sessionFromHook(e, ev.Context, d.cfg.Now())
 	}
 	tr := core.Apply(sess, e)
-	if tr.Changed() && tr.To.NeedsAttention() {
-		// No view shows anything yet (views arrive in M2), so every
-		// attention-worthy transition is unseen.
+	if tr.Changed() && tr.To.NeedsAttention() && !d.shown(ctx, sess.ID) {
 		sess.Unseen = true
 	}
 	if isNew {
 		err = d.store.CreateSession(ctx, sess)
-	} else if tr.Applied {
+	} else if tr.Applied || linked {
 		err = d.store.UpdateSession(ctx, sess)
 	}
 	if err != nil {
@@ -251,8 +292,10 @@ func (d *Daemon) background(ctx context.Context) {
 	tail := reconcile.NewTailer()
 	reconcileT := time.NewTicker(d.cfg.ReconcileEvery)
 	tailT := time.NewTicker(d.cfg.TailEvery)
+	pruneT := time.NewTicker(10 * time.Second)
 	defer reconcileT.Stop()
 	defer tailT.Stop()
+	defer pruneT.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -270,10 +313,24 @@ func (d *Daemon) background(ctx context.Context) {
 				d.cfg.Log.Printf("reconcile: %v", err)
 			} else if res.Discovered+res.Updated > 0 {
 				d.cfg.Log.Printf("reconcile: %d discovered, %d updated", res.Discovered, res.Updated)
+				d.changes.bump()
 			}
 		case <-tailT.C:
-			if err := d.tailOnce(ctx, tail); err != nil {
+			changed, err := d.tailOnce(ctx, tail)
+			if err != nil {
 				d.cfg.Log.Printf("transcript tail: %v", err)
+			}
+			if changed {
+				d.changes.bump()
+			}
+		case <-pruneT.C:
+			n, err := d.pruneViews(ctx)
+			if err != nil {
+				d.cfg.Log.Printf("prune views: %v", err)
+			}
+			if n > 0 {
+				d.cfg.Log.Printf("pruned %d closed views", n)
+				d.changes.bump()
 			}
 		}
 	}
@@ -281,13 +338,14 @@ func (d *Daemon) background(ctx context.Context) {
 
 // tailOnce checks busy sessions' transcripts for an Esc interrupt (no Stop
 // hook fires for it, M0 A12) and marks them done.
-func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) error {
+func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	sessions, err := d.store.Sessions(ctx, false)
 	if err != nil {
-		return err
+		return false, err
 	}
+	changed := false
 	for _, s := range sessions {
 		if s.Status != core.StatusBusy {
 			tail.Forget(s.TranscriptPath)
@@ -297,26 +355,27 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) error {
 		if err != nil || !hit {
 			continue
 		}
-		tr := core.Apply(s, core.Event{Kind: core.EventInterrupted, Time: d.cfg.Now()})
+		tr := core.Apply(s, core.Event{Kind: core.EventInterrupted, Time: d.eventTime(s)})
 		if !tr.Changed() {
 			continue
 		}
-		s.Unseen = true
+		s.Unseen = !d.shown(ctx, s.ID)
+		changed = true
 		if err := d.store.UpdateSession(ctx, s); err != nil {
-			return err
+			return changed, err
 		}
 		if err := d.store.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID, ClaudeSessionID: s.ClaudeSessionID,
 			Kind: string(core.EventInterrupted), Detail: string(s.Status)}); err != nil {
-			return err
+			return changed, err
 		}
 	}
-	return nil
+	return changed, nil
 }
 
-// newSession creates the row for a Claude session acmd hasn't seen yet.
+// sessionFromHook creates the row for a Claude session acmd hasn't seen yet.
 // Classification here is provisional: the reconciler (M1d) corrects Kind
 // from `claude agents --json` (SPEC §6.3).
-func newSession(e core.Event, hc ipc.HookContext, now time.Time) *core.Session {
+func sessionFromHook(e core.Event, hc ipc.HookContext, now time.Time) *core.Session {
 	s := &core.Session{
 		ClaudeSessionID: e.SessionID,
 		Cwd:             e.Cwd,

@@ -236,16 +236,16 @@ func TestDaemonSingleInstanceAndShutdown(t *testing.T) {
 func TestNewSessionClassification(t *testing.T) {
 	e := core.Event{SessionID: "x", Cwd: "/w"}
 	now := time.Now()
-	if s := newSession(e, ipc.HookContext{ViewID: "v", KittyWindowID: "3"}, now); s.Kind != core.KindBackground || s.External != nil {
+	if s := sessionFromHook(e, ipc.HookContext{ViewID: "v", KittyWindowID: "3"}, now); s.Kind != core.KindBackground || s.External != nil {
 		t.Errorf("acmd-started session: %+v", s)
 	}
-	if s := newSession(e, ipc.HookContext{}, now); s.Kind != core.KindBackground {
+	if s := sessionFromHook(e, ipc.HookContext{}, now); s.Kind != core.KindBackground {
 		t.Errorf("no terminal context: %+v", s)
 	}
-	if s := newSession(e, ipc.HookContext{TermProgram: "ghostty"}, now); s.Kind != core.KindExternal || s.External.Terminal != "ghostty" {
+	if s := sessionFromHook(e, ipc.HookContext{TermProgram: "ghostty"}, now); s.Kind != core.KindExternal || s.External.Terminal != "ghostty" {
 		t.Errorf("ghostty: %+v", s)
 	}
-	if s := newSession(e, ipc.HookContext{TermProgram: "vscode"}, now); s.External.Terminal != "unknown" {
+	if s := sessionFromHook(e, ipc.HookContext{TermProgram: "vscode"}, now); s.External.Terminal != "unknown" {
 		t.Errorf("unknown terminal: %+v", s.External)
 	}
 }

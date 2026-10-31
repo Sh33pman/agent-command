@@ -480,7 +480,7 @@ const needsSetup = "acmd/needs-setup"
 // `acmd init` would change and asks (decision: show the plan, ask Y/n).
 // Without a terminal it only prints a hint.
 func autoInit(cmd *cobra.Command) error {
-	marked := false
+	marked := cmd == cmd.Root() // plain `acmd` opens a view
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Annotations[needsSetup] != "" {
 			marked = true

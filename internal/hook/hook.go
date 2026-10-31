@@ -75,6 +75,10 @@ func Run(name string, o Options) (Outcome, error) {
 		return Rejected, errors.New("hook payload is not JSON")
 	}
 
+	// Claude's trust prompt run by `acmd new` (SPEC §6.1) isn't a session.
+	if o.Getenv("ACMD_IGNORE_HOOKS") != "" {
+		return Ignored, nil
+	}
 	hc, headless := o.context()
 	if headless {
 		return Ignored, nil

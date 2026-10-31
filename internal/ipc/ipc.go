@@ -28,6 +28,9 @@ const (
 	OpStatus   = "status"   // counts, for doctor/tests
 	OpSnapshot = "snapshot" // sessions, groups and view state (Snapshot)
 	OpMutate   = "mutate"   // one change (Mutation)
+	OpWatch    = "watch"    // wait for a change (WatchRequest → WatchResponse); a view's heartbeat
+	OpNew      = "new"      // start a background session (NewRequest → *core.Session)
+	OpResume   = "resume"   // resume a paused background session (Mutation.ID → *core.Session)
 )
 
 // Snapshot is everything a client needs to render the list; clients
@@ -36,6 +39,7 @@ type Snapshot struct {
 	Sessions  []*core.Session `json:"sessions"`
 	Groups    []*core.Group   `json:"groups"`
 	ViewState core.ViewState  `json:"view_state"`
+	Views     []*core.View    `json:"views"`
 }
 
 // Mutation kinds (OpMutate). Selectors are resolved by the client; the
@@ -58,18 +62,55 @@ const (
 	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)
 	MutViewFilter     = "view.filter"       // Text
 	MutViewArchived   = "view.archived"     // Flag = show archived
+	MutViewOpen       = "view.open"         // Pane, ID = session to show ("" = most recently active) -> returns the view
+	MutViewSelect     = "view.select"       // ID = view, Text = session ("" = placeholder)
+	MutViewClose      = "view.close"        // ID = view
+	MutViewTouch      = "view.touch"        // ID = view: it was focused
 )
 
 // Mutation is one change requested by a client.
 type Mutation struct {
-	Kind    string   `json:"kind"`
-	ID      string   `json:"id,omitempty"`
-	IDs     []string `json:"ids,omitempty"`
-	GroupID string   `json:"group_id,omitempty"`
-	Text    string   `json:"text,omitempty"`
-	Color   string   `json:"color,omitempty"`
-	Flag    bool     `json:"flag,omitempty"`
+	Kind    string        `json:"kind"`
+	ID      string        `json:"id,omitempty"`
+	IDs     []string      `json:"ids,omitempty"`
+	GroupID string        `json:"group_id,omitempty"`
+	Text    string        `json:"text,omitempty"`
+	Color   string        `json:"color,omitempty"`
+	Flag    bool          `json:"flag,omitempty"`
+	Pane    *core.PaneLoc `json:"pane,omitempty"`
 }
+
+// WatchRequest waits until the state revision differs from Rev (or Wait
+// passes). With a ViewID it also counts as that view's heartbeat.
+type WatchRequest struct {
+	Rev    uint64 `json:"rev"`
+	ViewID string `json:"view_id,omitempty"`
+	WaitMS int    `json:"wait_ms,omitempty"`
+}
+
+// WatchResponse is the current revision and, for a ViewID, the view (Gone
+// when it was closed or pruned).
+type WatchResponse struct {
+	Rev  uint64     `json:"rev"`
+	View *core.View `json:"view,omitempty"`
+	Gone bool       `json:"gone,omitempty"`
+}
+
+// NewRequest starts a background session (SPEC §6.1). The client resolves
+// the group and folder; ShowIn is the view that switches to it ("" = none).
+type NewRequest struct {
+	GroupID     string   `json:"group_id,omitempty"`
+	Cwd         string   `json:"cwd"`
+	Name        string   `json:"name,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	Prompt      string   `json:"prompt,omitempty"`
+	ShowIn      string   `json:"show_in,omitempty"`
+}
+
+// ErrNotTrustedText marks a NewRequest refused because Claude hasn't
+// trusted the folder yet (the client runs the trust step and retries).
+const ErrNotTrustedText = "workspace not trusted by Claude"
 
 // Request is one client message.
 type Request struct {
@@ -117,6 +158,11 @@ type Status struct {
 	Sessions int    `json:"sessions"`
 	Events   int    `json:"events"`
 }
+
+// RemoteError is an error the daemon reported (the connection is fine).
+type RemoteError struct{ Msg string }
+
+func (e *RemoteError) Error() string { return e.Msg }
 
 // ErrVersionMismatch is returned by Dial when the daemon runs another version.
 type ErrVersionMismatch struct{ Daemon Hello }
@@ -178,7 +224,7 @@ func (c *Conn) Call(op string, in, out any) error {
 		return err
 	}
 	if !resp.OK {
-		return errors.New(resp.Error)
+		return &RemoteError{Msg: resp.Error}
 	}
 	if out != nil && len(resp.Data) > 0 {
 		return json.Unmarshal(resp.Data, out)

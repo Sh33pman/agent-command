@@ -260,3 +260,21 @@ func TestPidAlive(t *testing.T) {
 		t.Error("pid 999999 should not be alive")
 	}
 }
+
+func TestLinksSessionsStartedByAcmd(t *testing.T) {
+	r, st, l, c := setup(t)
+	started := create(t, st, &core.Session{BgID: "abcd1234", Status: core.StatusStarting, CreatedAt: c.t, Name: "mine", NameSource: core.NameUser})
+	l.agents = []claudecli.Agent{agent("abcd1234-5678-uuid", "abcd1234", "background", "busy", 7)}
+	res := once(t, r)
+	if res.Discovered != 0 {
+		t.Errorf("acmd's own session discovered again: %+v", res)
+	}
+	got := get(t, st, started.ID)
+	if got.ClaudeSessionID != "abcd1234-5678-uuid" || got.Status != core.StatusStarting || got.Name != "mine" || got.Pid != 7 {
+		t.Errorf("not linked: %+v", got)
+	}
+	all, _ := st.Sessions(ctx, true)
+	if len(all) != 1 {
+		t.Errorf("%d sessions, want 1", len(all))
+	}
+}

@@ -1,0 +1,524 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/procenv"
+	"github.com/brettmostert/agent-command/internal/setup"
+	"github.com/brettmostert/agent-command/internal/version"
+	"github.com/brettmostert/agent-command/internal/view"
+)
+
+// Views (SPEC §6.4): `acmd` turns the pane it runs in into a view. The
+// sidebar split arrives with the Kitty adapter (M2b); until then the
+// view's placeholder lists sessions.
+
+// runView registers this pane as a view and runs the view loop in it.
+func runView(cmd *cobra.Command, viewID string) error {
+	p, err := paths.Default()
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGHUP, syscall.SIGTERM)
+	defer stop()
+	vc := &viewClient{paths: p}
+	defer vc.close()
+
+	if viewID == "" {
+		var v core.View
+		pane := currentPane(os.Getenv)
+		if err := vc.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &pane}, &v); err != nil {
+			return err
+		}
+		viewID = v.ID
+	}
+	claude, _, err := claudeCommand(p)
+	if err != nil {
+		return fmt.Errorf("claude not found (run `acmd doctor`): %w", err)
+	}
+	env := append(procenv.Scrub(os.Environ()), "ACMD_VIEW_ID="+viewID)
+	cwd, _ := os.Getwd()
+	loop := &view.Loop{
+		ViewID: viewID,
+		Client: vc,
+		Out:    cmd.OutOrStdout(),
+		Keys:   &view.TermKeys{In: os.Stdin},
+		Attach: func(bgID string) *exec.Cmd {
+			c := exec.Command(claude, "attach", bgID) // #nosec G204 -- resolved claude binary, short id from Claude
+			c.Stdin, c.Stdout, c.Stderr, c.Env = os.Stdin, os.Stdout, os.Stderr, env
+			return c
+		},
+		New: func(ctx context.Context) error {
+			_, err := startSession(ctx, cmd, newOptions{cwd: cwd, showIn: viewID, interactive: true})
+			return err
+		},
+	}
+	err = loop.Run(ctx)
+	switch {
+	case errors.Is(err, view.ErrClosed):
+		return nil
+	case errors.Is(err, errNewerDaemon):
+		return reexec()
+	case ctx.Err() != nil:
+		// The pane closed (SIGHUP) or we were asked to stop: the view goes,
+		// its session keeps running (SPEC §6.4).
+		cctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = vc.Close(cctx, viewID)
+		return nil
+	}
+	return err
+}
+
+// currentPane describes the pane acmd runs in.
+func currentPane(getenv func(string) string) core.PaneLoc {
+	loc := core.PaneLoc{Terminal: "unknown"}
+	switch {
+	case getenv("KITTY_WINDOW_ID") != "":
+		loc.Terminal, loc.KittySocket = "kitty", getenv("KITTY_LISTEN_ON")
+		_, _ = fmt.Sscan(getenv("KITTY_WINDOW_ID"), &loc.KittyWindow)
+	case getenv("TERM_PROGRAM") == "ghostty":
+		loc.Terminal = "ghostty"
+	}
+	return loc
+}
+
+func newViewCmd() *cobra.Command {
+	var viewID string
+	cmd := &cobra.Command{
+		Use:    "view",
+		Short:  "Run the view loop in this pane (started by `acmd`)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runView(cmd, viewID)
+		},
+	}
+	cmd.Flags().StringVar(&viewID, "view", "", "the view to run (default: register this pane)")
+	return cmd
+}
+
+// errNewerDaemon means the daemon runs another acmd version: this view
+// loop re-executes the installed binary (SPEC §4.3, version skew).
+var errNewerDaemon = errors.New("daemon runs another acmd version")
+
+// viewClient implements view.Client. Watch gets its own connection per
+// call (it blocks, and runs alongside other calls).
+type viewClient struct {
+	paths paths.Paths
+	mu    sync.Mutex
+	conn  *ipc.Conn
+}
+
+func (v *viewClient) dial(ctx context.Context) (*ipc.Conn, error) {
+	me := ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version}
+	conn, err := ipc.Dial(ctx, v.paths.Socket(), me)
+	var mismatch *ipc.ErrVersionMismatch
+	if errors.As(err, &mismatch) {
+		_ = conn.Close()
+		if installedVersion() != me.Version {
+			return nil, errNewerDaemon
+		}
+		// We are the installed version: replace the old daemon.
+	}
+	if err == nil {
+		return conn, nil
+	}
+	c, err := connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.conn, nil
+}
+
+// installedVersion is the version of the acmd at the stable path ("" if
+// it can't be run).
+var installedVersion = func() string {
+	exe, _ := executable()
+	out, err := exec.Command(setup.StableBinary(invokedAs, exe, exec.LookPath), "version", "--json").Output() // #nosec G204 -- our own binary
+	if err != nil {
+		return ""
+	}
+	var info version.Info
+	if json.Unmarshal(out, &info) != nil {
+		return ""
+	}
+	return info.Version
+}
+
+// reexec replaces this process with the installed acmd (same arguments).
+var reexec = func() error {
+	exe, _ := executable()
+	path := setup.StableBinary(invokedAs, exe, exec.LookPath)
+	return syscall.Exec(path, append([]string{path}, os.Args[1:]...), os.Environ()) // #nosec G204 -- our own binary
+}
+
+func (v *viewClient) call(ctx context.Context, op string, in, out any) error {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for attempt := 0; ; attempt++ {
+		if v.conn == nil {
+			conn, err := v.dial(ctx)
+			if err != nil {
+				return err
+			}
+			v.conn = conn
+		}
+		err := v.conn.Call(op, in, out)
+		var remote *ipc.RemoteError
+		if err == nil || errors.As(err, &remote) || attempt > 0 {
+			return err
+		}
+		// The connection broke (daemon restarted): dial again once.
+		_ = v.conn.Close()
+		v.conn = nil
+	}
+}
+
+func (v *viewClient) close() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.conn != nil {
+		_ = v.conn.Close()
+		v.conn = nil
+	}
+}
+
+func (v *viewClient) Watch(ctx context.Context, req ipc.WatchRequest) (ipc.WatchResponse, error) {
+	var resp ipc.WatchResponse
+	conn, err := v.dial(ctx)
+	if err != nil {
+		return resp, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	defer conn.Close()
+	err = conn.Call(ipc.OpWatch, req, &resp)
+	if ctx.Err() != nil {
+		return resp, ctx.Err()
+	}
+	return resp, err
+}
+
+func (v *viewClient) Snapshot(ctx context.Context) (ipc.Snapshot, error) {
+	var s ipc.Snapshot
+	err := v.call(ctx, ipc.OpSnapshot, nil, &s)
+	return s, err
+}
+
+func (v *viewClient) Select(ctx context.Context, viewID, sessionID string) error {
+	return v.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewSelect, ID: viewID, Text: sessionID}, nil)
+}
+
+func (v *viewClient) Close(ctx context.Context, viewID string) error {
+	return v.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewClose, ID: viewID}, nil)
+}
+
+func (v *viewClient) Resume(ctx context.Context, id string) (*core.Session, error) {
+	var s core.Session
+	err := v.call(ctx, ipc.OpResume, ipc.Mutation{ID: id}, &s)
+	return &s, err
+}
+
+// ---- acmd new (SPEC §6.1) ----
+
+type newOptions struct {
+	group       string
+	noCreate    bool
+	cwd         string
+	name        string
+	description string
+	prompt      string
+	showIn      string // view to switch ("" = none)
+	interactive bool   // the trust step may run in this terminal
+}
+
+func newNewCmd() *cobra.Command {
+	var o newOptions
+	var noFollow bool
+	cmd := &cobra.Command{
+		Use:   "new [-- <first prompt>]",
+		Short: "Start a new Claude background session",
+		Long: "Starts `claude --bg` in a folder (default: this one) and lists it in acmd. Run inside a view, the view\n" +
+			"switches to it. A folder Claude hasn't trusted yet first shows Claude's trust prompt in this terminal.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o.prompt = strings.TrimSpace(strings.Join(args, " "))
+			o.interactive = isInteractive(cmd)
+			if o.cwd == "" {
+				o.cwd, _ = os.Getwd()
+			}
+			if !noFollow {
+				o.showIn = os.Getenv("ACMD_VIEW_ID")
+			}
+			s, err := startSession(cmd.Context(), cmd, o)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Started %s in %s (claude attach %s).\n", nameOf(s), setup.Tilde(s.Cwd, homeDir()), s.BgID)
+			if o.showIn == "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Show it in a view: acmd go "+s.BgID)
+			}
+			return nil
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&o.group, "group", "", "group to put it in (created if missing)")
+	f.BoolVar(&o.noCreate, "no-create", false, "fail instead of creating a missing --group")
+	f.StringVar(&o.cwd, "cwd", "", "folder to start in (default: the current folder)")
+	f.StringVar(&o.name, "name", "", "session name (default: Claude's)")
+	f.StringVar(&o.description, "description", "", "session description")
+	f.BoolVar(&noFollow, "no-follow", false, "don't switch the current view to it")
+	return cmd
+}
+
+// startSession resolves the group, starts the session and runs Claude's
+// trust prompt first when needed (interactive only).
+func startSession(ctx context.Context, cmd *cobra.Command, o newOptions) (*core.Session, error) {
+	p, err := paths.Default()
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := config.Load(p.Config())
+	if err != nil {
+		return nil, err
+	}
+	dir, err := filepath.Abs(o.cwd)
+	if err != nil {
+		return nil, err
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return nil, fmt.Errorf("%s isn't a folder", dir)
+	}
+	var s core.Session
+	err = withClient(ctx, func(c *client, snap ipc.Snapshot) error {
+		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Args: cfg.ClaudeArgs, Prompt: o.prompt, ShowIn: o.showIn}
+		if o.group != "" {
+			g, err := resolveGroup(snap, o.group)
+			if err != nil && o.noCreate {
+				return err
+			}
+			if err != nil {
+				var created core.Group
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutGroupCreate, Text: o.group}, &created); err != nil {
+					return err
+				}
+				g = &created
+			}
+			req.GroupID = g.ID
+		}
+		err := c.conn.Call(ipc.OpNew, req, &s)
+		if err == nil || !strings.Contains(err.Error(), ipc.ErrNotTrustedText) {
+			return err
+		}
+		if !o.interactive {
+			return fmt.Errorf("Claude hasn't trusted %s yet: run `claude` there once and accept, or run `acmd new` in a terminal", dir) //nolint:staticcheck // ST1005: product name
+		}
+		if err := runTrust(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), dir); err != nil {
+			return err
+		}
+		return c.conn.Call(ipc.OpNew, req, &s)
+	})
+	return &s, err
+}
+
+// trustFile is Claude's own state file holding folder trust (M0 C1).
+var trustFile = func() string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return filepath.Join(d, ".claude.json")
+	}
+	return filepath.Join(homeDir(), ".claude.json")
+}
+
+// trusted reports whether Claude's state says dir is trusted (a hint: the
+// `claude --bg` error stays authoritative).
+func trusted(dir string) bool {
+	b, err := os.ReadFile(trustFile())
+	if err != nil {
+		return false
+	}
+	var st struct {
+		Projects map[string]struct {
+			HasTrustDialogAccepted bool `json:"hasTrustDialogAccepted"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal(b, &st) != nil {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		resolved = dir
+	}
+	return st.Projects[resolved].HasTrustDialogAccepted || st.Projects[dir].HasTrustDialogAccepted
+}
+
+// runTrust shows Claude's trust prompt for dir in this terminal (SPEC
+// §6.1 step 3) and closes it once the folder is trusted. Its hooks are
+// ignored: it's not a session.
+func runTrust(ctx context.Context, in io.Reader, out io.Writer, dir string) error {
+	p, err := paths.Default()
+	if err != nil {
+		return err
+	}
+	claude, env, err := claudeCommand(p)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "\nClaude hasn't trusted %s yet.\nTrust this folder for Claude, then this session continues in the background.\n\n", dir)
+	c := exec.CommandContext(ctx, claude) // #nosec G204 -- resolved claude binary, no arguments
+	c.Dir, c.Stdin, c.Stdout, c.Stderr = dir, in, out, out
+	c.Env = append(append([]string(nil), env...), "ACMD_IGNORE_HOOKS=1")
+	if err := c.Start(); err != nil {
+		return err
+	}
+	exited := make(chan struct{})
+	go func() {
+		_ = c.Wait()
+		close(exited)
+	}()
+	tick := time.NewTicker(300 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-exited:
+			if !trusted(dir) {
+				return fmt.Errorf("%s still isn't trusted, so the session wasn't started", dir)
+			}
+			return nil
+		case <-tick.C:
+			if trusted(dir) {
+				time.Sleep(300 * time.Millisecond) // let Claude finish writing
+				_ = c.Process.Signal(syscall.SIGTERM)
+				select {
+				case <-exited:
+				case <-time.After(5 * time.Second):
+					_ = c.Process.Kill()
+					<-exited
+				}
+				fmt.Fprintln(out)
+				return nil
+			}
+		}
+	}
+}
+
+// ---- acmd go / resume ----
+
+func newGoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "go <N|id|name-prefix>",
+		Short: "Show a session in the current (or most recently used) view",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+				s, err := resolveSession(snap, args[0])
+				if err != nil {
+					return err
+				}
+				if s.Kind == core.KindExternal {
+					return errors.New("that session runs in your own pane; focusing it arrives with Kitty support")
+				}
+				target, err := targetView(snap, os.Getenv("ACMD_VIEW_ID"))
+				if err != nil {
+					return err
+				}
+				return c.mutate(ipc.Mutation{Kind: ipc.MutViewSelect, ID: target.ID, Text: s.ID}, nil)
+			})
+		},
+	}
+}
+
+// targetView is the view a command acts on: the one it runs in, else the
+// most recently focused one (SPEC §8.3).
+func targetView(snap ipc.Snapshot, current string) (*core.View, error) {
+	var best *core.View
+	for _, v := range snap.Views {
+		if v.ID == current {
+			return v, nil
+		}
+		if best == nil || v.LastFocusedAt.After(best.LastFocusedAt) {
+			best = v
+		}
+	}
+	if best == nil {
+		return nil, errors.New("no view is open: run `acmd` in a pane to open one")
+	}
+	return best, nil
+}
+
+func newResumeCmd() *cobra.Command {
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "resume <N|id|name-prefix> | --all",
+		Short: "Resume paused background sessions (they keep running in the background)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if all == (len(args) == 1) || len(args) > 1 {
+				return errors.New("give one session, or --all")
+			}
+			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+				var targets []*core.Session
+				if all {
+					for _, s := range snap.Sessions {
+						if s.Status == core.StatusPaused && s.ClaudeSessionID != "" {
+							targets = append(targets, s)
+						}
+					}
+				} else {
+					s, err := resolveSession(snap, args[0])
+					if err != nil {
+						return err
+					}
+					targets = append(targets, s)
+				}
+				var errs []error
+				for _, s := range targets {
+					if s.Status != core.StatusPaused {
+						fmt.Fprintf(cmd.OutOrStdout(), "%s is already running.\n", nameOf(s))
+						continue
+					}
+					var r core.Session
+					if err := c.conn.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r); err != nil {
+						errs = append(errs, fmt.Errorf("%s: %w", nameOf(s), err))
+						continue
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "Resumed %s (claude attach %s).\n", nameOf(&r), r.BgID)
+				}
+				if all && len(targets) == 0 {
+					fmt.Fprintln(cmd.OutOrStdout(), "No paused sessions.")
+				}
+				return errors.Join(errs...)
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "resume every paused session")
+	return cmd
+}
+
+func nameOf(s *core.Session) string {
+	if s.Name != "" {
+		return fmt.Sprintf("%q", s.Name)
+	}
+	return "session " + s.BgID
+}
+
+func homeDir() string {
+	h, _ := os.UserHomeDir()
+	return h
+}

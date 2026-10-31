@@ -78,6 +78,25 @@ func (s *Store) SessionByClaudeID(ctx context.Context, claudeID string) (*core.S
 		FROM claude_ids c JOIN sessions s ON s.id = c.session_id WHERE c.claude_session_id = ?`, claudeID))
 }
 
+// SessionByBgID finds a session acmd started (`claude --bg`) that hasn't
+// been linked to its Claude session id yet. Claude's short id is the first
+// 8 characters of the session id (M0 A3), which links the first hook.
+func (s *Store) SessionByBgID(ctx context.Context, bgID string) (*core.Session, error) {
+	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions
+		WHERE bg_id = ? AND claude_session_id = '' ORDER BY created_at DESC LIMIT 1`, bgID))
+}
+
+// SessionByClaudePrefix finds the session whose Claude session id starts
+// with prefix (a short id), e.g. one its first hook created.
+func (s *Store) SessionByClaudePrefix(ctx context.Context, prefix string) (*core.Session, error) {
+	if prefix == "" {
+		return nil, ErrNotFound
+	}
+	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionCols)+`
+		FROM claude_ids c JOIN sessions s ON s.id = c.session_id
+		WHERE substr(c.claude_session_id, 1, length(?)) = ? ORDER BY s.created_at DESC LIMIT 1`, prefix, prefix))
+}
+
 // Sessions lists sessions in creation order; archived ones only if includeArchived.
 func (s *Store) Sessions(ctx context.Context, includeArchived bool) ([]*core.Session, error) {
 	q := `SELECT ` + sessionCols + ` FROM sessions`

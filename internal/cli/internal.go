@@ -45,7 +45,7 @@ func newDaemonCmd() *cobra.Command {
 			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger}
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)
-				cfg.Agents, cfg.Stopper = cli, cli
+				cfg.Agents, cfg.Stopper, cfg.Claude = cli, cli, cli
 			} else {
 				logger.Printf("claude not found; reconciliation disabled: %v", err)
 			}

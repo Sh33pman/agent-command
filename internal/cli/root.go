@@ -26,17 +26,27 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	root.AddCommand(newVersionCmd(), newDaemonCmd(), newHookCmd(),
 		newListCmd(), newRenameCmd(), newDescribeCmd(), newArchiveCmd(), newUnarchiveCmd(), newMoveCmd(),
 		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd(),
-		newInitCmd(), newUninstallCmd(), newEditorCmd(), newDoctorCmd())
+		newInitCmd(), newUninstallCmd(), newEditorCmd(), newDoctorCmd(),
+		newViewCmd(), newNewCmd(), newGoCmd(), newResumeCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 
 	// Using acmd for the first time offers setup (SPEC §9).
 	for _, c := range root.Commands() {
 		switch c.Name() {
-		case "list", "rename", "describe", "archive", "unarchive", "move", "group", "view-mode", "sort", "focus-group":
+		case "list", "rename", "describe", "archive", "unarchive", "move", "group", "view-mode", "sort", "focus-group",
+			"new", "go", "resume":
 			c.Annotations = map[string]string{needsSetup: "yes"}
 		}
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error { return autoInit(cmd) }
+	// Plain `acmd` in a terminal turns this pane into a view (SPEC §6.4).
+	root.Args = cobra.NoArgs
+	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		if !isInteractive(cmd) {
+			return cmd.Help()
+		}
+		return runView(cmd, "")
+	}
 	return root
 }
 

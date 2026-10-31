@@ -60,9 +60,13 @@ func (r *Reconciler) Once(ctx context.Context) (Result, error) {
 		return res, err
 	}
 	bySession := make(map[string]claudecli.Agent, len(agents))
+	byShortID := make(map[string]claudecli.Agent, len(agents))
 	for _, a := range agents {
 		if a.SessionID != "" {
 			bySession[a.SessionID] = a
+		}
+		if a.ID != "" {
+			byShortID[a.ID] = a
 		}
 	}
 
@@ -72,6 +76,16 @@ func (r *Reconciler) Once(ctx context.Context) (Result, error) {
 	}
 	known := make(map[string]bool, len(sessions))
 	for _, s := range sessions {
+		if s.ClaudeSessionID == "" && s.BgID != "" {
+			// Started by acmd, no hook yet: link it by the short id.
+			if a, ok := byShortID[s.BgID]; ok && a.SessionID != "" {
+				s.ClaudeSessionID = a.SessionID
+				if err := r.Store.UpdateSession(ctx, s); err != nil {
+					return res, err
+				}
+				res.Updated++
+			}
+		}
 		known[s.ClaudeSessionID] = true
 		for _, h := range s.ClaudeHistory {
 			known[h] = true

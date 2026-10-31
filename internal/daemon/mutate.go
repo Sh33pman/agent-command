@@ -33,7 +33,11 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs}, nil
+	views, err := d.store.Views(ctx)
+	if err != nil {
+		return ipc.Snapshot{}, err
+	}
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.
@@ -60,7 +64,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.archive(ctx, m.ID)
 	case ipc.MutUnarchive:
 		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
-			core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.cfg.Now()})
+			core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
 			return nil
 		})
 	case ipc.MutMove:
@@ -99,7 +103,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		}
 		for _, s := range sessions {
 			if s.GroupID == m.GroupID && s.Status == core.StatusArchived {
-				core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.cfg.Now()})
+				core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
 				if err := st.UpdateSession(ctx, s); err != nil {
 					return nil, err
 				}
@@ -136,6 +140,8 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.updateViewState(ctx, func(vs *core.ViewState) { vs.ShowArchived = m.Flag })
 	case ipc.MutViewFocus:
 		return nil, d.focus(ctx, m.GroupID)
+	case ipc.MutViewOpen, ipc.MutViewSelect, ipc.MutViewClose, ipc.MutViewTouch:
+		return d.viewMutation(ctx, m)
 	default:
 		return nil, fmt.Errorf("unknown mutation %q", m.Kind)
 	}
@@ -180,7 +186,7 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 			return fmt.Errorf("stop %s: %w", s.BgID, err)
 		}
 	}
-	core.Apply(s, core.Event{Kind: core.EventArchived, Time: d.cfg.Now()})
+	core.Apply(s, core.Event{Kind: core.EventArchived, Time: d.eventTime(s)})
 	if err := d.store.UpdateSession(ctx, s); err != nil {
 		return err
 	}

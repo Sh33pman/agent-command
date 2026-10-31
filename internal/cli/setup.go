@@ -169,7 +169,7 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	askEditor := g.cfg.Editor.Preset == "" && o.interactive && !o.dryRun
 	switch {
 	case askEditor && !o.ask:
-		if e := pickEditor(reader, out, g.path); e != nil {
+		if e := chooseEditor(ctx, reader, in, out, g.path); e != nil {
 			g.in.Editor = e
 		}
 		askEditor = false
@@ -212,7 +212,7 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 		}
 	}
 	if askEditor {
-		if e := pickEditor(reader, out, g.path); e != nil {
+		if e := chooseEditor(ctx, reader, in, out, g.path); e != nil {
 			g.in.Editor = e
 			if plan, err = setup.PlanInit(g.in); err != nil {
 				return false, err

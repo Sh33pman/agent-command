@@ -422,3 +422,14 @@ func TestLoginEnv(t *testing.T) {
 		t.Error("missing shell should fail")
 	}
 }
+
+func TestSkippedBinds(t *testing.T) {
+	conf := RenderKittyConf(KittyBinds("/a", DefaultKeys), map[string]string{
+		NormalizeKey("cmd+shift+a", ""): "conflicts with Kitty's default select_all",
+		NormalizeKey("ctrl+cmd+3", ""):  "conflicts with your `map ctrl+cmd+3 x`",
+	}, KittyConfig{})
+	got := SkippedBinds(conf + "# skipped malformed\n# skipped x (y\n")
+	if got["next-attention"] != "conflicts with Kitty's default select_all" || got["go"] != "conflicts with your `map ctrl+cmd+3 x`" || len(got) != 2 {
+		t.Errorf("SkippedBinds = %v", got)
+	}
+}

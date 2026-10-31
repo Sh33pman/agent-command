@@ -266,7 +266,12 @@ func (m *Model) render() string {
 	case m.mode == modePicker:
 		body = m.pickerLines()
 	case m.mode == modeHelp:
-		body = helpLines(m.w)
+		lines := m.act.Help(m.w-1, m.groupsExist())
+		m.helpTop = max(0, min(m.helpTop, len(lines)-h+1))
+		body = []string{boldStyle.Render(" Shortcuts") + dimStyle.Render("  ↑↓ scroll · any key closes")}
+		for _, l := range lines[min(m.helpTop, len(lines)):] {
+			body = append(body, " "+l)
+		}
 	default:
 		lines := m.bodyLines()
 		if len(lines) == 0 {
@@ -343,21 +348,6 @@ func (m *Model) overlayMenu(body []string) []string {
 		}
 	}
 	return body
-}
-
-func helpLines(w int) []string {
-	keys := [][2]string{
-		{"↑↓ j k", "move"}, {"↵ 1–9", "show"}, {"n / N", "new (/ in folder)"}, {"r e", "rename · describe"},
-		{"m", "move to group"}, {"space", "mark / collapse"}, {"← →", "collapse · expand"}, {"f z", "focus group · all"},
-		{"v", "groups ↔ list"}, {"o O", "sort · direction"}, {"K J D", "group up · down · delete"}, {"a A", "archive · show archived"},
-		{"/", "filter (g:name)"}, {"tab", "next needing you"}, {"h c", "hide · compact"}, {"esc", "back to the session"},
-		{"click", "show · collapse"}, {"2×click", "rename"}, {"r-click", "menu"},
-	}
-	out := []string{boldStyle.Render(" Keys")}
-	for _, k := range keys {
-		out = append(out, fit(fmt.Sprintf(" %-7s %s", k[0], k[1]), w))
-	}
-	return append(out, dimStyle.Render(" any key to close"))
 }
 
 // fit truncates to n cells with an ellipsis.

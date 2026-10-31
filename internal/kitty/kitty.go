@@ -256,3 +256,14 @@ func (k *Kitty) Overlay(ctx context.Context, id int, argv, env []string) error {
 	_, err := k.run(ctx, append(append(args, "--"), argv...)...)
 	return err
 }
+
+// LaunchTab runs argv in a new tab next to window id (in its OS window),
+// in dir. Used for terminal editors (`run_in = "tab"`, SPEC §8.6).
+func (k *Kitty) LaunchTab(ctx context.Context, id int, dir string, argv, env []string) error {
+	args := []string{"launch", "--type=tab", "--match", match(id), "--cwd", dir}
+	for _, e := range env {
+		args = append(args, "--env", e)
+	}
+	_, err := k.run(ctx, append(append(args, "--"), argv...)...)
+	return err
+}

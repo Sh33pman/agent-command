@@ -327,3 +327,29 @@ for kd in defaults.map:
     k = chr(key) if 32 < key < 0xE000 else str(key)
     print('+'.join(names + [k]) + '\t' + str(kd.definition))
 `
+
+// SkippedBinds reads which of acmd's shortcuts init left out of
+// agent-command.conf (the "# skipped <key> (<action>): <reason>" lines),
+// by action ("go 3" counts as "go").
+func SkippedBinds(conf string) map[string]string {
+	out := map[string]string{}
+	for _, l := range strings.Split(conf, "\n") {
+		rest, ok := strings.CutPrefix(l, "# skipped ")
+		if !ok {
+			continue
+		}
+		_, after, ok := strings.Cut(rest, " (")
+		if !ok {
+			continue
+		}
+		action, reason, ok := strings.Cut(after, "): ")
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(action, "go ") {
+			action = "go"
+		}
+		out[action] = reason
+	}
+	return out
+}

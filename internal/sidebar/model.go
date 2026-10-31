@@ -34,6 +34,10 @@ type Actions interface {
 	FocusView(ctx context.Context) error
 	ToggleSidebar(ctx context.Context) error
 	FitWidth(ctx context.Context) error
+	// Open opens s's folder in the editor (SPEC §8.6).
+	Open(ctx context.Context, s *core.Session) error
+	// Help is the cheat sheet (SPEC §8.3.1), lines at most width wide.
+	Help(width int, groups bool) []string
 }
 
 // ErrClosed means the sidebar's view was closed.
@@ -65,6 +69,7 @@ type Model struct {
 	err    error // fatal: the program quits with it
 
 	cursor  string // "s:<session id>" or "g:<group id>"
+	helpTop int    // first help line shown
 	top     int    // first visible body line
 	marked  map[string]bool
 	compact bool
@@ -354,7 +359,14 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	case modeMenu:
 		return m.menuKey(k)
 	case modeHelp:
-		m.mode = modeNormal
+		switch k.String() {
+		case "down", "j", "space":
+			m.helpTop++
+		case "up", "k":
+			m.helpTop = max(0, m.helpTop-1)
+		default:
+			m.mode = modeNormal
+		}
 		return nil
 	}
 	if !m.loaded {
@@ -487,9 +499,15 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 	case "c":
 		m.compact = !m.compact
 	case "?":
-		m.mode = modeHelp
-	case "s", "M", "E":
-		m.note = map[string]string{"s": "Split out", "M": "Move into acmd", "E": "Open in editor"}[s] + " isn't available yet."
+		m.mode, m.helpTop = modeHelp, 0
+	case "E":
+		if ok && r.Session != nil {
+			sess := r.Session
+			m.note = "Opening " + tilde(sess.Cwd, m.home) + "…"
+			return m.do(func(ctx context.Context) error { return m.act.Open(ctx, sess) })
+		}
+	case "s", "M":
+		m.note = map[string]string{"s": "Split out", "M": "Move into acmd"}[s] + " isn't available yet."
 	case "esc":
 		switch {
 		case m.snap.ViewState.Filter != "":

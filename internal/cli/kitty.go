@@ -16,6 +16,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/keymap"
 	"github.com/brettmostert/agent-command/internal/kitty"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
@@ -204,6 +205,15 @@ func (a *sidebarActions) New(ctx context.Context, groupID, dir string) error {
 func (a *sidebarActions) FocusView(ctx context.Context) error     { return a.panes.FocusView(ctx) }
 func (a *sidebarActions) ToggleSidebar(ctx context.Context) error { return a.panes.ToggleSidebar(ctx) }
 func (a *sidebarActions) FitWidth(ctx context.Context) error      { return a.panes.FitWidth(ctx) }
+
+func (a *sidebarActions) Open(ctx context.Context, s *core.Session) error {
+	return openSession(ctx, s, a.view, openOptions{})
+}
+
+func (a *sidebarActions) Help(width int, groups bool) []string {
+	bs := keymap.Filter(bindings(a.view.Pane.Terminal), "", "", groups)
+	return keymap.Lines(bs, keymap.Ordered(keymap.Sidebar), width)
+}
 
 // newFromShortcut starts a session for the sidebar or a keybinding (no
 // terminal of its own). An untrusted folder opens Claude's trust prompt

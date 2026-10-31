@@ -3,6 +3,7 @@ package sidebar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -62,6 +63,12 @@ func (f *fake) pane(what string) error {
 func (f *fake) FocusView(context.Context) error     { return f.pane("focus-view") }
 func (f *fake) ToggleSidebar(context.Context) error { return f.pane("toggle") }
 func (f *fake) FitWidth(context.Context) error      { return f.pane("fit") }
+func (f *fake) Open(_ context.Context, s *core.Session) error {
+	return f.pane("open " + s.ID)
+}
+func (f *fake) Help(width int, groups bool) []string {
+	return []string{"── Sidebar ──", "n  new session", fmt.Sprintf("groups %v width %d", groups, width)}
+}
 
 func (f *fake) last() ipc.Mutation {
 	f.mu.Lock()
@@ -220,15 +227,17 @@ func TestRenderAndNavigate(t *testing.T) {
 		t.Error("compact still shows detail lines")
 	}
 	h.keys("c", "?")
-	h.wantScreen(" Keys", "r-click menu")
-	h.keys("x")
-	if strings.Contains(h.screen(), " Keys") {
+	h.wantScreen(" Shortcuts", "n  new session", "groups false width 33")
+	h.keys("down", "up", "x")
+	if strings.Contains(h.screen(), " Shortcuts") {
 		t.Error("help didn't close")
 	}
 	h.keys("s")
 	h.wantScreen("Split out isn't available yet.")
+	h.keys("E")
+	h.wantScreen("Opening /w/a…")
 	h.keys("h", "esc")
-	if strings.Join(h.f.panes, ",") != "fit,toggle,focus-view" {
+	if strings.Join(h.f.panes, ",") != "fit,open a,toggle,focus-view" {
 		t.Errorf("panes %v", h.f.panes)
 	}
 }
@@ -485,8 +494,8 @@ func TestMouse(t *testing.T) {
 
 	// Right-click: a session menu; choose Archive with the mouse.
 	click(tea.MouseRight, 3)
-	h.wantScreen("Show", "Edit description", "Move to group…", "Archive")
-	click(tea.MouseLeft, h.m.menu.y+4)
+	h.wantScreen("Show", "Edit description", "Open in editor", "Move to group…", "Archive")
+	click(tea.MouseLeft, h.m.menu.y+5)
 	h.wantScreen("Archive “refactor auth")
 	h.keys("n")
 	// Group menu with keys; Esc closes; a click outside closes.

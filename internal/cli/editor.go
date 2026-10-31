@@ -22,7 +22,7 @@ func newEditorCmd() *cobra.Command {
 		Short: "Show, detect or set the editor that opens session folders",
 		Args:  cobra.NoArgs,
 	}
-	cmd.AddCommand(newEditorShowCmd(), newEditorDetectCmd(), newEditorSetCmd())
+	cmd.AddCommand(newEditorShowCmd(), newEditorDetectCmd(), newEditorSetCmd(), newEditorPickCmd())
 	return cmd
 }
 

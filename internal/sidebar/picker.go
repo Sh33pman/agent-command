@@ -189,6 +189,7 @@ func (m *Model) openMenu(r core.Row, y int) {
 			{"Show", func() tea.Cmd { return m.show(s) }},
 			{"Rename", func() tea.Cmd { return m.rename(r) }},
 			{"Edit description", func() tea.Cmd { return m.describe(s) }},
+			{"Open in editor", func() tea.Cmd { return m.do(func(ctx context.Context) error { return m.act.Open(ctx, s) }) }},
 			{"Move to group…", func() tea.Cmd { return m.openPicker(pickMove, s.GroupID, "") }},
 			{"Archive", func() tea.Cmd { return m.archive([]*core.Session{s}) }},
 		}

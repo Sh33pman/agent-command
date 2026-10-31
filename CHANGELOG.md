@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/brettmostert/agent-command/compare/v0.1.1...v0.2.0) (2026-10-31)
+
+
+### Features
+
+* **core:** session model and status state machine ([b8b8024](https://github.com/brettmostert/agent-command/commit/b8b8024554bfca4b1f0218fe7eacba1b1a991b05))
+
 ## [0.1.1](https://github.com/brettmostert/agent-command/compare/v0.1.0...v0.1.1) (2026-10-30)
 
 

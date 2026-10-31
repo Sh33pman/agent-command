@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/brettmostert/agent-command/compare/v0.11.0...v0.12.0) (2026-10-31)
+
+
+### Features
+
+* **keys:** add the cheat sheet, session picker and open in editor ([#35](https://github.com/brettmostert/agent-command/issues/35)) ([1bff440](https://github.com/brettmostert/agent-command/commit/1bff44010e4d97922137921d3002aca8185ec2f6))
+
 ## [0.11.0](https://github.com/brettmostert/agent-command/compare/v0.10.0...v0.11.0) (2026-10-31)
 
 

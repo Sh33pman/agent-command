@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/brettmostert/agent-command/compare/v0.6.0...v0.7.0) (2026-10-31)
+
+
+### Features
+
+* **setup:** add acmd init, uninstall and editor commands ([#23](https://github.com/brettmostert/agent-command/issues/23)) ([9411cbf](https://github.com/brettmostert/agent-command/commit/9411cbf3193b0656726f7ee02523e64773d9c32a))
+
 ## [0.6.0](https://github.com/brettmostert/agent-command/compare/v0.5.0...v0.6.0) (2026-10-31)
 
 

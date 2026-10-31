@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/brettmostert/agent-command/compare/v0.7.0...v0.8.0) (2026-10-31)
+
+
+### Features
+
+* **doctor:** add acmd doctor ([#26](https://github.com/brettmostert/agent-command/issues/26)) ([be50326](https://github.com/brettmostert/agent-command/commit/be503260ff4e7088cf997fd9feb4cba41143c951))
+
 ## [0.7.0](https://github.com/brettmostert/agent-command/compare/v0.6.0...v0.7.0) (2026-10-31)
 
 

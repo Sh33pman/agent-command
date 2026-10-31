@@ -19,8 +19,11 @@ on:
 permissions:
   contents: read
 
+# Label events other than ok-to-test (e.g. release-please's "autorelease:
+# pending") start a run whose jobs all skip; they get their own group so
+# they can't cancel the real run for the same commit.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ok-to-test' && '-label' || '' }}
   cancel-in-progress: true
 
 jobs:

@@ -1,0 +1,183 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go test:*)"
+    ],
+    "defaultMode": "auto"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "example@official": true
+  },
+  "effortLevel": "high",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook SessionStart || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook UserPromptSubmit || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook PreToolUse || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook PostToolUse || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook PostToolUseFailure || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook PermissionRequest || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook Notification || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook Stop || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook StopFailure || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook SubagentStart || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook SubagentStop || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook PreCompact || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook PostCompact || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook CwdChanged || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -x /opt/homebrew/bin/acmd ] \u0026\u0026 /opt/homebrew/bin/acmd hook SessionEnd || true # managed by acmd",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

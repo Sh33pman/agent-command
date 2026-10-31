@@ -1,0 +1,79 @@
+package setup
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"sort"
+	"strings"
+	"time"
+)
+
+// LoginEnv is the user's login-shell environment, captured at init so the
+// processes acmd starts find `claude`, editors, etc. even when acmd was
+// launched by a terminal keybinding with a minimal PATH (M0 K7, SPEC §9.4).
+type LoginEnv map[string]string
+
+// excludedEnv are variables that belong to the moment of capture, not to
+// the processes acmd starts later.
+var excludedEnv = map[string]bool{
+	"PWD": true, "OLDPWD": true, "SHLVL": true, "_": true, "TERM_SESSION_ID": true,
+	"KITTY_WINDOW_ID": true, "KITTY_PID": true, "KITTY_LISTEN_ON": true, "KITTY_PUBLIC_KEY": true,
+	"GHOSTTY_RESOURCES_DIR": true,
+}
+
+// ParseEnv0 parses `env -0` output, dropping CLAUDE* (M0 C5) and
+// capture-specific variables.
+func ParseEnv0(out []byte) LoginEnv {
+	env := LoginEnv{}
+	for _, kv := range bytes.Split(out, []byte{0}) {
+		k, v, ok := strings.Cut(string(kv), "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" || strings.HasPrefix(k, "CLAUDE") || excludedEnv[k] {
+			continue
+		}
+		env[k] = v
+	}
+	return env
+}
+
+// CaptureLoginEnv runs the user's login shell to read its environment.
+func CaptureLoginEnv(ctx context.Context, shell string) (LoginEnv, error) {
+	if shell == "" {
+		shell = "/bin/zsh"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, shell, "-l", "-c", "env -0") // #nosec G204 -- the user's own $SHELL
+	cmd.Stdin = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("capture login shell environment (%s -l): %w", shell, err)
+	}
+	env := ParseEnv0(out)
+	if env["PATH"] == "" {
+		return nil, fmt.Errorf("login shell %s reported no PATH", shell)
+	}
+	return env, nil
+}
+
+// Environ returns the environment as sorted KEY=VALUE pairs.
+func (e LoginEnv) Environ() []string {
+	out := make([]string, 0, len(e))
+	for k, v := range e {
+		out = append(out, k+"="+v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// MarshalFile renders the env as stable, indented JSON for env.json.
+func (e LoginEnv) MarshalFile() ([]byte, error) {
+	b, err := json.MarshalIndent(map[string]string(e), "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}

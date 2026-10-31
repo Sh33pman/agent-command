@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/brettmostert/agent-command/compare/v0.10.0...v0.11.0) (2026-10-31)
+
+
+### Features
+
+* **sidebar:** add the Bubble Tea sidebar ([#33](https://github.com/brettmostert/agent-command/issues/33)) ([de49335](https://github.com/brettmostert/agent-command/commit/de49335c2c14e8270811b3f1a0272fd91dbddddc))
+
 ## [0.10.0](https://github.com/brettmostert/agent-command/compare/v0.9.0...v0.10.0) (2026-10-31)
 
 

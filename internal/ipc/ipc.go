@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/brettmostert/agent-command/internal/core"
 )
 
 // Proto is bumped only on incompatible protocol changes.
@@ -24,7 +26,50 @@ const (
 	OpPing     = "ping"     // liveness
 	OpShutdown = "shutdown" // ask the daemon to exit (version skew)
 	OpStatus   = "status"   // counts, for doctor/tests
+	OpSnapshot = "snapshot" // sessions, groups and view state (Snapshot)
+	OpMutate   = "mutate"   // one change (Mutation)
 )
+
+// Snapshot is everything a client needs to render the list; clients
+// compute the layout themselves with core.Layout.
+type Snapshot struct {
+	Sessions  []*core.Session `json:"sessions"`
+	Groups    []*core.Group   `json:"groups"`
+	ViewState core.ViewState  `json:"view_state"`
+}
+
+// Mutation kinds (OpMutate). Selectors are resolved by the client; the
+// daemon gets ids.
+const (
+	MutRename         = "session.rename"    // ID, Text
+	MutDescribe       = "session.describe"  // ID, Text
+	MutArchive        = "session.archive"   // ID
+	MutUnarchive      = "session.unarchive" // ID
+	MutMove           = "session.move"      // IDs, GroupID
+	MutGroupCreate    = "group.create"      // Text (name), Color -> returns the group
+	MutGroupRename    = "group.rename"      // GroupID, Text
+	MutGroupColor     = "group.color"       // GroupID, Color
+	MutGroupDelete    = "group.delete"      // GroupID
+	MutGroupArchive   = "group.archive"     // GroupID (archives its sessions too)
+	MutGroupUnarchive = "group.unarchive"   // GroupID, Flag = also unarchive sessions
+	MutGroupCollapse  = "group.collapse"    // GroupID ("" = all), Flag = collapsed
+	MutViewMode       = "view.mode"         // Text: groups|list
+	MutViewSort       = "view.sort"         // Text: key, Flag = descending
+	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)
+	MutViewFilter     = "view.filter"       // Text
+	MutViewArchived   = "view.archived"     // Flag = show archived
+)
+
+// Mutation is one change requested by a client.
+type Mutation struct {
+	Kind    string   `json:"kind"`
+	ID      string   `json:"id,omitempty"`
+	IDs     []string `json:"ids,omitempty"`
+	GroupID string   `json:"group_id,omitempty"`
+	Text    string   `json:"text,omitempty"`
+	Color   string   `json:"color,omitempty"`
+	Flag    bool     `json:"flag,omitempty"`
+}
 
 // Request is one client message.
 type Request struct {

@@ -40,7 +40,8 @@ func newDaemonCmd() *cobra.Command {
 			// The claude path is resolved from PATH for now; `acmd init` pins
 			// an absolute path in config (M3).
 			if claude, err := exec.LookPath("claude"); err == nil {
-				cfg.Agents = claudecli.New(claude, os.Environ())
+				cli := claudecli.New(claude, os.Environ())
+				cfg.Agents, cfg.Stopper = cli, cli
 			} else {
 				logger.Printf("claude not found on PATH; reconciliation disabled: %v", err)
 			}

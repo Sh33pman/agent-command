@@ -23,7 +23,9 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.AddCommand(newVersionCmd(), newDaemonCmd(), newHookCmd())
+	root.AddCommand(newVersionCmd(), newDaemonCmd(), newHookCmd(),
+		newListCmd(), newRenameCmd(), newDescribeCmd(), newArchiveCmd(), newUnarchiveCmd(), newMoveCmd(),
+		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 	return root
 }

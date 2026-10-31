@@ -37,6 +37,8 @@ type Config struct {
 	// Agents lists Claude sessions for the reconciler (claudecli.CLI); nil
 	// disables reconciliation (e.g. claude not found).
 	Agents reconcile.Lister
+	// Stopper stops background sessions on archive (claudecli.CLI).
+	Stopper Stopper
 	// ReconcileEvery and TailEvery default to 3 s and 1 s (SPEC §6.7, §5.4).
 	ReconcileEvery time.Duration
 	TailEvery      time.Duration
@@ -178,6 +180,14 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 			return nil, fmt.Errorf("bad event: %w", err)
 		}
 		return nil, d.ApplyHook(ctx, ev)
+	case ipc.OpSnapshot:
+		return d.snapshot(ctx)
+	case ipc.OpMutate:
+		var m ipc.Mutation
+		if err := json.Unmarshal(req.Data, &m); err != nil {
+			return nil, fmt.Errorf("bad mutation: %w", err)
+		}
+		return d.mutate(ctx, m)
 	case ipc.OpStatus:
 		sessions, err := d.store.Sessions(ctx, true)
 		if err != nil {

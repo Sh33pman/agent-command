@@ -172,6 +172,28 @@ func TestHookCommandQuoting(t *testing.T) {
 	}
 }
 
+func TestHookPaths(t *testing.T) {
+	quoted := "/Users/o'neil/my apps/acmd"
+	in, _, err := AddHooks([]byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/usr/bin/true"}]}]}}`), quoted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paths, events := HookPaths(in); strings.Join(paths, "|") != quoted || events != len(HookEvents) {
+		t.Errorf("HookPaths = %q, %d", paths, events)
+	}
+	// One event moved to another binary by hand.
+	enc := func(s string) []byte { b, _ := json.Marshal(s); return b }
+	mixed := bytes.Replace(in, enc(HookCommand(quoted, "Stop")), enc(HookCommand("/old/acmd", "Stop")), 1)
+	if paths, events := HookPaths(mixed); strings.Join(paths, "|") != "/Users/o'neil/my apps/acmd|/old/acmd" || events != len(HookEvents) {
+		t.Errorf("mixed: %q, %d", paths, events)
+	}
+	for _, bad := range []string{`{`, `{"hooks":1}`, `{"model":"x"}`, `{"hooks":{"Stop":5}}`} {
+		if paths, events := HookPaths([]byte(bad)); paths != nil || events != 0 {
+			t.Errorf("%s: %q, %d", bad, paths, events)
+		}
+	}
+}
+
 func FuzzHooksRoundTrip(f *testing.F) {
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"a":[1,2],"hooks":{"Stop":[{"hooks":[{"type":"command","command":"x"}]}]}}`))

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,13 +70,16 @@ func newSandbox(t *testing.T) *sandbox {
 	return s
 }
 
+// testArgv0 is the path acmd runs as in tests.
+var testArgv0 = "/opt/homebrew/bin/acmd"
+
 func execute(t *testing.T, stdin string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	var out, errOut bytes.Buffer
 	root := NewRootCmd("acmd", &out, &errOut)
 	root.SetIn(strings.NewReader(stdin))
 	root.SetArgs(args)
-	invokedAs = "/opt/homebrew/bin/acmd"
+	invokedAs = testArgv0
 	err = root.Execute()
 	return out.String(), errOut.String(), err
 }
@@ -276,6 +280,51 @@ func TestFirstRunAsks(t *testing.T) {
 	cfg, _ := config.Load(s.paths.Config())
 	if cfg.Editor.Preset != "vscode" || cfg.Editor.Resolved != s.bin+"/code" {
 		t.Errorf("editor: %+v", cfg.Editor)
+	}
+}
+
+func TestDoctor(t *testing.T) {
+	s := newSandbox(t)
+	acmd := filepath.Join(s.bin, "acmd")
+	if err := os.WriteFile(acmd, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origArgv0, origOutput := testArgv0, versionOutput
+	testArgv0 = acmd
+	versionOutput = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		return map[string][]byte{"claude": []byte("2.1.320 (Claude Code)\n"), "kitty": []byte("kitty 0.49.2 created by Kovid Goyal\n")}[filepath.Base(name)], nil
+	}
+	t.Cleanup(func() { testArgv0, versionOutput = origArgv0, origOutput })
+	t.Setenv("KITTY_WINDOW_ID", "")
+
+	out, _, err := execute(t, "", "doctor")
+	if !errors.Is(err, ErrSilent) || !strings.Contains(out, "✗ setup hasn't run yet") || !strings.Contains(out, "· not running") {
+		t.Errorf("before init: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(s.paths.StateDir); !os.IsNotExist(err) {
+		t.Error("doctor created the state dir")
+	}
+
+	if _, _, err := execute(t, "", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := execute(t, "", "editor", "set", "vscode"); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = execute(t, "", "doctor")
+	if err != nil || !strings.Contains(out, "Everything looks good.") || !strings.Contains(out, "✓ setup is up to date") ||
+		!strings.Contains(out, "✓ hooks registered for all 15 events") || !strings.Contains(out, "✓ kitty 0.49.2") {
+		t.Errorf("after init: %v\n%s", err, out)
+	}
+
+	// Moving the binary is caught (hooks, shortcuts, and init would rewrite both).
+	if err := os.Remove(acmd); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err = execute(t, "", "doctor")
+	if !errors.Is(err, ErrSilent) || !strings.Contains(out, "hooks run "+setup.Tilde(acmd, s.home)+", which doesn't exist") ||
+		!strings.Contains(out, "shortcuts run") {
+		t.Errorf("binary gone: %v\n%s", err, out)
 	}
 }
 

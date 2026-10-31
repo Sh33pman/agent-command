@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -183,6 +184,52 @@ func HasHooks(settings []byte, acmdPath string) bool {
 		}
 	}
 	return true
+}
+
+// HookPaths returns the acmd binary paths that acmd's hook entries in a
+// settings.json point at (sorted, distinct), and how many events have an
+// acmd entry.
+func HookPaths(settings []byte) (paths []string, events int) {
+	root, err := parseObject(settings)
+	if err != nil {
+		return nil, 0
+	}
+	raw, ok := root.get("hooks")
+	if !ok {
+		return nil, 0
+	}
+	hooks, err := parseObject(raw)
+	if err != nil {
+		return nil, 0
+	}
+	seen := map[string]bool{}
+	for _, event := range HookEvents {
+		var groups []hookGroup
+		if json.Unmarshal(hooks.vals[event], &groups) != nil {
+			continue
+		}
+		found := false
+		for _, g := range groups {
+			for _, h := range g.Hooks {
+				if !strings.HasSuffix(h.Command, HookMarker) {
+					continue
+				}
+				found = true
+				// [ -x PATH ] && PATH hook EVENT || true # managed by acmd
+				if argv, err := ParseCommand(h.Command); err == nil && len(argv) > 2 && argv[0] == "[" && argv[1] == "-x" {
+					seen[argv[2]] = true
+				}
+			}
+		}
+		if found {
+			events++
+		}
+	}
+	for p := range seen {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths, events
 }
 
 // isOurs reports whether a hook group contains an acmd entry.

@@ -27,14 +27,15 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 		newListCmd(), newRenameCmd(), newDescribeCmd(), newArchiveCmd(), newUnarchiveCmd(), newMoveCmd(),
 		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd(),
 		newInitCmd(), newUninstallCmd(), newEditorCmd(), newDoctorCmd(),
-		newViewCmd(), newNewCmd(), newGoCmd(), newResumeCmd())
+		newViewCmd(), newNewCmd(), newGoCmd(), newResumeCmd(),
+		newSidebarCmd(), newToggleCmd(), newFocusCmd(), newNextAttentionCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 
 	// Using acmd for the first time offers setup (SPEC §9).
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "list", "rename", "describe", "archive", "unarchive", "move", "group", "view-mode", "sort", "focus-group",
-			"new", "go", "resume":
+			"new", "go", "resume", "toggle", "focus", "next-attention":
 			c.Annotations = map[string]string{needsSetup: "yes"}
 		}
 	}

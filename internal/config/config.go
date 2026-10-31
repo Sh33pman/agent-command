@@ -20,6 +20,7 @@ import (
 type Config struct {
 	ClaudeCommand string   `toml:"claude_command"`
 	ClaudeArgs    []string `toml:"claude_args"`
+	SidebarWidth  int      `toml:"sidebar_width"`
 	Editor        Editor   `toml:"editor"`
 	Keys          Keys     `toml:"keys"`
 }
@@ -50,6 +51,7 @@ type Keys struct {
 func Default() Config {
 	return Config{
 		ClaudeCommand: "claude",
+		SidebarWidth:  32,
 		Editor:        Editor{RunIn: "background", Target: "cwd"},
 		Keys: Keys{
 			Toggle: "cmd+shift+b", New: "cmd+shift+n", Focus: "cmd+shift+s", Attention: "cmd+shift+a",

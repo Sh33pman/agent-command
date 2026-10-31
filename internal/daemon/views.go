@@ -86,7 +86,7 @@ func (s *seen) forget(id string) {
 }
 
 func (d *Daemon) watch(ctx context.Context, req ipc.WatchRequest) (ipc.WatchResponse, error) {
-	if req.ViewID != "" {
+	if req.ViewID != "" && !req.Passive {
 		d.seen.mark(req.ViewID, d.cfg.Now())
 	}
 	wait := time.Duration(req.WaitMS) * time.Millisecond
@@ -176,6 +176,16 @@ func (d *Daemon) viewMutation(ctx context.Context, m ipc.Mutation) (any, error) 
 			return nil, err
 		}
 		v.LastFocusedAt = now
+		return nil, d.store.PutView(ctx, v)
+	case ipc.MutViewSidebar:
+		v, err := d.store.View(ctx, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		v.Sidebar = core.PaneLoc{}
+		if m.Pane != nil {
+			v.Sidebar = *m.Pane
+		}
 		return nil, d.store.PutView(ctx, v)
 	}
 	return nil, fmt.Errorf("unknown mutation %q", m.Kind)

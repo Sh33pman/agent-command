@@ -66,6 +66,7 @@ const (
 	MutViewSelect     = "view.select"       // ID = view, Text = session ("" = placeholder)
 	MutViewClose      = "view.close"        // ID = view
 	MutViewTouch      = "view.touch"        // ID = view: it was focused
+	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
 )
 
 // Mutation is one change requested by a client.
@@ -86,6 +87,9 @@ type WatchRequest struct {
 	Rev    uint64 `json:"rev"`
 	ViewID string `json:"view_id,omitempty"`
 	WaitMS int    `json:"wait_ms,omitempty"`
+	// Passive watches (a sidebar) don't count as the view's heartbeat:
+	// only its view loop keeps a view alive.
+	Passive bool `json:"passive,omitempty"`
 }
 
 // WatchResponse is the current revision and, for a ViewID, the view (Gone

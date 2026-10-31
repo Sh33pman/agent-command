@@ -53,6 +53,9 @@ type PaneLoc struct {
 	KittyWindow int
 	GhosttyTerm string
 	TTY         string
+	// RestoreLayout is the tab layout to restore when acmd removes this
+	// pane (a view's sidebar: the layout the tab had before).
+	RestoreLayout string `json:",omitempty"`
 }
 
 // Session is an acmd session (SPEC §5.1). Its ID is stable while Claude's

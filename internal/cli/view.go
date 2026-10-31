@@ -42,14 +42,41 @@ func runView(cmd *cobra.Command, viewID string) error {
 	vc := &viewClient{paths: p}
 	defer vc.close()
 
+	var v core.View
 	if viewID == "" {
-		var v core.View
 		pane := currentPane(os.Getenv)
 		if err := vc.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &pane}, &v); err != nil {
 			return err
 		}
 		viewID = v.ID
+		if pane.Terminal == "kitty" && pane.KittySocket != "" && pane.KittyWindow != 0 {
+			call := func(op string, in, out any) error { return vc.call(ctx, op, in, out) }
+			if v.Sidebar, err = addSidebar(ctx, call, &v); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "acmd: couldn't add the sidebar (%v); the view works without it\n", err)
+			}
+		}
+	} else {
+		// Re-executed after an upgrade (or started by acmd): the view and
+		// its sidebar exist already.
+		var snap ipc.Snapshot
+		if err := vc.call(ctx, ipc.OpSnapshot, nil, &snap); err != nil {
+			return err
+		}
+		for _, x := range snap.Views {
+			if x.ID == viewID {
+				v = *x
+			}
+		}
 	}
+	reexecing := false
+	defer func() {
+		if reexecing {
+			return
+		}
+		cctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		removeSidebar(cctx, &v)
+	}()
 	claude, _, err := claudeCommand(p)
 	if err != nil {
 		return fmt.Errorf("claude not found (run `acmd doctor`): %w", err)
@@ -76,7 +103,8 @@ func runView(cmd *cobra.Command, viewID string) error {
 	case errors.Is(err, view.ErrClosed):
 		return nil
 	case errors.Is(err, errNewerDaemon):
-		return reexec()
+		reexecing = true
+		return reexec("view", "--view", viewID)
 	case ctx.Err() != nil:
 		// The pane closed (SIGHUP) or we were asked to stop: the view goes,
 		// its session keeps running (SPEC §6.4).
@@ -164,11 +192,10 @@ var installedVersion = func() string {
 	return info.Version
 }
 
-// reexec replaces this process with the installed acmd (same arguments).
-var reexec = func() error {
-	exe, _ := executable()
-	path := setup.StableBinary(invokedAs, exe, exec.LookPath)
-	return syscall.Exec(path, append([]string{path}, os.Args[1:]...), os.Environ()) // #nosec G204 -- our own binary
+// reexec replaces this process with the installed acmd, running args.
+var reexec = func(args ...string) error {
+	path := acmdPath()
+	return syscall.Exec(path, append([]string{path}, args...), os.Environ()) // #nosec G204 -- our own binary
 }
 
 func (v *viewClient) call(ctx context.Context, op string, in, out any) error {
@@ -254,6 +281,8 @@ type newOptions struct {
 func newNewCmd() *cobra.Command {
 	var o newOptions
 	var noFollow bool
+	var win int
+	var viewID string
 	cmd := &cobra.Command{
 		Use:   "new [-- <first prompt>]",
 		Short: "Start a new Claude background session",
@@ -262,10 +291,28 @@ func newNewCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.prompt = strings.TrimSpace(strings.Join(args, " "))
 			o.interactive = isInteractive(cmd)
+			if win > 0 {
+				// From a shortcut: follow into the view it came from; start
+				// in the folder of what it shows (SPEC §6.1, decision 24).
+				return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+					v, err := shortcutView(snap, win)
+					if err != nil {
+						return err
+					}
+					dir := o.cwd
+					if dir == "" {
+						dir = newFolder(snap, v)
+					}
+					return newFromShortcut(cmd.Context(), cmd, v, dir)
+				})
+			}
 			if o.cwd == "" {
 				o.cwd, _ = os.Getwd()
 			}
-			if !noFollow {
+			switch {
+			case viewID != "":
+				o.showIn = viewID
+			case !noFollow:
 				o.showIn = os.Getenv("ACMD_VIEW_ID")
 			}
 			s, err := startSession(cmd.Context(), cmd, o)
@@ -286,7 +333,15 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&o.name, "name", "", "session name (default: Claude's)")
 	f.StringVar(&o.description, "description", "", "session description")
 	f.BoolVar(&noFollow, "no-follow", false, "don't switch the current view to it")
+	f.StringVar(&viewID, "view", "", "the view to show it in")
+	_ = f.MarkHidden("view")
+	kittyWindowFlag(cmd, &win)
 	return cmd
+}
+
+// newFolder is where a shortcut starts a session (SPEC §6.1 step 2).
+func newFolder(snap ipc.Snapshot, v *core.View) string {
+	return view.NewFolder(snap, v, homeDir())
 }
 
 // startSession resolves the group, starts the session and runs Claude's
@@ -329,7 +384,7 @@ func startSession(ctx context.Context, cmd *cobra.Command, o newOptions) (*core.
 			return err
 		}
 		if !o.interactive {
-			return fmt.Errorf("Claude hasn't trusted %s yet: run `claude` there once and accept, or run `acmd new` in a terminal", dir) //nolint:staticcheck // ST1005: product name
+			return &errUntrusted{dir: dir}
 		}
 		if err := runTrust(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), dir); err != nil {
 			return err
@@ -337,6 +392,14 @@ func startSession(ctx context.Context, cmd *cobra.Command, o newOptions) (*core.
 		return c.conn.Call(ipc.OpNew, req, &s)
 	})
 	return &s, err
+}
+
+// errUntrusted: Claude hasn't trusted the folder and there's no terminal
+// to show its trust prompt in.
+type errUntrusted struct{ dir string }
+
+func (e *errUntrusted) Error() string {
+	return fmt.Sprintf("Claude hasn't trusted %s yet: run `claude` there once and accept, or run `acmd new` in a terminal", e.dir)
 }
 
 // trustFile is Claude's own state file holding folder trust (M0 C1).
@@ -422,9 +485,10 @@ func runTrust(ctx context.Context, in io.Reader, out io.Writer, dir string) erro
 // ---- acmd go / resume ----
 
 func newGoCmd() *cobra.Command {
-	return &cobra.Command{
+	var win int
+	cmd := &cobra.Command{
 		Use:   "go <N|id|name-prefix>",
-		Short: "Show a session in the current (or most recently used) view",
+		Short: "Show a session in the current (or most recently used) view; your own panes are focused",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
@@ -433,16 +497,18 @@ func newGoCmd() *cobra.Command {
 					return err
 				}
 				if s.Kind == core.KindExternal {
-					return errors.New("that session runs in your own pane; focusing it arrives with Kitty support")
+					return show(cmd.Context(), c, nil, s)
 				}
-				target, err := targetView(snap, os.Getenv("ACMD_VIEW_ID"))
+				target, err := shortcutView(snap, win)
 				if err != nil {
 					return err
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutViewSelect, ID: target.ID, Text: s.ID}, nil)
+				return show(cmd.Context(), c, target, s)
 			})
 		},
 	}
+	kittyWindowFlag(cmd, &win)
+	return cmd
 }
 
 // targetView is the view a command acts on: the one it runs in, else the

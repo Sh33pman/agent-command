@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/brettmostert/agent-command/compare/v0.9.0...v0.10.0) (2026-10-31)
+
+
+### Features
+
+* **kitty:** add the view's sidebar split and Kitty shortcuts ([#30](https://github.com/brettmostert/agent-command/issues/30)) ([a15bb54](https://github.com/brettmostert/agent-command/commit/a15bb543b4e16af6b7e71bb4a15e5481624c322d))
+
 ## [0.9.0](https://github.com/brettmostert/agent-command/compare/v0.8.0...v0.9.0) (2026-10-31)
 
 

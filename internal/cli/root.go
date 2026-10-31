@@ -23,7 +23,7 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.AddCommand(newVersionCmd())
+	root.AddCommand(newVersionCmd(), newDaemonCmd(), newHookCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 	return root
 }

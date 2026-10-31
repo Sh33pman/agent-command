@@ -1,0 +1,252 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/store"
+)
+
+const testVersion = "9.9.9-test"
+
+// testPaths uses a short temp dir: macOS limits socket paths to 104 bytes
+// and t.TempDir() paths can exceed that.
+func testPaths(t *testing.T) paths.Paths {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "acmd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r")}
+}
+
+// running is a daemon started by a test. Done is closed when Run returns
+// (so it can be waited on any number of times); Err is then set.
+type running struct {
+	cancel context.CancelFunc
+	Done   chan struct{}
+	Err    error
+}
+
+func start(t *testing.T, p paths.Paths) *running {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	r := &running{cancel: cancel, Done: make(chan struct{})}
+	go func() {
+		r.Err = Run(ctx, Config{Paths: p, Version: testVersion, Log: log.New(io.Discard, "", 0)})
+		close(r.Done)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if c, err := ipc.Dial(context.Background(), p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: testVersion}); err == nil {
+			c.Close()
+			break
+		}
+		select {
+		case <-r.Done:
+			t.Fatalf("daemon exited early: %v", r.Err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("daemon didn't start")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-r.Done:
+		case <-time.After(5 * time.Second):
+			t.Error("daemon didn't stop")
+		}
+	})
+	return r
+}
+
+func dial(t *testing.T, p paths.Paths) *ipc.Conn {
+	t.Helper()
+	c, err := ipc.Dial(context.Background(), p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: testVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	return c
+}
+
+func hookEvent(name, payload string, at time.Time, hc ipc.HookContext) ipc.HookEvent {
+	return ipc.HookEvent{Name: name, At: at, Payload: json.RawMessage(payload), Context: hc}
+}
+
+func TestDaemonAppliesHookEvents(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	if c.Daemon.Version != testVersion || c.Daemon.Pid == 0 {
+		t.Errorf("hello: %+v", c.Daemon)
+	}
+
+	t0 := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	view := ipc.HookContext{ViewID: "v1", ClaudePid: 4242}
+	for i, e := range []ipc.HookEvent{
+		hookEvent("SessionStart", `{"session_id":"c1","source":"startup","cwd":"/w"}`, t0, view),
+		hookEvent("UserPromptSubmit", `{"session_id":"c1","prompt":"fix the flaky test"}`, t0.Add(time.Second), view),
+		hookEvent("PermissionRequest", `{"session_id":"c1","tool_name":"AskUserQuestion"}`, t0.Add(2*time.Second), view),
+	} {
+		if err := c.Call(ipc.OpEvent, e, nil); err != nil {
+			t.Fatalf("event %d: %v", i, err)
+		}
+	}
+	var st ipc.Status
+	if err := c.Call(ipc.OpStatus, nil, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Sessions != 1 || st.Events != 3 || st.Version != testVersion {
+		t.Errorf("status = %+v", st)
+	}
+
+	// A bad payload is reported, not fatal.
+	if err := c.Call(ipc.OpEvent, hookEvent("Stop", `{"no_session":1}`, t0, view), nil); err == nil {
+		t.Error("expected error for payload without session_id")
+	}
+	if err := c.Call("bogus", nil, nil); err == nil {
+		t.Error("expected error for unknown op")
+	}
+	if err := c.Call(ipc.OpPing, nil, nil); err != nil {
+		t.Errorf("ping: %v", err)
+	}
+}
+
+func TestDaemonPersistsStateAcrossRestarts(t *testing.T) {
+	p := testPaths(t)
+	d := start(t, p)
+	c := dial(t, p)
+	t0 := time.Now()
+	ext := ipc.HookContext{KittyWindowID: "7", KittyListenOn: "unix:/tmp/kitty-1", TermProgram: "kitty", ClaudePid: 99}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"c1","source":"startup","cwd":"/w"}`, t0, ext), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("Stop", `{"session_id":"c1"}`, t0.Add(time.Second), ext), nil))
+	c.Close()
+	d.cancel()
+	<-d.Done
+
+	st, err := store.Open(context.Background(), p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s, err := st.SessionByClaudeID(context.Background(), "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Status != core.StatusDone || !s.Unseen || s.Kind != core.KindExternal || s.Pid != 99 {
+		t.Errorf("session = %+v", s)
+	}
+	if s.External == nil || s.External.Terminal != "kitty" || s.External.KittyWindow != 7 || s.External.KittySocket != "unix:/tmp/kitty-1" {
+		t.Errorf("external = %+v", s.External)
+	}
+}
+
+func TestDaemonDrainsSpoolOnStart(t *testing.T) {
+	p := testPaths(t)
+	must(t, p.Ensure())
+	t0 := time.Now()
+	lines := []any{
+		hookEvent("SessionStart", `{"session_id":"s1","source":"startup"}`, t0, ipc.HookContext{}),
+		"not an event",
+		hookEvent("UserPromptSubmit", `{"session_id":"s1","prompt":"hi"}`, t0.Add(time.Second), ipc.HookContext{}),
+	}
+	f, err := os.Create(p.Spool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range lines {
+		b, _ := json.Marshal(l)
+		if _, err := f.Write(append(b, '\n')); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(t, f.Close())
+
+	start(t, p)
+	var st ipc.Status
+	must(t, dial(t, p).Call(ipc.OpStatus, nil, &st))
+	if st.Sessions != 1 || st.Events != 2 {
+		t.Errorf("after drain: %+v", st)
+	}
+	for _, f := range []string{p.Spool(), p.Spool() + ".draining"} {
+		if _, err := os.Stat(f); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s should be gone: %v", filepath.Base(f), err)
+		}
+	}
+}
+
+func TestDaemonSingleInstanceAndShutdown(t *testing.T) {
+	p := testPaths(t)
+	d := start(t, p)
+
+	if err := Run(context.Background(), Config{Paths: p, Version: testVersion, Log: log.New(io.Discard, "", 0)}); !errors.Is(err, ErrAlreadyRunning) {
+		t.Errorf("second daemon: %v, want ErrAlreadyRunning", err)
+	}
+
+	st, err := os.Stat(p.Socket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := st.Mode().Perm(); perm != 0o600 {
+		t.Errorf("socket permissions %o, want 600", perm)
+	}
+
+	// A client of another version gets a mismatch and can shut the daemon down.
+	c, err := ipc.Dial(context.Background(), p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: "0.0.1"})
+	var mm *ipc.ErrVersionMismatch
+	if !errors.As(err, &mm) || mm.Daemon.Version != testVersion || c == nil {
+		t.Fatalf("dial old version: %v", err)
+	}
+	must(t, c.Call(ipc.OpShutdown, nil, nil))
+	c.Close()
+	select {
+	case <-d.Done:
+		if d.Err != nil {
+			t.Errorf("Run returned %v", d.Err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon didn't shut down")
+	}
+	if _, err := os.Stat(p.Socket()); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("socket not removed: %v", err)
+	}
+}
+
+func TestNewSessionClassification(t *testing.T) {
+	e := core.Event{SessionID: "x", Cwd: "/w"}
+	now := time.Now()
+	if s := newSession(e, ipc.HookContext{ViewID: "v", KittyWindowID: "3"}, now); s.Kind != core.KindBackground || s.External != nil {
+		t.Errorf("acmd-started session: %+v", s)
+	}
+	if s := newSession(e, ipc.HookContext{}, now); s.Kind != core.KindBackground {
+		t.Errorf("no terminal context: %+v", s)
+	}
+	if s := newSession(e, ipc.HookContext{TermProgram: "ghostty"}, now); s.Kind != core.KindExternal || s.External.Terminal != "ghostty" {
+		t.Errorf("ghostty: %+v", s)
+	}
+	if s := newSession(e, ipc.HookContext{TermProgram: "vscode"}, now); s.External.Terminal != "unknown" {
+		t.Errorf("unknown terminal: %+v", s.External)
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/brettmostert/agent-command/compare/v0.8.0...v0.9.0) (2026-10-31)
+
+
+### Features
+
+* **view:** add the view engine, acmd new, go and resume ([#28](https://github.com/brettmostert/agent-command/issues/28)) ([6cf16c2](https://github.com/brettmostert/agent-command/commit/6cf16c22b0bfcb7567dd8d2293b213fd597e797f))
+
 ## [0.8.0](https://github.com/brettmostert/agent-command/compare/v0.7.0...v0.8.0) (2026-10-31)
 
 

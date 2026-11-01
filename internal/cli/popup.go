@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -108,6 +109,10 @@ func longText() string {
 	return s
 }
 
+// reexecPopup replaces this popup with the installed acmd (swappable in
+// tests).
+var reexecPopup = func() error { return reexec("popup") }
+
 // popupBindings turns [popup.keys] into the panel's bindings.
 func popupBindings(k config.PopupKeys) []popup.Binding {
 	var out []popup.Binding
@@ -203,6 +208,13 @@ func (a *popupAgent) follow(ctx context.Context) {
 	var rev uint64
 	for ctx.Err() == nil {
 		w, err := a.vc.Watch(ctx, ipc.WatchRequest{Rev: rev, WaitMS: 25000, Passive: true})
+		if errors.Is(err, errNewerDaemon) {
+			// acmd was upgraded: become the installed version (its popup
+			// lock is released on exec and taken again).
+			if err := reexecPopup(); err != nil {
+				fmt.Fprintln(a.log, "acmd popup: upgrade:", err)
+			}
+		}
 		if err != nil {
 			time.Sleep(2 * time.Second) // the daemon restarts on demand
 			continue

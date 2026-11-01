@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
@@ -21,6 +22,11 @@ import (
 
 func TestKeysCommand(t *testing.T) {
 	e := viewEnvFor(t)
+	// A slow daemon answer counts as "unknown" (groups shown), which made
+	// this flaky on a loaded runner (release gate, 0.26.0): wait longer.
+	origProbe := groupsProbeTimeout
+	groupsProbeTimeout = 30 * time.Second
+	t.Cleanup(func() { groupsProbeTimeout = origProbe })
 	p, _ := paths.Default()
 	// init skipped a shortcut, and the user moved another.
 	kittyDir := filepath.Join(e.dir, "kitty")

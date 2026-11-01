@@ -61,13 +61,17 @@ func currentTerminal() string {
 	return "kitty"
 }
 
+// groupsProbeTimeout is how long groupsExist waits for the daemon (a var so
+// tests on a loaded machine can allow longer).
+var groupsProbeTimeout = time.Second
+
 // groupsExist asks a running daemon (never starting one); unknown = true.
 func groupsExist(ctx context.Context) bool {
 	p, err := paths.Default()
 	if err != nil {
 		return true
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	ctx, cancel := context.WithTimeout(ctx, groupsProbeTimeout)
 	defer cancel()
 	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
 	if err != nil {

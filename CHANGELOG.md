@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/brettmostert/agent-command/compare/v0.12.1...v0.13.0) (2026-11-01)
+
+
+### Features
+
+* **ghostty:** add Ghostty views, setup and doctor checks ([#37](https://github.com/brettmostert/agent-command/issues/37)) ([e1b20f2](https://github.com/brettmostert/agent-command/commit/e1b20f2d8ac97839ee449c602fe561af75318f08))
+
 ## [0.12.1](https://github.com/brettmostert/agent-command/compare/v0.12.0...v0.12.1) (2026-11-01)
 
 

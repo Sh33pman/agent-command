@@ -9,7 +9,7 @@
 // client sends frames of [type byte][length uint32 BE][payload]:
 // 'a' attach (first frame; a connection without it only probes or ends
 // the terminal), 'i' input, 'r' resize (rows, cols as uint16 BE), 'k' end
-// the terminal.
+// the terminal, 'w' type the payload into the shell and close (Send).
 package term
 
 import (
@@ -24,6 +24,7 @@ const (
 	frameInput  = 'i'
 	frameResize = 'r'
 	frameKill   = 'k'
+	frameWrite  = 'w' // input from a connection that doesn't attach (Send)
 )
 
 // Keep is how much recent output a server replays to a client that

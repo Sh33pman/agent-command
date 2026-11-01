@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -89,10 +88,6 @@ func runView(cmd *cobra.Command, viewID string) error {
 		defer cancel()
 		removeSidebar(cctx, &v)
 	}()
-	claude, _, err := claudeCommand(p)
-	if err != nil {
-		return fmt.Errorf("claude not found (run `acmd doctor`): %w", err)
-	}
 	env := append(procenv.Scrub(os.Environ()), "ACMD_VIEW_ID="+viewID)
 	cwd, _ := os.Getwd()
 	loop := &view.Loop{
@@ -101,23 +96,13 @@ func runView(cmd *cobra.Command, viewID string) error {
 		Out:    cmd.OutOrStdout(),
 		Keys:   &view.TermKeys{In: os.Stdin},
 		Attach: func(s *core.Session) *exec.Cmd {
-			if s.Kind == core.KindHosted {
-				exe, _ := executable()
-				c := exec.Command(exe, "host", "attach", "--session", s.ID) // #nosec G204 -- our own binary
-				c.Stdin, c.Stdout, c.Stderr, c.Env = os.Stdin, os.Stdout, os.Stderr, env
-				return c
-			}
-			c := exec.Command(claude, "attach", s.BgID) // #nosec G204 -- resolved claude binary, short id from Claude
+			exe, _ := executable()
+			c := exec.Command(exe, "host", "attach", "--session", s.ID) // #nosec G204 -- our own binary
 			c.Stdin, c.Stdout, c.Stderr, c.Env = os.Stdin, os.Stdout, os.Stderr, env
-			// In the session's folder: Claude's agent view (← in attach)
-			// asks to trust the folder it starts in.
-			if st, err := os.Stat(s.Cwd); err == nil && st.IsDir() {
-				c.Dir = s.Cwd
-			}
 			return c
 		},
 		New: func(ctx context.Context) error {
-			_, err := startSession(ctx, cmd, newOptions{cwd: cwd, showIn: viewID, interactive: true})
+			_, err := startSession(ctx, cmd, newOptions{cwd: cwd, showIn: viewID})
 			return err
 		},
 		Showing: termShowing(vc, viewID),
@@ -186,10 +171,6 @@ func runPinned(cmd *cobra.Command, id string) error {
 	if err != nil {
 		return err
 	}
-	claude, _, err := claudeCommand(p)
-	if err != nil {
-		return fmt.Errorf("claude not found (run `acmd doctor`): %w", err)
-	}
 	vc := &viewClient{paths: p}
 	defer vc.close()
 	snap, err := vc.Snapshot(cmd.Context())
@@ -202,10 +183,10 @@ func runPinned(cmd *cobra.Command, id string) error {
 			s = x
 		}
 	}
-	if s == nil || !s.Managed() || (s.Kind == core.KindBackground && s.BgID == "") {
+	if s == nil || !s.Managed() {
 		return errors.New("that session can't be shown here")
 	}
-	if s.Stopped() {
+	if s.Stopped() || s.NeedsResume() {
 		if s, err = vc.Resume(cmd.Context(), id); err != nil {
 			return err
 		}
@@ -219,13 +200,7 @@ func runPinned(cmd *cobra.Command, id string) error {
 		for range sigs {
 		}
 	}()
-	if s.Kind == core.KindHosted {
-		return attachHost(cmd.Context(), p.HostSocket(s.ID))
-	}
-	c := exec.CommandContext(cmd.Context(), claude, "attach", s.BgID) // #nosec G204 -- resolved claude binary, short id from Claude
-	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-	c.Env = procenv.Scrub(os.Environ())
-	return c.Run()
+	return attachHost(cmd.Context(), p.HostSocket(s.ID))
 }
 
 // errNewerDaemon means the daemon runs another acmd version: this view
@@ -372,7 +347,6 @@ type newOptions struct {
 	description string
 	prompt      string
 	showIn      string // view to switch ("" = none)
-	interactive bool   // the trust step may run in this terminal
 }
 
 func newNewCmd() *cobra.Command {
@@ -382,12 +356,11 @@ func newNewCmd() *cobra.Command {
 	var viewID string
 	cmd := &cobra.Command{
 		Use:   "new [-- <first prompt>]",
-		Short: "Start a new Claude background session",
-		Long: "Starts `claude --bg` in a folder (default: this one) and lists it in acmd. Run inside a view, the view\n" +
-			"switches to it. A folder Claude hasn't trusted yet first shows Claude's trust prompt in this terminal.",
+		Short: "Start a new Claude session hosted by acmd",
+		Long: "Starts an interactive `claude` in a folder (default: this one), hosted by acmd, and lists it. Run inside a view, the view\n" +
+			"switches to it. A folder Claude hasn't trusted yet shows Claude's trust prompt in the session.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.prompt = strings.TrimSpace(strings.Join(args, " "))
-			o.interactive = isInteractive(cmd)
 			if win > 0 {
 				// From a shortcut: follow into the view it came from; start
 				// in the folder of what it shows (SPEC §6.1, decision 24).
@@ -443,9 +416,9 @@ func newFolder(snap ipc.Snapshot, v *core.View) string {
 	return view.NewFolder(snap, v, homeDir())
 }
 
-// startSession resolves the group, starts the session and runs Claude's
-// trust prompt first when needed (interactive only).
-func startSession(ctx context.Context, cmd *cobra.Command, o newOptions) (*core.Session, error) {
+// startSession resolves the group and starts the hosted session. Claude's
+// trust prompt, for a folder it hasn't trusted, shows up in the session.
+func startSession(ctx context.Context, _ *cobra.Command, o newOptions) (*core.Session, error) {
 	p, err := paths.Default()
 	if err != nil {
 		return nil, err
@@ -478,107 +451,9 @@ func startSession(ctx context.Context, cmd *cobra.Command, o newOptions) (*core.
 			}
 			req.GroupID = g.ID
 		}
-		err := c.conn.Call(ipc.OpNew, req, &s)
-		if err == nil || !strings.Contains(err.Error(), ipc.ErrNotTrustedText) {
-			return err
-		}
-		if !o.interactive {
-			return &errUntrusted{dir: dir}
-		}
-		if err := runTrust(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), dir); err != nil {
-			return err
-		}
 		return c.conn.Call(ipc.OpNew, req, &s)
 	})
 	return &s, err
-}
-
-// errUntrusted: Claude hasn't trusted the folder and there's no terminal
-// to show its trust prompt in.
-type errUntrusted struct{ dir string }
-
-func (e *errUntrusted) Error() string {
-	return fmt.Sprintf("Claude hasn't trusted %s yet: run `claude` there once and accept, or run `acmd new` in a terminal", e.dir)
-}
-
-// trustFile is Claude's own state file holding folder trust (M0 C1).
-var trustFile = func() string {
-	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
-		return filepath.Join(d, ".claude.json")
-	}
-	return filepath.Join(homeDir(), ".claude.json")
-}
-
-// trusted reports whether Claude's state says dir is trusted (a hint: the
-// `claude --bg` error stays authoritative).
-func trusted(dir string) bool {
-	b, err := os.ReadFile(trustFile())
-	if err != nil {
-		return false
-	}
-	var st struct {
-		Projects map[string]struct {
-			HasTrustDialogAccepted bool `json:"hasTrustDialogAccepted"`
-		} `json:"projects"`
-	}
-	if json.Unmarshal(b, &st) != nil {
-		return false
-	}
-	resolved, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		resolved = dir
-	}
-	return st.Projects[resolved].HasTrustDialogAccepted || st.Projects[dir].HasTrustDialogAccepted
-}
-
-// runTrust shows Claude's trust prompt for dir in this terminal (SPEC
-// §6.1 step 3) and closes it once the folder is trusted. Its hooks are
-// ignored: it's not a session.
-func runTrust(ctx context.Context, in io.Reader, out io.Writer, dir string) error {
-	p, err := paths.Default()
-	if err != nil {
-		return err
-	}
-	claude, env, err := claudeCommand(p)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(out, "\nClaude hasn't trusted %s yet.\nTrust this folder for Claude, then this session continues in the background.\n\n", dir)
-	c := exec.CommandContext(ctx, claude) // #nosec G204 -- resolved claude binary, no arguments
-	c.Dir, c.Stdin, c.Stdout, c.Stderr = dir, in, out, out
-	c.Env = append(append([]string(nil), env...), "ACMD_IGNORE_HOOKS=1")
-	if err := c.Start(); err != nil {
-		return err
-	}
-	exited := make(chan struct{})
-	go func() {
-		_ = c.Wait()
-		close(exited)
-	}()
-	tick := time.NewTicker(300 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		select {
-		case <-exited:
-			if !trusted(dir) {
-				return fmt.Errorf("%s still isn't trusted, so the session wasn't started", dir)
-			}
-			return nil
-		case <-tick.C:
-			if trusted(dir) {
-				time.Sleep(300 * time.Millisecond) // let Claude finish writing
-				_ = c.Process.Signal(syscall.SIGTERM)
-				select {
-				case <-exited:
-				case <-time.After(5 * time.Second):
-					_ = c.Process.Kill()
-					<-exited
-				}
-				fmt.Fprintln(out)
-				return nil
-			}
-		}
-	}
 }
 
 // ---- acmd go / resume ----

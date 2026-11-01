@@ -95,31 +95,12 @@ func TestParseAgentsLenient(t *testing.T) {
 	}
 }
 
-func TestParseShortIDRecorded(t *testing.T) {
-	for file, want := range map[string]string{"bg-start.txt": "9df2c810", "bg-resume.txt": "77d411e3"} {
-		if got, err := ParseShortID(fixture(t, file)); err != nil || got != want {
-			t.Errorf("%s: %q, %v", file, got, err)
-		}
+// The env scrub (M0 C5): never pass Claude's session variables to a new claude.
+func TestRunScrubsClaudeEnv(t *testing.T) {
+	c, f := newFake(map[string]answer{"stop": {}})
+	if err := c.Stop(context.Background(), "x"); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := ParseShortID([]byte("something else\nentirely")); err == nil || !strings.Contains(err.Error(), "something else") {
-		t.Errorf("unexpected: %v", err)
-	}
-}
-
-func TestStartBackground(t *testing.T) {
-	c, f := newFake(map[string]answer{"--bg": {out: fixture(t, "bg-start.txt")}})
-	id, err := c.StartBackground(context.Background(), StartOptions{Dir: "/w", Name: "fix it", Args: []string{"--model", "opus"}, Prompt: "-p looks like a flag"})
-	if err != nil || id != "9df2c810" {
-		t.Fatalf("StartBackground = %q, %v", id, err)
-	}
-	want := []string{"/u/.local/bin/claude", "--bg", "--remote-control", "--name", "fix it", "--model", "opus", "--", "-p looks like a flag"}
-	if !reflect.DeepEqual(f.calls[0], want) {
-		t.Errorf("argv = %q\nwant %q", f.calls[0], want)
-	}
-	if f.dirs[0] != "/w" {
-		t.Errorf("dir = %q", f.dirs[0])
-	}
-	// M0 C5: never pass Claude's session variables to a new claude.
 	for _, kv := range f.envs[0] {
 		if strings.HasPrefix(kv, "CLAUDE") {
 			t.Errorf("env leaked %s", kv)
@@ -127,40 +108,18 @@ func TestStartBackground(t *testing.T) {
 	}
 }
 
-func TestStartBackgroundRemoteControlNotDuplicated(t *testing.T) {
-	c, f := newFake(map[string]answer{"--bg": {out: fixture(t, "bg-start.txt")}})
-	if _, err := c.StartBackground(context.Background(), StartOptions{Dir: "/w", Args: []string{"--remote-control", "phone"}}); err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"/u/.local/bin/claude", "--bg", "--remote-control", "phone"}
-	if !reflect.DeepEqual(f.calls[0], want) {
-		t.Errorf("argv = %q\nwant %q", f.calls[0], want)
-	}
-}
-
-func TestNotTrusted(t *testing.T) {
-	c, _ := newFake(map[string]answer{"--bg": {out: fixture(t, "not-trusted.txt"), err: errors.New("exit status 1")}})
-	if _, err := c.StartBackground(context.Background(), StartOptions{Dir: "/work/untrusted"}); !errors.Is(err, ErrNotTrusted) {
-		t.Errorf("err = %v, want ErrNotTrusted", err)
-	}
-}
-
-func TestResumeStopRemoveAgents(t *testing.T) {
+func TestStopRemoveAgents(t *testing.T) {
 	c, f := newFake(map[string]answer{
-		"--bg":   {out: fixture(t, "bg-resume.txt")},
 		"stop":   {out: []byte("stopped 77d411e3\n")},
 		"rm":     {err: errors.New("exit status 1"), out: []byte("no such session\n")},
 		"agents": {out: fixture(t, "agents-mixed.json")},
 	})
 	ctx := context.Background()
-	if id, err := c.Resume(ctx, "/w", "77d411e3-6d72-4c37-890f-76c3f97f965c"); err != nil || id != "77d411e3" {
-		t.Errorf("Resume = %q %v", id, err)
-	}
-	if !reflect.DeepEqual(f.calls[0][1:], []string{"--bg", "--remote-control", "--resume", "77d411e3-6d72-4c37-890f-76c3f97f965c"}) {
-		t.Errorf("resume argv = %q", f.calls[0])
-	}
 	if err := c.Stop(ctx, "77d411e3"); err != nil {
 		t.Errorf("Stop: %v", err)
+	}
+	if !reflect.DeepEqual(f.calls[0][1:], []string{"stop", "77d411e3"}) {
+		t.Errorf("stop argv = %q", f.calls[0])
 	}
 	if err := c.Remove(ctx, "77d411e3"); err == nil || !strings.Contains(err.Error(), "no such session") {
 		t.Errorf("Remove error should carry claude's message: %v", err)
@@ -171,9 +130,6 @@ func TestResumeStopRemoveAgents(t *testing.T) {
 	}
 	if !reflect.DeepEqual(f.calls[len(f.calls)-1][1:], []string{"agents", "--json", "--all"}) {
 		t.Errorf("agents argv = %q", f.calls[len(f.calls)-1])
-	}
-	if got := c.AttachArgv("9df2c810"); !reflect.DeepEqual(got, []string{"/u/.local/bin/claude", "attach", "9df2c810"}) {
-		t.Errorf("AttachArgv = %q", got)
 	}
 }
 

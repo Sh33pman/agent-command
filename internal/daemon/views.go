@@ -8,17 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/store"
 )
-
-// Claude starts and resumes background sessions (claudecli.CLI in production).
-type Claude interface {
-	StartBackground(ctx context.Context, o claudecli.StartOptions) (string, error)
-	Resume(ctx context.Context, dir, sessionID string) (string, error)
-}
 
 // Views (SPEC §6.4): a view loop registers its pane, follows its Selected
 // session by watching for changes, and proves it's alive through those
@@ -234,8 +227,6 @@ func (d *Daemon) viewable(ctx context.Context, id string) (*core.Session, error)
 		return nil, errors.New("that session is archived (acmd unarchive first)")
 	case !s.Managed():
 		return nil, errors.New("that session runs in your own pane, so a view can't show it")
-	case s.Kind == core.KindBackground && s.BgID == "":
-		return nil, errors.New("that session has no Claude background id yet")
 	}
 	return s, nil
 }
@@ -248,7 +239,7 @@ func (d *Daemon) mostRecentViewable(ctx context.Context) (*core.Session, error) 
 	}
 	var best *core.Session
 	for _, s := range sessions {
-		if !s.Managed() || (s.Kind == core.KindBackground && s.BgID == "") {
+		if !s.Managed() {
 			continue
 		}
 		if best == nil || activity(s).After(activity(best)) {
@@ -304,91 +295,24 @@ func (d *Daemon) pruneViews(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// newSession starts `claude --bg` (outside the lock: it takes a second or
-// two and hooks must not wait) and records the session.
+// newSession starts a hosted session (SPEC §4.5).
 func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
-	if d.cfg.Hosts != nil {
-		if req.Cwd == "" {
-			return nil, errors.New("no folder for the new session")
-		}
-		return d.hostSession(ctx, req)
-	}
-	if d.cfg.Claude == nil {
+	if d.cfg.Hosts == nil {
 		return nil, errors.New("claude not available: run `acmd doctor`")
 	}
 	if req.Cwd == "" {
 		return nil, errors.New("no folder for the new session")
 	}
-	bgID, err := d.cfg.Claude.StartBackground(ctx, claudecli.StartOptions{Dir: req.Cwd, Name: req.Name, Args: req.Args, Prompt: req.Prompt})
-	if errors.Is(err, claudecli.ErrNotTrusted) {
-		return nil, errors.New(ipc.ErrNotTrustedText)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	// Its first hook may have beaten us here and created the row already.
-	s, err := d.store.SessionByClaudePrefix(ctx, bgID)
-	created := errors.Is(err, store.ErrNotFound)
-	switch {
-	case created:
-		s = &core.Session{Kind: core.KindBackground, Cwd: req.Cwd, CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto}
-		core.Apply(s, core.Event{Kind: core.EventCreated, Time: d.cfg.Now()})
-	case err != nil:
-		return nil, err
-	}
-	s.BgID = bgID
-	if req.GroupID != "" {
-		s.GroupID = req.GroupID
-	}
-	if req.Name != "" {
-		s.Name, s.NameSource = req.Name, core.NameUser
-	}
-	if req.Description != "" {
-		s.Description = req.Description
-	}
-	if created {
-		err = d.store.CreateSession(ctx, s)
-	} else {
-		err = d.store.UpdateSession(ctx, s)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if req.ShowIn != "" {
-		v, err := d.store.View(ctx, req.ShowIn)
-		if err == nil {
-			v.LastFocusedAt = d.cfg.Now()
-			err = d.show(ctx, v, s.ID)
-		}
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return nil, err
-		}
-	}
-	return s, nil
+	return d.hostSession(ctx, req)
 }
 
-// resume restarts a paused background session with `claude --bg --resume`
-// (SPEC §6.2; Claude keeps the session id, M0 C3). Attaching restarts a
-// stopped session too; this is the fallback and `acmd resume`.
+// resume starts a stopped session again in a new host with `claude
+// --resume` (SPEC §6.2). A session from before hosting (a `claude --bg`
+// one) is stopped first if it still runs (Claude keeps the conversation)
+// and becomes a hosted session; so does one that ended in the user's own
+// pane (acmd adopt).
 func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
-	if d.cfg.Hosts != nil {
-		d.mu.Lock()
-		s, err := d.store.Session(ctx, id)
-		d.mu.Unlock()
-		if err == nil && s.Kind == core.KindHosted {
-			switch {
-			case s.Status == core.StatusArchived:
-				return nil, errors.New("that session is archived (acmd unarchive first)")
-			case !s.Stopped():
-				return s, nil
-			}
-			return d.resumeHosted(ctx, s)
-		}
-	}
-	if d.cfg.Claude == nil {
+	if d.cfg.Hosts == nil {
 		return nil, errors.New("claude not available: run `acmd doctor`")
 	}
 	d.mu.Lock()
@@ -402,68 +326,16 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 		return nil, errors.New("that session is archived (acmd unarchive first)")
 	case s.ClaudeSessionID == "":
 		return nil, errors.New("that session has no Claude conversation to resume")
-	case !s.Stopped():
+	case s.Kind == core.KindHosted && !s.Stopped():
 		return s, nil // already running
-	}
-	bgID, err := d.cfg.Claude.Resume(ctx, s.Cwd, s.ClaudeSessionID)
-	if err != nil {
-		return nil, err
-	}
-	if s, err = d.recordResume(ctx, id, bgID); err != nil {
-		return nil, err
-	}
-	// `claude --bg --resume` returns before the session runs; a view that
-	// attaches now gets "restarting in 10s" and drops to its placeholder.
-	if err := d.waitRunning(ctx, bgID); err != nil {
-		return nil, fmt.Errorf("resumed %s, but %w", bgID, err)
-	}
-	return s, nil
-}
-
-// recordResume stores session id as resumed under Claude background id bgID.
-func (d *Daemon) recordResume(ctx context.Context, id, bgID string) (*core.Session, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	s, err := d.store.Session(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	s.BgID, s.Kind, s.External = bgID, core.KindBackground, nil
-	core.Apply(s, core.Event{Kind: core.EventResumed, Time: d.eventTime(s)})
-	return s, d.store.UpdateSession(ctx, s)
-}
-
-// Resume readiness: how long and how often resume waits for Claude to
-// list the session as running (tests shorten them).
-var (
-	resumeReady = 15 * time.Second
-	resumePoll  = 300 * time.Millisecond
-)
-
-// waitRunning waits until Claude lists background session bgID with a
-// process; without a lister it returns at once.
-func (d *Daemon) waitRunning(ctx context.Context, bgID string) error {
-	if d.cfg.Agents == nil {
-		return nil
-	}
-	deadline := time.Now().Add(resumeReady)
-	for {
-		if agents, err := d.cfg.Agents.Agents(ctx); err == nil {
-			for _, a := range agents {
-				if a.ID == bgID && !a.Stopped() {
-					return nil
-				}
-			}
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("Claude hasn't started it after %s (it may have no conversation to resume)", resumeReady)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(resumePoll):
+	case s.Kind == core.KindExternal && !s.Stopped():
+		return nil, errors.New("that session runs in your own pane: exit Claude there, or move it into acmd")
+	case s.Kind == core.KindBackground && !s.Stopped() && s.BgID != "" && d.cfg.Stopper != nil:
+		if err := d.cfg.Stopper.Stop(ctx, s.BgID); err != nil {
+			return nil, fmt.Errorf("stop %s: %w", s.BgID, err)
 		}
 	}
+	return d.resumeHosted(ctx, s)
 }
 
 // eventTime is the time for an event acmd itself applies to s: now, but

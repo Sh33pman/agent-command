@@ -60,11 +60,11 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			}
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)
-				cfg.Agents, cfg.Stopper, cfg.Claude, cfg.Remover = cli, cli, cli, cli
+				cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli
+				cfg.Hosts = execHosts{paths: p}
 			} else {
 				logger.Printf("claude not found; reconciliation disabled: %v", err)
 			}
-			cfg.Hosts = execHosts{paths: p}
 			err = daemon.Run(ctx, cfg)
 			if errors.Is(err, daemon.ErrAlreadyRunning) {
 				return nil // another daemon won the race; fine

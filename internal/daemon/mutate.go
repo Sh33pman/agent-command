@@ -154,16 +154,6 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			n++
 		}
 		return n, nil
-	case ipc.MutAdopt:
-		sess, err := st.Session(ctx, m.ID)
-		if err != nil {
-			return nil, err
-		}
-		if sess.Kind != core.KindExternal {
-			return nil, errors.New("that session is already in acmd")
-		}
-		d.adopting[sess.ID] = adoption{cwd: sess.Cwd, at: d.cfg.Now()}
-		return nil, nil
 	case ipc.MutGroupMove:
 		return nil, d.moveGroup(ctx, m.GroupID, m.Flag)
 	case ipc.MutViewMode:

@@ -23,13 +23,13 @@ type caller func(op string, in, out any) error
 
 // adoptSession moves external session s into acmd: once Claude is idle
 // in its pane (done: not working and not waiting on a question, where
-// typed text would be taken as the answer) acmd types /bg there, and
-// Claude continues the conversation as a background session, which the
-// daemon links back to s. A session whose process ended is resumed in the
-// background instead. The caller has confirmed with the user; waiting
-// reports each status it waits on (nil: quiet). left is the pane Claude
-// left after /bg (nil when the session was resumed): the caller closes it
-// with closePane once it's done with it.
+// typed text would be taken as the answer) acmd types /exit there, and
+// when the session has ended resumes it in a host of its own
+// (`claude --resume`, SPEC §4.5). A session whose process already ended is
+// just resumed. The caller has confirmed with the user; waiting reports
+// each status it waits on (nil: quiet). left is the pane Claude left
+// (nil when it had already ended): the caller closes it with closePane
+// once it's done with it.
 func adoptSession(ctx context.Context, call caller, s *core.Session, waiting func(core.Status)) (r *core.Session, left *core.PaneLoc, err error) {
 	if s.Kind != core.KindExternal {
 		return s, nil, errors.New("that session is already in acmd")
@@ -38,39 +38,47 @@ func adoptSession(ctx context.Context, call caller, s *core.Session, waiting fun
 	if err != nil {
 		return nil, nil, err
 	}
-	if s.Stopped() || s.External == nil {
-		var r core.Session
-		if err := call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r); err != nil {
+	var pane *core.PaneLoc
+	if !s.Stopped() && s.External != nil {
+		p := *s.External
+		if err := typeInto(ctx, p, "/exit"); err != nil {
 			return nil, nil, err
 		}
-		return &r, nil, nil
+		pane = &p
+		if err := waitEnded(ctx, call, s.ID); err != nil {
+			return nil, nil, err
+		}
 	}
-	pane := *s.External
-	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID}, nil); err != nil {
+	var res core.Session
+	if err := call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &res); err != nil {
 		return nil, nil, err
 	}
-	if err := typeInto(ctx, pane, "/bg"); err != nil {
-		return nil, nil, err
-	}
-	// The conversation continues under a new Claude id (M0 C4); wait for
-	// the daemon to link it.
+	return &res, pane, nil
+}
+
+// waitEnded waits (up to adoptWait) until session id has ended.
+func waitEnded(ctx context.Context, call caller, id string) error {
 	deadline := time.Now().Add(adoptWait)
 	for time.Now().Before(deadline) {
 		var snap ipc.Snapshot
 		if err := call(ipc.OpSnapshot, nil, &snap); err != nil {
-			return nil, nil, err
+			return err
 		}
 		for _, x := range snap.Sessions {
-			if x.ID == s.ID && x.Kind == core.KindBackground && x.BgID != "" {
-				return x, &pane, nil
+			if x.ID == id && x.Stopped() {
+				return nil
 			}
 		}
-		time.Sleep(200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
-	return nil, nil, errors.New("Claude didn't move the session to the background (is /bg available in your Claude Code?)") //nolint:staticcheck // ST1005: product name
+	return errors.New("Claude didn't exit in that pane (did /exit get typed into something else?)") //nolint:staticcheck // ST1005: product name
 }
 
-// closePane closes the user's pane a moved session left: after /bg only
+// closePane closes the user's pane a moved session left: after /exit only
 // a shell is left there, and the session now lives in acmd. Errors are
 // ignored (the user may have closed it already).
 func closePane(ctx context.Context, loc *core.PaneLoc) {
@@ -91,7 +99,7 @@ func closePane(ctx context.Context, loc *core.PaneLoc) {
 	}
 }
 
-// adoptIdle are the statuses in which /bg can be typed into the pane.
+// adoptIdle are the statuses in which /exit can be typed into the pane.
 func adoptIdle(st core.Status) bool {
 	return st == core.StatusDone || st == core.StatusError || st == core.StatusPaused
 }
@@ -136,7 +144,7 @@ func waitIdle(ctx context.Context, call caller, s *core.Session, waiting func(co
 // adoptPoll is how often acmd checks whether a session became idle.
 var adoptPoll = 500 * time.Millisecond
 
-// adoptWait is how long acmd waits for Claude's /bg (tests shorten it).
+// adoptWait is how long acmd waits for Claude to exit after /exit (tests shorten it).
 var adoptWait = 15 * time.Second
 
 // typeInto types text + Enter into a pane (Kitty send-text, Ghostty input
@@ -180,12 +188,12 @@ func newAdoptCmd() *cobra.Command {
 	var win int
 	cmd := &cobra.Command{
 		Use:   "adopt [N|id|name-prefix]",
-		Short: "Move a session from one of your own panes into acmd (it continues in the background)",
+		Short: "Move a session from one of your own panes into acmd (it continues, hosted by acmd)",
 		Long: `Move a Claude session running in one of your own panes into acmd, where it
-continues in the background. acmd asks first, then waits until Claude is
-idle in that pane (not working, not waiting on a question) and types /bg
-there. From the shortcut (Kitty cmd+shift+m) it moves the session in the
-focused pane.`,
+continues hosted by acmd. acmd asks first, then waits until Claude is idle
+in that pane (not working, not waiting on a question), types /exit there and
+resumes the conversation in acmd. From the shortcut (Kitty cmd+shift+m) it
+moves the session in the focused pane.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
@@ -205,7 +213,7 @@ focused pane.`,
 				if s.Kind != core.KindExternal {
 					return errors.New("that session is already in acmd")
 				}
-				q := fmt.Sprintf("Move %s into acmd? Claude continues it in the background and your pane closes.", nameOf(s))
+				q := fmt.Sprintf("Move %s into acmd? It continues hosted by acmd and your pane closes.", nameOf(s))
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}
@@ -217,7 +225,7 @@ focused pane.`,
 				if err != nil {
 					return err
 				}
-				fmt.Fprintf(out, "Moved %s into acmd (claude attach %s).\n", nameOf(r), r.BgID)
+				fmt.Fprintf(out, "Moved %s into acmd (%s).\n", nameOf(r), attachNote(r))
 				// Close the pane last: the shortcut's overlay runs in it.
 				defer closePane(context.WithoutCancel(cmd.Context()), left)
 				if v, err := targetView(snap, os.Getenv("ACMD_VIEW_ID")); err == nil {
@@ -277,7 +285,7 @@ func sessionInPane(snap ipc.Snapshot, socket string, win int) (*core.Session, er
 // splitOut opens s in a new tab or window next to view v: session only
 // (`acmd view --pinned`) or a full view with its own sidebar.
 func splitOut(ctx context.Context, v *core.View, s *core.Session, window, withSidebar bool) error {
-	if s.Kind != core.KindBackground || s.BgID == "" {
+	if !s.Managed() {
 		return errors.New("only sessions in acmd can be split out (move it into acmd first)")
 	}
 	argv := []string{acmdPath(), "view", "--pinned", s.ID}

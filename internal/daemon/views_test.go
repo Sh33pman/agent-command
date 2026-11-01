@@ -5,44 +5,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/store"
 )
-
-// fakeClaude plays `claude --bg` and `claude --bg --resume`.
-type fakeClaude struct {
-	mu        sync.Mutex
-	n         int
-	untrusted map[string]bool
-	starts    []claudecli.StartOptions
-	resumes   []string
-	delay     time.Duration
-}
-
-func (f *fakeClaude) StartBackground(_ context.Context, o claudecli.StartOptions) (string, error) {
-	time.Sleep(f.delay)
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.untrusted[o.Dir] {
-		return "", claudecli.ErrNotTrusted
-	}
-	f.n++
-	f.starts = append(f.starts, o)
-	return fmt.Sprintf("bg%06d", f.n), nil
-}
-
-func (f *fakeClaude) Resume(_ context.Context, _, sessionID string) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.resumes = append(f.resumes, sessionID)
-	return sessionID[:8], nil
-}
 
 func openView(t *testing.T, c *ipc.Conn, sessionID string) *core.View {
 	t.Helper()
@@ -62,124 +31,9 @@ func newSess(t *testing.T, c *ipc.Conn, req ipc.NewRequest) *core.Session {
 	return &s
 }
 
-func TestNewSessionAndViews(t *testing.T) {
-	p := testPaths(t)
-	fc := &fakeClaude{untrusted: map[string]bool{"/untrusted": true}}
-	start(t, p, func(c *Config) { c.Claude = fc })
-	c := dial(t, p)
-
-	// A view before any session shows the placeholder.
-	empty := openView(t, c, "")
-	if empty.ID == "" || empty.Selected != "" {
-		t.Fatalf("empty view: %+v", empty)
-	}
-
-	g := groupNamed(t, c, "PROJ-1")
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Name: "auth", Description: "d", GroupID: g, Args: []string{"--model", "opus"},
-		Prompt: "go", ShowIn: empty.ID})
-	if s.BgID != "bg000001" || s.Status != core.StatusStarting || s.Name != "auth" || s.NameSource != core.NameUser ||
-		s.GroupID != g || s.Description != "d" || s.Cwd != "/w/api" {
-		t.Errorf("new session: %+v", s)
-	}
-	if o := fc.starts[0]; o.Dir != "/w/api" || o.Name != "auth" || o.Prompt != "go" || strings.Join(o.Args, " ") != "--model opus" {
-		t.Errorf("claude --bg options: %+v", o)
-	}
-	snap := snapshot(t, c)
-	if len(snap.Views) != 1 || snap.Views[0].Selected != s.ID {
-		t.Errorf("view didn't switch to the new session: %+v", snap.Views)
-	}
-
-	// Untrusted folder: a recognizable error, no row.
-	err := c.Call(ipc.OpNew, ipc.NewRequest{Cwd: "/untrusted"}, nil)
-	if err == nil || !strings.Contains(err.Error(), ipc.ErrNotTrustedText) {
-		t.Errorf("untrusted: %v", err)
-	}
-	if err := c.Call(ipc.OpNew, ipc.NewRequest{}, nil); err == nil {
-		t.Error("new without a folder accepted")
-	}
-	if n := len(snapshot(t, c).Sessions); n != 1 {
-		t.Errorf("%d sessions after refused starts", n)
-	}
-
-	// The first hook links to the row by short id; the user's name stays.
-	t0 := time.Now()
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg000001-aaaa","source":"startup","cwd":"/w/api","transcript_path":"/t"}`, t0, ipc.HookContext{}), nil))
-	snap = snapshot(t, c)
-	if len(snap.Sessions) != 1 || snap.Sessions[0].ClaudeSessionID != "bg000001-aaaa" || snap.Sessions[0].Name != "auth" ||
-		snap.Sessions[0].Status != core.StatusDone {
-		t.Errorf("hook not linked: %+v", snap.Sessions[0])
-	}
-
-	// A status change in the shown session isn't unseen; in another one it is.
-	other := newSess(t, c, ipc.NewRequest{Cwd: "/w/web"})
-	for _, e := range []ipc.HookEvent{
-		hookEvent("UserPromptSubmit", `{"session_id":"bg000001-aaaa","prompt":"x"}`, t0.Add(time.Second), ipc.HookContext{}),
-		hookEvent("Stop", `{"session_id":"bg000001-aaaa"}`, t0.Add(2*time.Second), ipc.HookContext{}),
-		hookEvent("UserPromptSubmit", `{"session_id":"bg000002-bbbb","prompt":"y"}`, t0.Add(time.Second), ipc.HookContext{}),
-		hookEvent("Stop", `{"session_id":"bg000002-bbbb"}`, t0.Add(2*time.Second), ipc.HookContext{}),
-	} {
-		must(t, c.Call(ipc.OpEvent, e, nil))
-	}
-	snap = snapshot(t, c)
-	if byClaude(snap, "bg000001-aaaa").Unseen || !byClaude(snap, "bg000002-bbbb").Unseen {
-		t.Errorf("unseen: shown=%v other=%v", byClaude(snap, "bg000001-aaaa").Unseen, byClaude(snap, "bg000002-bbbb").Unseen)
-	}
-
-	// Selecting it in a view marks it seen; a second view starts on the most recently active.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewSelect, ID: empty.ID, Text: other.ID})
-	if byClaude(snapshot(t, c), "bg000002-bbbb").Unseen {
-		t.Error("selected session still unseen")
-	}
-	second := openView(t, c, "")
-	if second.Selected == "" {
-		t.Error("second view started on the placeholder")
-	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewSelect, ID: second.ID, Text: ""})
-
-	// Views can't show archived or external sessions, or unknown ids.
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext-1","source":"startup","cwd":"/w"}`, t0,
-		ipc.HookContext{KittyWindowID: "9", KittyListenOn: "unix:/k"}), nil))
-	ext := byClaude(snapshot(t, c), "ext-1")
-	for _, sel := range []string{ext.ID, "nope"} {
-		if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewSelect, ID: second.ID, Text: sel}, nil); err == nil {
-			t.Errorf("view showed %s", sel)
-		}
-	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen}, nil); err == nil {
-		t.Error("view without a pane accepted")
-	}
-
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewTouch, ID: second.ID})
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewClose, ID: second.ID})
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewClose, ID: second.ID}) // idempotent
-	if n := len(snapshot(t, c).Views); n != 1 {
-		t.Errorf("%d views after close", n)
-	}
-}
-
-func TestNewSessionRacesItsFirstHook(t *testing.T) {
-	p := testPaths(t)
-	fc := &fakeClaude{delay: 100 * time.Millisecond}
-	start(t, p, func(c *Config) { c.Claude = fc })
-	c, hookConn := dial(t, p), dial(t, p)
-	done := make(chan *core.Session)
-	go func() {
-		var s core.Session
-		_ = c.Call(ipc.OpNew, ipc.NewRequest{Cwd: "/w", Name: "named"}, &s)
-		done <- &s
-	}()
-	// The hook arrives while `claude --bg` is still "running".
-	must(t, hookConn.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg000001-zzzz","source":"startup","cwd":"/w"}`, time.Now(), ipc.HookContext{}), nil))
-	s := <-done
-	snap := snapshot(t, c)
-	if len(snap.Sessions) != 1 || s.ID != snap.Sessions[0].ID || snap.Sessions[0].Name != "named" || snap.Sessions[0].BgID != "bg000001" {
-		t.Errorf("race made %d sessions: %+v", len(snap.Sessions), snap.Sessions)
-	}
-}
-
 func TestWatchAndPrune(t *testing.T) {
 	p := testPaths(t)
-	start(t, p, func(c *Config) { c.Claude = &fakeClaude{} })
+	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p} })
 	c := dial(t, p)
 	v := openView(t, c, "")
 
@@ -259,36 +113,6 @@ func TestPruneViews(t *testing.T) {
 	}
 }
 
-func TestResume(t *testing.T) {
-	p := testPaths(t)
-	fc := &fakeClaude{}
-	start(t, p, func(c *Config) { c.Claude, c.Stopper = fc, &stops{} })
-	c := dial(t, p)
-	t0 := time.Now()
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"cafe0001-x","source":"startup","cwd":"/w"}`, t0, ipc.HookContext{}), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"cafe0001-x","reason":"other"}`, t0.Add(time.Second), ipc.HookContext{}), nil))
-	s := byClaude(snapshot(t, c), "cafe0001-x")
-	if s.Status != core.StatusPaused {
-		t.Fatalf("not paused: %s", s.Status)
-	}
-	var r core.Session
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
-	if r.Status != core.StatusStarting || r.BgID != "cafe0001" || len(fc.resumes) != 1 || fc.resumes[0] != "cafe0001-x" {
-		t.Errorf("resume: %+v %v", r, fc.resumes)
-	}
-	// Running sessions are left alone; archived and unknown ones are refused.
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
-	if len(fc.resumes) != 1 {
-		t.Error("resumed a running session")
-	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID})
-	for _, id := range []string{s.ID, "nope"} {
-		if err := c.Call(ipc.OpResume, ipc.Mutation{ID: id}, nil); err == nil {
-			t.Errorf("resumed %s", id)
-		}
-	}
-}
-
 func TestWithoutClaude(t *testing.T) {
 	p := testPaths(t)
 	start(t, p)
@@ -340,37 +164,6 @@ func TestMoveGroup(t *testing.T) {
 	}
 }
 
-func TestAdoptLinksTheFork(t *testing.T) {
-	p := testPaths(t)
-	start(t, p)
-	c := dial(t, p)
-	t0 := time.Now()
-	ext := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/k", TTY: "/dev/ttys004"}
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"old-1","source":"startup","cwd":"/w/api"}`, t0, ext), nil))
-	s := byClaude(snapshot(t, c), "old-1")
-	if s.Kind != core.KindExternal || s.External.TTY != "/dev/ttys004" {
-		t.Fatalf("external: %+v %+v", s, s.External)
-	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutRename, ID: s.ID, Text: "mine"})
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID})
-	// /bg: the old process ends, a forked background session starts.
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"old-1","reason":"prompt_input_exit"}`, t0.Add(time.Second), ext), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"abcd1234-new","source":"startup","cwd":"/w/api"}`, t0.Add(2*time.Second), ipc.HookContext{ClaudePid: 77}), nil))
-	snap := snapshot(t, c)
-	if len(snap.Sessions) != 1 {
-		t.Fatalf("%d sessions", len(snap.Sessions))
-	}
-	got := snap.Sessions[0]
-	if got.ID != s.ID || got.Kind != core.KindBackground || got.BgID != "abcd1234" || got.Name != "mine" || got.External != nil ||
-		len(got.ClaudeHistory) != 1 || got.ClaudeHistory[0] != "old-1" || got.Pid != 77 {
-		t.Errorf("not linked: %+v", got)
-	}
-	// Background sessions can't be adopted.
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID}, nil); err == nil {
-		t.Error("adopted a background session")
-	}
-}
-
 type removes struct{ ids []string }
 
 func (r *removes) Remove(_ context.Context, id string) error {
@@ -401,7 +194,7 @@ func TestPurge(t *testing.T) {
 
 func TestViewNotes(t *testing.T) {
 	p := testPaths(t)
-	start(t, p, func(c *Config) { c.Claude = &fakeClaude{} })
+	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p} })
 	c := dial(t, p)
 	v := openView(t, c, "")
 
@@ -436,52 +229,11 @@ func watchView(t *testing.T, c *ipc.Conn, id string) ipc.WatchResponse {
 	return w
 }
 
-// Resume returns only once Claude lists the session as running, so a view
-// doesn't attach to a session that is still starting.
-func TestResumeWaitsUntilRunning(t *testing.T) {
-	oldReady, oldPoll := resumeReady, resumePoll
-	resumeReady, resumePoll = 2*time.Second, 20*time.Millisecond
-	t.Cleanup(func() { resumeReady, resumePoll = oldReady, oldPoll })
-
-	p := testPaths(t)
-	agents := &fakeAgents{}
-	start(t, p, func(c *Config) { c.Claude, c.Agents, c.ReconcileEvery = &fakeClaude{}, agents, time.Hour })
-	c := dial(t, p)
-	t0 := time.Now()
-	for _, id := range []string{"cafe0001-x", "dead0001-x"} {
-		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+id+`","source":"startup","cwd":"/w"}`, t0, ipc.HookContext{}), nil))
-		must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"`+id+`","reason":"other"}`, t0.Add(time.Second), ipc.HookContext{}), nil))
-	}
-	s := byClaude(snapshot(t, c), "cafe0001-x")
-
-	pid := 42
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		agents.add(claudecli.Agent{ID: "cafe0001", SessionID: "cafe0001-x", Kind: "background", Pid: &pid, Cwd: "/w"})
-	}()
-	began := time.Now()
-	var r core.Session
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
-	if took := time.Since(began); took < 250*time.Millisecond || r.BgID != "cafe0001" {
-		t.Errorf("returned after %v (before Claude ran it?): %+v", took, r)
-	}
-
-	// Never starts: a clear error, the bg id still recorded.
-	d := byClaude(snapshot(t, c), "dead0001-x")
-	err := c.Call(ipc.OpResume, ipc.Mutation{ID: d.ID}, nil)
-	if err == nil || !strings.Contains(err.Error(), "hasn't started it") {
-		t.Errorf("never running: %v", err)
-	}
-	if got := byClaude(snapshot(t, c), "dead0001-x"); got.BgID != "dead0001" {
-		t.Errorf("bg id not recorded: %+v", got)
-	}
-}
-
 // The reply popup's inbox: a finished turn, a permission prompt that
 // replaces it, a prompt that drops it, skip, and order.
 func TestInbox(t *testing.T) {
 	p := testPaths(t)
-	start(t, p, func(c *Config) { c.Claude = &fakeClaude{} })
+	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p} })
 	c := dial(t, p)
 	t0 := time.Now()
 	ev := func(name, payload string, at time.Time) {
@@ -547,70 +299,5 @@ func TestExternalPaneFollowsHooks(t *testing.T) {
 	must(t, c.Call(ipc.OpEvent, hookEvent("Notification", `{"session_id":"ext0000-1","notification_type":"idle_prompt"}`, t0.Add(3*time.Second), ipc.HookContext{ViewID: "v"}), nil))
 	if s = byClaude(snapshot(t, c), "ext0000-1"); s.External.KittyWindow != 4 || s.External.KittySocket != "unix:/tmp/kitty-1" {
 		t.Errorf("kept: %+v", s.External)
-	}
-}
-
-// A moved-in session keeps the name it had (an automatic one too): Claude
-// names the background session anew, and the reconciler mustn't take it.
-func TestAdoptKeepsTheName(t *testing.T) {
-	p := testPaths(t)
-	agents := &fakeAgents{}
-	start(t, p, func(c *Config) { c.Agents, c.ReconcileEvery = agents, 30*time.Millisecond })
-	c := dial(t, p)
-	t0 := time.Now()
-	ext := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/k"}
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"old-2","source":"startup","cwd":"/w"}`, t0, ext), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"old-2","prompt":"fix the flaky login test"}`, t0.Add(time.Second), ext), nil))
-	s := byClaude(snapshot(t, c), "old-2")
-	if s.Name == "" || s.NameSource != core.NameAuto {
-		t.Fatalf("auto name: %q %s", s.Name, s.NameSource)
-	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID})
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"beef1234-new","source":"startup","cwd":"/w"}`, t0.Add(2*time.Second), ipc.HookContext{}), nil))
-	idle, pid := "idle", 5
-	agents.add(claudecli.Agent{ID: "beef1234", SessionID: "beef1234-new", Kind: "background", Name: "background-task-moo-chat", Status: &idle, Pid: &pid, Cwd: "/w"})
-	time.Sleep(200 * time.Millisecond) // a few reconcile rounds
-	got := byClaude(snapshot(t, c), "beef1234-new")
-	if got == nil || got.ID != s.ID || got.Name != s.Name {
-		t.Errorf("name after moving in: %+v (was %q)", got, s.Name)
-	}
-}
-
-// Claude's listing can show the moved-in background session before its
-// first hook (seen live: a separate "Interesting remark" session was
-// created). The reconciler links it to the session being moved instead.
-func TestAdoptRaceWithReconciler(t *testing.T) {
-	p := testPaths(t)
-	agents := &fakeAgents{}
-	start(t, p, func(c *Config) { c.Agents, c.ReconcileEvery = agents, 20*time.Millisecond })
-	c := dial(t, p)
-	t0 := time.Now().Add(-time.Minute)
-	ext := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/k"}
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"7bef0000-old","source":"startup","cwd":"/w"}`, t0, ext), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"7bef0000-old","prompt":"hmm interesting"}`, t0.Add(time.Second), ext), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("Stop", `{"session_id":"7bef0000-old"}`, t0.Add(2*time.Second), ext), nil))
-	s := byClaude(snapshot(t, c), "7bef0000-old")
-	if s.Name == "" {
-		t.Fatal("no name to keep")
-	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID})
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"7bef0000-old","reason":"other"}`, t0.Add(3*time.Second), ext), nil))
-	// The listing has the new background session; no hook yet.
-	idle, pid := "idle", 9
-	agents.add(claudecli.Agent{ID: "a07bedb8", SessionID: "a07bedb8-new", Kind: "background", Name: "Interesting remark", Status: &idle, Pid: &pid, Cwd: "/w"})
-	time.Sleep(150 * time.Millisecond)
-	// Then its hook.
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"a07bedb8-new","source":"fork","cwd":"/w"}`, time.Now(), ipc.HookContext{ClaudePid: 9}), nil))
-	snap := snapshot(t, c)
-	if len(snap.Sessions) != 1 {
-		t.Fatalf("%d sessions (a new one was created?)", len(snap.Sessions))
-	}
-	got := snap.Sessions[0]
-	if got.ID != s.ID || got.Kind != core.KindBackground || got.BgID != "a07bedb8" || got.Name != s.Name ||
-		got.External != nil || len(got.ClaudeHistory) != 1 || got.ClaudeHistory[0] != "7bef0000-old" {
-		t.Errorf("not linked: %+v", got)
-	}
-	if got.Status == core.StatusPaused {
-		t.Errorf("moved session left paused: %+v", got)
 	}
 }

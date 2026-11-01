@@ -201,19 +201,11 @@ func (a *sidebarActions) Help(width int, groups bool) []string {
 }
 
 // newFromShortcut starts a session for the sidebar or a keybinding (no
-// terminal of its own). An untrusted folder opens Claude's trust prompt
-// in an overlay over the view pane, which then starts the session.
+// terminal of its own). Claude's trust prompt, for an untrusted folder,
+// shows up in the session itself.
 func newFromShortcut(ctx context.Context, cmd *cobra.Command, v *core.View, groupID, dir string) error {
 	_, err := startSession(ctx, cmd, newOptions{groupID: groupID, cwd: dir, showIn: v.ID})
-	var untrusted *errUntrusted
-	if !errors.As(err, &untrusted) || (v.Pane.Terminal != "kitty" && v.Pane.Terminal != "ghostty") {
-		return err
-	}
-	argv := []string{acmdPath(), "new", "--cwd", dir, "--view", v.ID}
-	if groupID != "" {
-		argv = append(argv, "--group-id", groupID)
-	}
-	return promptIn(ctx, v, argv)
+	return err
 }
 
 // ---- global shortcuts (SPEC §8.3) ----

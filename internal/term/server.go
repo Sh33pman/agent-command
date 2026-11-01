@@ -93,11 +93,14 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 			go func() { // only an attach becomes the client
 				_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
-				typ, _, err := readFrame(c)
+				typ, p, err := readFrame(c)
 				_ = c.SetReadDeadline(time.Time{})
 				switch {
 				case err == nil && typ == frameAttach:
 					conns <- c
+				case err == nil && typ == frameWrite:
+					_, _ = ptmx.Write(p)
+					_ = c.Close()
 				case err == nil && typ == frameKill:
 					hangup()
 					_ = c.Close()
@@ -194,4 +197,16 @@ func Kill(socket string) error {
 	}
 	defer c.Close()
 	return writeFrame(c, frameKill, nil)
+}
+
+// Send types data into the shell on socket without attaching, so nobody
+// watching sees a client come or go. The reply popup uses it to answer a
+// session.
+func Send(socket string, data []byte) error {
+	c, err := net.DialTimeout("unix", socket, time.Second)
+	if err != nil {
+		return ErrEnded
+	}
+	defer c.Close()
+	return writeFrame(c, frameWrite, data)
 }

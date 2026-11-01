@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -57,7 +55,7 @@ func TestGhosttyView(t *testing.T) {
 		t.Errorf("not re-added: %+v", v2.Sidebar)
 	}
 
-	// go focuses the view pane; new in an untrusted folder opens a tab.
+	// go focuses the view pane.
 	api := e.folder(t, "api", false)
 	mustRun(t, "new", "--cwd", api, "--name", "auth")
 	sim.Focused = "elsewhere"
@@ -65,12 +63,7 @@ func TestGhosttyView(t *testing.T) {
 	if sim.Focused != "T1" {
 		t.Errorf("go focused %s", sim.Focused)
 	}
-	must(t, os.WriteFile(filepath.Join(api, ".untrusted"), nil, 0o600))
 	view := e.snapshot(t).Views[0]
-	must(t, newFromShortcut(ctx, nil, view, "", api))
-	if last := sim.Calls[len(sim.Calls)-1]; !strings.HasPrefix(last, "tab ") || !strings.Contains(last, "'new' '--cwd' '"+api+"'") {
-		t.Errorf("trust prompt tab: %s", last)
-	}
 	// A terminal editor opens in a tab too.
 	p, _ := paths.Default()
 	must(t, setup.SaveEditor(p.Config(), config.Editor{Preset: "custom", Command: []string{"/bin/echo", "{dir}"}, Resolved: "/bin/echo", RunIn: "tab"}))

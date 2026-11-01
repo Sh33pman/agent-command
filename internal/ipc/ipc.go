@@ -101,7 +101,6 @@ const (
 	MutViewTouch      = "view.touch"        // ID = view: it was focused
 	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
 	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)
-	MutAdopt          = "session.adopt"     // ID: acmd is about to type /bg into this external session's pane
 	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
 )
 
@@ -155,10 +154,6 @@ type NewRequest struct {
 	Prompt      string   `json:"prompt,omitempty"`
 	ShowIn      string   `json:"show_in,omitempty"`
 }
-
-// ErrNotTrustedText marks a NewRequest refused because Claude hasn't
-// trusted the folder yet (the client runs the trust step and retries).
-const ErrNotTrustedText = "workspace not trusted by Claude"
 
 // Request is one client message.
 type Request struct {

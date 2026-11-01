@@ -1,27 +1,22 @@
-// Package claudecli is the only place acmd runs the `claude` CLI (SPEC
-// §4.3): background sessions (`--bg`, `--bg --resume`), `agents --json`,
-// `stop`, `rm` and the argv for `attach`. Agent view is a research preview,
-// so parsing is lenient and pinned by contract tests on recorded output
-// (testdata/claudecli).
+// Package claudecli runs the `claude` management commands acmd still needs
+// (SPEC §4.3): `agents --json` for status cross-checks, and `stop` / `rm`
+// for sessions started by `claude --bg` before acmd hosted its own (SPEC
+// §4.5). Sessions themselves are started by internal/harness under a PTY
+// host, not here. Agent view is a research preview, so parsing is lenient
+// and pinned by contract tests on recorded output (testdata/claudecli).
 package claudecli
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/procenv"
 )
-
-// ErrNotTrusted means Claude refused to start in an untrusted folder
-// (M0 A1); the user has to accept the trust prompt interactively once.
-var ErrNotTrusted = errors.New("workspace not trusted by Claude")
 
 // Runner executes a command and returns its combined output.
 type Runner func(ctx context.Context, dir string, env []string, name string, args ...string) ([]byte, error)
@@ -57,9 +52,6 @@ func (c *CLI) run(ctx context.Context, dir string, args ...string) ([]byte, erro
 	}
 	out, err := c.Run(ctx, dir, procenv.Scrub(c.Env), c.Path, args...)
 	if err != nil {
-		if bytes.Contains(out, []byte("Workspace not trusted")) {
-			return out, ErrNotTrusted
-		}
 		return out, fmt.Errorf("claude %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(firstLine(out)))
 	}
 	return out, nil
@@ -159,60 +151,6 @@ func (c *CLI) Agents(ctx context.Context) ([]Agent, error) {
 	return ParseAgents(out)
 }
 
-// remoteControlFlag enables Remote Control on every session acmd launches,
-// so they can be driven from a phone.
-const remoteControlFlag = "--remote-control"
-
-// hasRemoteControl reports whether the user's claude_args already set it.
-func hasRemoteControl(args []string) bool {
-	for _, a := range args {
-		if a == remoteControlFlag || strings.HasPrefix(a, remoteControlFlag+"=") {
-			return true
-		}
-	}
-	return false
-}
-
-// StartOptions configure a new background session.
-type StartOptions struct {
-	Dir    string   // folder to start in
-	Name   string   // --name, optional
-	Args   []string // extra claude args (config claude_args)
-	Prompt string   // optional first prompt
-}
-
-// StartBackground runs `claude --bg` and returns the short id it prints.
-// ErrNotTrusted if Claude hasn't trusted Dir yet.
-func (c *CLI) StartBackground(ctx context.Context, o StartOptions) (string, error) {
-	args := []string{"--bg"}
-	if !hasRemoteControl(o.Args) {
-		// Placed before another flag so its optional [name] value can't
-		// swallow an argument.
-		args = append(args, remoteControlFlag)
-	}
-	if o.Name != "" {
-		args = append(args, "--name", o.Name)
-	}
-	args = append(args, o.Args...)
-	if o.Prompt != "" {
-		args = append(args, "--", o.Prompt)
-	}
-	out, err := c.run(ctx, o.Dir, args...)
-	if err != nil {
-		return "", err
-	}
-	return ParseShortID(out)
-}
-
-// Resume runs `claude --bg --resume <sessionID>` (M0 C3: keeps the id).
-func (c *CLI) Resume(ctx context.Context, dir, sessionID string) (string, error) {
-	out, err := c.run(ctx, dir, "--bg", remoteControlFlag, "--resume", sessionID)
-	if err != nil {
-		return "", err
-	}
-	return ParseShortID(out)
-}
-
 // Stop runs `claude stop <id>`; the conversation is kept.
 func (c *CLI) Stop(ctx context.Context, id string) error {
 	_, err := c.run(ctx, "", "stop", id)
@@ -223,26 +161,6 @@ func (c *CLI) Stop(ctx context.Context, id string) error {
 func (c *CLI) Remove(ctx context.Context, id string) error {
 	_, err := c.run(ctx, "", "rm", id)
 	return err
-}
-
-// AttachArgv is the command line for showing a session in a pane. It must
-// run in the foreground of the pane (M0 A9).
-func (c *CLI) AttachArgv(id string) []string { return []string{c.Path, "attach", id} }
-
-var (
-	attachRe      = regexp.MustCompile(`claude attach ([0-9a-f]{8})\b`)
-	backgroundRe  = regexp.MustCompile(`backgrounded · ([0-9a-f]{8}) ·`)
-	errNoIDInText = errors.New("no session id in claude output")
-)
-
-// ParseShortID extracts the short session id from `claude --bg` output.
-func ParseShortID(out []byte) (string, error) {
-	for _, re := range []*regexp.Regexp{backgroundRe, attachRe} {
-		if m := re.FindSubmatch(out); m != nil {
-			return string(m[1]), nil
-		}
-	}
-	return "", fmt.Errorf("%w: %q", errNoIDInText, firstLine(out))
 }
 
 func firstLine(b []byte) string {

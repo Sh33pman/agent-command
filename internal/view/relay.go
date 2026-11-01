@@ -1,7 +1,6 @@
 package view
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -17,26 +16,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Leaving a session from inside `claude attach` (← on an empty prompt,
-// /exit) doesn't end attach: it switches to Claude's own agent view in the
-// same process (SPEC §6.4). acmd runs attach through a relay that watches
-// for that switch, which Claude marks by setting the terminal title to
-// "… claude agents", and tells which of the two it was from what was typed.
-
-// agentViewTitle is the end of the window title Claude sets in its agent
-// view (OSC 0, checked against Claude Code 2.1).
-var agentViewTitle = []byte("claude agents")
-
 // relayed is how a relayed attach ended.
 type relayed struct {
-	agentView bool // Claude switched to its agent view
-	exitTyped bool // ...after the user typed /exit (or /quit)
+	exitTyped bool // the attach ended on its own after the user typed /exit (or /quit)
 }
 
 // relay runs cmd in a pseudo-terminal between the user's terminal (in,
-// out) and cmd until cmd exits or it reaches Claude's agent view; stop
-// ends it early. It returns how it ended and cmd's wait error (nil when
-// relay killed it).
+// out) and cmd until cmd exits; stop ends it early. It returns how it
+// ended (the session's CLI exits when the user types /exit, which ends
+// the attach too) and cmd's wait error (nil when relay killed it).
 func relay(cmd *exec.Cmd, in *os.File, out io.Writer, stop <-chan struct{}) (relayed, error) {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	ptmx, err := pty.Start(cmd)
@@ -57,24 +45,14 @@ func relay(cmd *exec.Cmd, in *os.File, out io.Writer, stop <-chan struct{}) (rel
 
 	var mu sync.Mutex
 	typed := typing{}
-	agentView := make(chan struct{})
-	var once sync.Once
 	outDone := make(chan struct{})
-	go func() { // cmd's output: pass it on, watch the title
+	go func() { // cmd's output: pass it on
 		defer close(outDone)
 		buf := make([]byte, 32<<10)
-		tail := make([]byte, 0, 512)
 		for {
 			n, err := ptmx.Read(buf)
 			if n > 0 {
 				_, _ = out.Write(buf[:n])
-				tail = append(tail, buf[:n]...)
-				if hasAgentTitle(tail) {
-					once.Do(func() { close(agentView) })
-				}
-				if len(tail) > 256 {
-					tail = append(tail[:0], tail[len(tail)-256:]...)
-				}
 			}
 			if err != nil {
 				return
@@ -134,36 +112,17 @@ func relay(cmd *exec.Cmd, in *os.File, out io.Writer, stop <-chan struct{}) (rel
 			_ = pty.InheritSize(in, ptmx)
 		case err := <-exited:
 			<-outDone
-			return relayed{}, err
-		case <-agentView:
 			mu.Lock()
-			r := relayed{agentView: true, exitTyped: typed.exitRecently(time.Now())}
+			r := relayed{exitTyped: typed.exitRecently(time.Now())}
 			mu.Unlock()
-			return r, end()
+			return r, err
 		case <-stop:
 			return relayed{}, end()
 		}
 	}
 }
 
-func hasAgentTitle(b []byte) bool {
-	for {
-		i := bytes.Index(b, []byte("\x1b]0;"))
-		if i < 0 {
-			return false
-		}
-		b = b[i+4:]
-		j := bytes.IndexAny(b, "\x07\x1b")
-		if j < 0 {
-			return false // the title isn't complete yet
-		}
-		if bytes.HasSuffix(b[:j], agentViewTitle) {
-			return true
-		}
-	}
-}
-
-// typing follows what the user types, to tell /exit from ←: the last
+// typing follows what the user types, to tell /exit: the last
 // line submitted with Enter that was a slash command, and when.
 type typing struct {
 	line     []byte

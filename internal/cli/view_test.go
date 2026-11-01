@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -15,13 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -73,17 +70,16 @@ func viewEnvFor(t *testing.T) *viewEnv {
 	}
 	must(t, os.MkdirAll(p.ConfigDir, 0o700))
 	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+claude+"\"\nclaude_args = [\"--model\", \"opus\"]\n"), 0o600))
-	origSpawn, origTrust := spawnDaemon, trustFile
+	origSpawn := spawnDaemon
 	spawnDaemon = func(paths.Paths) error { return errors.New("tests start the daemon themselves") }
-	trustFile = func() string { return e.trust }
-	t.Cleanup(func() { spawnDaemon, trustFile = origSpawn, origTrust })
+	t.Cleanup(func() { spawnDaemon = origSpawn })
 
 	cli := claudecli.New(claude, os.Environ())
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- daemon.Run(ctx, daemon.Config{Paths: p, Version: version.Get().Version, Log: log.New(io.Discard, "", 0),
-			Agents: cli, Stopper: cli, Claude: cli, TailEvery: time.Hour, ReconcileEvery: 50 * time.Millisecond})
+			Agents: cli, Stopper: cli, Hosts: testHosts{p}, TailEvery: time.Hour, ReconcileEvery: 50 * time.Millisecond})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -110,14 +106,6 @@ func (e *viewEnv) snapshot(t *testing.T) ipc.Snapshot {
 	var s ipc.Snapshot
 	must(t, e.conn.Call(ipc.OpSnapshot, nil, &s))
 	return s
-}
-
-func (e *viewEnv) fakeCalls(t *testing.T) []string {
-	t.Helper()
-	var st struct{ Calls []string }
-	b, _ := os.ReadFile(e.state)
-	_ = json.Unmarshal(b, &st)
-	return st.Calls
 }
 
 func (e *viewEnv) folder(t *testing.T, name string, untrusted bool) string {
@@ -149,9 +137,6 @@ func TestNewGoResume(t *testing.T) {
 	if !strings.Contains(out, `Started "auth work" in `) || !strings.Contains(out, "Show it in a view: acmd go ") {
 		t.Errorf("new output:\n%s", out)
 	}
-	if calls := e.fakeCalls(t); !contains(calls, "--bg --remote-control --name auth work --model opus -- fix it") {
-		t.Errorf("claude calls: %q", calls)
-	}
 	snap := e.snapshot(t)
 	var s *core.Session
 	for _, x := range snap.Sessions {
@@ -159,18 +144,9 @@ func TestNewGoResume(t *testing.T) {
 	}
 	g, _ := resolveGroup(snap, "PROJ-1")
 	realAPI, _ := filepath.EvalSymlinks(api) // Claude reports resolved folders
-	if s == nil || s.Name != "auth work" || s.GroupID != g.ID || (s.Cwd != api && s.Cwd != realAPI) || s.BgID == "" {
+	if s == nil || s.Name != "auth work" || s.GroupID != g.ID || (s.Cwd != api && s.Cwd != realAPI) || s.Kind != core.KindHosted || s.ClaudeSessionID == "" {
 		t.Fatalf("session: %+v", s)
 	}
-	// The reconciler links it to Claude's listing (no hooks in this test).
-	eventually(t, "link", func() bool {
-		for _, x := range e.snapshot(t).Sessions {
-			if x.ID == s.ID && strings.HasPrefix(x.ClaudeSessionID, s.BgID) {
-				return true
-			}
-		}
-		return false
-	})
 	if _, err := acmd(t, "new", "--cwd", api, "--group", "nope", "--no-create"); err == nil {
 		t.Error("--no-create with a missing group accepted")
 	}
@@ -210,7 +186,9 @@ func TestNewGoResume(t *testing.T) {
 	if !strings.Contains(out, `"auth work" is already running.`) {
 		t.Errorf("resume running:\n%s", out)
 	}
-	must(t, exec.Command(buildFakeClaude(t), "stop", s.BgID).Run())
+	must(t, term.Kill(paths.Paths{RuntimeDir: os.Getenv("ACMD_RUNTIME_DIR")}.HostSocket(s.ID)))
+	must(t, e.conn.Call(ipc.OpEvent, ipc.HookEvent{Name: "SessionEnd", At: time.Now(),
+		Payload: []byte(`{"session_id":"` + s.ClaudeSessionID + `","reason":"other"}`)}, nil))
 	eventually(t, "paused", func() bool {
 		for _, x := range e.snapshot(t).Sessions {
 			if x.ID == s.ID {
@@ -220,7 +198,7 @@ func TestNewGoResume(t *testing.T) {
 		return false
 	})
 	out = mustRun(t, "resume", "--all")
-	if !strings.Contains(out, `Resumed "auth work" (claude attach `+s.BgID+").") {
+	if !strings.Contains(out, `Resumed "auth work" (hosted `+s.ID+").") {
 		t.Errorf("resume --all:\n%s", out)
 	}
 	if !strings.Contains(mustRun(t, "resume", "--all"), "No paused sessions.") {
@@ -230,47 +208,6 @@ func TestNewGoResume(t *testing.T) {
 		if _, err := acmd(t, bad...); err == nil {
 			t.Errorf("%v accepted", bad)
 		}
-	}
-}
-
-func TestNewInUntrustedFolder(t *testing.T) {
-	e := viewEnvFor(t)
-	dir := e.folder(t, "fresh", true)
-
-	// Without a terminal: a clear error, nothing started.
-	_, err := acmd(t, "new", "--cwd", dir)
-	if err == nil || !strings.Contains(err.Error(), "hasn't trusted") {
-		t.Errorf("non-interactive untrusted: %v", err)
-	}
-	if n := len(e.snapshot(t).Sessions); n != 0 {
-		t.Errorf("%d sessions after a refused start", n)
-	}
-
-	// In a terminal: Claude's trust prompt runs here; accepting it closes
-	// the prompt and the session starts.
-	var out bytes.Buffer
-	cmd := &cobra.Command{}
-	cmd.SetIn(strings.NewReader("accept\n"))
-	cmd.SetOut(&out)
-	s, err := startSession(context.Background(), cmd, newOptions{cwd: dir, interactive: true})
-	if err != nil {
-		t.Fatalf("trust flow: %v\n%s", err, out.String())
-	}
-	for _, want := range []string{"Claude hasn't trusted " + dir, "TRUST PROMPT for ", "TRUSTED"} {
-		if !strings.Contains(out.String(), want) {
-			t.Errorf("output lacks %q:\n%s", want, out.String())
-		}
-	}
-	if s.BgID == "" || len(e.snapshot(t).Sessions) != 1 {
-		t.Errorf("session after trust: %+v", s)
-	}
-
-	// Declining (closing the prompt) starts nothing.
-	other := e.folder(t, "other", true)
-	cmd.SetIn(strings.NewReader("")) // the user closes the prompt
-	if _, err := startSession(context.Background(), cmd, newOptions{cwd: other, interactive: true}); err == nil ||
-		!strings.Contains(err.Error(), "still isn't trusted") {
-		t.Errorf("declined trust: %v", err)
 	}
 }
 
@@ -326,12 +263,22 @@ func TestGoResumesSessionWithoutBgID(t *testing.T) {
 	var v core.View
 	must(t, e.conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &core.PaneLoc{Terminal: "unknown"}}, &v))
 	mustRun(t, "go", s.ID)
-	if calls := e.fakeCalls(t); !contains(calls, "--bg --remote-control --resume 7fcdd732-orphan") {
-		t.Errorf("claude calls: %q", calls)
+	if !term.Running(paths.Paths{RuntimeDir: os.Getenv("ACMD_RUNTIME_DIR")}.HostSocket(s.ID)) {
+		t.Error("no host was started for the resumed session")
 	}
 	for _, x := range e.snapshot(t).Views {
 		if x.ID == v.ID && x.Selected != s.ID {
 			t.Errorf("view shows %q, want %q", x.Selected, s.ID)
 		}
 	}
+}
+
+// testHosts runs each session host in this process: a term.Server around
+// `sleep`, on the same socket a real host would use.
+type testHosts struct{ paths paths.Paths }
+
+func (h testHosts) Start(ctx context.Context, r daemon.HostRequest) error {
+	srv := &term.Server{Socket: h.paths.HostSocket(r.ID), Shell: []string{"/bin/sleep", "60"}, Dir: "/", Env: []string{"PATH=/usr/bin:/bin"}}
+	go func() { _ = srv.Serve(context.WithoutCancel(ctx)) }()
+	return nil
 }

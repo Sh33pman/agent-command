@@ -139,3 +139,22 @@ func TestKill(t *testing.T) {
 		t.Fatal("kill didn't end the terminal")
 	}
 }
+
+func TestSendTypesWithoutAttaching(t *testing.T) {
+	dir, err := os.MkdirTemp("", "acmdsend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock, typed := filepath.Join(dir, "t.sock"), filepath.Join(dir, "typed")
+	s := &Server{Socket: sock, Shell: []string{"/bin/sh", "-c", "cat > " + typed}, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"}}
+	go func() { _ = s.Serve(context.Background()) }()
+	waitFor(t, "server", func() bool { return Running(sock) })
+	if err := Send(sock, []byte("hi there\n")); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "typed text", func() bool { b, _ := os.ReadFile(typed); return strings.Contains(string(b), "hi there") })
+	if err := Send(filepath.Join(dir, "none.sock"), []byte("x")); !errors.Is(err, ErrEnded) {
+		t.Errorf("send without a server: %v", err)
+	}
+}

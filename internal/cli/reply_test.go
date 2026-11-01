@@ -10,31 +10,41 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/term"
 )
 
-func TestTypeViaAttach(t *testing.T) {
-	e := viewEnvFor(t)
-	origSettle, origDraw, origTake := replySettle, replyDraw, replyTake
-	replySettle, replyDraw, replyTake = 100*time.Millisecond, 2*time.Second, time.Second
-	t.Cleanup(func() { replySettle, replyDraw, replyTake = origSettle, origDraw, origTake })
-	typed := filepath.Join(e.dir, "typed.txt")
-	api := e.folder(t, "api", false)
-	mustRun(t, "new", "--cwd", api, "--name", "auth")
-	s := e.snapshot(t).Sessions[0]
-	env := append(os.Environ(), "FAKECLAUDE_TYPED="+typed)
-	fake := buildFakeClaude(t)
+func TestTypeViaHost(t *testing.T) {
+	dir, err := os.MkdirTemp("", "acmdreply")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	origEnter, origTake := replyEnterDelay, replyTake
+	replyEnterDelay, replyTake = 50*time.Millisecond, time.Second
+	t.Cleanup(func() { replyEnterDelay, replyTake = origEnter, origTake })
+	typed := filepath.Join(dir, "typed.txt")
+	sock := filepath.Join(dir, "h.sock")
+	// A stand-in session: it records what it is typed.
+	srv := &term.Server{Socket: sock, Shell: []string{"/bin/sh", "-c", "cat > " + typed}, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"}}
+	go func() { _ = srv.Serve(context.Background()) }()
+	waitUntil(t, "host", func() bool { return term.Running(sock) })
 	got := func() string { b, _ := os.ReadFile(typed); return string(b) }
 
 	// Text is pasted (bracketed) and sent with Enter.
-	err := typeViaAttach(context.Background(), fake, env, s, replyText("hello there").keys(), true,
-		func() bool { return strings.Contains(got(), "hello there") })
+	err = typeViaHost(context.Background(), sock, replyText("hello there").keys(), true,
+		func() bool { return strings.Contains(got(), "hello there\x1b[201~\n") })
 	if err != nil || !strings.Contains(got(), "\x1b[200~hello there\x1b[201~") {
 		t.Errorf("text: %v %q", err, got())
 	}
-	// An option is its number key; nothing reacting is an error.
-	err = typeViaAttach(context.Background(), fake, env, s, replyInput{Option: 1}.keys(), false, func() bool { return false })
+	// Nothing reacting is an error.
+	err = typeViaHost(context.Background(), sock, replyInput{Option: 1}.keys(), false, func() bool { return false })
 	if err == nil || !strings.Contains(err.Error(), "didn't take the answer") {
 		t.Errorf("no reaction: %v", err)
+	}
+	// No host: a clear error.
+	if err := typeViaHost(context.Background(), filepath.Join(dir, "none.sock"), []byte("x"), false, func() bool { return true }); err == nil ||
+		!strings.Contains(err.Error(), "host isn't running") {
+		t.Errorf("no host: %v", err)
 	}
 }
 

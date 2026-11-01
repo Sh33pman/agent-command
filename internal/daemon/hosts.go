@@ -118,6 +118,10 @@ func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session) (*core.Sessi
 	if err != nil {
 		return nil, err
 	}
+	s.Kind, s.BgID, s.External = core.KindHosted, "", nil
+	if !s.Stopped() { // a `--bg` session stopped just now
+		core.Apply(s, core.Event{Kind: core.EventAgentStatus, AgentStatus: core.AgentStopped, Time: d.eventTime(s)})
+	}
 	core.Apply(s, core.Event{Kind: core.EventResumed, Time: d.eventTime(s)})
 	return s, d.store.UpdateSession(ctx, s)
 }

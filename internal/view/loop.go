@@ -1,7 +1,6 @@
 // Package view is the view pane loop (SPEC §4.1, §6.4): it keeps one pane
 // attached to the session its view selects, switching by ending the
-// `claude attach` client (SIGTERM detaches cleanly, M0 A8) and starting the
-// next one. With nothing selected, or after the user detached, it shows a
+// attach client (SIGTERM detaches cleanly) and starting the next one. With nothing selected, or after the user detached, it shows a
 // placeholder that lists sessions. Sessions are never affected by what the
 // loop does.
 package view
@@ -151,6 +150,14 @@ func (l *Loop) show(ctx context.Context, id string) (string, error) {
 		if l.Showing != nil {
 			l.Showing(ctx, s.ID)
 		}
+		if s.NeedsResume() && !resumed {
+			// Stopped (or from before hosting): start its host first.
+			resumed = true
+			if _, err := l.Client.Resume(ctx, id); err != nil {
+				return fmt.Sprintf("Couldn't resume %q: %v", displayName(s), err), nil
+			}
+			continue
+		}
 		started := l.Now()
 		switched, left, exitErr, err := l.attachUntil(ctx, s)
 		l.restoreTerminal() // attach ended (maybe killed): undo its modes
@@ -160,16 +167,13 @@ func (l *Loop) show(ctx context.Context, id string) (string, error) {
 		if switched {
 			return "", nil
 		}
-		if left.agentView {
-			// ← or /exit in Claude: back to acmd's list; /exit also
-			// finishes the session (claude stop).
-			if left.exitTyped {
-				if err := l.Client.Finish(ctx, id); err != nil {
-					return fmt.Sprintf("Couldn't finish %q: %v", displayName(s), err), nil
-				}
-				return "", nil
+		if left.exitTyped {
+			// /exit in the session: back to acmd's list, and the session
+			// is finished (SPEC §5.2).
+			if err := l.Client.Finish(ctx, id); err != nil {
+				return fmt.Sprintf("Couldn't finish %q: %v", displayName(s), err), nil
 			}
-			return "", l.Client.Select(ctx, l.ViewID, "")
+			return "", nil
 		}
 		// The attach client ended by itself.
 		if exitErr == nil || l.Now().Sub(started) >= l.QuickExit {

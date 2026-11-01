@@ -229,7 +229,7 @@ func TestFinish(t *testing.T) {
 	pid := 9
 	agents := &fakeAgents{}
 	start(t, p, func(c *Config) {
-		c.Stopper, c.Agents, c.Claude = st, agents, &fakeClaude{}
+		c.Stopper, c.Agents, c.Hosts = st, agents, &fakeHosts{paths: p}
 		c.ReconcileEvery = 30 * time.Millisecond
 	})
 	c := dial(t, p)

@@ -18,7 +18,6 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -42,8 +41,6 @@ type Config struct {
 	Agents reconcile.Lister
 	// Stopper stops background sessions on archive (claudecli.CLI).
 	Stopper Stopper
-	// Claude starts and resumes background sessions (claudecli.CLI).
-	Claude Claude
 	// Hosts runs hosted sessions (SPEC §4.5); when set, new and resumed
 	// sessions are hosted interactive sessions instead of `claude --bg`.
 	Hosts Hosts
@@ -74,16 +71,7 @@ type Daemon struct {
 	terms   terms   // sessions with a running terminal (not persisted)
 	inbox   inbox   // what the reply popup shows (not persisted)
 
-	adopting map[string]adoption // session id → a move into acmd in progress (d.mu)
-	notify   *notifier           // d.mu
-}
-
-// adoption is an external session acmd typed /bg into: its conversation
-// continues as a new background session (new Claude id, M0 C4), linked
-// back by folder and time.
-type adoption struct {
-	cwd string
-	at  time.Time
+	notify *notifier // d.mu
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks
@@ -127,7 +115,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}),
-		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}, adopting: map[string]adoption{}}
+		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}}
 	d.terms.rescan(cfg.Paths)
 	sweepHosts(cfg.Paths)
 	if cfg.Notify != nil {
@@ -308,19 +296,6 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	defer d.mu.Unlock()
 
 	sess, err := d.store.SessionByClaudeID(ctx, e.SessionID)
-	linked := false
-	if errors.Is(err, store.ErrNotFound) && len(e.SessionID) >= 8 {
-		// A session acmd started: linked by Claude's short id (M0 A3).
-		if sess, err = d.store.SessionByBgID(ctx, e.SessionID[:8]); err == nil {
-			sess.ClaudeSessionID, linked = e.SessionID, true
-		}
-	}
-	adopted := false
-	if errors.Is(err, store.ErrNotFound) && e.Kind == core.HookSessionStart {
-		if s := d.adoptedBy(ctx, e); s != nil {
-			sess, err, linked, adopted = s, nil, true, true
-		}
-	}
 	isNew := errors.Is(err, store.ErrNotFound)
 	if err != nil && !isNew {
 		return err
@@ -332,16 +307,13 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		moved = refreshPane(sess, ev.Context)
 	}
 	tr := core.Apply(sess, e)
-	if adopted {
-		linkMovedIn(sess, e.SessionID, ev.Context.ClaudePid)
-	}
 	shown := d.shown(ctx, sess.ID)
 	if tr.Changed() && tr.To.NeedsAttention() && !shown {
 		sess.Unseen = true
 	}
 	if isNew {
 		err = d.store.CreateSession(ctx, sess)
-	} else if tr.Applied || linked || moved {
+	} else if tr.Applied || moved {
 		err = d.store.UpdateSession(ctx, sess)
 	}
 	if err != nil {
@@ -357,68 +329,13 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	})
 }
 
-// linkMovedIn makes s, a session moved in from the user's pane, the
-// background session claudeID (/bg forks the conversation under a new id).
-// It keeps the name it had: Claude names the background session anew,
-// which made the moved session look like another one.
-func linkMovedIn(s *core.Session, claudeID string, pid int) {
-	if s.ClaudeSessionID != "" && s.ClaudeSessionID != claudeID {
-		s.ClaudeHistory = append(s.ClaudeHistory, s.ClaudeSessionID)
-	}
-	s.ClaudeSessionID = claudeID
-	s.Kind, s.External = core.KindBackground, nil
-	if pid > 0 {
-		s.Pid = pid
-	}
-	if len(claudeID) >= 8 {
-		s.BgID = claudeID[:8]
-	}
-	if s.Name != "" {
-		s.NameSource = core.NameUser
-	}
-}
-
-// adoptedBy returns the session being moved into acmd that a new Claude
-// session (first hook) continues: same folder, within 30 s. d.mu is held.
-func (d *Daemon) adoptedBy(ctx context.Context, e core.Event) *core.Session {
-	for id, a := range d.adopting {
-		if d.cfg.Now().Sub(a.at) > 30*time.Second {
-			delete(d.adopting, id)
-			continue
-		}
-		if a.cwd != "" && a.cwd == e.Cwd {
-			delete(d.adopting, id)
-			s, err := d.store.Session(ctx, id)
-			if err == nil {
-				return s
-			}
-		}
-	}
-	return nil
-}
-
 // background runs the reconciler and the transcript tail until the daemon
 // stops. Both take d.mu, like hook handling, so updates never interleave.
 func (d *Daemon) background(ctx context.Context) {
 	var rec *reconcile.Reconciler
 	if d.cfg.Agents != nil {
 		rec = &reconcile.Reconciler{Store: d.store, Agents: d.cfg.Agents, Now: d.cfg.Now,
-			HostAlive: func(s *core.Session) bool { return term.Running(d.cfg.Paths.HostSocket(s.ID)) },
-			// Claude's listing can show the moved session before its first
-			// hook: link it then too (d.mu is held while reconciling).
-			Claim: func(ctx context.Context, a claudecli.Agent) *core.Session {
-				s := d.adoptedBy(ctx, core.Event{Cwd: a.Cwd})
-				if s == nil {
-					return nil
-				}
-				pid := 0
-				if a.Pid != nil {
-					pid = *a.Pid
-				}
-				linkMovedIn(s, a.SessionID, pid)
-				core.Apply(s, core.Event{Kind: core.EventAgentStatus, AgentStatus: a.StatusString(), Time: d.cfg.Now()})
-				return s
-			}}
+			HostAlive: func(s *core.Session) bool { return term.Running(d.cfg.Paths.HostSocket(s.ID)) }}
 	}
 	tail := reconcile.NewTailer()
 	reconcileT := time.NewTicker(d.cfg.ReconcileEvery)

@@ -12,7 +12,7 @@ func TestManagedAndNeedsResume(t *testing.T) {
 		{Session{Kind: KindHosted, Status: StatusDone, ClaudeSessionID: "c"}, true, false},
 		{Session{Kind: KindHosted, Status: StatusPaused}, true, false},
 		{Session{Kind: KindBackground, Status: StatusPaused, ClaudeSessionID: "c"}, true, true},
-		{Session{Kind: KindBackground, BgID: "b", Status: StatusPaused, ClaudeSessionID: "c"}, true, false},
+		{Session{Kind: KindBackground, BgID: "b", Status: StatusDone, ClaudeSessionID: "c"}, true, true}, // from before hosting
 		{Session{Kind: KindExternal, Status: StatusPaused, ClaudeSessionID: "c"}, false, false},
 	} {
 		if tc.s.Managed() != tc.managed || tc.s.NeedsResume() != tc.resume {

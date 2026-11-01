@@ -41,20 +41,20 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	origPoll := adoptPoll
 	adoptPoll = 20 * time.Millisecond
 	t.Cleanup(func() { adoptPoll = origPoll })
-	// When acmd types /bg, "Claude" forks the session into the background.
+	// When acmd types /exit, "Claude" ends the session.
 	go func() {
 		// Watch long enough for a loaded machine (the full suite runs
 		// packages in parallel): the waits below come first.
 		for i := 0; i < 1500; i++ {
-			if ksim.Called("send-text --match id:2 /bg") {
-				send("SessionStart", `{"session_id":"bbbb0000-fork","source":"startup","cwd":"`+api+`"}`, t0.Add(4*time.Second), ipc.HookContext{})
+			if ksim.Called("send-text --match id:2 /exit") {
+				send("SessionEnd", `{"session_id":"ext-k","reason":"prompt_input_exit"}`, t0.Add(4*time.Second), kctx)
 				return
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
 	// Busy, then waiting on a question: acmd waits (the shortcut finds the
-	// session by its pane) and types /bg only once Claude is done.
+	// session by its pane) and types /exit only once Claude is done.
 	type result struct {
 		out string
 		err error
@@ -67,8 +67,8 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	send("PermissionRequest", `{"session_id":"ext-k","tool_name":"Bash"}`, t0.Add(2*time.Second), kctx)
 	time.Sleep(150 * time.Millisecond)
-	if ksim.Called("send-text --match id:2 /bg") {
-		t.Fatal("typed /bg while Claude was busy or waiting on a question")
+	if ksim.Called("send-text --match id:2 /exit") {
+		t.Fatal("typed /exit while Claude was busy or waiting on a question")
 	}
 	send("Stop", `{"session_id":"ext-k"}`, t0.Add(3*time.Second), kctx)
 	var r result
@@ -79,7 +79,7 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	}
 	if r.err != nil || !strings.Contains(r.out, "Waiting for Claude to finish in that pane (working)") ||
 		!strings.Contains(r.out, "(it's waiting for you: answer it first)") ||
-		!strings.Contains(r.out, `Moved "busy work" into acmd (claude attach bbbb0000).`) {
+		!strings.Contains(r.out, `Moved "busy work" into acmd (hosted `) {
 		t.Errorf("adopt: %v\n%s", r.err, r.out)
 	}
 	if !ksim.Called("close-window --match id:2") {
@@ -93,7 +93,7 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	send("SessionStart", `{"session_id":"cafe0000-gone","source":"startup","cwd":"`+api+`"}`, t0, ipc.HookContext{TermProgram: "ghostty", TTY: "/dev/ttys001"})
 	send("SessionEnd", `{"session_id":"cafe0000-gone","reason":"other"}`, t0.Add(time.Second), ipc.HookContext{TermProgram: "ghostty"})
 	out := mustRun(t, "adopt", "cafe0000-gone", "--yes")
-	if !strings.Contains(out, "Moved session cafe0000 into acmd") {
+	if !strings.Contains(out, "Moved session ") || !strings.Contains(out, " into acmd (hosted ") {
 		t.Errorf("resume fallback:\n%s", out)
 	}
 	for _, c := range gsim.Calls {
@@ -103,11 +103,11 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	}
 
 	// Typing into a Ghostty pane finds it by tty.
-	must(t, typeInto(ctx, core.PaneLoc{Terminal: "ghostty", TTY: "/dev/ttys001"}, "/bg"))
-	if last := gsim.Calls[len(gsim.Calls)-1]; last != "type T1 /bg" {
+	must(t, typeInto(ctx, core.PaneLoc{Terminal: "ghostty", TTY: "/dev/ttys001"}, "/exit"))
+	if last := gsim.Calls[len(gsim.Calls)-1]; last != "type T1 /exit" {
 		t.Errorf("ghostty type: %s", last)
 	}
-	if err := typeInto(ctx, core.PaneLoc{Terminal: "unknown"}, "/bg"); err == nil {
+	if err := typeInto(ctx, core.PaneLoc{Terminal: "unknown"}, "/exit"); err == nil {
 		t.Error("typed into an unknown pane")
 	}
 

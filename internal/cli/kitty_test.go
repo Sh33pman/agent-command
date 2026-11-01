@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -133,16 +131,6 @@ func TestKittyShortcuts(t *testing.T) {
 		t.Errorf("go external focused %d", sim.Focused)
 	}
 
-	// new from the shortcut in an untrusted folder: Claude's trust prompt
-	// opens in an overlay over the view pane.
-	must(t, os.WriteFile(filepath.Join(api, ".untrusted"), nil, 0o600))
-	mustRun(t, "new", "--kitty-window", "1")
-	last := sim.Calls[len(sim.Calls)-1]
-	realAPI, _ := filepath.EvalSymlinks(api)
-	if !strings.HasPrefix(last, "launch --type=overlay --match id:1 -- ") || !strings.Contains(last, " new --cwd "+realAPI+" --view "+v.ID) {
-		t.Errorf("overlay: %s", last)
-	}
-	must(t, os.Remove(filepath.Join(api, ".untrusted")))
 	mustRun(t, "new", "--kitty-window", "1")
 	if sel := e.snapshot(t).Views[0].Selected; sel == first.ID || sel == "" {
 		t.Error("new from a shortcut didn't follow into the view")

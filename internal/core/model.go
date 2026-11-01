@@ -137,14 +137,14 @@ type ViewState struct {
 func (s *Session) Managed() bool { return s.Kind == KindBackground || s.Kind == KindHosted }
 
 // NeedsResume reports whether a view must resume s before it can show it:
-// a stopped background session acmd never got a Claude background id for,
-// or a stopped hosted session (its host is gone), with a conversation to
-// resume.
+// a stopped hosted session (its host is gone), or a session from before
+// hosting (`claude --bg`), which resume turns into a hosted one; either
+// with a conversation to resume.
 func (s *Session) NeedsResume() bool {
-	if s.ClaudeSessionID == "" || !s.Stopped() {
+	if s.ClaudeSessionID == "" {
 		return false
 	}
-	return s.Kind == KindHosted || (s.Kind == KindBackground && s.BgID == "")
+	return (s.Kind == KindHosted && s.Stopped()) || s.Kind == KindBackground
 }
 
 // Stopped reports whether s's Claude process isn't running by design:

@@ -21,8 +21,8 @@ func (s *syncBuf) Write(p []byte) (int, error) {
 	return s.b.Write(p)
 }
 
-// runRelay relays a stand-in for `claude attach` that reads one line, then
-// either shows Claude's agent view (sets the title) or exits.
+// runRelay relays a stand-in for the attach client that reads one line,
+// then runs the rest of script.
 func runRelay(t *testing.T, script, typed string) (relayed, string, error) {
 	t.Helper()
 	user, term, err := pty.Open() // user types into user; relay reads term
@@ -56,11 +56,10 @@ func runRelay(t *testing.T, script, typed string) (relayed, string, error) {
 	return relayed{}, "", nil
 }
 
-const agentView = `read line; echo "got:$line"; printf '\033]0;2 awaiting input \302\267 claude agents\007'; sleep 30`
-
+// The CLI exits after /exit is typed: the attach ends on its own.
 func TestRelayExitFinishes(t *testing.T) {
-	r, out, err := runRelay(t, agentView, "/exit\r")
-	if err != nil || !r.agentView || !r.exitTyped {
+	r, out, err := runRelay(t, `read line; echo "got:$line"`, "/exit\r")
+	if err != nil || !r.exitTyped {
 		t.Errorf("/exit: %+v %v\n%q", r, err, out)
 	}
 	if !bytes.Contains([]byte(out), []byte("got:/exit")) {
@@ -68,26 +67,25 @@ func TestRelayExitFinishes(t *testing.T) {
 	}
 }
 
-func TestRelayLeftArrowOnlyLeaves(t *testing.T) {
-	r, _, err := runRelay(t, agentView, "\x1b[D\r")
-	if err != nil || !r.agentView || r.exitTyped {
-		t.Errorf("←: %+v %v", r, err)
+func TestRelayOtherInputIsNotExit(t *testing.T) {
+	r, _, err := runRelay(t, `read line`, "hello\r")
+	if err != nil || r.exitTyped {
+		t.Errorf("a prompt: %+v %v", r, err)
 	}
-	// Something else typed, then ←: not an exit either.
-	r, _, _ = runRelay(t, agentView, "/ex is not it, hello\r")
+	r, _, _ = runRelay(t, `read line`, "/ex is not it, hello\r")
 	if r.exitTyped {
 		t.Errorf("a prompt counted as /exit: %+v", r)
 	}
 }
 
-func TestRelayProgramExits(t *testing.T) {
+func TestRelayProgramFails(t *testing.T) {
 	r, _, err := runRelay(t, `read line; exit 3`, "bye\r")
-	if r.agentView || err == nil {
+	if r.exitTyped || err == nil {
 		t.Errorf("exit: %+v %v", r, err)
 	}
 }
 
-func TestTypingAndTitle(t *testing.T) {
+func TestTyping(t *testing.T) {
 	var ty typing
 	ty.add([]byte("/ex\r")) // Claude completes it
 	ty.add([]byte("\r"))
@@ -105,9 +103,5 @@ func TestTypingAndTitle(t *testing.T) {
 	ty.add([]byte("/quiz\x7ft\r"))
 	if !ty.exitRecently(time.Now()) {
 		t.Error("/quit with backspaces not seen")
-	}
-	if !hasAgentTitle([]byte("x\x1b]0;claude agents\x07y")) || hasAgentTitle([]byte("\x1b]0;my claude agents notes ok\x07")) ||
-		hasAgentTitle([]byte("\x1b]0;claude agents")) {
-		t.Error("title detection")
 	}
 }

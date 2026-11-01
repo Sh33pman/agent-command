@@ -186,3 +186,39 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	}
 	t.Fatalf("timed out waiting for %s", what)
 }
+
+// A session from before hosting (`claude --bg`) becomes a hosted one when
+// it is resumed: a running one is stopped first, a paused one just resumes.
+func TestResumeLegacyBackground(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	st := &stops{}
+	start(t, p, func(c *Config) { c.Hosts, c.Stopper = fh, st })
+	c := dial(t, p)
+	hc := ipc.HookContext{ViewID: "v"}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"cafe0001-x","source":"startup","cwd":"/w"}`, time.Now(), hc), nil))
+	s := byClaude(snapshot(t, c), "cafe0001-x")
+	if s.Kind != core.KindBackground {
+		t.Fatalf("kind %v", s.Kind)
+	}
+	var r core.Session
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
+	reqs := fh.requests()
+	if len(reqs) != 1 || reqs[0].Resume != "cafe0001-x" || reqs[0].Dir != "/w" {
+		t.Errorf("host request: %+v", reqs)
+	}
+	if r.Kind != core.KindHosted || r.Status != core.StatusStarting || r.BgID != "" {
+		t.Errorf("resumed: %+v", r)
+	}
+	// Running hosted sessions are left alone; archived and unknown ones are refused.
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
+	if len(fh.requests()) != 1 {
+		t.Error("resumed a running session")
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID})
+	for _, id := range []string{s.ID, "nope"} {
+		if err := c.Call(ipc.OpResume, ipc.Mutation{ID: id}, nil); err == nil {
+			t.Errorf("resumed %s", id)
+		}
+	}
+}

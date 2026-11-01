@@ -1,4 +1,0 @@
-
-  claude attach 9df2c810    open in this terminal
-  claude logs 9df2c810      show recent output
-  claude stop 9df2c810      stop this session

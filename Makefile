@@ -43,7 +43,7 @@ INSTALL_DIR ?= $(HOME)/.local/bin
 
 ##@ General
 
-.PHONY: help
+.PHONY: help hooks
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2} /^##@/ {printf "\n%s\n", substr($$0, 5)}' $(MAKEFILE_LIST)
 
@@ -150,5 +150,9 @@ it-ghostty: ## Integration tests against a real Ghostty (local only; added in M4
 	ACMD_IT_GHOSTTY=1 go test -run Integration ./...
 
 .PHONY: clean
+hooks: ## Use the repo's git hooks (pre-push runs lint and test)
+	git config core.hooksPath .githooks
+	@echo "git hooks enabled: .githooks/pre-push runs make lint and make test before each push"
+
 clean: ## Remove build output
 	rm -rf $(DIST) coverage.out

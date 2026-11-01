@@ -1,0 +1,42 @@
+#!/bin/sh
+# Runs what CI checks on a PR (lint, then tests with -race and coverage
+# gates) before anything is pushed. Enable with `make hooks`.
+#
+# To push work in progress without the checks (to get it onto a branch or
+# PR so it isn't lost), either of these skips them once:
+#   SKIP_CHECKS=1 git push
+#   git push --no-verify
+# It shouldn't be the norm: CI still runs every check on the PR.
+#
+# Pushes that only delete branches or tags skip the checks.
+set -eu
+
+if [ "${SKIP_CHECKS:-}" = 1 ]; then
+	echo "pre-push: SKIP_CHECKS=1, pushing without lint and tests (CI still checks the PR)." >&2
+	exit 0
+fi
+
+has_commits=0
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+	case "$local_sha" in
+	0000000000000000000000000000000000000000) ;; # a delete
+	*) has_commits=1 ;;
+	esac
+done
+[ "$has_commits" = 1 ] || exit 0
+
+# The checks run on the working tree; warn when it differs from HEAD.
+if ! git diff --quiet || ! git diff --cached --quiet; then
+	echo "pre-push: you have uncommitted changes; the checks run on the working tree as it is." >&2
+fi
+
+echo "pre-push: make lint, make test (to push work in progress without them: SKIP_CHECKS=1 git push)" >&2
+if ! make --no-print-directory lint >&2; then
+	echo "pre-push: lint failed (to push work in progress anyway: SKIP_CHECKS=1 git push)." >&2
+	exit 1
+fi
+if ! make --no-print-directory test >&2; then
+	echo "pre-push: tests failed (to push work in progress anyway: SKIP_CHECKS=1 git push)." >&2
+	exit 1
+fi
+echo "pre-push: all checks passed" >&2

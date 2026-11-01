@@ -5,6 +5,7 @@
 - `main` is always releasable. Every change goes through a pull request and is **squash-merged**.
 - The **PR title becomes the commit message** and must be a [Conventional Commit](https://www.conventionalcommits.org/): `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `build:`, `ci:`, `chore:`, `revert:`. Mark breaking changes with `!` (`feat!: …`) or a `BREAKING CHANGE:` footer in the PR description. The `pr-title` check validates this.
 - Run `make ci` before pushing. CI runs the same targets.
+- Run `make hooks` once per clone: a `pre-push` git hook then runs `make lint` and `make test` (about 20 s) before every push, and stops the push if either fails. To push work in progress so it isn't lost (onto a branch or draft PR), `SKIP_CHECKS=1 git push` (or `git push --no-verify`) skips the checks once. Use it sparingly: CI still runs every check on the PR.
 - **All checks must be green before merging.** GitHub can't enforce this on a private repo on the free plan, so it's a rule we follow. The release gate re-runs everything before publishing anything.
 
 ## CI (`.github/workflows`)

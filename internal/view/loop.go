@@ -82,6 +82,7 @@ var ErrClosed = errors.New("view closed")
 // Run runs until the view is closed or ctx ends.
 func (l *Loop) Run(ctx context.Context) error {
 	l.defaults()
+	defer l.restoreTerminal() // the pane goes back to its shell clean
 	// The pane's foreground process group gets Ctrl+C/Ctrl+Z/Ctrl+\; they
 	// are for the attach client, never for the loop.
 	sigs := make(chan os.Signal, 4)
@@ -152,6 +153,7 @@ func (l *Loop) show(ctx context.Context, id string) (string, error) {
 		}
 		started := l.Now()
 		switched, left, exitErr, err := l.attachUntil(ctx, s)
+		l.restoreTerminal() // attach ended (maybe killed): undo its modes
 		if err != nil {
 			return "", err
 		}
@@ -430,4 +432,18 @@ func displayName(s *core.Session) string {
 		return s.Name
 	}
 	return "session " + s.BgID
+}
+
+// terminalReset turns off the modes Claude Code sets while attached, which
+// it can't undo when it's ended by a signal: mouse tracking (otherwise the
+// shell gets "35;24;61M…" for every mouse move), focus reports, bracketed
+// paste, the kitty keyboard protocol and xterm's modifyOtherKeys, the
+// alternate screen; and it shows the cursor again.
+const terminalReset = "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l" +
+	"\x1b[?1004l\x1b[?2004l\x1b[<99u\x1b[>4;0m\x1b[?1049l\x1b[?25h"
+
+func (l *Loop) restoreTerminal() {
+	if l.Out != nil {
+		_, _ = io.WriteString(l.Out, terminalReset)
+	}
 }

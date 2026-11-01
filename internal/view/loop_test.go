@@ -233,6 +233,11 @@ func TestSwitchDetachAndPick(t *testing.T) {
 	h.press("detach\n")
 	h.waitFor("No session is shown here.")
 	h.waitFor("Pick one in the sidebar on the left")
+	// Claude's terminal modes (mouse tracking, …) are undone first.
+	if out := h.out.String(); !strings.Contains(out, terminalReset) ||
+		strings.Index(out, terminalReset) > strings.LastIndex(out, "No session is shown here.") {
+		t.Error("terminal modes not reset after attach ended")
+	}
 	if d.selected() != "" {
 		t.Errorf("detach left %q selected", d.selected())
 	}
@@ -277,6 +282,9 @@ func TestPlaceholderRedrawsAndCloses(t *testing.T) {
 	case err := <-h.done:
 		if !errors.Is(err, ErrClosed) {
 			t.Errorf("q: %v", err)
+		}
+		if !strings.HasSuffix(h.out.String(), terminalReset) {
+			t.Error("closing the view didn't reset the terminal's modes")
 		}
 		h.done <- err // for the cleanup
 	case <-time.After(5 * time.Second):

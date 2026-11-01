@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/brettmostert/agent-command/compare/v0.22.0...v0.23.0) (2026-11-01)
+
+
+### Features
+
+* **sessions:** finish sessions, /exit finishes, Claude id in the header ([#64](https://github.com/brettmostert/agent-command/issues/64)) ([75fbf67](https://github.com/brettmostert/agent-command/commit/75fbf677550183659c634b5e8cc6294dc482ee28))
+
 ## [0.22.0](https://github.com/brettmostert/agent-command/compare/v0.21.0...v0.22.0) (2026-11-01)
 
 

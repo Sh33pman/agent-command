@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/brettmostert/agent-command/compare/v0.24.0...v0.24.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **popup:** copy and paste in the reply popup ([#73](https://github.com/brettmostert/agent-command/issues/73)) ([71e7e06](https://github.com/brettmostert/agent-command/commit/71e7e065735eff070f3a2c02f636e7c2682ae8b8))
+
 ## [0.24.0](https://github.com/brettmostert/agent-command/compare/v0.23.0...v0.24.0) (2026-11-01)
 
 

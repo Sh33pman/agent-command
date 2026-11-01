@@ -27,27 +27,30 @@ type caller func(op string, in, out any) error
 // Claude continues the conversation as a background session, which the
 // daemon links back to s. A session whose process ended is resumed in the
 // background instead. The caller has confirmed with the user; waiting
-// reports each status it waits on (nil: quiet).
-func adoptSession(ctx context.Context, call caller, s *core.Session, waiting func(core.Status)) (*core.Session, error) {
+// reports each status it waits on (nil: quiet). left is the pane Claude
+// left after /bg (nil when the session was resumed): the caller closes it
+// with closePane once it's done with it.
+func adoptSession(ctx context.Context, call caller, s *core.Session, waiting func(core.Status)) (r *core.Session, left *core.PaneLoc, err error) {
 	if s.Kind != core.KindExternal {
-		return s, errors.New("that session is already in acmd")
+		return s, nil, errors.New("that session is already in acmd")
 	}
-	s, err := waitIdle(ctx, call, s, waiting)
+	s, err = waitIdle(ctx, call, s, waiting)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if s.Stopped() || s.External == nil {
 		var r core.Session
 		if err := call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return &r, nil
+		return &r, nil, nil
 	}
+	pane := *s.External
 	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID}, nil); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if err := typeInto(ctx, *s.External, "/bg"); err != nil {
-		return nil, err
+	if err := typeInto(ctx, pane, "/bg"); err != nil {
+		return nil, nil, err
 	}
 	// The conversation continues under a new Claude id (M0 C4); wait for
 	// the daemon to link it.
@@ -55,16 +58,37 @@ func adoptSession(ctx context.Context, call caller, s *core.Session, waiting fun
 	for time.Now().Before(deadline) {
 		var snap ipc.Snapshot
 		if err := call(ipc.OpSnapshot, nil, &snap); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, x := range snap.Sessions {
 			if x.ID == s.ID && x.Kind == core.KindBackground && x.BgID != "" {
-				return x, nil
+				return x, &pane, nil
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return nil, errors.New("Claude didn't move the session to the background (is /bg available in your Claude Code?)") //nolint:staticcheck // ST1005: product name
+	return nil, nil, errors.New("Claude didn't move the session to the background (is /bg available in your Claude Code?)") //nolint:staticcheck // ST1005: product name
+}
+
+// closePane closes the user's pane a moved session left: after /bg only
+// a shell is left there, and the session now lives in acmd. Errors are
+// ignored (the user may have closed it already).
+func closePane(ctx context.Context, loc *core.PaneLoc) {
+	if loc == nil {
+		return
+	}
+	switch {
+	case loc.Terminal == "kitty" && loc.KittySocket != "" && loc.KittyWindow != 0:
+		_ = kittyAt(loc.KittySocket).Close(ctx, loc.KittyWindow)
+	case loc.Terminal == "ghostty":
+		term := loc.GhosttyTerm
+		if term == "" && loc.TTY != "" {
+			term, _ = ghosttyApp().TermForTTY(ctx, loc.TTY)
+		}
+		if term != "" {
+			_ = ghosttyApp().Close(ctx, term)
+		}
+	}
 }
 
 // adoptIdle are the statuses in which /bg can be typed into the pane.
@@ -181,19 +205,21 @@ focused pane.`,
 				if s.Kind != core.KindExternal {
 					return errors.New("that session is already in acmd")
 				}
-				q := fmt.Sprintf("Move %s into acmd? Claude continues it in the background and your pane goes back to the shell.", nameOf(s))
+				q := fmt.Sprintf("Move %s into acmd? Claude continues it in the background and your pane closes.", nameOf(s))
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}
 				call := func(op string, in, out any) error { return c.conn.Call(op, in, out) }
 				out := cmd.OutOrStdout()
-				r, err := adoptSession(cmd.Context(), call, s, func(st core.Status) {
+				r, left, err := adoptSession(cmd.Context(), call, s, func(st core.Status) {
 					fmt.Fprintf(out, "Waiting for Claude to finish in that pane (%s)… Ctrl+C cancels.\n", waitingWord(st))
 				})
 				if err != nil {
 					return err
 				}
 				fmt.Fprintf(out, "Moved %s into acmd (claude attach %s).\n", nameOf(r), r.BgID)
+				// Close the pane last: the shortcut's overlay runs in it.
+				defer closePane(context.WithoutCancel(cmd.Context()), left)
 				if v, err := targetView(snap, os.Getenv("ACMD_VIEW_ID")); err == nil {
 					return show(cmd.Context(), c, v, r)
 				}

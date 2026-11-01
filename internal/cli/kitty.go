@@ -173,11 +173,13 @@ func (a *sidebarActions) Open(ctx context.Context, s *core.Session) error {
 
 func (a *sidebarActions) Adopt(ctx context.Context, s *core.Session) error {
 	call := func(op string, in, out any) error { return a.vc.call(ctx, op, in, out) }
-	r, err := adoptSession(ctx, call, s, nil)
+	r, left, err := adoptSession(ctx, call, s, nil)
 	if err != nil {
 		return err
 	}
-	return a.Show(ctx, r)
+	err = a.Show(ctx, r)
+	closePane(ctx, left)
+	return err
 }
 
 func (a *sidebarActions) SplitOut(ctx context.Context, s *core.Session, window, withSidebar bool) error {

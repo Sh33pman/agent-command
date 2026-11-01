@@ -42,6 +42,10 @@ type Reconciler struct {
 	StartupGrace time.Duration
 	// Alive reports whether a pid is running (default: kill(pid, 0)).
 	Alive func(pid int) bool
+	// Claim, when set, may take a newly listed background session for an
+	// existing acmd session (one being moved in from the user's pane); it
+	// returns that session, already linked, or nil.
+	Claim func(ctx context.Context, a claudecli.Agent) *core.Session
 
 	disagreeSince map[string]time.Time
 }
@@ -108,6 +112,15 @@ func (r *Reconciler) Once(ctx context.Context) (Result, error) {
 			continue // archived session we didn't list
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return res, err
+		}
+		if r.Claim != nil {
+			if s := r.Claim(ctx, a); s != nil {
+				if err := r.Store.UpdateSession(ctx, s); err != nil {
+					return res, err
+				}
+				res.Updated++
+				continue
+			}
 		}
 		s := &core.Session{
 			ClaudeSessionID: a.SessionID, BgID: a.ID, Kind: core.KindBackground, Cwd: a.Cwd,

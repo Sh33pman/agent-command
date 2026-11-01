@@ -830,7 +830,7 @@ func (m *Model) adopt(s *core.Session) tea.Cmd {
 		m.note = "That session is already in acmd."
 		return nil
 	}
-	return m.ask2("Move "+quote(name(s))+" into acmd? Claude continues it in the background; your pane goes back to the shell.", func() tea.Cmd {
+	return m.ask2("Move "+quote(name(s))+" into acmd? Claude continues it in the background and your pane closes.", func() tea.Cmd {
 		m.note = "Moving " + quote(name(s)) + " into acmd…"
 		if cur := m.session(s.ID); cur != nil && cur.Status != core.StatusDone && cur.Status != core.StatusError && !cur.Stopped() {
 			m.note = "Will move " + quote(name(s)) + " into acmd once Claude is idle there…"

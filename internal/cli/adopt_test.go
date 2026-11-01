@@ -82,6 +82,9 @@ func TestAdoptAndSplitOut(t *testing.T) {
 		!strings.Contains(r.out, `Moved "busy work" into acmd (claude attach bbbb0000).`) {
 		t.Errorf("adopt: %v\n%s", r.err, r.out)
 	}
+	if !ksim.Called("close-window --match id:2") {
+		t.Errorf("the pane Claude left wasn't closed:\n%s", strings.Join(ksim.Calls, "\n"))
+	}
 	if _, err := acmd(t, "adopt", "busy work", "--yes"); err == nil {
 		t.Error("adopted twice")
 	}
@@ -92,6 +95,11 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	out := mustRun(t, "adopt", "cafe0000-gone", "--yes")
 	if !strings.Contains(out, "Moved session cafe0000 into acmd") {
 		t.Errorf("resume fallback:\n%s", out)
+	}
+	for _, c := range gsim.Calls {
+		if strings.HasPrefix(c, "close") {
+			t.Errorf("closed a pane for a resumed session: %s", c)
+		}
 	}
 
 	// Typing into a Ghostty pane finds it by tty.

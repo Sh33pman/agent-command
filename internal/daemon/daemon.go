@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -327,15 +328,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	}
 	tr := core.Apply(sess, e)
 	if adopted {
-		sess.Kind, sess.External, sess.Pid = core.KindBackground, nil, ev.Context.ClaudePid
-		if sess.Name != "" {
-			// Keep the name it had: Claude names the background session
-			// anew, which made the moved session look like another one.
-			sess.NameSource = core.NameUser
-		}
-		if len(e.SessionID) >= 8 {
-			sess.BgID = e.SessionID[:8]
-		}
+		linkMovedIn(sess, e.SessionID, ev.Context.ClaudePid)
 	}
 	shown := d.shown(ctx, sess.ID)
 	if tr.Changed() && tr.To.NeedsAttention() && !shown {
@@ -357,6 +350,27 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
 		Detail: string(sess.Status), ToolName: e.ToolName,
 	})
+}
+
+// linkMovedIn makes s, a session moved in from the user's pane, the
+// background session claudeID (/bg forks the conversation under a new id).
+// It keeps the name it had: Claude names the background session anew,
+// which made the moved session look like another one.
+func linkMovedIn(s *core.Session, claudeID string, pid int) {
+	if s.ClaudeSessionID != "" && s.ClaudeSessionID != claudeID {
+		s.ClaudeHistory = append(s.ClaudeHistory, s.ClaudeSessionID)
+	}
+	s.ClaudeSessionID = claudeID
+	s.Kind, s.External = core.KindBackground, nil
+	if pid > 0 {
+		s.Pid = pid
+	}
+	if len(claudeID) >= 8 {
+		s.BgID = claudeID[:8]
+	}
+	if s.Name != "" {
+		s.NameSource = core.NameUser
+	}
 }
 
 // adoptedBy returns the session being moved into acmd that a new Claude
@@ -383,7 +397,22 @@ func (d *Daemon) adoptedBy(ctx context.Context, e core.Event) *core.Session {
 func (d *Daemon) background(ctx context.Context) {
 	var rec *reconcile.Reconciler
 	if d.cfg.Agents != nil {
-		rec = &reconcile.Reconciler{Store: d.store, Agents: d.cfg.Agents, Now: d.cfg.Now}
+		rec = &reconcile.Reconciler{Store: d.store, Agents: d.cfg.Agents, Now: d.cfg.Now,
+			// Claude's listing can show the moved session before its first
+			// hook: link it then too (d.mu is held while reconciling).
+			Claim: func(ctx context.Context, a claudecli.Agent) *core.Session {
+				s := d.adoptedBy(ctx, core.Event{Cwd: a.Cwd})
+				if s == nil {
+					return nil
+				}
+				pid := 0
+				if a.Pid != nil {
+					pid = *a.Pid
+				}
+				linkMovedIn(s, a.SessionID, pid)
+				core.Apply(s, core.Event{Kind: core.EventAgentStatus, AgentStatus: a.StatusString(), Time: d.cfg.Now()})
+				return s
+			}}
 	}
 	tail := reconcile.NewTailer()
 	reconcileT := time.NewTicker(d.cfg.ReconcileEvery)

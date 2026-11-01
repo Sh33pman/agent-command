@@ -575,3 +575,42 @@ func TestAdoptKeepsTheName(t *testing.T) {
 		t.Errorf("name after moving in: %+v (was %q)", got, s.Name)
 	}
 }
+
+// Claude's listing can show the moved-in background session before its
+// first hook (seen live: a separate "Interesting remark" session was
+// created). The reconciler links it to the session being moved instead.
+func TestAdoptRaceWithReconciler(t *testing.T) {
+	p := testPaths(t)
+	agents := &fakeAgents{}
+	start(t, p, func(c *Config) { c.Agents, c.ReconcileEvery = agents, 20*time.Millisecond })
+	c := dial(t, p)
+	t0 := time.Now().Add(-time.Minute)
+	ext := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/k"}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"7bef0000-old","source":"startup","cwd":"/w"}`, t0, ext), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"7bef0000-old","prompt":"hmm interesting"}`, t0.Add(time.Second), ext), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("Stop", `{"session_id":"7bef0000-old"}`, t0.Add(2*time.Second), ext), nil))
+	s := byClaude(snapshot(t, c), "7bef0000-old")
+	if s.Name == "" {
+		t.Fatal("no name to keep")
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID})
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"7bef0000-old","reason":"other"}`, t0.Add(3*time.Second), ext), nil))
+	// The listing has the new background session; no hook yet.
+	idle, pid := "idle", 9
+	agents.add(claudecli.Agent{ID: "a07bedb8", SessionID: "a07bedb8-new", Kind: "background", Name: "Interesting remark", Status: &idle, Pid: &pid, Cwd: "/w"})
+	time.Sleep(150 * time.Millisecond)
+	// Then its hook.
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"a07bedb8-new","source":"fork","cwd":"/w"}`, time.Now(), ipc.HookContext{ClaudePid: 9}), nil))
+	snap := snapshot(t, c)
+	if len(snap.Sessions) != 1 {
+		t.Fatalf("%d sessions (a new one was created?)", len(snap.Sessions))
+	}
+	got := snap.Sessions[0]
+	if got.ID != s.ID || got.Kind != core.KindBackground || got.BgID != "a07bedb8" || got.Name != s.Name ||
+		got.External != nil || len(got.ClaudeHistory) != 1 || got.ClaudeHistory[0] != "7bef0000-old" {
+		t.Errorf("not linked: %+v", got)
+	}
+	if got.Status == core.StatusPaused {
+		t.Errorf("moved session left paused: %+v", got)
+	}
+}

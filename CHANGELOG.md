@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.21.0](https://github.com/brettmostert/agent-command/compare/v0.20.0...v0.21.0) (2026-11-01)
+
+
+### Features
+
+* **ghostty:** use the same shortcut combos as Kitty ([#59](https://github.com/brettmostert/agent-command/issues/59)) ([e7822ee](https://github.com/brettmostert/agent-command/commit/e7822ee64ae77ebfe5e9d2009f3a136ee30f9b76))
+* **sessions:** add a terminal per session under the Claude pane ([#58](https://github.com/brettmostert/agent-command/issues/58)) ([aa21f5e](https://github.com/brettmostert/agent-command/commit/aa21f5e949cc349c019f0c7243a9961ebf6fc82d))
+* **view:** add a header bar above the Claude pane ([#57](https://github.com/brettmostert/agent-command/issues/57)) ([a274836](https://github.com/brettmostert/agent-command/commit/a27483616aeca9d550782573977a5203f4c07f7a))
+
+
+### Bug Fixes
+
+* **sessions:** wait until a resumed session runs before showing it ([#56](https://github.com/brettmostert/agent-command/issues/56)) ([f2a9a6a](https://github.com/brettmostert/agent-command/commit/f2a9a6aef7e75e9908ff0e20c906cada2cd4d9f5))
+
 ## [0.20.0](https://github.com/brettmostert/agent-command/compare/v0.19.0...v0.20.0) (2026-11-01)
 
 

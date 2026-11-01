@@ -606,3 +606,55 @@ func TestAdoptExternal(t *testing.T) {
 	h.send(tea.MouseClickMsg{Button: tea.MouseRight, Y: h.m.cursorLine(), X: 2})
 	h.wantScreen("Split out…")
 }
+
+func TestStatusBar(t *testing.T) {
+	h := newHarness(t, listSnap(), "")
+	h.send(tea.WindowSizeMsg{Width: 24, Height: 20})
+	long := "kitten @ resize-window: exit status 1: Error: Could not resize window /var/folders/7_/jzqzg45n1wxdpqp4t17lttk80000gn/T/kitty"
+	h.send(noteMsg{text: long, err: true})
+
+	lines := strings.Split(h.screen(), "\n")
+	if len(lines) != 20 {
+		t.Fatalf("%d lines, want 20", len(lines))
+	}
+	// The bar is the last lines: wrapped, not cut to one line.
+	bar := lines[len(lines)-maxErrLines:]
+	if !strings.HasPrefix(bar[0], " ✗ kitten @") {
+		t.Errorf("bar doesn't start the error at the bottom:\n%s", h.screen())
+	}
+	joined := strings.Join(bar, " ")
+	for _, want := range []string{"exit status 1", "Could not"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("bar lost %q:\n%s", want, strings.Join(bar, "\n"))
+		}
+	}
+	if !strings.HasSuffix(strings.TrimRight(bar[maxErrLines-1], " "), "…") {
+		t.Errorf("cut error not marked: %q", bar[maxErrLines-1])
+	}
+	for _, l := range lines {
+		if w := ansi.StringWidth(l); w != 24 {
+			t.Errorf("line %q is %d wide", l, w)
+		}
+	}
+
+	// A short note is one dim line; any key clears it.
+	h.send(noteMsg{text: "Canceled."})
+	if l := strings.Split(h.screen(), "\n"); strings.TrimSpace(l[len(l)-1]) != "Canceled." {
+		t.Errorf("note not at the bottom: %q", l[len(l)-1])
+	}
+	h.keys("down")
+	if strings.Contains(h.screen(), "Canceled.") {
+		t.Error("note not cleared by a key")
+	}
+}
+
+func TestBarLines(t *testing.T) {
+	got := barLines("aaaa bbbb cccc", 9, 4)
+	if strings.Join(got, "|") != "aaaa bbbb|cccc" {
+		t.Errorf("wrap: %q", got)
+	}
+	got = barLines("/a/very/long/path/without/spaces", 10, 2)
+	if len(got) != 2 || !strings.HasSuffix(got[1], "…") || ansi.StringWidth(got[1]) > 10 {
+		t.Errorf("hard wrap and cut: %q", got)
+	}
+}

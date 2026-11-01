@@ -15,14 +15,14 @@ import (
 
 const (
 	bodyTop   = 2 // header and rule
-	footerMin = 3 // rule, tooltip, status line
+	footerMin = 3 // rule, tooltip, status line (plus the status bar's note)
 )
 
 var (
 	dimStyle    = lipgloss.NewStyle().Faint(true)
 	boldStyle   = lipgloss.NewStyle().Bold(true)
 	cursorStyle = lipgloss.NewStyle().Reverse(true)
-	noteStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	errBarStyle = lipgloss.NewStyle().Background(lipgloss.Color("1")).Foreground(lipgloss.Color("15"))
 	barStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
 	spinner     = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	groupColors = map[string]string{"red": "1", "green": "2", "yellow": "3", "blue": "4", "magenta": "5", "cyan": "6"}
@@ -157,13 +157,6 @@ func (m *Model) footer() []string {
 			out = append(out, dimStyle.Render(fit(" "+info, m.w)))
 		}
 	}
-	if m.note != "" {
-		st := dimStyle
-		if m.noteErr {
-			st = noteStyle
-		}
-		out = append(out, st.Render(fit(" "+m.note, m.w)))
-	}
 	switch m.mode {
 	case modeInput:
 		out = append(out, fit(" "+m.label+": ", m.w), " "+m.input.View())
@@ -194,7 +187,48 @@ func (m *Model) footer() []string {
 	if pad := m.w - lipgloss.Width(status) - len(keys) - 1; pad > 0 {
 		status += strings.Repeat(" ", pad) + keys
 	}
-	return append(out, dimStyle.Render(fit(status, m.w)))
+	out = append(out, dimStyle.Render(fit(status, m.w)))
+	return append(out, m.statusBar()...)
+}
+
+// Status bar limits: an error wraps over up to maxErrLines, a note over
+// up to maxNoteLines; anything longer ends in "…".
+const (
+	maxErrLines  = 4
+	maxNoteLines = 2
+)
+
+// statusBar renders the current note at the very bottom: errors as a red
+// bar wrapped to the sidebar's width (so they can be read in full), other
+// notes dimmed. Any key clears it.
+func (m *Model) statusBar() []string {
+	if m.note == "" || m.w <= 2 {
+		return nil
+	}
+	text, limit, st := m.note, maxNoteLines, dimStyle
+	if m.noteErr {
+		text, limit, st = "✗ "+text, maxErrLines, errBarStyle
+	}
+	lines := barLines(strings.Join(strings.Fields(text), " "), m.w-2, limit)
+	for i, l := range lines {
+		lines[i] = st.Render(padTo(" "+l+" ", m.w))
+	}
+	return lines
+}
+
+// barLines word-wraps s to width w (breaking words longer than w) and
+// keeps at most limit lines, marking a cut with "…".
+func barLines(s string, w, limit int) []string {
+	lines := strings.Split(ansi.Wrap(s, w, ""), "\n")
+	if len(lines) > limit {
+		lines = lines[:limit]
+		last := strings.TrimRight(lines[limit-1], " ")
+		if lipgloss.Width(last) >= w {
+			last = ansi.Truncate(last, w-1, "")
+		}
+		lines[limit-1] = last + "…"
+	}
+	return lines
 }
 
 func (m *Model) bodyHeight() int {

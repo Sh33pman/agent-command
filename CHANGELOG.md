@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/brettmostert/agent-command/compare/v0.25.0...v0.25.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **popup:** empty the reply box once a reply is sent ([#82](https://github.com/brettmostert/agent-command/issues/82)) ([84c15af](https://github.com/brettmostert/agent-command/commit/84c15af776899db1cc552766db63ab2b7445ff17))
+
 ## [0.25.0](https://github.com/brettmostert/agent-command/compare/v0.24.3...v0.25.0) (2026-11-01)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/brettmostert/agent-command/compare/v0.28.0...v0.28.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **popup:** draw code blocks as one box, not a strip per line ([#100](https://github.com/brettmostert/agent-command/issues/100)) ([f745614](https://github.com/brettmostert/agent-command/commit/f745614246415777e1b5be333854d28bf86fc35a))
+
 ## [0.28.0](https://github.com/brettmostert/agent-command/compare/v0.27.1...v0.28.0) (2026-11-01)
 
 

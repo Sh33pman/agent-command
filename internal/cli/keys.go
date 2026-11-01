@@ -41,8 +41,12 @@ func bindings(terminal string) []keymap.Binding {
 		if cfg, err := config.Load(p.Config()); err == nil {
 			keys = cfg.Keys
 		}
-		if rec, ok, _ := setup.ReadRecord(p.Setup()); ok && rec.KittyDir != "" {
-			if b, err := os.ReadFile(filepath.Join(rec.KittyDir, setup.KittyConfName)); err == nil { // #nosec G304 -- acmd's own file
+		if rec, ok, _ := setup.ReadRecord(p.Setup()); ok {
+			own := filepath.Join(rec.KittyDir, setup.KittyConfName)
+			if terminal == "ghostty" {
+				own = filepath.Join(rec.GhosttyDir, setup.GhosttyConfName)
+			}
+			if b, err := os.ReadFile(own); err == nil && own != setup.KittyConfName && own != setup.GhosttyConfName { // #nosec G304 -- acmd's own file
 				skipped = setup.SkippedBinds(string(b))
 			}
 		}

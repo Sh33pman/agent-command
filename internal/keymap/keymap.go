@@ -33,29 +33,29 @@ type Binding struct {
 	Unbound string `json:"unbound,omitempty"` // why init didn't bind it
 }
 
-// global is a global action: its config key and its Ghostty form.
+// global is a global action and its config key. The combo is the same
+// in Kitty and Ghostty (in Ghostty via the sidebar, codes.go).
 type global struct {
 	action, desc string
 	key          func(config.Keys) string
-	ghostty      string // "" = the same key (native in Ghostty); else the two-step form
 }
 
 var globals = []global{
-	{"new", "new session", func(k config.Keys) string { return k.New }, "⌘⇧S → n"},
-	{"toggle", "hide/show sidebar", func(k config.Keys) string { return k.Toggle }, ""},
-	{"focus", "focus sidebar", func(k config.Keys) string { return k.Focus }, ""},
-	{"next-attention", "next needing you", func(k config.Keys) string { return k.Attention }, "⌘⇧S → Tab"},
-	{"pick", "session picker", func(k config.Keys) string { return k.Picker }, "⌘⇧S → /"},
-	{"open", "open in editor", func(k config.Keys) string { return k.Editor }, "⌘⇧S → E"},
-	{"keys", "shortcuts (this sheet)", func(k config.Keys) string { return k.Cheatsheet }, "⌘⇧S → ?"},
-	{"adopt", "move this pane's session into acmd", func(k config.Keys) string { return k.Adopt }, "⌘⇧S → M"},
-	{"term", "session terminal: create · show/hide", func(k config.Keys) string { return k.Term }, "⌘⇧S → t"},
+	{"new", "new session", func(k config.Keys) string { return k.New }},
+	{"toggle", "hide/show sidebar", func(k config.Keys) string { return k.Toggle }},
+	{"focus", "focus sidebar", func(k config.Keys) string { return k.Focus }},
+	{"next-attention", "next needing you", func(k config.Keys) string { return k.Attention }},
+	{"pick", "session picker", func(k config.Keys) string { return k.Picker }},
+	{"open", "open in editor", func(k config.Keys) string { return k.Editor }},
+	{"keys", "shortcuts (this sheet)", func(k config.Keys) string { return k.Cheatsheet }},
+	{"adopt", "move this pane's session into acmd", func(k config.Keys) string { return k.Adopt }},
+	{"term", "session terminal: create · show/hide", func(k config.Keys) string { return k.Term }},
 	{"go", "show session N", func(k config.Keys) string {
 		if k.GotoPrefix == "" {
 			return ""
 		}
 		return k.GotoPrefix + "+1–9"
-	}, "⌘⇧S → 1–9"},
+	}},
 }
 
 // local are the sidebar's own keys and mouse actions (as implemented in
@@ -94,17 +94,14 @@ var local = []Binding{
 	{"wheel", Mouse, "wheel", "scroll", ""},
 }
 
-// Registry builds the bindings for a terminal ("kitty" or "ghostty").
-// skipped maps actions to the reason init didn't bind them (Kitty).
-func Registry(keys config.Keys, terminal string, skipped map[string]string) []Binding {
+// Registry builds the bindings for a terminal ("kitty" or "ghostty"; the
+// keys are the same). skipped maps actions to the reason init didn't bind
+// them in that terminal.
+func Registry(keys config.Keys, _ string, skipped map[string]string) []Binding {
 	var out []Binding
 	for _, g := range globals {
 		b := Binding{Action: g.action, Context: Global, Key: Pretty(g.key(keys)), Desc: g.desc}
-		if terminal == "ghostty" {
-			if g.ghostty != "" {
-				b.Key = g.ghostty
-			}
-		} else if reason, ok := skipped[g.action]; ok {
+		if reason, ok := skipped[g.action]; ok {
 			b.Unbound = reason
 		}
 		if b.Key == "" {

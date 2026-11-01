@@ -43,9 +43,10 @@ func TestRegistry(t *testing.T) {
 	if b := get(bs, "go", Global); b.Key != "⌃⌘1–9" {
 		t.Errorf("go: %+v", b)
 	}
-	gh := Registry(config.Default().Keys, "ghostty", map[string]string{"new": "ignored in ghostty"})
-	if b := get(gh, "new", Global); b.Key != "⌘⇧S → n" || b.Unbound != "" {
-		t.Errorf("ghostty two-step: %+v", b)
+	// The same combos in Ghostty; its own skipped binds apply.
+	gh := Registry(config.Default().Keys, "ghostty", map[string]string{"new": "conflicts in ghostty"})
+	if b := get(gh, "new", Global); b.Key != "⌘⇧N" || b.Unbound != "conflicts in ghostty" {
+		t.Errorf("ghostty: %+v", b)
 	}
 	if b := get(gh, "toggle", Global); b.Key != "⌘⇧B" {
 		t.Errorf("ghostty native: %+v", b)
@@ -96,5 +97,30 @@ func TestWrite(t *testing.T) {
 	}
 	if err := Write(&b, bs, nil, "yaml", "kitty"); err == nil {
 		t.Error("bad format accepted")
+	}
+}
+
+func TestCodes(t *testing.T) {
+	seen := map[rune]string{}
+	for _, a := range []string{"new", "next-attention", "pick", "open", "keys", "adopt", "term", "go 1", "go 9"} {
+		c, ok := Code(a)
+		if !ok || c < 0xE000 || c > 0xF8FF {
+			t.Errorf("%s: %U %v (not a private-use code)", a, c, ok)
+		}
+		if other, dup := seen[c]; dup {
+			t.Errorf("%s and %s share %U", a, other, c)
+		}
+		seen[c] = a
+		if got := Action(c); got != a {
+			t.Errorf("Action(Code(%q)) = %q", a, got)
+		}
+	}
+	for _, a := range []string{"toggle", "focus", "go 0", "go 10", "nope"} {
+		if _, ok := Code(a); ok {
+			t.Errorf("%s has a code", a)
+		}
+	}
+	if Action('n') != "" || CSI(0xE0A0) != "57504u" {
+		t.Errorf("Action('n') %q, CSI %q", Action('n'), CSI(0xE0A0))
 	}
 }

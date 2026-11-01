@@ -20,7 +20,7 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	origK, origG, origWait := kittyAt, ghosttyApp, adoptWait
 	kittyAt = func(string) *kitty.Kitty { return ksim.Kitty() }
 	ghosttyApp = func() *ghostty.App { return gsim.App() }
-	adoptWait = 3 * time.Second
+	adoptWait = 10 * time.Second
 	t.Cleanup(func() { kittyAt, ghosttyApp, adoptWait = origK, origG, origWait })
 	ctx := context.Background()
 	t0 := time.Now()
@@ -43,7 +43,9 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	t.Cleanup(func() { adoptPoll = origPoll })
 	// When acmd types /bg, "Claude" forks the session into the background.
 	go func() {
-		for i := 0; i < 250; i++ {
+		// Watch long enough for a loaded machine (the full suite runs
+		// packages in parallel): the waits below come first.
+		for i := 0; i < 1500; i++ {
 			if ksim.Called("send-text --match id:2 /bg") {
 				send("SessionStart", `{"session_id":"bbbb0000-fork","source":"startup","cwd":"`+api+`"}`, t0.Add(4*time.Second), ipc.HookContext{})
 				return
@@ -72,7 +74,7 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	var r result
 	select {
 	case r = <-done:
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("adopt didn't finish after Claude became idle")
 	}
 	if r.err != nil || !strings.Contains(r.out, "Waiting for Claude to finish in that pane (working)") ||

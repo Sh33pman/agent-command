@@ -18,6 +18,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/keymap"
 	"github.com/brettmostert/agent-command/internal/tui"
 )
 
@@ -386,6 +387,9 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
+	if a := keymap.Action(k.Code); a != "" {
+		return m.globalKey(a)
+	}
 	m.note = ""
 	switch m.mode {
 	case modeInput:
@@ -864,4 +868,31 @@ func (m *Model) cursorLine() int {
 		}
 	}
 	return bodyTop
+}
+
+// globalKeys are the sidebar keys that do what a global shortcut does,
+// for the private keys Ghostty sends (keymap.Code, SPEC §7.3).
+var globalKeys = map[string]tea.KeyPressMsg{
+	"new":            {Code: 'n', Text: "n"},
+	"next-attention": {Code: tea.KeyTab},
+	"pick":           {Code: '/', Text: "/"},
+	"keys":           {Code: '?', Text: "?"},
+	"open":           {Code: 'e', Text: "E", Mod: tea.ModShift},
+	"adopt":          {Code: 'm', Text: "M", Mod: tea.ModShift},
+	"term":           {Code: 't', Text: "t"},
+}
+
+// globalKey runs a global shortcut that arrived as a private key: it
+// cancels whatever the sidebar was asking, then acts like the sidebar key.
+func (m *Model) globalKey(action string) tea.Cmd {
+	m.mode, m.picker = modeNormal, nil
+	m.input.Blur()
+	if d, ok := strings.CutPrefix(action, "go "); ok && len(d) == 1 && d[0] >= '1' && d[0] <= '9' {
+		return m.key(tea.KeyPressMsg{Code: rune(d[0]), Text: d})
+	}
+	k, ok := globalKeys[action]
+	if !ok {
+		return nil
+	}
+	return m.key(k)
 }

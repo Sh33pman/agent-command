@@ -47,7 +47,7 @@ func TestKeysCommand(t *testing.T) {
 	}
 	var bs []keymap.Binding
 	must(t, json.Unmarshal([]byte(mustRun(t, "keys", "--format", "json", "--terminal", "ghostty")), &bs))
-	if bs[0].Key != "⌘⇧S → n" {
+	if bs[0].Key != "⌘⇧N" { // the same combo as in Kitty
 		t.Errorf("ghostty json: %+v", bs[0])
 	}
 	for _, bad := range [][]string{{"keys", "--terminal", "iterm"}, {"keys", "--context", "nope"}, {"keys", "--format", "yaml"}} {

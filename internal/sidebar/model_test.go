@@ -14,6 +14,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/keymap"
 )
 
 // fake records what the sidebar asks for.
@@ -672,4 +673,34 @@ func TestMessagesGoToTheBarPane(t *testing.T) {
 	}
 	h.keys("down") // any key clears it, in the bar too
 	h.wantMutation(ipc.Mutation{Kind: ipc.MutViewNote, ID: "v1"})
+}
+
+// Ghostty sends global shortcuts as private keys; the sidebar does what
+// the shortcut does, even while it was asking something.
+func TestGlobalKeysFromGhostty(t *testing.T) {
+	h := newHarness(t, listSnap(), "a")
+	press := func(action string) {
+		t.Helper()
+		code, ok := keymap.Code(action)
+		if !ok {
+			t.Fatalf("no code for %s", action)
+		}
+		h.send(tea.KeyPressMsg{Code: code})
+	}
+	press("keys")
+	h.wantScreen("Shortcuts")
+	h.keys("esc") // any key closes the sheet
+	// Mid-rename: the prompt is dropped and the action runs.
+	h.keys("r")
+	h.wantScreen("Rename:")
+	press("go 2")
+	if strings.Contains(h.screen(), "Rename:") || strings.Join(h.f.shown, ",") != "b" {
+		t.Errorf("go 2 from a prompt: shown %v\n%s", h.f.shown, h.screen())
+	}
+	press("term")
+	if !strings.Contains(strings.Join(h.f.panes, ","), "term") {
+		t.Errorf("term: %v", h.f.panes)
+	}
+	press("pick")
+	h.wantScreen("Filter")
 }

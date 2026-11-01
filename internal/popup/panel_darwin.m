@@ -96,11 +96,23 @@ static NSAttributedString *richText(NSArray *blocks, NSString *fallback) {
             continue;
         }
         if ([kind isEqualToString:@"code"]) {
-            ps.firstLineHeadIndent = ps.headIndent = 8; ps.tailIndent = -8;
-            ps.paragraphSpacingBefore = 4; ps.paragraphSpacing = 6;
+            // Every "\n" ends a paragraph in Cocoa, so the lines share one
+            // NSTextBlock: that draws a single padded box, not a strip per line.
+            NSTextBlock *box = [[NSTextBlock alloc] init];
+            box.backgroundColor = codeBG;
+            [box setContentWidth:100 type:NSTextBlockPercentageValueType];
+            [box setWidth:8 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockPadding];
+            [box setWidth:4 type:NSTextBlockAbsoluteValueType forLayer:NSTextBlockMargin];
+            ps.textBlocks = @[box];
+            ps.paragraphSpacing = 0;
             NSString *t = [b[@"spans"] firstObject][@"text"] ?: @"";
-            append([t stringByAppendingString:end], @{NSFontAttributeName: mono, NSForegroundColorAttributeName: NSColor.labelColor,
-                NSBackgroundColorAttributeName: codeBG, NSParagraphStyleAttributeName: ps});
+            NSArray *lines = [t componentsSeparatedByString:@"\n"];
+            for (NSUInteger k = 0; k < lines.count; k++) {
+                BOOL last = k + 1 == lines.count;
+                append([lines[k] stringByAppendingString:(last ? end : @"\n")],
+                       @{NSFontAttributeName: mono, NSForegroundColorAttributeName: NSColor.labelColor,
+                         NSParagraphStyleAttributeName: ps});
+            }
             continue;
         }
         if ([kind isEqualToString:@"bullet"]) {
@@ -158,6 +170,7 @@ static NSAttributedString *richText(NSArray *blocks, NSString *fallback) {
     self.note = label(12, NSFontWeightRegular, NSColor.secondaryLabelColor);
 
     self.body = [[NSTextView alloc] init];
+    (void)self.body.layoutManager; // TextKit 1: code blocks use NSTextBlock, which TextKit 2 ignores
     self.body.editable = NO;
     self.body.selectable = YES;
     self.body.font = [NSFont systemFontOfSize:14];

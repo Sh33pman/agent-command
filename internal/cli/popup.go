@@ -56,6 +56,9 @@ func runPopupDemo(cmd *cobra.Command, selftest bool) error {
 		{Title: "auth work", Meta: "✓ done · ~/w/api", Body: "I refactored the auth middleware.\n\n" + longText(), CanReply: true, Placeholder: "Reply to auth work"},
 		{Title: "flaky e2e", Meta: "! needs you · ~/w/web", Body: "Claude wants to run: npm test -- --runInBand", Options: []string{"Yes", "Yes, and don't ask again", "No"}},
 	}
+	if body := os.Getenv("ACMD_POPUP_DEMO_BODY"); body != "" { // preview one given response
+		items = []popup.State{{Title: "preview", Meta: "✓ done · ~/w/preview", Body: body, CanReply: true, Placeholder: "Reply"}}
+	}
 	i := 0
 	show := func() {
 		s := items[i]

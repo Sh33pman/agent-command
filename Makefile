@@ -116,7 +116,7 @@ ci: lint test vuln build ## Everything CI checks on a PR (except snapshot/formul
 .PHONY: build
 build: ## Build ./dist/agent-command (+ acmd symlink) for this machine
 	mkdir -p $(DIST)
-	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
+	CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
 	ln -sf agent-command $(DIST)/acmd
 	$(DIST)/acmd version
 

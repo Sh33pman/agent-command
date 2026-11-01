@@ -28,7 +28,7 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd(),
 		newInitCmd(), newUninstallCmd(), newEditorCmd(), newDoctorCmd(),
 		newViewCmd(), newNewCmd(), newGoCmd(), newResumeCmd(),
-		newSidebarCmd(), newStatusbarCmd(), newHeaderCmd(), newTermCmd(), newToggleCmd(), newFocusCmd(), newNextAttentionCmd(),
+		newSidebarCmd(), newStatusbarCmd(), newHeaderCmd(), newPopupCmd(), newTermCmd(), newToggleCmd(), newFocusCmd(), newNextAttentionCmd(),
 		newKeysCmd(), newPickCmd(), newOpenCmd(), newAdoptCmd(), newSplitOutCmd(), newPurgeCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 

@@ -53,6 +53,9 @@ func Update(s State) {
 	if s.Options == nil {
 		s.Options = []string{}
 	}
+	if s.Blocks == nil {
+		s.Blocks = ParseRich(s.Body)
+	}
 	b, _ := json.Marshal(s)
 	cs := C.CString(string(b))
 	defer C.free(unsafe.Pointer(cs))

@@ -52,9 +52,9 @@ func newPopupCmd() *cobra.Command {
 func runPopupDemo(cmd *cobra.Command, selftest bool) error {
 	out := cmd.ErrOrStderr()
 	items := []popup.State{
+		{Title: "docs", Meta: "✓ done · ~/w/docs", Body: "Updated the README. Changes:\n- added **install** steps (see https://example.com/docs.)\n- fixed `acmd init` flags\n  - nested item\n1. first\n2. second\n\n```go\nfunc main() {\n\tfmt.Println(\"hi\")\n}\n```\nDetails in [the spec](https://example.com/spec).", CanReply: true},
 		{Title: "auth work", Meta: "✓ done · ~/w/api", Body: "I refactored the auth middleware.\n\n" + longText(), CanReply: true, Placeholder: "Reply to auth work"},
 		{Title: "flaky e2e", Meta: "! needs you · ~/w/web", Body: "Claude wants to run: npm test -- --runInBand", Options: []string{"Yes", "Yes, and don't ask again", "No"}},
-		{Title: "docs", Meta: "✓ done · ~/w/docs", Body: "Updated the README.", CanReply: true},
 	}
 	i := 0
 	show := func() {

@@ -13,11 +13,14 @@ var ErrUnsupported = errors.New("the popup needs macOS (built with cgo)")
 
 // State is what the panel shows.
 type State struct {
-	Visible     bool     `json:"visible"`
-	Title       string   `json:"title"`       // the session's name
-	Meta        string   `json:"meta"`        // status · folder
-	Counter     string   `json:"counter"`     // "4 of 7"
-	Body        string   `json:"body"`        // the response or question
+	Visible bool   `json:"visible"`
+	Title   string `json:"title"`   // the session's name
+	Meta    string `json:"meta"`    // status · folder
+	Counter string `json:"counter"` // "4 of 7"
+	Body    string `json:"body"`    // the response or question (plain text)
+	// Blocks is Body parsed for display (see ParseRich); filled by Update
+	// when empty. The reply box is never formatted.
+	Blocks      []Block  `json:"blocks"`
 	Options     []string `json:"options"`     // answers to pick (questions, permissions)
 	Placeholder string   `json:"placeholder"` // the reply box's hint
 	Playing     bool     `json:"playing"`     // speech is playing

@@ -28,6 +28,7 @@ static void emit(NSString *kind, NSString *text, int n) {
 @property(strong) NSArray *bindings;
 @property(assign) BOOL canReply;
 @property(assign) NSInteger reply;
+@property(copy) NSString *shownBody; // the raw Body behind the rendered text
 @end
 
 static AcmdController *ctl;
@@ -64,6 +65,73 @@ static NSScrollView *scrolling(NSTextView *tv) {
     tv.textContainerInset = NSMakeSize(4, 6);
     s.documentView = tv;
     return s;
+}
+
+// richText draws the response from the blocks Go parsed (ParseRich): code
+// blocks and inline code in monospace on a tinted background, bullets with
+// a hanging indent, clickable links, bold, and headings.
+static NSAttributedString *richText(NSArray *blocks, NSString *fallback) {
+    NSFont *base = [NSFont systemFontOfSize:14];
+    NSFont *mono = [NSFont monospacedSystemFontOfSize:13 weight:NSFontWeightRegular];
+    NSFont *bold = [NSFont systemFontOfSize:14 weight:NSFontWeightSemibold];
+    NSColor *codeBG = [NSColor.labelColor colorWithAlphaComponent:0.08];
+    NSMutableAttributedString *out = [[NSMutableAttributedString alloc] init];
+    if (![blocks isKindOfClass:NSArray.class] || blocks.count == 0) {
+        return [[NSAttributedString alloc] initWithString:fallback ?: @""
+            attributes:@{NSFontAttributeName: base, NSForegroundColorAttributeName: NSColor.labelColor}];
+    }
+    void (^append)(NSString *, NSDictionary *) = ^(NSString *t, NSDictionary *a) {
+        [out appendAttributedString:[[NSAttributedString alloc] initWithString:t attributes:a]];
+    };
+    for (NSUInteger i = 0; i < blocks.count; i++) {
+        NSDictionary *b = blocks[i];
+        NSString *kind = b[@"kind"];
+        NSMutableParagraphStyle *ps = [[NSMutableParagraphStyle alloc] init];
+        ps.paragraphSpacing = 2;
+        NSDictionary *plain = @{NSFontAttributeName: base, NSForegroundColorAttributeName: NSColor.labelColor, NSParagraphStyleAttributeName: ps};
+        NSString *end = i + 1 < blocks.count ? @"\n" : @"";
+        if ([kind isEqualToString:@"blank"]) {
+            ps.minimumLineHeight = 8; ps.maximumLineHeight = 8;
+            append(end, plain);
+            continue;
+        }
+        if ([kind isEqualToString:@"code"]) {
+            ps.firstLineHeadIndent = ps.headIndent = 8; ps.tailIndent = -8;
+            ps.paragraphSpacingBefore = 4; ps.paragraphSpacing = 6;
+            NSString *t = [b[@"spans"] firstObject][@"text"] ?: @"";
+            append([t stringByAppendingString:end], @{NSFontAttributeName: mono, NSForegroundColorAttributeName: NSColor.labelColor,
+                NSBackgroundColorAttributeName: codeBG, NSParagraphStyleAttributeName: ps});
+            continue;
+        }
+        if ([kind isEqualToString:@"bullet"]) {
+            CGFloat lead = 8 + 18 * [b[@"indent"] integerValue];
+            ps.firstLineHeadIndent = lead; ps.headIndent = lead + 18;
+            ps.tabStops = @[[[NSTextTab alloc] initWithTextAlignment:NSTextAlignmentLeft location:lead + 18 options:@{}]];
+            append([NSString stringWithFormat:@"%@\t", b[@"marker"] ?: @"•"], plain);
+        }
+        NSInteger head = [b[@"head"] integerValue];
+        NSFont *textFont = head > 0 ? [NSFont systemFontOfSize:(head == 1 ? 18 : head == 2 ? 16 : 15) weight:NSFontWeightSemibold] : base;
+        for (NSDictionary *sp in b[@"spans"]) {
+            NSMutableDictionary *a = [@{NSFontAttributeName: textFont, NSForegroundColorAttributeName: NSColor.labelColor,
+                                        NSParagraphStyleAttributeName: ps} mutableCopy];
+            NSString *style = sp[@"style"];
+            if ([style isEqualToString:@"code"]) {
+                a[NSFontAttributeName] = mono; a[NSBackgroundColorAttributeName] = codeBG;
+            } else if ([style isEqualToString:@"bold"]) {
+                a[NSFontAttributeName] = bold;
+            } else if ([style isEqualToString:@"link"]) {
+                NSURL *u = [NSURL URLWithString:sp[@"url"] ?: @""];
+                if (u) {
+                    a[NSLinkAttributeName] = u;
+                    a[NSForegroundColorAttributeName] = NSColor.linkColor;
+                    a[NSUnderlineStyleAttributeName] = @(NSUnderlineStyleSingle);
+                }
+            }
+            append(sp[@"text"] ?: @"", a);
+        }
+        append(end, plain);
+    }
+    return out;
 }
 
 @implementation AcmdController
@@ -233,14 +301,15 @@ static NSScrollView *scrolling(NSTextView *tv) {
         return;
     }
     NSString *oldTitle = self.title.stringValue;
-    NSString *oldBody = self.body.string;
+    NSString *oldBody = self.shownBody ?: @"";
     self.title.stringValue = s[@"title"] ?: @"";
     self.meta.stringValue = s[@"meta"] ?: @"";
     self.counter.stringValue = s[@"counter"] ?: @"";
     self.note.stringValue = s[@"note"] ?: @"";
     NSString *body = s[@"body"] ?: @"";
     if (![body isEqualToString:oldBody]) {
-        self.body.string = body;
+        [self.body.textStorage setAttributedString:richText(s[@"blocks"], body)];
+        self.shownBody = body;
         [self.body scrollRangeToVisible:NSMakeRange(0, 0)];
     }
     self.play.title = [s[@"playing"] boolValue] ? @"Stop" : @"Play";

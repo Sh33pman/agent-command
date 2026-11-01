@@ -325,3 +325,23 @@ func TestDaemonBackgroundLoops(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// A client that keeps its connection open without sending anything (a
+// sidebar or the popup between requests) doesn't keep the daemon from
+// stopping (it hung before: `acmd daemon restart` then failed).
+func TestShutdownWithIdleClient(t *testing.T) {
+	old := shutdownGrace
+	shutdownGrace = 200 * time.Millisecond
+	t.Cleanup(func() { shutdownGrace = old })
+	p := testPaths(t)
+	r := start(t, p)
+	idle := dial(t, p) // connected, then silent
+	defer idle.Close()
+	c := dial(t, p)
+	_ = c.Call(ipc.OpShutdown, nil, nil)
+	select {
+	case <-r.Done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the daemon didn't stop while a client was connected")
+	}
+}

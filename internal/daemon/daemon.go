@@ -144,6 +144,8 @@ func Run(ctx context.Context, cfg Config) error {
 	}()
 
 	var wg sync.WaitGroup
+	var connsMu sync.Mutex
+	conns := map[net.Conn]bool{}
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -155,16 +157,40 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 			break
 		}
+		connsMu.Lock()
+		conns[c] = true
+		connsMu.Unlock()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			d.serve(ctx, c)
+			connsMu.Lock()
+			delete(conns, c)
+			connsMu.Unlock()
 		}()
 	}
-	wg.Wait()
+	// Let requests in flight finish, then close what's left: clients that
+	// keep a connection open between requests (sidebars, the popup) would
+	// otherwise keep the daemon from ever stopping.
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(shutdownGrace):
+		connsMu.Lock()
+		for c := range conns {
+			_ = c.Close()
+		}
+		connsMu.Unlock()
+		<-done
+	}
 	cfg.Log.Printf("stopped")
 	return nil
 }
+
+// shutdownGrace is how long a stopping daemon lets requests finish before
+// it closes the connections left open.
+var shutdownGrace = 2 * time.Second
 
 func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 	defer c.Close()

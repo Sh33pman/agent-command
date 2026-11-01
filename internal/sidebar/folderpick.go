@@ -39,6 +39,21 @@ type folderPicker struct {
 	groupID     string
 	createGroup string
 	sel         int
+	roots       map[string]string // cwd → repository root; repo.Root runs git, so it's looked up once per folder
+}
+
+// root is repo.Root(dir), remembered while the picker is open: folderItems
+// runs on every key and every redraw, and each uncached lookup spawns git.
+func (f *folderPicker) root(dir string) string {
+	if r, ok := f.roots[dir]; ok {
+		return r
+	}
+	if f.roots == nil {
+		f.roots = map[string]string{}
+	}
+	r := repo.Root(dir)
+	f.roots[dir] = r
+	return r
 }
 
 // SetLaunchDir sets the folder acmd was run from, offered first when a
@@ -107,7 +122,7 @@ func (m *Model) folderItems() []folderItem {
 	add(fkLaunch, m.launchDir)
 	if m.view != nil {
 		if s := m.session(m.view.Selected); s != nil && s.Cwd != "" {
-			add(fkSelected, repo.Root(s.Cwd))
+			add(fkSelected, m.fpick.root(s.Cwd))
 		}
 	}
 	type recent struct {
@@ -119,7 +134,7 @@ func (m *Model) folderItems() []folderItem {
 		if s.Cwd == "" {
 			continue
 		}
-		root := repo.Root(s.Cwd)
+		root := m.fpick.root(s.Cwd)
 		if at := s.LastEventAt.UnixNano(); at >= last[root] {
 			last[root] = at
 		}

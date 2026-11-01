@@ -301,3 +301,37 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// A paused session acmd never got a background id for (a short-lived
+// Claude process started from a view pane) is resumed when shown, instead
+// of failing with "no Claude background id yet".
+func TestGoResumesSessionWithoutBgID(t *testing.T) {
+	e := viewEnvFor(t)
+	api := e.folder(t, "api", false)
+	t0 := time.Now().Add(-time.Minute)
+	hc := ipc.HookContext{ViewID: "some-view"}
+	must(t, e.conn.Call(ipc.OpEvent, ipc.HookEvent{Name: "SessionStart", At: t0,
+		Payload: []byte(`{"session_id":"7fcdd732-orphan","source":"startup","cwd":"` + api + `"}`), Context: hc}, nil))
+	must(t, e.conn.Call(ipc.OpEvent, ipc.HookEvent{Name: "SessionEnd", At: t0.Add(time.Second),
+		Payload: []byte(`{"session_id":"7fcdd732-orphan","reason":"other"}`), Context: hc}, nil))
+	var s *core.Session
+	for _, x := range e.snapshot(t).Sessions {
+		if x.ClaudeSessionID == "7fcdd732-orphan" {
+			s = x
+		}
+	}
+	if s == nil || !s.NeedsResume() {
+		t.Fatalf("orphan: %+v", s)
+	}
+	var v core.View
+	must(t, e.conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &core.PaneLoc{Terminal: "unknown"}}, &v))
+	mustRun(t, "go", s.ID)
+	if calls := e.fakeCalls(t); !contains(calls, "--bg --resume 7fcdd732-orphan") {
+		t.Errorf("claude calls: %q", calls)
+	}
+	for _, x := range e.snapshot(t).Views {
+		if x.ID == v.ID && x.Selected != s.ID {
+			t.Errorf("view shows %q, want %q", x.Selected, s.ID)
+		}
+	}
+}

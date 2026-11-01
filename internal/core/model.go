@@ -117,3 +117,10 @@ type ViewState struct {
 	PreFocus     map[string]bool
 	ShowArchived bool
 }
+
+// NeedsResume reports whether a view must resume s (claude --bg --resume)
+// before it can show it: a stopped background session acmd never got a
+// Claude background id for, with a conversation to resume.
+func (s *Session) NeedsResume() bool {
+	return s.Kind == KindBackground && s.BgID == "" && s.Status == StatusPaused && s.ClaudeSessionID != ""
+}

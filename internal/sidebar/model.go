@@ -816,6 +816,9 @@ func (m *Model) adopt(s *core.Session) tea.Cmd {
 	}
 	return m.ask2("Move "+quote(name(s))+" into acmd? Claude continues it in the background; your pane goes back to the shell.", func() tea.Cmd {
 		m.note = "Moving " + quote(name(s)) + " into acmd…"
+		if cur := m.session(s.ID); cur != nil && cur.Status != core.StatusDone && cur.Status != core.StatusError && cur.Status != core.StatusPaused {
+			m.note = "Will move " + quote(name(s)) + " into acmd once Claude is idle there…"
+		}
 		return m.do(func(ctx context.Context) error { return m.act.Adopt(ctx, s) })
 	})
 }

@@ -135,6 +135,11 @@ func (a *sidebarActions) Show(ctx context.Context, s *core.Session) error {
 		}
 		return focusExternal(ctx, *s.External)
 	}
+	if s.NeedsResume() {
+		if _, err := a.vc.Resume(ctx, s.ID); err != nil {
+			return err
+		}
+	}
 	if err := a.vc.Select(ctx, a.view.ID, s.ID); err != nil {
 		return err
 	}
@@ -155,7 +160,7 @@ func (a *sidebarActions) Open(ctx context.Context, s *core.Session) error {
 
 func (a *sidebarActions) Adopt(ctx context.Context, s *core.Session) error {
 	call := func(op string, in, out any) error { return a.vc.call(ctx, op, in, out) }
-	r, err := adoptSession(ctx, call, s)
+	r, err := adoptSession(ctx, call, s, nil)
 	if err != nil {
 		return err
 	}
@@ -330,6 +335,11 @@ func show(ctx context.Context, c *client, v *core.View, s *core.Session) error {
 			return errors.New("don't know which pane that session is in")
 		}
 		return focusExternal(ctx, *s.External)
+	}
+	if s.NeedsResume() {
+		if err := c.conn.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, nil); err != nil {
+			return err
+		}
 	}
 	if err := c.mutate(ipc.Mutation{Kind: ipc.MutViewSelect, ID: v.ID, Text: s.ID}, nil); err != nil {
 		return err

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -20,14 +21,20 @@ import (
 // caller is one daemon call (client or view client).
 type caller func(op string, in, out any) error
 
-// adoptSession moves external session s into acmd: when its pane is idle
-// (done or waiting) acmd types /bg there, and Claude continues the
-// conversation as a background session, which the daemon links back to s.
-// A session whose process ended is resumed in the background instead.
-// The caller has confirmed with the user.
-func adoptSession(ctx context.Context, call caller, s *core.Session) (*core.Session, error) {
+// adoptSession moves external session s into acmd: once Claude is idle
+// in its pane (done: not working and not waiting on a question, where
+// typed text would be taken as the answer) acmd types /bg there, and
+// Claude continues the conversation as a background session, which the
+// daemon links back to s. A session whose process ended is resumed in the
+// background instead. The caller has confirmed with the user; waiting
+// reports each status it waits on (nil: quiet).
+func adoptSession(ctx context.Context, call caller, s *core.Session, waiting func(core.Status)) (*core.Session, error) {
 	if s.Kind != core.KindExternal {
 		return s, errors.New("that session is already in acmd")
+	}
+	s, err := waitIdle(ctx, call, s, waiting)
+	if err != nil {
+		return nil, err
 	}
 	if s.Status == core.StatusPaused || s.External == nil {
 		var r core.Session
@@ -35,9 +42,6 @@ func adoptSession(ctx context.Context, call caller, s *core.Session) (*core.Sess
 			return nil, err
 		}
 		return &r, nil
-	}
-	if s.Status != core.StatusDone && s.Status != core.StatusWaiting {
-		return nil, errors.New("Claude is working in that pane: move it when it's done or waiting for you") //nolint:staticcheck // ST1005: product name
 	}
 	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID}, nil); err != nil {
 		return nil, err
@@ -62,6 +66,51 @@ func adoptSession(ctx context.Context, call caller, s *core.Session) (*core.Sess
 	}
 	return nil, errors.New("Claude didn't move the session to the background (is /bg available in your Claude Code?)") //nolint:staticcheck // ST1005: product name
 }
+
+// adoptIdle are the statuses in which /bg can be typed into the pane.
+func adoptIdle(st core.Status) bool {
+	return st == core.StatusDone || st == core.StatusError || st == core.StatusPaused
+}
+
+// waitIdle returns s once it's idle (adoptIdle), polling the daemon; it
+// gives up when ctx ends, or s is archived or gone.
+func waitIdle(ctx context.Context, call caller, s *core.Session, waiting func(core.Status)) (*core.Session, error) {
+	last := core.Status("")
+	for {
+		if adoptIdle(s.Status) {
+			return s, nil
+		}
+		if s.Status == core.StatusArchived {
+			return nil, errors.New("that session was archived")
+		}
+		if waiting != nil && s.Status != last {
+			waiting(s.Status)
+		}
+		last = s.Status
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(adoptPoll):
+		}
+		var snap ipc.Snapshot
+		if err := call(ipc.OpSnapshot, nil, &snap); err != nil {
+			return nil, err
+		}
+		var found *core.Session
+		for _, x := range snap.Sessions {
+			if x.ID == s.ID {
+				found = x
+			}
+		}
+		if found == nil {
+			return nil, errors.New("that session no longer exists")
+		}
+		s = found
+	}
+}
+
+// adoptPoll is how often acmd checks whether a session became idle.
+var adoptPoll = 500 * time.Millisecond
 
 // adoptWait is how long acmd waits for Claude's /bg (tests shorten it).
 var adoptWait = 15 * time.Second
@@ -90,13 +139,28 @@ func typeInto(ctx context.Context, loc core.PaneLoc, text string) error {
 
 func newAdoptCmd() *cobra.Command {
 	var yes bool
+	var win int
 	cmd := &cobra.Command{
-		Use:   "adopt <N|id|name-prefix>",
+		Use:   "adopt [N|id|name-prefix]",
 		Short: "Move a session from one of your own panes into acmd (it continues in the background)",
-		Args:  cobra.ExactArgs(1),
+		Long: `Move a Claude session running in one of your own panes into acmd, where it
+continues in the background. acmd asks first, then waits until Claude is
+idle in that pane (not working, not waiting on a question) and types /bg
+there. From the shortcut (Kitty cmd+shift+m) it moves the session in the
+focused pane.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
-				s, err := resolveSession(snap, args[0])
+			err := withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+				var s *core.Session
+				var err error
+				switch {
+				case len(args) == 1:
+					s, err = resolveSession(snap, args[0])
+				case win != 0:
+					s, err = sessionInPane(snap, os.Getenv("KITTY_LISTEN_ON"), win)
+				default:
+					err = errors.New("which session? Pass its number, id or name (see `acmd list`)")
+				}
 				if err != nil {
 					return err
 				}
@@ -108,20 +172,64 @@ func newAdoptCmd() *cobra.Command {
 					return err
 				}
 				call := func(op string, in, out any) error { return c.conn.Call(op, in, out) }
-				r, err := adoptSession(cmd.Context(), call, s)
+				out := cmd.OutOrStdout()
+				r, err := adoptSession(cmd.Context(), call, s, func(st core.Status) {
+					fmt.Fprintf(out, "Waiting for Claude to finish in that pane (%s)… Ctrl+C cancels.\n", waitingWord(st))
+				})
 				if err != nil {
 					return err
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Moved %s into acmd (claude attach %s).\n", nameOf(r), r.BgID)
+				fmt.Fprintf(out, "Moved %s into acmd (claude attach %s).\n", nameOf(r), r.BgID)
 				if v, err := targetView(snap, os.Getenv("ACMD_VIEW_ID")); err == nil {
 					return show(cmd.Context(), c, v, r)
 				}
 				return nil
 			})
+			if err != nil && win != 0 {
+				// From the shortcut's overlay: keep the message readable.
+				fmt.Fprintf(cmd.ErrOrStderr(), "%v\nPress Enter to close.", err)
+				_, _ = bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+			}
+			return err
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	kittyWindowFlag(cmd, &win)
 	return cmd
+}
+
+// waitingWord describes a status adopt waits on.
+func waitingWord(st core.Status) string {
+	switch st {
+	case core.StatusWaiting:
+		return "it's waiting for you: answer it first"
+	case core.StatusStarting:
+		return "starting"
+	default:
+		return "working"
+	}
+}
+
+// sessionInPane is the session running in Kitty window win: the most
+// recent non-archived external session there.
+func sessionInPane(snap ipc.Snapshot, socket string, win int) (*core.Session, error) {
+	var best *core.Session
+	for _, s := range snap.Sessions {
+		x := s.External
+		if s.Kind != core.KindExternal || s.Status == core.StatusArchived || x == nil || x.Terminal != "kitty" || x.KittyWindow != win {
+			continue
+		}
+		if socket != "" && x.KittySocket != "" && x.KittySocket != socket {
+			continue
+		}
+		if best == nil || s.LastEventAt.After(best.LastEventAt) {
+			best = s
+		}
+	}
+	if best == nil {
+		return nil, errors.New("no Claude session acmd knows of runs in this pane")
+	}
+	return best, nil
 }
 
 // ---- split out (SPEC §6.6) ----

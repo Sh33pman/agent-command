@@ -33,27 +33,52 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	send("SessionStart", `{"session_id":"ext-k","source":"startup","cwd":"`+api+`"}`, t0, kctx)
 	send("UserPromptSubmit", `{"session_id":"ext-k","prompt":"busy work"}`, t0.Add(time.Second), kctx)
 
-	// Busy: refused. Without --yes and a terminal: refused.
-	if _, err := acmd(t, "adopt", "busy work", "--yes"); err == nil || !strings.Contains(err.Error(), "working in that pane") {
-		t.Errorf("busy: %v", err)
-	}
+	// Without --yes and a terminal: refused.
 	if _, err := acmd(t, "adopt", "busy work"); err == nil || !strings.Contains(err.Error(), "--yes") {
 		t.Errorf("no confirmation: %v", err)
 	}
-	send("Stop", `{"session_id":"ext-k"}`, t0.Add(2*time.Second), kctx)
+	t.Setenv("KITTY_LISTEN_ON", "unix:/tmp/k") // the shortcut's Kitty
+	origPoll := adoptPoll
+	adoptPoll = 20 * time.Millisecond
+	t.Cleanup(func() { adoptPoll = origPoll })
 	// When acmd types /bg, "Claude" forks the session into the background.
 	go func() {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 250; i++ {
 			if ksim.Called("send-text --match id:2 /bg") {
-				send("SessionStart", `{"session_id":"bbbb0000-fork","source":"startup","cwd":"`+api+`"}`, t0.Add(3*time.Second), ipc.HookContext{})
+				send("SessionStart", `{"session_id":"bbbb0000-fork","source":"startup","cwd":"`+api+`"}`, t0.Add(4*time.Second), ipc.HookContext{})
 				return
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
-	out := mustRun(t, "adopt", "busy work", "--yes")
-	if !strings.Contains(out, `Moved "busy work" into acmd (claude attach bbbb0000).`) {
-		t.Errorf("adopt:\n%s", out)
+	// Busy, then waiting on a question: acmd waits (the shortcut finds the
+	// session by its pane) and types /bg only once Claude is done.
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := acmd(t, "adopt", "--kitty-window", "2", "--yes")
+		done <- result{out, err}
+	}()
+	time.Sleep(150 * time.Millisecond)
+	send("PermissionRequest", `{"session_id":"ext-k","tool_name":"Bash"}`, t0.Add(2*time.Second), kctx)
+	time.Sleep(150 * time.Millisecond)
+	if ksim.Called("send-text --match id:2 /bg") {
+		t.Fatal("typed /bg while Claude was busy or waiting on a question")
+	}
+	send("Stop", `{"session_id":"ext-k"}`, t0.Add(3*time.Second), kctx)
+	var r result
+	select {
+	case r = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("adopt didn't finish after Claude became idle")
+	}
+	if r.err != nil || !strings.Contains(r.out, "Waiting for Claude to finish in that pane (working)") ||
+		!strings.Contains(r.out, "(it's waiting for you: answer it first)") ||
+		!strings.Contains(r.out, `Moved "busy work" into acmd (claude attach bbbb0000).`) {
+		t.Errorf("adopt: %v\n%s", r.err, r.out)
 	}
 	if _, err := acmd(t, "adopt", "busy work", "--yes"); err == nil {
 		t.Error("adopted twice")
@@ -62,7 +87,7 @@ func TestAdoptAndSplitOut(t *testing.T) {
 	// An external session whose process ended is resumed instead.
 	send("SessionStart", `{"session_id":"cafe0000-gone","source":"startup","cwd":"`+api+`"}`, t0, ipc.HookContext{TermProgram: "ghostty", TTY: "/dev/ttys001"})
 	send("SessionEnd", `{"session_id":"cafe0000-gone","reason":"other"}`, t0.Add(time.Second), ipc.HookContext{TermProgram: "ghostty"})
-	out = mustRun(t, "adopt", "cafe0000-gone", "--yes")
+	out := mustRun(t, "adopt", "cafe0000-gone", "--yes")
 	if !strings.Contains(out, "Moved session cafe0000 into acmd") {
 		t.Errorf("resume fallback:\n%s", out)
 	}

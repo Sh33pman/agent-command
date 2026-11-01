@@ -48,6 +48,7 @@ var globals = []global{
 	{"pick", "session picker", func(k config.Keys) string { return k.Picker }, "⌘⇧S → /"},
 	{"open", "open in editor", func(k config.Keys) string { return k.Editor }, "⌘⇧S → E"},
 	{"keys", "shortcuts (this sheet)", func(k config.Keys) string { return k.Cheatsheet }, "⌘⇧S → ?"},
+	{"adopt", "move this pane's session into acmd", func(k config.Keys) string { return k.Adopt }, "⌘⇧S → M"},
 	{"go", "show session N", func(k config.Keys) string {
 		if k.GotoPrefix == "" {
 			return ""

@@ -311,7 +311,14 @@ func (l *Loop) placeholder(ctx context.Context, rev uint64, note string) error {
 		case k >= '1' && k <= '9':
 			n := int(k - '0')
 			if n <= len(rows) {
-				if err := l.Client.Select(ctx, l.ViewID, rows[n-1].ID); err != nil {
+				err := error(nil)
+				if rows[n-1].NeedsResume() {
+					_, err = l.Client.Resume(ctx, rows[n-1].ID)
+				}
+				if err == nil {
+					err = l.Client.Select(ctx, l.ViewID, rows[n-1].ID)
+				}
+				if err != nil {
 					note = err.Error()
 					rows = l.draw(snap, note)
 				}
@@ -351,7 +358,7 @@ func (l *Loop) draw(snap ipc.Snapshot, note string) []*core.Session {
 	b.WriteString("No session shown in this pane.\r\n\r\n")
 	var rows []*core.Session
 	for _, r := range core.Layout(snap.Sessions, snap.Groups, snap.ViewState) {
-		if r.Session == nil || r.Session.Kind != core.KindBackground || r.Session.BgID == "" {
+		if r.Session == nil || r.Session.Kind != core.KindBackground || (r.Session.BgID == "" && !r.Session.NeedsResume()) {
 			continue
 		}
 		rows = append(rows, r.Session)

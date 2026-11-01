@@ -70,6 +70,7 @@ type Keys struct {
 	Picker     string `toml:"picker"`
 	Cheatsheet string `toml:"cheatsheet"`
 	Editor     string `toml:"editor"`
+	Adopt      string `toml:"adopt"`
 	GotoPrefix string `toml:"goto_prefix"`
 }
 
@@ -83,7 +84,7 @@ func Default() Config {
 		Editor: Editor{RunIn: "background", Target: "cwd"},
 		Keys: Keys{
 			Toggle: "cmd+shift+b", New: "cmd+shift+n", Focus: "cmd+shift+s", Attention: "cmd+shift+a",
-			Picker: "cmd+shift+l", Cheatsheet: "cmd+shift+k", Editor: "cmd+shift+e", GotoPrefix: "ctrl+cmd",
+			Picker: "cmd+shift+l", Cheatsheet: "cmd+shift+k", Editor: "cmd+shift+e", Adopt: "cmd+shift+m", GotoPrefix: "ctrl+cmd",
 		},
 	}
 }

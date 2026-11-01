@@ -296,3 +296,28 @@ func TestHostedStaysHosted(t *testing.T) {
 		t.Errorf("unlisted hosted session paused: %v", got.Status)
 	}
 }
+
+// A hosted session whose host is gone (reboot, crash) is paused once it is
+// past the startup grace; one whose host runs is left alone.
+func TestHostedPausedWhenHostGone(t *testing.T) {
+	r, st, l, c := setup(t)
+	alive := true
+	r.HostAlive = func(*core.Session) bool { return alive }
+	s := create(t, st, &core.Session{ClaudeSessionID: "h2", Kind: core.KindHosted, Status: core.StatusBusy, CreatedAt: c.now().Add(-time.Hour)})
+	l.agents = nil
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status != core.StatusBusy {
+		t.Fatalf("host alive, status %v", got.Status)
+	}
+	alive = false
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status != core.StatusPaused {
+		t.Errorf("host gone, status %v", got.Status)
+	}
+	// A new session whose host hasn't listened yet is not paused.
+	n := create(t, st, &core.Session{ClaudeSessionID: "h3", Kind: core.KindHosted, Status: core.StatusStarting, CreatedAt: c.now()})
+	once(t, r)
+	if got := get(t, st, n.ID); got.Status != core.StatusStarting {
+		t.Errorf("new session, status %v", got.Status)
+	}
+}

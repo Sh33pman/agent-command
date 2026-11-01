@@ -3,11 +3,13 @@ package daemon
 import (
 	"context"
 	"errors"
+	"os"
 	"regexp"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -125,4 +127,62 @@ func TestNewUUID(t *testing.T) {
 	if !uuidRe.MatchString(a) || a == b {
 		t.Errorf("uuids %q %q", a, b)
 	}
+}
+
+// A daemon that restarts keeps hosted sessions whose host still runs, and
+// pauses the ones whose host is gone; stale host files are swept.
+func TestHostedSurvivesDaemonRestart(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	r := start(t, p, func(c *Config) { c.Hosts = fh })
+	c := dial(t, p)
+	live := newSess(t, c, ipc.NewRequest{Cwd: "/w/a", Name: "live"})
+	dead := newSess(t, c, ipc.NewRequest{Cwd: "/w/b", Name: "dead"})
+	for _, s := range []*core.Session{live, dead} {
+		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+s.ClaudeSessionID+`","source":"startup","cwd":"`+s.Cwd+`"}`, time.Now(), ipc.HookContext{}), nil))
+	}
+	// A leftover from a host that is long gone.
+	stale := p.HostIDFile("01STALESTALESTALESTALESTAL")
+	must(t, os.WriteFile(stale, []byte("01STALESTALESTALESTALESTAL\n"), 0o600))
+
+	r.cancel() // the daemon stops; the in-process "hosts" keep running
+	<-r.Done
+	term.Kill(p.HostSocket(dead.ID)) //nolint:errcheck // the host goes away while the daemon is down
+	waitHost(t, p, dead.ID, false)
+
+	start(t, p, func(c *Config) {
+		c.Hosts, c.Agents, c.ReconcileEvery = fh, emptyAgents{}, 50*time.Millisecond
+		c.Now = func() time.Time { return time.Now().Add(time.Hour) } // past the startup grace
+	})
+	c = dial(t, p)
+	waitFor(t, "dead session paused", func() bool { return statusOf(snapshot(t, c), dead.ID) == core.StatusPaused })
+	if got := statusOf(snapshot(t, c), live.ID); got != core.StatusDone {
+		t.Errorf("live session status %v", got)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale host file not swept: %v", err)
+	}
+}
+
+type emptyAgents struct{}
+
+func (emptyAgents) Agents(context.Context) ([]claudecli.Agent, error) { return nil, nil }
+
+func statusOf(snap ipc.Snapshot, id string) core.Status {
+	for _, s := range snap.Sessions {
+		if s.ID == id {
+			return s.Status
+		}
+	}
+	return ""
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if cond() {
+			return
+		}
+	}
+	t.Fatalf("timed out waiting for %s", what)
 }

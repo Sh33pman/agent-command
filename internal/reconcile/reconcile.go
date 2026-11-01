@@ -42,6 +42,10 @@ type Reconciler struct {
 	StartupGrace time.Duration
 	// Alive reports whether a pid is running (default: kill(pid, 0)).
 	Alive func(pid int) bool
+	// HostAlive reports whether a hosted session's host process is running
+	// (nil: assume it is). A hosted session whose host is gone (reboot,
+	// crash) is paused; showing it resumes it.
+	HostAlive func(s *core.Session) bool
 	// Claim, when set, may take a newly listed background session for an
 	// existing acmd session (one being moved in from the user's pane); it
 	// returns that session, already linked, or nil.
@@ -199,9 +203,13 @@ func (r *Reconciler) unlisted(s *core.Session) bool {
 		return false
 	}
 	if s.Kind == core.KindHosted {
-		// Its host process is acmd's: SessionEnd and the host's exit say
-		// when it is gone, not Claude's listing.
-		return false
+		// Its host process is acmd's, so the host says whether it runs, not
+		// Claude's listing (which can lag a new session's first hooks).
+		if r.HostAlive == nil || r.HostAlive(s) || r.Now().Sub(s.CreatedAt) < r.StartupGrace {
+			return false
+		}
+		s.Pid = 0
+		return r.apply(s, core.AgentStopped)
 	}
 	if s.Kind == core.KindExternal {
 		// Interactive sessions aren't always listed (e.g. child sessions,

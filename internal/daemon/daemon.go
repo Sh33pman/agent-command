@@ -25,6 +25,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/reconcile"
 	"github.com/brettmostert/agent-command/internal/store"
+	"github.com/brettmostert/agent-command/internal/term"
 )
 
 // ErrAlreadyRunning means another daemon holds the lock.
@@ -128,6 +129,7 @@ func Run(ctx context.Context, cfg Config) error {
 	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}),
 		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}, adopting: map[string]adoption{}}
 	d.terms.rescan(cfg.Paths)
+	sweepHosts(cfg.Paths)
 	if cfg.Notify != nil {
 		d.notify = newNotifier(*cfg.Notify)
 	}
@@ -401,6 +403,7 @@ func (d *Daemon) background(ctx context.Context) {
 	var rec *reconcile.Reconciler
 	if d.cfg.Agents != nil {
 		rec = &reconcile.Reconciler{Store: d.store, Agents: d.cfg.Agents, Now: d.cfg.Now,
+			HostAlive: func(s *core.Session) bool { return term.Running(d.cfg.Paths.HostSocket(s.ID)) },
 			// Claude's listing can show the moved session before its first
 			// hook: link it then too (d.mu is held while reconciling).
 			Claim: func(ctx context.Context, a claudecli.Agent) *core.Session {

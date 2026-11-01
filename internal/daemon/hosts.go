@@ -5,10 +5,14 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
 )
@@ -123,5 +127,23 @@ func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session) (*core.Sessi
 func (d *Daemon) stopHost(s *core.Session) {
 	if s.Kind == core.KindHosted {
 		_ = term.Kill(d.cfg.Paths.HostSocket(s.ID)) // not running: fine
+	}
+}
+
+// sweepHosts removes the id files of hosts that are gone (a reboot or a
+// crash leaves them); hosts still running are left alone, and keep serving
+// their session (they are separate processes, SPEC §4.5). The sessions
+// whose host is gone are paused by the reconciler.
+func sweepHosts(p paths.Paths) {
+	files, _ := filepath.Glob(filepath.Join(p.RuntimeDir, "h-*.id"))
+	for _, f := range files {
+		b, err := os.ReadFile(filepath.Clean(f))
+		if err != nil {
+			continue
+		}
+		if !term.Running(p.HostSocket(strings.TrimSpace(string(b)))) {
+			_ = os.Remove(f)
+			_ = os.Remove(strings.TrimSuffix(f, ".id") + ".sock")
+		}
 	}
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/brettmostert/agent-command/compare/v0.18.0...v0.19.0) (2026-11-01)
+
+
+### Features
+
+* **kitty:** add a full-width status bar under the sidebar and view ([#52](https://github.com/brettmostert/agent-command/issues/52)) ([5efb58c](https://github.com/brettmostert/agent-command/commit/5efb58ccabce4fb60070c70034edcb631bc8e5ad))
+
 ## [0.18.0](https://github.com/brettmostert/agent-command/compare/v0.17.0...v0.18.0) (2026-11-01)
 
 

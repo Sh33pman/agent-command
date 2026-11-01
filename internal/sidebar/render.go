@@ -90,6 +90,13 @@ func (m *Model) bodyLines() []line {
 			if s.Kind == core.KindExternal {
 				badges += " ↗"
 			}
+			if t, ok := m.snap.Terminals[s.ID]; ok { // a session terminal (SPEC §8.7)
+				if t.Shown {
+					badges += " $"
+				} else {
+					badges += dimStyle.Render(" $")
+				}
+			}
 			if s.Unseen {
 				badges += " •"
 			}

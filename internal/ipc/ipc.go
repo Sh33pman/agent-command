@@ -42,6 +42,15 @@ type Snapshot struct {
 	Views     []*core.View    `json:"views"`
 	// Notices are the most recent notifications (SPEC §8.5), oldest first.
 	Notices []Notice `json:"notices,omitempty"`
+	// Terminals are the sessions with a running terminal (SPEC §8.7),
+	// by session id.
+	Terminals map[string]Terminal `json:"terminals,omitempty"`
+}
+
+// Terminal is a session's terminal: Shown is whether its pane is shown
+// under the view's Claude pane when that session is shown.
+type Terminal struct {
+	Shown bool `json:"shown"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view
@@ -83,6 +92,8 @@ const (
 	MutViewSelect     = "view.select"       // ID = view, Text = session ("" = placeholder)
 	MutViewClose      = "view.close"        // ID = view
 	MutViewNote       = "view.note"         // ID = view, Text (empty clears), Flag = error
+	MutTerm           = "term.running"      // ID = session, Flag = running (the terminal server reports itself)
+	MutTermShown      = "term.shown"        // ID = session, Flag = shown
 	MutViewTouch      = "view.touch"        // ID = view: it was focused
 	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
 	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)

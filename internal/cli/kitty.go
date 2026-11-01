@@ -152,7 +152,20 @@ func (a *sidebarActions) New(ctx context.Context, groupID, dir string) error {
 
 func (a *sidebarActions) FocusView(ctx context.Context) error     { return a.panes.FocusView(ctx) }
 func (a *sidebarActions) ToggleSidebar(ctx context.Context) error { return a.panes.ToggleSidebar(ctx) }
-func (a *sidebarActions) FitWidth(ctx context.Context) error      { return a.panes.FitWidth(ctx) }
+func (a *sidebarActions) ToggleTerm(ctx context.Context) error {
+	snap, err := a.vc.Snapshot(ctx)
+	if err != nil {
+		return err
+	}
+	for _, v := range snap.Views {
+		if v.ID == a.view.ID {
+			call := func(op string, in, out any) error { return a.vc.call(ctx, op, in, out) }
+			return toggleTerm(ctx, call, snap, v)
+		}
+	}
+	return errors.New("this view is gone")
+}
+func (a *sidebarActions) FitWidth(ctx context.Context) error { return a.panes.FitWidth(ctx) }
 
 func (a *sidebarActions) Open(ctx context.Context, s *core.Session) error {
 	return openSession(ctx, s, a.view, openOptions{})
@@ -204,7 +217,8 @@ func newFromShortcut(ctx context.Context, cmd *cobra.Command, v *core.View, grou
 func shortcutView(snap ipc.Snapshot, win int) (*core.View, error) {
 	if win > 0 {
 		for _, v := range snap.Views {
-			if v.Pane.KittyWindow == win || v.Sidebar.KittyWindow == win {
+			sb := v.Sidebar
+			if v.Pane.KittyWindow == win || sb.KittyWindow == win || sb.HeaderWindow == win || sb.BarWindow == win || sb.TermWindow == win {
 				return v, nil
 			}
 		}

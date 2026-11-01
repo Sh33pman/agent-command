@@ -46,6 +46,9 @@ type Loop struct {
 	Out  io.Writer
 	// New starts a session from the placeholder ('n'); nil disables it.
 	New func(ctx context.Context) error
+	// Showing is called before the view shows session id (e.g. to bring
+	// back its terminal pane); nil: nothing.
+	Showing func(ctx context.Context, id string)
 	// HeartbeatWait is the longest watch (default 25 s, under the daemon's
 	// 90 s view timeout).
 	HeartbeatWait time.Duration
@@ -135,6 +138,9 @@ func (l *Loop) show(ctx context.Context, id string) (string, error) {
 		s, err := l.session(ctx, id)
 		if err != nil {
 			return err.Error(), nil
+		}
+		if l.Showing != nil {
+			l.Showing(ctx, s.ID)
 		}
 		started := l.Now()
 		switched, exitErr, err := l.attachUntil(ctx, s)

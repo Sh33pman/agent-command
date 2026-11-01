@@ -49,6 +49,7 @@ var globals = []global{
 	{"open", "open in editor", func(k config.Keys) string { return k.Editor }, "⌘⇧S → E"},
 	{"keys", "shortcuts (this sheet)", func(k config.Keys) string { return k.Cheatsheet }, "⌘⇧S → ?"},
 	{"adopt", "move this pane's session into acmd", func(k config.Keys) string { return k.Adopt }, "⌘⇧S → M"},
+	{"term", "session terminal: create · show/hide", func(k config.Keys) string { return k.Term }, "⌘⇧S → t"},
 	{"go", "show session N", func(k config.Keys) string {
 		if k.GotoPrefix == "" {
 			return ""
@@ -78,6 +79,7 @@ var local = []Binding{
 	{"sort", Sidebar, "o O", "sort · direction", ""},
 	{"attention", Sidebar, "Tab", "next needing you", ""},
 	{"hide", Sidebar, "h", "hide sidebar", ""},
+	{"term", Sidebar, "t", "session terminal: create · show/hide ($ = has one)", ""},
 	{"quit", Sidebar, "q", "close this view (sessions keep running)", ""},
 	{"compact", Sidebar, "c", "compact rows", ""},
 	{"back", Sidebar, "Esc", "back to the session", ""},

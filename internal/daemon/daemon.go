@@ -66,6 +66,7 @@ type Daemon struct {
 	changes changes // bumped on every state change (OpWatch)
 	seen    seen    // view heartbeats
 	notes   notes   // status bar messages per view (not persisted)
+	terms   terms   // sessions with a running terminal (not persisted)
 
 	adopting map[string]adoption // session id → a move into acmd in progress (d.mu)
 	notify   *notifier           // d.mu
@@ -121,6 +122,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}),
 		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}, adopting: map[string]adoption{}}
+	d.terms.rescan(cfg.Paths)
 	if cfg.Notify != nil {
 		d.notify = newNotifier(*cfg.Notify)
 	}

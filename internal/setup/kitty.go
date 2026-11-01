@@ -81,6 +81,7 @@ func KittyBinds(acmd string, k Keys) []KittyBind {
 		{k.Editor, "open", bg("open")},
 		// An overlay: it asks first and shows progress (SPEC §6.3).
 		{k.Adopt, "adopt", "--type=overlay " + q + " adopt --kitty-window @active-kitty-window-id"},
+		{k.Term, "term", bg("term")},
 	}
 	for n := 1; n <= 9; n++ {
 		binds = append(binds, KittyBind{fmt.Sprintf("%s+%d", k.GotoPrefix, n), fmt.Sprintf("go %d", n), bg(fmt.Sprintf("go %d", n))})
@@ -96,13 +97,13 @@ func KittyBinds(acmd string, k Keys) []KittyBind {
 
 // Keys are the configurable global shortcuts (SPEC §10 [keys]).
 type Keys struct {
-	Toggle, New, Focus, Attention, Picker, Cheatsheet, Editor, Adopt, GotoPrefix string
+	Toggle, New, Focus, Attention, Picker, Cheatsheet, Editor, Adopt, Term, GotoPrefix string
 }
 
 // DefaultKeys are SPEC §8.3's defaults.
 var DefaultKeys = Keys{
 	Toggle: "cmd+shift+b", New: "cmd+shift+n", Focus: "cmd+shift+s", Attention: "cmd+shift+a",
-	Picker: "cmd+shift+l", Cheatsheet: "cmd+shift+k", Editor: "cmd+shift+e", Adopt: "cmd+shift+m", GotoPrefix: "ctrl+cmd",
+	Picker: "cmd+shift+l", Cheatsheet: "cmd+shift+k", Editor: "cmd+shift+e", Adopt: "cmd+shift+m", Term: "cmd+shift+x", GotoPrefix: "ctrl+cmd",
 }
 
 // RenderKittyConf renders agent-command.conf. Binds in skip (normalized key

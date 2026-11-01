@@ -280,6 +280,17 @@ func (k *Kitty) AddPaneAbove(ctx context.Context, s BarSpec, role string) (int, 
 	return id, err
 }
 
+// AddPaneBelow splits the view pane and puts the new window right under
+// it, spanning only the view pane's width (the terminal pane), lines
+// tall. It returns the new window's id; focus stays on the new window.
+func (k *Kitty) AddPaneBelow(ctx context.Context, s BarSpec, role string) (int, error) {
+	id, err := k.launchSplit(ctx, s, role)
+	if err != nil {
+		return 0, err
+	}
+	return id, k.SetHeight(ctx, id, s.Lines)
+}
+
 // launchSplit launches s.Command in a horizontal split under s.View.
 func (k *Kitty) launchSplit(ctx context.Context, s BarSpec, role string) (int, error) {
 	args := []string{"launch", "--location=hsplit", "--match", match(s.View),

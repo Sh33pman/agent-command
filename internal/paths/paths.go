@@ -83,3 +83,23 @@ func (p Paths) Setup() string { return filepath.Join(p.StateDir, "setup.json") }
 
 // Backups holds copies of config files from before acmd edited them.
 func (p Paths) Backups() string { return filepath.Join(p.StateDir, "backups") }
+
+// TermSocket is the unix socket of session id's terminal server (SPEC
+// §8.7). The name is short: unix socket paths are limited to 104 bytes.
+func (p Paths) TermSocket(id string) string {
+	return filepath.Join(p.RuntimeDir, "t-"+termKey(id)+".sock")
+}
+
+// TermIDFile holds the full session id next to TermSocket, so a daemon
+// that restarts can find the terminals that are still running.
+func (p Paths) TermIDFile(id string) string {
+	return filepath.Join(p.RuntimeDir, "t-"+termKey(id)+".id")
+}
+
+// termKey is the random tail of a ULID session id (unique enough).
+func termKey(id string) string {
+	if len(id) > 12 {
+		return id[len(id)-12:]
+	}
+	return id
+}

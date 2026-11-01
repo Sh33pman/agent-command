@@ -43,6 +43,9 @@ type Actions interface {
 	Adopt(ctx context.Context, s *core.Session) error
 	// SplitOut opens s in a new tab or window (SPEC §6.6).
 	SplitOut(ctx context.Context, s *core.Session, window, withSidebar bool) error
+	// ToggleTerm creates the terminal of the session this view shows, or
+	// shows/hides it (SPEC §8.7).
+	ToggleTerm(ctx context.Context) error
 	// Terminal is "kitty" or "ghostty" (notification format).
 	Terminal() string
 	// ViewFocused reports whether this view's pane has focus in the
@@ -536,6 +539,12 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(append(cmds, m.show(next))...)
 	case "h":
 		return m.do(m.act.ToggleSidebar)
+	case "t":
+		if m.view == nil || m.view.Selected == "" {
+			m.note = "Show a session first; its terminal opens under it."
+			return nil
+		}
+		return m.do(m.act.ToggleTerm)
 	case "q":
 		return m.ask2("Close this view? Your sessions keep running.", func() tea.Cmd {
 			return m.mutate(ipc.Mutation{Kind: ipc.MutViewClose, ID: m.viewID})

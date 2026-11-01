@@ -43,7 +43,7 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views, Notices: d.notices()}, nil
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views, Notices: d.notices(), Terminals: d.terms.all()}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.
@@ -179,6 +179,14 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.updateViewState(ctx, func(vs *core.ViewState) { vs.ShowArchived = m.Flag })
 	case ipc.MutViewFocus:
 		return nil, d.focus(ctx, m.GroupID)
+	case ipc.MutTerm:
+		d.terms.set(m.ID, m.Flag)
+		return nil, nil
+	case ipc.MutTermShown:
+		if !d.terms.show(m.ID, m.Flag) {
+			return nil, errors.New("that session has no terminal")
+		}
+		return nil, nil
 	case ipc.MutViewOpen, ipc.MutViewSelect, ipc.MutViewClose, ipc.MutViewTouch, ipc.MutViewSidebar, ipc.MutViewHidden, ipc.MutViewNote:
 		return d.viewMutation(ctx, m)
 	default:

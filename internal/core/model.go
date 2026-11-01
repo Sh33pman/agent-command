@@ -63,6 +63,10 @@ type PaneLoc struct {
 	// a view's sidebar; Kitty window id / Ghostty terminal id).
 	HeaderWindow int    `json:",omitempty"`
 	HeaderTerm   string `json:",omitempty"`
+	// TermWindow / TermTerm: the terminal pane under a view pane (set on a
+	// view's sidebar; SPEC §8.7). It may have closed by itself since.
+	TermWindow int    `json:",omitempty"`
+	TermTerm   string `json:",omitempty"`
 }
 
 // Session is an acmd session (SPEC §5.1). Its ID is stable while Claude's

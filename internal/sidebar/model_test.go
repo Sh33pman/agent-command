@@ -64,6 +64,7 @@ func (f *fake) pane(what string) error {
 func (f *fake) FocusView(context.Context) error     { return f.pane("focus-view") }
 func (f *fake) ToggleSidebar(context.Context) error { return f.pane("toggle") }
 func (f *fake) FitWidth(context.Context) error      { return f.pane("fit") }
+func (f *fake) ToggleTerm(context.Context) error    { return f.pane("term") }
 func (f *fake) Open(_ context.Context, s *core.Session) error {
 	return f.pane("open " + s.ID)
 }

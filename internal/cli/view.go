@@ -107,6 +107,7 @@ func runView(cmd *cobra.Command, viewID string) error {
 			_, err := startSession(ctx, cmd, newOptions{cwd: cwd, showIn: viewID, interactive: true})
 			return err
 		},
+		Showing: termShowing(vc, viewID),
 	}
 	err = loop.Run(ctx)
 	switch {

@@ -101,3 +101,18 @@ func TestInboxReplyResets(t *testing.T) {
 		t.Error("removing the shown item didn't empty the reply box")
 	}
 }
+
+func TestSurfaceKeepsOpenItem(t *testing.T) {
+	at := time.Now()
+	b := &Inbox{}
+	b.Set([]core.InboxItem{{SessionID: "a", At: at}}, nil)
+	b.Surface("a")
+	if !b.Open || b.Current != "a" {
+		t.Fatalf("closed panel should open on a: open=%v cur=%q", b.Open, b.Current)
+	}
+	b.Set([]core.InboxItem{{SessionID: "a", At: at}, {SessionID: "b", At: at}}, nil)
+	b.Surface("b")
+	if b.Current != "a" {
+		t.Fatalf("open panel switched to %q, want a", b.Current)
+	}
+}

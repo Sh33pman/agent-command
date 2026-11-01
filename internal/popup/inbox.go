@@ -92,6 +92,15 @@ func (b *Inbox) Show(id string) {
 	b.Open = len(b.Items) > 0
 }
 
+// Surface shows session id's new item. A panel that is already open keeps the
+// item being reviewed, so a queue update never interrupts the user.
+func (b *Inbox) Surface(id string) {
+	if b.Open && b.index() >= 0 {
+		return
+	}
+	b.Show(id)
+}
+
 // Remove drops session id's item at once (the daemon follows), showing the
 // next one; the panel closes when none are left.
 func (b *Inbox) Remove(id string) {

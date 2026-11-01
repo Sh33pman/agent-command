@@ -264,7 +264,7 @@ func (a *popupAgent) follow(ctx context.Context) {
 			}
 			if show != "" && !inAcmd {
 				a.mu.Lock()
-				a.b.Show(show)
+				a.b.Surface(show)
 				a.mu.Unlock()
 			}
 		}

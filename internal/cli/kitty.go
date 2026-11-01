@@ -53,7 +53,7 @@ func sidebarWidth() int {
 func focusExternal(ctx context.Context, loc core.PaneLoc) error { return focusPane(ctx, loc) }
 
 func newSidebarCmd() *cobra.Command {
-	var viewID string
+	var viewID, launchDir string
 	cmd := &cobra.Command{
 		Use:    "sidebar --view <id>",
 		Short:  "Run a view's sidebar (started by `acmd`)",
@@ -87,6 +87,10 @@ func newSidebarCmd() *cobra.Command {
 			act := &sidebarActions{vc: vc, cmd: cmd, view: v,
 				panes: &viewPanes{v: v, call: call, own: own, width: sidebarWidth()}}
 			model := sidebar.New(ctx, act, viewID, homeDir())
+			if launchDir == "" {
+				launchDir, _ = os.Getwd()
+			}
+			model.SetLaunchDir(launchDir)
 			if _, err := tea.NewProgram(model, tea.WithContext(ctx)).Run(); err != nil && ctx.Err() == nil && model.Err() == nil {
 				return err
 			}
@@ -101,6 +105,7 @@ func newSidebarCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&viewID, "view", "", "the view this sidebar belongs to")
+	cmd.Flags().StringVar(&launchDir, "launch-dir", "", "the folder acmd was run from (offered first for new sessions)")
 	return cmd
 }
 
@@ -266,7 +271,7 @@ func toggleSidebar(ctx context.Context, c *client, v *core.View) error {
 		return err
 	}
 	if !alive {
-		_, err := addSidebar(ctx, call, v)
+		_, err := addSidebar(ctx, call, v, "")
 		return err
 	}
 	_ = c.mutate(ipc.Mutation{Kind: ipc.MutViewTouch, ID: v.ID}, nil)

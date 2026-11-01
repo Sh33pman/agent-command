@@ -25,7 +25,7 @@ func TestKittyShortcuts(t *testing.T) {
 	// A view in Kitty window 1 gets its sidebar on the left.
 	var v core.View
 	must(t, e.conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &core.PaneLoc{Terminal: "kitty", KittySocket: "unix:/tmp/k", KittyWindow: 1}}, &v))
-	sb, err := addSidebar(ctx, e.conn.Call, &v)
+	sb, err := addSidebar(ctx, e.conn.Call, &v, "")
 	must(t, err)
 	if sb.KittyWindow == 0 || sb.RestoreLayout != "fat" || sim.Tabs[0].Windows[0].ID != sb.KittyWindow || sim.Tabs[0].Layout != "splits" {
 		t.Fatalf("sidebar %+v, tab %+v", sb, sim.Tabs[0])

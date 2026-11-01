@@ -66,6 +66,7 @@ const (
 	modePicker
 	modeMenu
 	modeHelp
+	modeFolder // folder picker for a new session
 )
 
 // Model is the sidebar.
@@ -74,7 +75,9 @@ type Model struct {
 	act    Actions
 	viewID string
 	home   string
-	now    func() time.Time
+	// launchDir is the folder acmd was run from (never a worktree).
+	launchDir string
+	now       func() time.Time
 
 	snap   ipc.Snapshot
 	view   *core.View
@@ -96,6 +99,7 @@ type Model struct {
 	label   string                     // input / confirm prompt
 	confirm func() tea.Cmd
 	picker  *picker
+	fpick   *folderPicker
 	menu    *menu
 	note    string
 	noteErr bool
@@ -270,28 +274,6 @@ func (m *Model) targets() []*core.Session {
 	return nil
 }
 
-// folderFor is where a new session in group starts (SPEC §6.1 step 2).
-func (m *Model) folderFor(groupID string) string {
-	if r, ok := m.current(); ok && r.Session != nil && r.Session.GroupID == groupID && r.Session.Cwd != "" {
-		return r.Session.Cwd
-	}
-	if m.view != nil {
-		if s := m.session(m.view.Selected); s != nil && s.GroupID == groupID && s.Cwd != "" {
-			return s.Cwd
-		}
-	}
-	var recent *core.Session
-	for _, s := range m.snap.Sessions {
-		if s.GroupID == groupID && s.Cwd != "" && (recent == nil || s.LastEventAt.After(recent.LastEventAt)) {
-			recent = s
-		}
-	}
-	if recent != nil {
-		return recent.Cwd
-	}
-	return m.home
-}
-
 // currentGroup is the group to preselect: the cursor's, else the shown
 // session's, else the most recently active session's (SPEC §8.4).
 func (m *Model) currentGroup() string {
@@ -378,7 +360,7 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.mode == modeInput || m.mode == modePicker {
+	if m.mode == modeInput || m.mode == modePicker || m.mode == modeFolder {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -403,6 +385,8 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case modePicker:
 		return m.pickerKey(k)
+	case modeFolder:
+		return m.folderKey(k)
 	case modeMenu:
 		return m.menuKey(k)
 	case modeHelp:
@@ -448,8 +432,7 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return m.newSession("")
 	case "N":
-		dir := m.folderFor(m.currentGroup())
-		return m.ask("Folder", dir, func(v string) tea.Cmd { return m.newSession(strings.TrimSpace(v)) })
+		return m.newSession("")
 	case "r":
 		if !ok {
 			return nil
@@ -771,7 +754,7 @@ func (m *Model) newSession(dir string) tea.Cmd {
 
 func (m *Model) newIn(groupID, dir string) tea.Cmd {
 	if dir == "" {
-		dir = m.folderFor(groupID)
+		return m.openFolderPicker(groupID, "")
 	}
 	m.note = "Starting a session in " + tilde(dir, m.home) + "…"
 	return m.do(func(ctx context.Context) error { return m.act.New(ctx, groupID, dir) })
@@ -786,6 +769,8 @@ func (m *Model) click(mo tea.Mouse) tea.Cmd {
 		return m.menuClick(mo)
 	case modePicker:
 		return m.pickerClick(mo)
+	case modeFolder:
+		return m.folderClick(mo)
 	case modeNormal:
 	default:
 		return nil

@@ -273,6 +273,8 @@ func (m *Model) render() string {
 		body = []string{dimStyle.Render(" loading…")}
 	case m.mode == modePicker:
 		body = m.pickerLines()
+	case m.mode == modeFolder:
+		body = m.folderLines()
 	case m.mode == modeHelp:
 		lines := m.act.Help(m.w-1, m.groupsExist())
 		m.helpTop = max(0, min(m.helpTop, len(lines)-h+1))

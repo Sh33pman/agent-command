@@ -36,7 +36,7 @@ func TestSessionTerminal(t *testing.T) {
 
 	var v core.View
 	must(t, e.conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &core.PaneLoc{Terminal: "kitty", KittySocket: "unix:/tmp/k", KittyWindow: 1}}, &v))
-	_, err := addSidebar(ctx, e.conn.Call, &v)
+	_, err := addSidebar(ctx, e.conn.Call, &v, "")
 	must(t, err)
 
 	// No session shown: refused.

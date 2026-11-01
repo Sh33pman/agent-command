@@ -141,9 +141,17 @@ func (m *Model) pick(it pickItem) tea.Cmd {
 	p := m.picker
 	m.mode, m.picker = modeNormal, nil
 	m.input.Blur()
-	if p.kind == pickMove {
-		m.marked = map[string]bool{}
+	if p.kind == pickNew {
+		// Next: where the session starts (the group is created then).
+		if it.group != nil {
+			return m.newIn(it.group.ID, p.dir)
+		}
+		if p.dir == "" {
+			return m.openFolderPicker("", it.create)
+		}
+		return m.startIn(&folderPicker{createGroup: it.create}, p.dir, false)
 	}
+	m.marked = map[string]bool{}
 	return m.do(func(ctx context.Context) error {
 		groupID := ""
 		if it.group != nil {
@@ -155,14 +163,7 @@ func (m *Model) pick(it pickItem) tea.Cmd {
 			}
 			groupID = g.ID
 		}
-		if p.kind == pickMove {
-			return m.act.Mutate(ctx, ipc.Mutation{Kind: ipc.MutMove, IDs: p.ids, GroupID: groupID}, nil)
-		}
-		dir := p.dir
-		if dir == "" {
-			dir = m.folderFor(groupID)
-		}
-		return m.act.New(ctx, groupID, dir)
+		return m.act.Mutate(ctx, ipc.Mutation{Kind: ipc.MutMove, IDs: p.ids, GroupID: groupID}, nil)
 	})
 }
 

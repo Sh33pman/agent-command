@@ -28,7 +28,7 @@ func TestGhosttyView(t *testing.T) {
 
 	var v core.View
 	must(t, e.conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &core.PaneLoc{Terminal: "ghostty", GhosttyTerm: "T1", TTY: "/dev/ttys001"}}, &v))
-	sb, err := addSidebar(ctx, e.conn.Call, &v)
+	sb, err := addSidebar(ctx, e.conn.Call, &v, "")
 	must(t, err)
 	if sb.Terminal != "ghostty" || sb.GhosttyTerm == "" || sim.Focused != "T1" {
 		t.Fatalf("sidebar %+v focused %s", sb, sim.Focused)

@@ -64,7 +64,7 @@ var local = []Binding{
 	{"show", Sidebar, "↵ 1–9", "show session", ""},
 	{"move-cursor", Sidebar, "↑↓ j k", "move", ""},
 	{"new", Sidebar, "n", "new session", ""},
-	{"new-in", Sidebar, "N", "new session in a folder", ""},
+	{"new-in", Sidebar, "N", "new session (same folder picker as n)", ""},
 	{"rename", Sidebar, "r", "rename", ""},
 	{"describe", Sidebar, "e", "describe", ""},
 	{"open", Sidebar, "E", "open in editor", ""},

@@ -62,7 +62,8 @@ func runView(cmd *cobra.Command, viewID string) error {
 		viewID = v.ID
 		if (pane.Terminal == "kitty" && pane.KittySocket != "" && pane.KittyWindow != 0) || (pane.Terminal == "ghostty" && pane.GhosttyTerm != "") {
 			call := func(op string, in, out any) error { return vc.call(ctx, op, in, out) }
-			if v.Sidebar, err = addSidebar(ctx, call, &v); err != nil {
+			launchDir, _ := os.Getwd()
+			if v.Sidebar, err = addSidebar(ctx, call, &v, launchDir); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "acmd: couldn't add the sidebar (%v); the view works without it\n", err)
 			}
 		}

@@ -402,6 +402,8 @@ func TestPickerNewAndMove(t *testing.T) {
 	// n: the group picker, preselecting the cursor's group.
 	h.keys("n")
 	h.wantScreen("New session in group:", "PROJ-123", "spikes", "○ Default", "esc cancel")
+	h.keys("enter") // the group, then where it starts
+	h.wantScreen("Start in:", "/w/a", "New folder…")
 	h.keys("enter")
 	if got := strings.Join(h.f.news, ";"); got != "g1 /w/a" {
 		t.Errorf("new: %s", got)
@@ -410,30 +412,29 @@ func TestPickerNewAndMove(t *testing.T) {
 	h.keys("n")
 	h.typeText("Billing")
 	h.wantScreen("＋ Create group “Billing”")
-	h.keys("enter")
-	if got := h.f.news[len(h.f.news)-1]; got != "new-Billing /home" {
+	h.keys("enter", "enter") // create the group, start in the shown session's folder
+	if got := h.f.news[len(h.f.news)-1]; got != "new-Billing /w/a" {
 		t.Errorf("new in a created group: %s", got)
 	}
 	h.wantMutation(ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "Billing"})
 	h.keys("n", "esc")
 	h.wantScreen("Canceled.")
 
-	// n on a header: that group, no picker. N asks for the folder.
+	// n on a header: that group's folder picker, no group picker.
 	h.m.cursor = "g:g2"
 	h.keys("n")
-	if got := h.f.news[len(h.f.news)-1]; got != "g2 /w/b" {
+	h.wantScreen("Start in:")
+	h.keys("down", "enter") // the shown session's folder, then the next one
+	if got := h.f.news[len(h.f.news)-1]; !strings.HasPrefix(got, "g2 /w/") {
 		t.Errorf("n on a header: %s", got)
 	}
+	// N is the same flow; a typed path starts there.
 	h.m.cursor = "s:a"
-	h.keys("N")
-	h.wantScreen("Folder:")
-	for range len("/w/a") {
-		h.keys("backspace")
-	}
+	h.keys("N", "enter") // group
 	h.typeText("/tmp/x")
-	h.keys("enter") // folder, then the picker
-	h.keys("down", "down", "enter")
-	if got := h.f.news[len(h.f.news)-1]; got != "default /tmp/x" {
+	h.wantScreen("… /tmp/x")
+	h.keys("enter")
+	if got := h.f.news[len(h.f.news)-1]; got != "g1 /tmp/x" {
 		t.Errorf("N: %s", got)
 	}
 
@@ -452,7 +453,9 @@ func TestPickerNewAndMove(t *testing.T) {
 
 func TestPickerWithoutGroups(t *testing.T) {
 	h := newHarness(t, listSnap(), "a")
-	h.keys("n") // only Default: no picker
+	h.keys("n") // only Default: straight to the folder picker
+	h.wantScreen("Start in:", "/w/a")
+	h.keys("enter")
 	if got := strings.Join(h.f.news, ";"); got != "default /w/a" {
 		t.Errorf("new: %s", got)
 	}

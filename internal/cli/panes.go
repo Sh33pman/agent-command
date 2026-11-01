@@ -79,8 +79,13 @@ func acmdEnv() []string {
 
 // addSidebar adds the view's sidebar split on the left of the view pane
 // and records it with the daemon.
-func addSidebar(ctx context.Context, call func(op string, in, out any) error, v *core.View) (core.PaneLoc, error) {
+// launchDir is the folder acmd was run from ("" when not known: the sidebar
+// then uses its own working folder), offered first when starting a session.
+func addSidebar(ctx context.Context, call func(op string, in, out any) error, v *core.View, launchDir string) (core.PaneLoc, error) {
 	argv := []string{acmdPath(), "sidebar", "--view", v.ID}
+	if launchDir != "" {
+		argv = append(argv, "--launch-dir", launchDir)
+	}
 	var loc core.PaneLoc
 	switch v.Pane.Terminal {
 	case "kitty":

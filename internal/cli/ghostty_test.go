@@ -12,6 +12,8 @@ import (
 	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/ghostty/ghosttytest"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/kitty"
+	"github.com/brettmostert/agent-command/internal/kitty/kittytest"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
@@ -104,4 +106,30 @@ func TestCurrentGhosttyPane(t *testing.T) {
 	if err := p.FitWidth(context.Background()); err != nil { // no terminal in tests: nothing to fit
 		t.Errorf("FitWidth: %v", err)
 	}
+}
+
+func TestViewFocusedAndFallback(t *testing.T) {
+	gsim, ksim := ghosttytest.New(), kittytest.New()
+	origG, origK := ghosttyApp, kittyAt
+	ghosttyApp = func() *ghostty.App { return gsim.App() }
+	kittyAt = func(string) *kitty.Kitty { return ksim.Kitty() }
+	t.Cleanup(func() { ghosttyApp, kittyAt = origG, origK })
+	ctx := context.Background()
+	gv := &core.View{Pane: core.PaneLoc{Terminal: "ghostty", GhosttyTerm: "T1"}}
+	if !viewFocused(ctx, gv) {
+		t.Error("ghostty: focused view not seen")
+	}
+	gsim.Background = true
+	if viewFocused(ctx, gv) {
+		t.Error("ghostty in the background counted as focused")
+	}
+	kv := &core.View{Pane: core.PaneLoc{Terminal: "kitty", KittySocket: "unix:/tmp/k", KittyWindow: 1}}
+	if viewFocused(ctx, kv) { // the simulated OS window isn't focused
+		t.Error("kitty: unfocused OS window counted")
+	}
+	if viewFocused(ctx, &core.View{}) {
+		t.Error("no terminal counted as focused")
+	}
+	t.Setenv("PATH", "/usr/bin:/bin")
+	fallbackNotify(ipc.Notice{Title: "t", Body: "b", Sound: "default"}) // osascript via the (simulated) runner: no panic
 }

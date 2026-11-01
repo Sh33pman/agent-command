@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -41,6 +42,11 @@ type Config struct {
 	Stopper Stopper
 	// Claude starts and resumes background sessions (claudecli.CLI).
 	Claude Claude
+	// Notify configures notifications (nil = none).
+	Notify *config.Notify
+	// Fallback shows a notification when no view's sidebar can (SPEC §8.5:
+	// terminal-notifier, else osascript).
+	Fallback func(ipc.Notice)
 	// ReconcileEvery and TailEvery default to 3 s and 1 s (SPEC §6.7, §5.4).
 	ReconcileEvery time.Duration
 	TailEvery      time.Duration
@@ -59,6 +65,7 @@ type Daemon struct {
 	seen    seen    // view heartbeats
 
 	adopting map[string]adoption // session id → a move into acmd in progress (d.mu)
+	notify   *notifier           // d.mu
 }
 
 // adoption is an external session acmd typed /bg into: its conversation
@@ -111,6 +118,9 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}),
 		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}, adopting: map[string]adoption{}}
+	if cfg.Notify != nil {
+		d.notify = newNotifier(*cfg.Notify)
+	}
 	defer os.Remove(sock)
 
 	if err := d.drainSpool(ctx); err != nil {
@@ -287,7 +297,8 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 			sess.BgID = e.SessionID[:8]
 		}
 	}
-	if tr.Changed() && tr.To.NeedsAttention() && !d.shown(ctx, sess.ID) {
+	shown := d.shown(ctx, sess.ID)
+	if tr.Changed() && tr.To.NeedsAttention() && !shown {
 		sess.Unseen = true
 	}
 	if isNew {
@@ -298,6 +309,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	if err != nil {
 		return err
 	}
+	d.transition(ctx, sess, tr)
 	return d.store.AppendEvent(ctx, store.LoggedEvent{
 		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
 		Detail: string(sess.Status), ToolName: e.ToolName,
@@ -400,6 +412,7 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 		if !tr.Changed() {
 			continue
 		}
+		d.transition(ctx, s, tr)
 		s.Unseen = !d.shown(ctx, s.ID)
 		changed = true
 		if err := d.store.UpdateSession(ctx, s); err != nil {

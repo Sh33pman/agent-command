@@ -267,3 +267,15 @@ on run argv
 end run`, command, cwd, strings.Join(env, "\n"))
 	return err
 }
+
+// FocusedTerm is the focused terminal's id when Ghostty is the frontmost
+// app, else "" (notification suppression, SPEC §8.5).
+func (a *App) FocusedTerm(ctx context.Context) (string, error) {
+	return a.Run(ctx, `
+if application "Ghostty" is running then
+	tell application "Ghostty"
+		if frontmost and (count of windows) > 0 then return id of focused terminal of selected tab of front window
+	end tell
+end if
+return ""`)
+}

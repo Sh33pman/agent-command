@@ -166,6 +166,10 @@ func (a *sidebarActions) SplitOut(ctx context.Context, s *core.Session, window, 
 	return splitOut(ctx, a.view, s, window, withSidebar)
 }
 
+func (a *sidebarActions) Terminal() string { return a.view.Pane.Terminal }
+
+func (a *sidebarActions) ViewFocused(ctx context.Context) bool { return viewFocused(ctx, a.view) }
+
 func (a *sidebarActions) Help(width int, groups bool) []string {
 	bs := keymap.Filter(bindings(a.view.Pane.Terminal), "", "", groups)
 	return keymap.Lines(bs, keymap.Ordered(keymap.Sidebar), width)

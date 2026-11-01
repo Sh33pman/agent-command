@@ -15,6 +15,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/kitty"
+	"github.com/brettmostert/agent-command/internal/setup"
 )
 
 // Terminal dispatch (SPEC §7.1): the few pane operations acmd needs, for
@@ -242,4 +243,57 @@ func abs(n int) int {
 		return -n
 	}
 	return n
+}
+
+// viewFocused reports whether v's pane has focus in the frontmost
+// terminal window.
+func viewFocused(ctx context.Context, v *core.View) bool {
+	switch v.Pane.Terminal {
+	case "kitty":
+		ws, err := kittyAt(v.Pane.KittySocket).LS(ctx)
+		if err != nil {
+			return false
+		}
+		for _, ow := range ws {
+			for _, t := range ow.Tabs {
+				for _, w := range t.Windows {
+					if w.ID == v.Pane.KittyWindow {
+						return ow.IsFocused && w.IsFocused
+					}
+				}
+			}
+		}
+	case "ghostty":
+		id, err := ghosttyApp().FocusedTerm(ctx)
+		return err == nil && id != "" && id == v.Pane.GhosttyTerm
+	}
+	return false
+}
+
+// fallbackNotify shows a notification without a sidebar (SPEC §8.5):
+// terminal-notifier (a click runs `acmd go`), else osascript.
+func fallbackNotify(no ipc.Notice) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if tn, err := setup.LookPathIn("terminal-notifier", loginPath()); err == nil {
+		args := []string{"-title", no.Title, "-message", no.Body, "-group", no.SessionID,
+			"-execute", ghostty.Quote([]string{acmdPath(), "go", no.SessionID})}
+		if no.Sound != "" {
+			args = append(args, "-sound", no.Sound)
+		}
+		_ = exec.CommandContext(ctx, tn, args...).Run() // #nosec G204 -- terminal-notifier on the login PATH; argv without a shell
+		return
+	}
+	script := `on run argv
+	if item 3 of argv is "" then
+		display notification (item 2 of argv) with title (item 1 of argv)
+	else
+		display notification (item 2 of argv) with title (item 1 of argv) sound name (item 3 of argv)
+	end if
+end run`
+	sound := no.Sound
+	if sound == "default" {
+		sound = "Glass"
+	}
+	_, _ = ghosttyApp().Run(ctx, script, no.Title, no.Body, sound)
 }

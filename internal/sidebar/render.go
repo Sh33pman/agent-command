@@ -240,6 +240,7 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+	v.ReportFocus = true // a notification click focuses the sidebar (M0 N2, N6)
 	return v
 }
 

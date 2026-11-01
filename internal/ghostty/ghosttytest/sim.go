@@ -20,13 +20,14 @@ type Term struct {
 
 // Sim is a Ghostty with terminals; it records operations.
 type Sim struct {
-	mu      sync.Mutex
-	Terms   []*Term
-	Focused string
-	Zoomed  map[string]bool
-	Calls   []string
-	Denied  bool // macOS Automation permission denied
-	next    int
+	mu         sync.Mutex
+	Terms      []*Term
+	Focused    string
+	Zoomed     map[string]bool
+	Calls      []string
+	Denied     bool // macOS Automation permission denied
+	Background bool // Ghostty isn't the frontmost app
+	next       int
 }
 
 // New returns a Ghostty with one terminal, "T1" on /dev/ttys001.
@@ -135,6 +136,11 @@ func (s *Sim) Run(_ context.Context, script string, args ...string) (string, err
 	case strings.Contains(script, "reload_config"):
 		s.record("reload")
 		return "ok", nil
+	case strings.Contains(script, "if frontmost and"):
+		if s.Background {
+			return "", nil
+		}
+		return s.Focused, nil
 	case strings.Contains(script, "get version"):
 		return "running", nil
 	}

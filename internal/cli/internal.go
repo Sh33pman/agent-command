@@ -44,7 +44,12 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			logger := log.New(cmd.ErrOrStderr(), "acmd daemon: ", log.LstdFlags)
-			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger}
+			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify}
+			if c, err := config.Load(p.Config()); err == nil {
+				cfg.Notify = &c.Notify
+			} else {
+				logger.Printf("config: %v (notifications off)", err)
+			}
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)
 				cfg.Agents, cfg.Stopper, cfg.Claude = cli, cli, cli

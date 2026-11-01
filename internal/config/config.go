@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -23,6 +24,31 @@ type Config struct {
 	SidebarWidth  int      `toml:"sidebar_width"`
 	Editor        Editor   `toml:"editor"`
 	Keys          Keys     `toml:"keys"`
+	Notify        Notify   `toml:"notify"`
+}
+
+// Notify is the [notify] section (SPEC §8.5).
+type Notify struct {
+	Enabled         bool   `toml:"enabled"`
+	OnWaiting       bool   `toml:"on_waiting"`
+	OnError         bool   `toml:"on_error"`
+	OnDone          bool   `toml:"on_done"`
+	OnPaused        bool   `toml:"on_paused"`
+	DoneMinDuration string `toml:"done_min_duration"` // only "finished" for turns at least this long
+	Cooldown        string `toml:"cooldown"`          // at most one notification per session per this
+	Sound           string `toml:"sound"`             // "" for silent
+}
+
+// Durations parses DoneMinDuration and Cooldown (defaults when invalid).
+func (n Notify) Durations() (doneMin, cooldown time.Duration) {
+	doneMin, cooldown = 30*time.Second, 20*time.Second
+	if d, err := time.ParseDuration(n.DoneMinDuration); err == nil && d >= 0 {
+		doneMin = d
+	}
+	if d, err := time.ParseDuration(n.Cooldown); err == nil && d >= 0 {
+		cooldown = d
+	}
+	return doneMin, cooldown
 }
 
 // Editor is the [editor] section (SPEC §8.6).
@@ -52,7 +78,9 @@ func Default() Config {
 	return Config{
 		ClaudeCommand: "claude",
 		SidebarWidth:  32,
-		Editor:        Editor{RunIn: "background", Target: "cwd"},
+		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
+			DoneMinDuration: "30s", Cooldown: "20s", Sound: "default"},
+		Editor: Editor{RunIn: "background", Target: "cwd"},
 		Keys: Keys{
 			Toggle: "cmd+shift+b", New: "cmd+shift+n", Focus: "cmd+shift+s", Attention: "cmd+shift+a",
 			Picker: "cmd+shift+l", Cheatsheet: "cmd+shift+k", Editor: "cmd+shift+e", GotoPrefix: "ctrl+cmd",

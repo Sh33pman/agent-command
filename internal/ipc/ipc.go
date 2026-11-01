@@ -40,6 +40,22 @@ type Snapshot struct {
 	Groups    []*core.Group   `json:"groups"`
 	ViewState core.ViewState  `json:"view_state"`
 	Views     []*core.View    `json:"views"`
+	// Notices are the most recent notifications (SPEC §8.5), oldest first.
+	Notices []Notice `json:"notices,omitempty"`
+}
+
+// Notice is a notification the daemon decided on. Emitter is the view
+// whose sidebar shows it; "" means the daemon showed it itself (no view
+// with a visible sidebar).
+type Notice struct {
+	Seq       uint64 `json:"seq"`
+	SessionID string `json:"session_id"`
+	Kind      string `json:"kind"` // waiting | error | done | paused | withdraw
+	Title     string `json:"title,omitempty"`
+	Body      string `json:"body,omitempty"`
+	Urgent    bool   `json:"urgent,omitempty"`
+	Sound     string `json:"sound,omitempty"`
+	Emitter   string `json:"emitter,omitempty"`
 }
 
 // Mutation kinds (OpMutate). Selectors are resolved by the client; the

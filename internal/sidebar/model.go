@@ -42,6 +42,11 @@ type Actions interface {
 	Adopt(ctx context.Context, s *core.Session) error
 	// SplitOut opens s in a new tab or window (SPEC §6.6).
 	SplitOut(ctx context.Context, s *core.Session, window, withSidebar bool) error
+	// Terminal is "kitty" or "ghostty" (notification format).
+	Terminal() string
+	// ViewFocused reports whether this view's pane has focus in the
+	// frontmost terminal (then no notification for what it shows).
+	ViewFocused(ctx context.Context) bool
 }
 
 // ErrClosed means the sidebar's view was closed.
@@ -94,6 +99,10 @@ type Model struct {
 		at  time.Time
 		key string
 	}
+
+	lastNotice uint64    // newest notice seen
+	notified   string    // session of the last notification this sidebar showed
+	notifiedAt time.Time // when
 }
 
 // New returns the sidebar for view viewID.
@@ -302,6 +311,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case snapMsg:
 		first := !m.loaded
 		m.snap, m.view, m.rev, m.loaded = msg.snap, msg.view, msg.rev, true
+		notify := m.notices(msg.snap, first)
 		if first && m.view != nil && m.view.Selected != "" {
 			m.cursor = "s:" + m.view.Selected
 		}
@@ -310,7 +320,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(m.marked, id)
 			}
 		}
-		return m, m.watch(m.rev, true)
+		return m, tea.Batch(m.watch(m.rev, true), notify)
+	case emitMsg:
+		if msg.sessionID != "" {
+			m.notified, m.notifiedAt = msg.sessionID, m.now()
+		}
+		return m, tea.Raw(msg.seq)
+	case tea.FocusMsg:
+		return m, m.focused()
 	case goneMsg:
 		m.err = ErrClosed
 		return m, tea.Quit

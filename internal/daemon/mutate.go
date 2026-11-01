@@ -38,7 +38,7 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views}, nil
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views, Notices: d.notices()}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.

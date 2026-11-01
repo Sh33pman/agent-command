@@ -26,6 +26,7 @@ type fake struct {
 	news      []string
 	panes     []string
 	fail      error
+	focused   bool
 }
 
 func (f *fake) Watch(ctx context.Context, _ uint64, _ bool) (ipc.WatchResponse, error) {
@@ -70,6 +71,8 @@ func (f *fake) Adopt(_ context.Context, s *core.Session) error { return f.pane("
 func (f *fake) SplitOut(_ context.Context, s *core.Session, window, side bool) error {
 	return f.pane(fmt.Sprintf("split %s %v %v", s.ID, window, side))
 }
+func (f *fake) Terminal() string                 { return "kitty" }
+func (f *fake) ViewFocused(context.Context) bool { return f.focused }
 func (f *fake) Help(width int, groups bool) []string {
 	return []string{"── Sidebar ──", "n  new session", fmt.Sprintf("groups %v width %d", groups, width)}
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.3](https://github.com/brettmostert/agent-command/compare/v0.25.2...v0.25.3) (2026-11-01)
+
+
+### Bug Fixes
+
+* **adopt:** link a move-in listed before its hook; close the pane it left ([#88](https://github.com/brettmostert/agent-command/issues/88)) ([f6fc644](https://github.com/brettmostert/agent-command/commit/f6fc6440a40e2847c9ca876468c9309003500c92))
+
 ## [0.25.2](https://github.com/brettmostert/agent-command/compare/v0.25.1...v0.25.2) (2026-11-01)
 
 

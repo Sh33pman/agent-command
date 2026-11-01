@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/brettmostert/agent-command/compare/v0.23.0...v0.24.0) (2026-11-01)
+
+
+### Features
+
+* **init:** ask about the reply popup, auto-play and speech ([#72](https://github.com/brettmostert/agent-command/issues/72)) ([b981a16](https://github.com/brettmostert/agent-command/commit/b981a169a6c3e454ef987f4079c80791e469251b))
+* **popup:** add the native reply panel (spike) ([#66](https://github.com/brettmostert/agent-command/issues/66)) ([413f184](https://github.com/brettmostert/agent-command/commit/413f184a71a0440e5a7ea6a5bae6be11c9d6087d))
+* **popup:** keep an inbox of finished turns, questions and permissions ([#70](https://github.com/brettmostert/agent-command/issues/70)) ([ac0199f](https://github.com/brettmostert/agent-command/commit/ac0199ff23a854dae78383ca7eec613c74fc9960))
+* **popup:** run the reply popup and answer sessions from it ([#71](https://github.com/brettmostert/agent-command/issues/71)) ([47ac13a](https://github.com/brettmostert/agent-command/commit/47ac13a7d53e4fc765f4a3353a8f9942684a58db))
+* **speech:** read text aloud with Kokoro on MLX ([#68](https://github.com/brettmostert/agent-command/issues/68)) ([10a1f53](https://github.com/brettmostert/agent-command/commit/10a1f53d0c034e9b389ba26ecbbfaada8b6e2ff5))
+* **speech:** stream audio instead of writing files ([#69](https://github.com/brettmostert/agent-command/issues/69)) ([f133cf2](https://github.com/brettmostert/agent-command/commit/f133cf28e81fb563ee47dba7dc92f5ffcaa245b9))
+
 ## [0.23.0](https://github.com/brettmostert/agent-command/compare/v0.22.0...v0.23.0) (2026-11-01)
 
 

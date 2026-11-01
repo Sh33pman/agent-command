@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
@@ -432,18 +433,34 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	return nil
 }
 
-// stopDaemon asks a running daemon (of any version) to exit; it never
-// starts one.
-func stopDaemon(ctx context.Context, p paths.Paths) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
-	var mismatch *ipc.ErrVersionMismatch
-	if err != nil && !errors.As(err, &mismatch) {
-		return // not running
+// stopDaemon asks a running daemon (of any version) to exit and waits up
+// to 3s for it to go; it never starts one. It reports whether one was
+// running.
+func stopDaemon(ctx context.Context, p paths.Paths) bool {
+	me := ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version}
+	dial := func() (*ipc.Conn, bool) {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		conn, err := ipc.Dial(ctx, p.Socket(), me)
+		var mismatch *ipc.ErrVersionMismatch
+		return conn, err == nil || errors.As(err, &mismatch)
+	}
+	conn, up := dial()
+	if !up {
+		return false
 	}
 	_ = conn.Call(ipc.OpShutdown, nil, nil)
 	_ = conn.Close()
+	waitDaemonGone(ctx, p)
+	return true
+}
+
+// waitDaemonGone waits up to 3s for a stopping daemon to release its lock,
+// so a daemon started next doesn't see it and exit as a duplicate.
+func waitDaemonGone(ctx context.Context, p paths.Paths) {
+	for deadline := time.Now().Add(3 * time.Second); daemon.Running(p) && time.Now().Before(deadline) && ctx.Err() == nil; {
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 // deleteData removes acmd's state (except config backups) and config.

@@ -40,6 +40,7 @@ func connect(ctx context.Context) (*client, error) {
 	if errors.As(err, &mismatch) {
 		_ = conn.Call(ipc.OpShutdown, nil, nil)
 		_ = conn.Close()
+		waitDaemonGone(ctx, p)
 	}
 	if err := spawnDaemon(p); err != nil {
 		return nil, fmt.Errorf("start daemon: %w", err)

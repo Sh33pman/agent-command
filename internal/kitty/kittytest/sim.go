@@ -21,6 +21,8 @@ type Sim struct {
 	Focused int
 	Calls   []string
 	Fail    string // command that fails
+	FailErr error  // its error (default "<command> failed")
+	Stuck   bool   // resizes change nothing
 	Launch  string // override launch output
 }
 
@@ -56,6 +58,9 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 	}
 	s.Calls = append(s.Calls, strings.Join(args, " "))
 	if args[0] == s.Fail {
+		if s.FailErr != nil {
+			return nil, s.FailErr
+		}
 		return nil, errors.New(args[0] + " failed")
 	}
 	id := 0
@@ -108,6 +113,9 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 			}
 		}
 	case "resize-window":
+		if s.Stuck {
+			break
+		}
 		inc, _ := strconv.Atoi(args[len(args)-1])
 		if inc > 0 {
 			inc += 2 // borders

@@ -141,3 +141,39 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestSetWidthLimits(t *testing.T) {
+	ctx := context.Background()
+	resizes := func(s *kittytest.Sim) int {
+		n := 0
+		for _, c := range s.Calls {
+			if strings.HasPrefix(c, "resize-window") {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Capped so the view keeps 20 columns: 32+15-20 = 27.
+	s := kittytest.New()
+	s.Tabs[0].Windows = []kitty.Window{{ID: 1, Columns: 32}, {ID: 2, Columns: 15}}
+	s.Tabs[0].Layout = "splits"
+	must(t, s.Kitty().SetWidth(ctx, 1, 40))
+	if c := s.Calls[1]; c != "resize-window --match id:1 --axis horizontal --increment -5" {
+		t.Errorf("first resize %q", c)
+	}
+
+	// Kitty refusing (split at its limit) is not an error.
+	s = kittytest.New()
+	s.Fail, s.FailErr = "resize-window", errors.New("Error: Could not resize")
+	if err := s.Kitty().SetWidth(ctx, 1, 40); err != nil || resizes(s) != 1 {
+		t.Errorf("refused: %v, %d resizes", err, resizes(s))
+	}
+
+	// No progress: stop after one try instead of three.
+	s = kittytest.New()
+	s.Stuck = true
+	if err := s.Kitty().SetWidth(ctx, 1, 40); err != nil || resizes(s) != 1 {
+		t.Errorf("stuck: %v, %d resizes", err, resizes(s))
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -29,11 +30,12 @@ import (
 // from help (SPEC §8.7).
 
 func newDaemonCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:    "daemon",
-		Short:  "Run the acmd daemon (started automatically)",
-		Hidden: true,
-		Args:   cobra.NoArgs,
+	cmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Stop or restart the background service (it starts automatically)",
+		Long: `acmd's background service tracks your sessions. It starts by itself
+when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths.Default()
 			if err != nil {
@@ -54,6 +56,58 @@ func newDaemonCmd() *cobra.Command {
 				return nil // another daemon won the race; fine
 			}
 			return err
+		},
+	}
+	cmd.AddCommand(newDaemonStopCmd(), newDaemonRestartCmd())
+	return cmd
+}
+
+func newDaemonStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the background service",
+		Long: `Stop the background service. Open views and sidebars start it again
+the next time they need it; close them first to keep it stopped.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := paths.Default()
+			if err != nil {
+				return err
+			}
+			if stopDaemon(cmd.Context(), p) {
+				fmt.Fprintln(cmd.OutOrStdout(), "Stopped the background service.")
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "The background service wasn't running.")
+			}
+			return nil
+		},
+	}
+}
+
+func newDaemonRestartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart",
+		Short: "Restart the background service (open views reconnect by themselves)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := paths.Default()
+			if err != nil {
+				return err
+			}
+			was := stopDaemon(cmd.Context(), p)
+			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+			defer cancel()
+			c, err := connect(ctx)
+			if err != nil {
+				return err
+			}
+			c.close()
+			verb := "Restarted"
+			if !was {
+				verb = "Started"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s the background service (%s).\n", verb, version.Get().Version)
+			return nil
 		},
 	}
 }

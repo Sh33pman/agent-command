@@ -468,3 +468,14 @@ func lock(path string) (func(), error) {
 		_ = f.Close()
 	}, nil
 }
+
+// Running reports whether a daemon holds the lock in p (a stopping daemon
+// holds it until it has fully exited).
+func Running(p paths.Paths) bool {
+	unlock, err := lock(p.Lock())
+	if err != nil {
+		return errors.Is(err, ErrAlreadyRunning)
+	}
+	unlock()
+	return false
+}

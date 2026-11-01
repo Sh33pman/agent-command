@@ -185,9 +185,16 @@ func (k *Kitty) AddSidebarLeft(ctx context.Context, s SidebarSpec) (sidebar int,
 	return sidebar, prevLayout, err
 }
 
+// minView is the fewest columns SetWidth leaves the other panes of the row.
+const minView = 20
+
 // SetWidth resizes window id to cols columns: resize, read back, correct
-// (resizes are off by the border width, M0 K2), at most 3 tries.
+// (resizes are off by the border width, M0 K2), at most 3 tries. The width
+// is capped so the rest of the tab keeps minView columns, it stops when a
+// resize makes no progress, and Kitty refusing a resize ("could not
+// resize", the split is at its limit) is not an error.
 func (k *Kitty) SetWidth(ctx context.Context, id, cols int) error {
+	last := -1
 	for range 3 {
 		ws, err := k.LS(ctx)
 		if err != nil {
@@ -197,11 +204,29 @@ func (k *Kitty) SetWidth(ctx context.Context, id, cols int) error {
 		if !ok {
 			return fmt.Errorf("kitty window %d not found", id)
 		}
-		if tab.Layout == "stack" || w.Columns == cols {
+		if tab.Layout == "stack" {
 			return nil // hidden (stacked) sidebars keep their split (K5)
 		}
+		want := cols
+		if len(tab.Windows) > 1 {
+			// The widest other pane approximates the rest of the row.
+			rest := 0
+			for _, o := range tab.Windows {
+				if o.ID != id {
+					rest = max(rest, o.Columns)
+				}
+			}
+			want = min(cols, max(1, w.Columns+rest-minView))
+		}
+		if w.Columns == want || w.Columns == last {
+			return nil
+		}
+		last = w.Columns
 		if _, err := k.run(ctx, "resize-window", "--match", match(id), "--axis", "horizontal",
-			"--increment", strconv.Itoa(cols-w.Columns)); err != nil {
+			"--increment", strconv.Itoa(want-w.Columns)); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "could not resize") {
+				return nil
+			}
 			return err
 		}
 	}

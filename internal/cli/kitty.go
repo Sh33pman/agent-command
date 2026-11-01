@@ -90,6 +90,7 @@ type kittyPanes struct {
 	k             *kitty.Kitty
 	view, sidebar int
 	width         int
+	fit           fitGate
 }
 
 func (p *kittyPanes) FocusView(ctx context.Context) error { return p.k.Focus(ctx, p.view) }
@@ -97,7 +98,7 @@ func (p *kittyPanes) ToggleSidebar(ctx context.Context) error {
 	return p.k.ToggleSidebar(ctx, p.view)
 }
 func (p *kittyPanes) FitWidth(ctx context.Context) error {
-	return p.k.SetWidth(ctx, p.sidebar, p.width)
+	return p.fit.Run(ctx, func(ctx context.Context) error { return p.k.SetWidth(ctx, p.sidebar, p.width) })
 }
 func (p *kittyPanes) FocusPane(ctx context.Context, loc core.PaneLoc) error {
 	return focusExternal(ctx, loc)

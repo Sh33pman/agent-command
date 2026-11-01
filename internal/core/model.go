@@ -59,6 +59,10 @@ type PaneLoc struct {
 	// BarWindow is the Kitty window of a view's full-width status bar
 	// (set on a view's sidebar; 0 = none, the sidebar shows messages).
 	BarWindow int `json:",omitempty"`
+	// HeaderWindow / HeaderTerm: the header bar above a view pane (set on
+	// a view's sidebar; Kitty window id / Ghostty terminal id).
+	HeaderWindow int    `json:",omitempty"`
+	HeaderTerm   string `json:",omitempty"`
 }
 
 // Session is an acmd session (SPEC §5.1). Its ID is stable while Claude's

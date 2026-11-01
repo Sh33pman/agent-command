@@ -36,6 +36,10 @@ func TestGhosttyView(t *testing.T) {
 	if cmd := sim.Terms[1].Command; !strings.HasPrefix(cmd, "'") || !strings.HasSuffix(cmd, "'sidebar' '--view' '"+v.ID+"'") {
 		t.Errorf("sidebar command: %s", cmd)
 	}
+	// The header splits the view pane upward (it spans only the view pane).
+	if sb.HeaderTerm == "" || !strings.Contains(strings.Join(sim.Calls, "\n"), "split T1 up → "+sb.HeaderTerm) {
+		t.Errorf("header %q, calls:\n%s", sb.HeaderTerm, strings.Join(sim.Calls, "\n"))
+	}
 
 	// toggle zooms the view and records it; focus unhides first.
 	mustRun(t, "toggle")
@@ -81,6 +85,9 @@ func TestGhosttyView(t *testing.T) {
 	removeSidebar(ctx, view)
 	if ok, _ := sim.App().Exists(ctx, view.Sidebar.GhosttyTerm); ok {
 		t.Error("sidebar still open")
+	}
+	if ok, _ := sim.App().Exists(ctx, view.Sidebar.HeaderTerm); ok || view.Sidebar.HeaderTerm == "" {
+		t.Errorf("header %q still open", view.Sidebar.HeaderTerm)
 	}
 	if err := focusPane(ctx, core.PaneLoc{Terminal: "unknown"}); err == nil {
 		t.Error("focus on an unknown terminal")

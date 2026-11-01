@@ -25,31 +25,11 @@ var (
 	cursorStyle = lipgloss.NewStyle().Reverse(true)
 	errBarStyle = lipgloss.NewStyle().Background(lipgloss.Color("1")).Foreground(lipgloss.Color("15"))
 	barStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	spinner     = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	groupColors = map[string]string{"red": "1", "green": "2", "yellow": "3", "blue": "4", "magenta": "5", "cyan": "6"}
 )
 
-// glyph is the status indicator (SPEC §5.2; plain Unicode, ANSI colors so
-// it follows the terminal's palette).
-func (m *Model) glyph(s core.Status) string {
-	c := func(color, g string) string { return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(g) }
-	switch s {
-	case core.StatusStarting:
-		return dimStyle.Render("…")
-	case core.StatusBusy:
-		return c("4", spinner[m.spin%len(spinner)])
-	case core.StatusWaiting:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true).Render("!")
-	case core.StatusDone:
-		return c("2", "✓")
-	case core.StatusError:
-		return c("1", "✗")
-	case core.StatusPaused:
-		return c("8", "‖")
-	default:
-		return dimStyle.Render("-")
-	}
-}
+// glyph is the status indicator (shared with the header bar).
+func (m *Model) glyph(s core.Status) string { return tui.Glyph(s, m.spin) }
 
 func colorDot(g *core.Group) string {
 	if g == nil || g.IsDefault {

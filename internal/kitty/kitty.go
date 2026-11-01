@@ -258,13 +258,32 @@ type BarSpec struct {
 	Env     []string // KEY=VALUE for the bar process
 }
 
-// AddBottomBar splits the view's tab and moves the new window to the
-// bottom edge, where it spans the tab's full width under the sidebar and
-// the view pane. The tab must already be in the splits layout (the
-// sidebar put it there). It returns the bar's window id.
-func (k *Kitty) AddBottomBar(ctx context.Context, s BarSpec) (int, error) {
+// AddPaneAbove splits the view pane and puts the new window above it,
+// spanning only the view pane's width (the header bar): launch below with
+// hsplit, then swap the pair with rotate 180. It returns the new window's id.
+func (k *Kitty) AddPaneAbove(ctx context.Context, s BarSpec, role string) (int, error) {
+	id, err := k.launchSplit(ctx, s, role)
+	if err != nil {
+		return 0, err
+	}
+	// rotate acts on the focused window's split.
+	if _, err := k.run(ctx, "focus-window", "--match", match(id)); err != nil {
+		return id, err
+	}
+	if _, err := k.run(ctx, "action", "--match", match(id), "layout_action", "rotate", "180"); err != nil {
+		return id, err
+	}
+	if err := k.SetHeight(ctx, id, s.Lines); err != nil {
+		return id, err
+	}
+	_, err = k.run(ctx, "focus-window", "--match", match(s.View))
+	return id, err
+}
+
+// launchSplit launches s.Command in a horizontal split under s.View.
+func (k *Kitty) launchSplit(ctx context.Context, s BarSpec, role string) (int, error) {
 	args := []string{"launch", "--location=hsplit", "--match", match(s.View),
-		"--var", "acmd_role=bar", "--var", "acmd_view=" + s.ViewID, "--title", "acmd"}
+		"--var", "acmd_role=" + role, "--var", "acmd_view=" + s.ViewID, "--title", "acmd"}
 	for _, e := range s.Env {
 		args = append(args, "--env", e)
 	}
@@ -272,9 +291,21 @@ func (k *Kitty) AddBottomBar(ctx context.Context, s BarSpec) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	bar, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	id, err := strconv.Atoi(strings.TrimSpace(string(out)))
 	if err != nil {
 		return 0, fmt.Errorf("kitten @ launch printed %q", out)
+	}
+	return id, nil
+}
+
+// AddBottomBar splits the view's tab and moves the new window to the
+// bottom edge, where it spans the tab's full width under the sidebar and
+// the view pane. The tab must already be in the splits layout (the
+// sidebar put it there). It returns the bar's window id.
+func (k *Kitty) AddBottomBar(ctx context.Context, s BarSpec) (int, error) {
+	bar, err := k.launchSplit(ctx, s, "bar")
+	if err != nil {
+		return 0, err
 	}
 	// move_to_screen_edge only works on the focused window of the active tab.
 	if _, err := k.run(ctx, "focus-window", "--match", match(bar)); err != nil {

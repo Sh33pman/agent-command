@@ -70,7 +70,7 @@ func (s *Sim) Run(_ context.Context, script string, args ...string) (string, err
 			}
 		}
 		return "not found", nil
-	case strings.Contains(script, "split view direction left"):
+	case strings.Contains(script, "split view direction "):
 		v := s.find(arg(0))
 		if v == nil {
 			return "not found", nil
@@ -82,7 +82,13 @@ func (s *Sim) Run(_ context.Context, script string, args ...string) (string, err
 		}
 		s.Terms = append(s.Terms, t)
 		s.Focused = v.ID // the script refocuses the view
-		s.record("split %s → %s", v.ID, t.ID)
+		_, rest, _ := strings.Cut(script, "split view direction ")
+		dir, _, _ := strings.Cut(rest, " ")
+		if dir == "left" {
+			s.record("split %s → %s", v.ID, t.ID)
+		} else {
+			s.record("split %s %s → %s", v.ID, dir, t.ID)
+		}
 		return t.ID, nil
 	case strings.Contains(script, "perform action (item 2 of argv)"):
 		if s.find(arg(0)) == nil {

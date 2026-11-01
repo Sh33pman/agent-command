@@ -18,6 +18,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/tui"
 )
 
 // Actions are the sidebar's side effects (daemon and terminal).
@@ -804,12 +805,7 @@ func name(s *core.Session) string {
 	return "session"
 }
 
-func tilde(p, home string) string {
-	if home != "" && (p == home || strings.HasPrefix(p, home+"/")) {
-		return "~" + p[len(home):]
-	}
-	return p
-}
+func tilde(p, home string) string { return tui.Tilde(p, home) }
 
 // adopt asks, then moves an external session into acmd.
 func (m *Model) adopt(s *core.Session) tea.Cmd {

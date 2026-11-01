@@ -106,7 +106,11 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 				w.UserVars[k] = v
 			}
 		}
-		t.Windows = append(t.Windows, w) // vsplit: on the right
+		if slices.Contains(args, "--location=hsplit") {
+			t.Windows = slices.Insert(t.Windows, i+1, w) // right under it
+		} else {
+			t.Windows = append(t.Windows, w) // vsplit: on the right
+		}
 		return []byte(strconv.Itoa(w.ID) + "\n"), nil
 	case "focus-window":
 		s.Focused = id
@@ -115,6 +119,14 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 		case "layout_action":
 			if s.Focused != id {
 				return nil, errors.New("move_to_screen_edge needs the window focused")
+			}
+			if args[4] == "rotate" {
+				// 180: swap with the window it was split from (the
+				// one before it here).
+				if i > 0 {
+					t.Windows[i-1], t.Windows[i] = t.Windows[i], t.Windows[i-1]
+				}
+				break
 			}
 			w := t.Windows[i]
 			t.Windows = slices.Delete(t.Windows, i, i+1)

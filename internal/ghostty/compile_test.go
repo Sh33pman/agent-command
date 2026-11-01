@@ -32,6 +32,8 @@ func TestScriptsCompile(t *testing.T) {
 	ctx := context.Background()
 	_, _ = rec.TermForTTY(ctx, "/dev/ttys001")
 	_, _ = rec.AddSidebarLeft(ctx, "id", "cmd", "/", nil)
+	_, _ = rec.Split(ctx, "id", "up", "cmd", "/", nil)
+	_, _ = rec.Split(ctx, "id", "down", "cmd", "/", nil)
 	_ = rec.Action(ctx, "id", "toggle_split_zoom")
 	_ = rec.Focus(ctx, "id")
 	_ = rec.Close(ctx, "id")
@@ -39,7 +41,7 @@ func TestScriptsCompile(t *testing.T) {
 	_ = rec.NewTab(ctx, "id", "cmd", "/", []string{"A=1"})
 	_, _ = rec.Running(ctx)
 	_ = rec.ReloadConfig(ctx)
-	if n != 9 || strings.Contains(t.Name(), "x") {
+	if n != 11 || strings.Contains(t.Name(), "x") {
 		t.Errorf("compiled %d scripts", n)
 	}
 }

@@ -91,6 +91,19 @@ end run`, tty)
 // in cwd with env (KEY=VALUE), and gives focus back to the view (G3).
 // It returns the sidebar terminal's id.
 func (a *App) AddSidebarLeft(ctx context.Context, view, command, cwd string, env []string) (string, error) {
+	return a.Split(ctx, view, "left", command, cwd, env)
+}
+
+// Split splits terminal view in direction dir ("left", "up" or "down"),
+// running command (already quoted, Quote) in cwd with env, gives focus
+// back to view and returns the new terminal's id. A split of the view
+// pane spans only the view pane (the header bar above it, SPEC §8.4).
+func (a *App) Split(ctx context.Context, view, dir, command, cwd string, env []string) (string, error) {
+	switch dir {
+	case "left", "up", "down", "right":
+	default:
+		return "", fmt.Errorf("ghostty: bad split direction %q", dir)
+	}
 	return a.run(ctx, `
 on run argv
 	set view to my findTerm(item 1 of argv)
@@ -103,7 +116,7 @@ on run argv
 			set AppleScript's text item delimiters to linefeed
 			set environment variables of cfg to text items of (item 4 of argv)
 		end if
-		set side to split view direction left with configuration cfg
+		set side to split view direction `+dir+` with configuration cfg
 		set sideId to id of side
 		focus view
 		return sideId

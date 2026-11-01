@@ -33,6 +33,12 @@ func TestKittyShortcuts(t *testing.T) {
 	if got := e.snapshot(t).Views[0].Sidebar; got != sb {
 		t.Errorf("daemon has sidebar %+v, want %+v", got, sb)
 	}
+	// The header sits right above the view pane (window 1), 1 line.
+	for i, w := range sim.Tabs[0].Windows {
+		if w.ID == 1 && (i == 0 || sim.Tabs[0].Windows[i-1].ID != sb.HeaderWindow || sim.Tabs[0].Windows[i-1].Lines != 1) {
+			t.Errorf("header %d not above the view: %+v", sb.HeaderWindow, sim.Tabs[0].Windows)
+		}
+	}
 	// The full-width status bar is the last window (bottom edge), 1 line.
 	ws := sim.Tabs[0].Windows
 	if bar := ws[len(ws)-1]; sb.BarWindow == 0 || bar.ID != sb.BarWindow || bar.Lines != 1 || bar.UserVars["acmd_role"] != "bar" {
@@ -150,7 +156,7 @@ func TestKittyShortcuts(t *testing.T) {
 		t.Errorf("layout after removing the sidebar: %s", sim.Tabs[0].Layout)
 	}
 	for _, w := range sim.Tabs[0].Windows {
-		if w.ID == v3.Sidebar.BarWindow || w.ID == v3.Sidebar.KittyWindow {
+		if w.ID == v3.Sidebar.BarWindow || w.ID == v3.Sidebar.KittyWindow || w.ID == v3.Sidebar.HeaderWindow {
 			t.Errorf("window %d left open", w.ID)
 		}
 	}

@@ -100,12 +100,20 @@ func addSidebar(ctx context.Context, call func(op string, in, out any) error, v 
 		if bar, err := addBar(ctx, v); err == nil {
 			loc.BarWindow = bar
 		}
+		if old := v.Sidebar.HeaderWindow; old != 0 {
+			_ = kittyAt(v.Sidebar.KittySocket).Close(ctx, old)
+		}
+		_ = addHeader(ctx, v, &loc)
 	case "ghostty":
 		id, err := ghosttyApp().AddSidebarLeft(ctx, v.Pane.GhosttyTerm, ghostty.Quote(argv), homeDir(), acmdEnv())
 		if err != nil {
 			return core.PaneLoc{}, err
 		}
 		loc = core.PaneLoc{Terminal: "ghostty", GhosttyTerm: id}
+		if old := v.Sidebar.HeaderTerm; old != "" {
+			_ = ghosttyApp().Close(ctx, old)
+		}
+		_ = addHeader(ctx, v, &loc)
 	default:
 		return core.PaneLoc{}, errNoTerminal
 	}
@@ -121,14 +129,19 @@ func removeSidebar(ctx context.Context, v *core.View) {
 			return
 		}
 		k := kittyAt(v.Sidebar.KittySocket)
-		if v.Sidebar.BarWindow != 0 {
-			_ = k.Close(ctx, v.Sidebar.BarWindow)
+		for _, w := range []int{v.Sidebar.BarWindow, v.Sidebar.HeaderWindow} {
+			if w != 0 {
+				_ = k.Close(ctx, w)
+			}
 		}
 		if l := v.Sidebar.RestoreLayout; l != "" && l != "splits" {
 			_ = k.SetLayout(ctx, v.Sidebar.KittyWindow, l)
 		}
 		_ = k.Close(ctx, v.Sidebar.KittyWindow)
 	case "ghostty":
+		if v.Sidebar.HeaderTerm != "" {
+			_ = ghosttyApp().Close(ctx, v.Sidebar.HeaderTerm)
+		}
 		if v.Sidebar.GhosttyTerm != "" {
 			_ = ghosttyApp().Close(ctx, v.Sidebar.GhosttyTerm)
 		}

@@ -200,6 +200,7 @@ func (m *Model) summary() string {
 		{core.StatusWaiting, "needs you"},
 		{core.StatusError, "failed"},
 		{core.StatusBusy, "busy"},
+		{core.StatusStarting, "starting"},
 		{core.StatusDone, "done"},
 		{core.StatusPaused, "paused"},
 	} {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.3](https://github.com/brettmostert/agent-command/compare/v0.24.2...v0.24.3) (2026-11-01)
+
+
+### Bug Fixes
+
+* **daemon:** keep the pane of sessions in your own windows current ([#77](https://github.com/brettmostert/agent-command/issues/77)) ([b957811](https://github.com/brettmostert/agent-command/commit/b957811d0a62562b1486c828e4a4879e36bf54a1))
+
 ## [0.24.2](https://github.com/brettmostert/agent-command/compare/v0.24.1...v0.24.2) (2026-11-01)
 
 

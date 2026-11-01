@@ -69,6 +69,7 @@ const (
 	MutViewTouch      = "view.touch"        // ID = view: it was focused
 	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
 	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)
+	MutAdopt          = "session.adopt"     // ID: acmd is about to type /bg into this external session's pane
 )
 
 // Mutation is one change requested by a client.
@@ -154,6 +155,7 @@ type HookContext struct {
 	KittyListenOn string `json:"kitty_listen_on,omitempty"`
 	KittyWindowID string `json:"kitty_window_id,omitempty"`
 	TermProgram   string `json:"term_program,omitempty"`
+	TTY           string `json:"tty,omitempty"`     // the Claude process's terminal (/dev/ttysNNN)
 	ViewID        string `json:"view_id,omitempty"` // ACMD_VIEW_ID: started by acmd
 }
 

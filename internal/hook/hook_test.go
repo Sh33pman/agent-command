@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -247,5 +248,18 @@ func waitForSocket(t *testing.T, p paths.Paths) {
 			t.Fatal("daemon socket didn't appear")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestTTYPathDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
+	p, err := procInfo(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.TTY != "" && !strings.HasPrefix(p.TTY, "/dev/ttys") {
+		t.Errorf("tty %q", p.TTY)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/brettmostert/agent-command/internal/kitty"
 )
@@ -16,6 +17,7 @@ import (
 // Sim is a tiny Kitty: one OS window, tabs of windows, enough of `kitten @`
 // for the adapter. Resizes are off by the border (M0 K2).
 type Sim struct {
+	mu      sync.Mutex
 	Tabs    []*kitty.Tab
 	next    int
 	Focused int
@@ -53,6 +55,8 @@ func (s *Sim) find(id int) (*kitty.Tab, int) {
 
 // Run plays `kitten @`.
 func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if kitten != "/k/kitten" || to != "unix:/tmp/k" {
 		return nil, fmt.Errorf("wrong kitten/socket %s %s", kitten, to)
 	}
@@ -80,6 +84,8 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 		return json.Marshal([]kitty.OSWindow{{ID: 1, Tabs: derefTabs(s.Tabs)}})
 	case "goto-layout":
 		t.Layout = args[len(args)-1]
+	case "send-text":
+		return nil, nil
 	case "launch":
 		if s.Launch != "" {
 			return []byte(s.Launch), nil
@@ -133,4 +139,17 @@ func derefTabs(ts []*kitty.Tab) []kitty.Tab {
 		out[i] = *t
 	}
 	return out
+}
+
+// Called reports whether a call starting with prefix was made (safe while
+// the simulation runs).
+func (s *Sim) Called(prefix string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, c := range s.Calls {
+		if strings.HasPrefix(c, prefix) {
+			return true
+		}
+	}
+	return false
 }

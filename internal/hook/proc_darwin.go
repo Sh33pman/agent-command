@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -25,6 +26,7 @@ func procInfo(pid int) (Proc, error) {
 		Pid:  pid,
 		PPid: int(kp.Eproc.Ppid),
 		Comm: unix.ByteSliceToString(kp.Proc.P_comm[:]),
+		TTY:  ttyPath(kp.Eproc.Tdev),
 	}
 	if raw, err := unix.SysctlRaw("kern.procargs2", pid); err == nil {
 		p.Args = parseProcArgs2(raw)
@@ -61,4 +63,13 @@ func parseProcArgs2(raw []byte) []string {
 		rest = rest[j+1:]
 	}
 	return args
+}
+
+// ttyPath names a pseudo-terminal device: /dev/ttysNNN has major 16 and
+// minor NNN. -1 (NODEV) means no terminal.
+func ttyPath(dev int32) string {
+	if dev < 0 || dev>>24 != 16 {
+		return ""
+	}
+	return fmt.Sprintf("/dev/ttys%03d", dev&0xffffff)
 }

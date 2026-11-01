@@ -55,7 +55,7 @@ func runView(cmd *cobra.Command, viewID string) error {
 				}
 			}
 		}
-		if err := vc.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &pane}, &v); err != nil {
+		if err := vc.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, ID: startSessionID, Pane: &pane}, &v); err != nil {
 			return err
 		}
 		viewID = v.ID
@@ -140,18 +140,73 @@ func currentPane(getenv func(string) string) core.PaneLoc {
 }
 
 func newViewCmd() *cobra.Command {
-	var viewID string
+	var viewID, pinned, start string
 	cmd := &cobra.Command{
 		Use:    "view",
 		Short:  "Run the view loop in this pane (started by `acmd`)",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if pinned != "" {
+				return runPinned(cmd, pinned)
+			}
+			startSessionID = start
 			return runView(cmd, viewID)
 		},
 	}
 	cmd.Flags().StringVar(&viewID, "view", "", "the view to run (default: register this pane)")
+	cmd.Flags().StringVar(&pinned, "pinned", "", "just show this session; detaching closes the pane (split out)")
+	cmd.Flags().StringVar(&start, "start", "", "start the new view on this session (split out with sidebar)")
 	return cmd
+}
+
+// startSessionID is the session a new view starts on ("" = most recent).
+var startSessionID string
+
+// runPinned shows one session in this pane (split out, session only,
+// SPEC §6.6): attach until the user detaches, then the pane closes.
+func runPinned(cmd *cobra.Command, id string) error {
+	p, err := paths.Default()
+	if err != nil {
+		return err
+	}
+	claude, _, err := claudeCommand(p)
+	if err != nil {
+		return fmt.Errorf("claude not found (run `acmd doctor`): %w", err)
+	}
+	vc := &viewClient{paths: p}
+	defer vc.close()
+	snap, err := vc.Snapshot(cmd.Context())
+	if err != nil {
+		return err
+	}
+	var s *core.Session
+	for _, x := range snap.Sessions {
+		if x.ID == id {
+			s = x
+		}
+	}
+	if s == nil || s.BgID == "" {
+		return errors.New("that session can't be shown here")
+	}
+	if s.Status == core.StatusPaused {
+		if s, err = vc.Resume(cmd.Context(), id); err != nil {
+			return err
+		}
+	}
+	// Ctrl+C/Ctrl+\/Ctrl+Z are for claude attach. Caught (not ignored)
+	// signals revert to the default in the child; ignored ones wouldn't.
+	sigs := make(chan os.Signal, 4)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTSTP)
+	defer signal.Stop(sigs)
+	go func() {
+		for range sigs {
+		}
+	}()
+	c := exec.CommandContext(cmd.Context(), claude, "attach", s.BgID) // #nosec G204 -- resolved claude binary, short id from Claude
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	c.Env = procenv.Scrub(os.Environ())
+	return c.Run()
 }
 
 // errNewerDaemon means the daemon runs another acmd version: this view

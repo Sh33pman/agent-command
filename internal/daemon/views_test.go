@@ -339,3 +339,34 @@ func TestMoveGroup(t *testing.T) {
 		t.Error("moved Default")
 	}
 }
+
+func TestAdoptLinksTheFork(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	t0 := time.Now()
+	ext := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/k", TTY: "/dev/ttys004"}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"old-1","source":"startup","cwd":"/w/api"}`, t0, ext), nil))
+	s := byClaude(snapshot(t, c), "old-1")
+	if s.Kind != core.KindExternal || s.External.TTY != "/dev/ttys004" {
+		t.Fatalf("external: %+v %+v", s, s.External)
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutRename, ID: s.ID, Text: "mine"})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID})
+	// /bg: the old process ends, a forked background session starts.
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"old-1","reason":"prompt_input_exit"}`, t0.Add(time.Second), ext), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"abcd1234-new","source":"startup","cwd":"/w/api"}`, t0.Add(2*time.Second), ipc.HookContext{ClaudePid: 77}), nil))
+	snap := snapshot(t, c)
+	if len(snap.Sessions) != 1 {
+		t.Fatalf("%d sessions", len(snap.Sessions))
+	}
+	got := snap.Sessions[0]
+	if got.ID != s.ID || got.Kind != core.KindBackground || got.BgID != "abcd1234" || got.Name != "mine" || got.External != nil ||
+		len(got.ClaudeHistory) != 1 || got.ClaudeHistory[0] != "old-1" || got.Pid != 77 {
+		t.Errorf("not linked: %+v", got)
+	}
+	// Background sessions can't be adopted.
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID}, nil); err == nil {
+		t.Error("adopted a background session")
+	}
+}

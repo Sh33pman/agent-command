@@ -232,3 +232,38 @@ func ResizeAction(delta int, pxPerCol float64) string {
 	}
 	return fmt.Sprintf("resize_split:%s,%d", dir, int(float64(delta)*pxPerCol+0.5))
 }
+
+// Type types text into a terminal and presses Enter (G9: delivered as a
+// paste). Used only for "move into acmd", with confirmation (SPEC §6.3).
+func (a *App) Type(ctx context.Context, term, text string) error {
+	_, err := a.run(ctx, `
+on run argv
+	set term to my findTerm(item 1 of argv)
+	if term is missing value then return "not found"
+	tell application "Ghostty"
+		input text (item 2 of argv) to term
+		send key "enter" to term
+	end tell
+	return "ok"
+end run`, term, text)
+	return err
+}
+
+// NewWindow opens a window running command in cwd (split out, SPEC §6.6).
+func (a *App) NewWindow(ctx context.Context, command, cwd string, env []string) error {
+	_, err := a.Run(ctx, `
+on run argv
+	tell application "Ghostty"
+		set cfg to new surface configuration
+		set command of cfg to item 1 of argv
+		set initial working directory of cfg to item 2 of argv
+		if item 3 of argv is not "" then
+			set AppleScript's text item delimiters to linefeed
+			set environment variables of cfg to text items of (item 3 of argv)
+		end if
+		new window with configuration cfg
+	end tell
+	return "ok"
+end run`, command, cwd, strings.Join(env, "\n"))
+	return err
+}

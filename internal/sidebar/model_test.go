@@ -66,6 +66,10 @@ func (f *fake) FitWidth(context.Context) error      { return f.pane("fit") }
 func (f *fake) Open(_ context.Context, s *core.Session) error {
 	return f.pane("open " + s.ID)
 }
+func (f *fake) Adopt(_ context.Context, s *core.Session) error { return f.pane("adopt " + s.ID) }
+func (f *fake) SplitOut(_ context.Context, s *core.Session, window, side bool) error {
+	return f.pane(fmt.Sprintf("split %s %v %v", s.ID, window, side))
+}
 func (f *fake) Help(width int, groups bool) []string {
 	return []string{"── Sidebar ──", "n  new session", fmt.Sprintf("groups %v width %d", groups, width)}
 }
@@ -233,11 +237,14 @@ func TestRenderAndNavigate(t *testing.T) {
 		t.Error("help didn't close")
 	}
 	h.keys("s")
-	h.wantScreen("Split out isn't available yet.")
+	h.wantScreen("Split out refactor auth", "New tab · session only", "New window · with sidebar")
+	h.keys("down", "down", "down", "enter")
+	h.keys("M")
+	h.wantScreen("That session is already in acmd.")
 	h.keys("E")
 	h.wantScreen("Opening /w/a…")
 	h.keys("h", "esc")
-	if strings.Join(h.f.panes, ",") != "fit,open a,toggle,focus-view" {
+	if strings.Join(h.f.panes, ",") != "fit,split a true true,open a,toggle,focus-view" {
 		t.Errorf("panes %v", h.f.panes)
 	}
 }
@@ -571,4 +578,28 @@ func TestAge(t *testing.T) {
 	if got := wrap(" a long question that wraps", 12); len(got) < 2 {
 		t.Errorf("wrap: %q", got)
 	}
+}
+
+func TestAdoptExternal(t *testing.T) {
+	snap := listSnap()
+	ext := sess("x", "mine", "default", core.StatusDone, 9)
+	ext.Kind = core.KindExternal
+	snap.Sessions = append(snap.Sessions, ext)
+	h := newHarness(t, snap, "")
+	h.m.cursor = "s:x"
+	h.keys("s")
+	h.wantScreen("Move it into acmd first (M).")
+	h.keys("M")
+	h.wantScreen("Move “mine” into acmd?")
+	h.keys("y")
+	if got := strings.Join(h.f.panes, ","); !strings.Contains(got, "adopt x") {
+		t.Errorf("adopt: %s", got)
+	}
+	// Right-click menu offers it too.
+	h.send(tea.MouseClickMsg{Button: tea.MouseRight, Y: h.m.cursorLine(), X: 2})
+	h.wantScreen("Move into acmd")
+	h.keys("esc")
+	h.m.cursor = "s:a"
+	h.send(tea.MouseClickMsg{Button: tea.MouseRight, Y: h.m.cursorLine(), X: 2})
+	h.wantScreen("Split out…")
 }

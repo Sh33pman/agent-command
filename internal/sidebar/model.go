@@ -38,6 +38,10 @@ type Actions interface {
 	Open(ctx context.Context, s *core.Session) error
 	// Help is the cheat sheet (SPEC §8.3.1), lines at most width wide.
 	Help(width int, groups bool) []string
+	// Adopt moves an external session into acmd (SPEC §6.3; confirmed).
+	Adopt(ctx context.Context, s *core.Session) error
+	// SplitOut opens s in a new tab or window (SPEC §6.6).
+	SplitOut(ctx context.Context, s *core.Session, window, withSidebar bool) error
 }
 
 // ErrClosed means the sidebar's view was closed.
@@ -506,8 +510,14 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 			m.note = "Opening " + tilde(sess.Cwd, m.home) + "…"
 			return m.do(func(ctx context.Context) error { return m.act.Open(ctx, sess) })
 		}
-	case "s", "M":
-		m.note = map[string]string{"s": "Split out", "M": "Move into acmd"}[s] + " isn't available yet."
+	case "M":
+		if ok && r.Session != nil {
+			return m.adopt(r.Session)
+		}
+	case "s":
+		if ok && r.Session != nil {
+			m.openSplitMenu(r.Session, m.cursorLine())
+		}
 	case "esc":
 		switch {
 		case m.snap.ViewState.Filter != "":
@@ -763,4 +773,51 @@ func tilde(p, home string) string {
 		return "~" + p[len(home):]
 	}
 	return p
+}
+
+// adopt asks, then moves an external session into acmd.
+func (m *Model) adopt(s *core.Session) tea.Cmd {
+	if s.Kind != core.KindExternal {
+		m.note = "That session is already in acmd."
+		return nil
+	}
+	return m.ask2("Move "+quote(name(s))+" into acmd? Claude continues it in the background; your pane goes back to the shell.", func() tea.Cmd {
+		m.note = "Moving " + quote(name(s)) + " into acmd…"
+		return m.do(func(ctx context.Context) error { return m.act.Adopt(ctx, s) })
+	})
+}
+
+// openSplitMenu asks where to split s out to (tab/window, session only or
+// with a sidebar; SPEC §6.6 asks every time).
+func (m *Model) openSplitMenu(s *core.Session, y int) {
+	if s.Kind != core.KindBackground {
+		m.note = "Move it into acmd first (M)."
+		return
+	}
+	split := func(window, side bool) func() tea.Cmd {
+		return func() tea.Cmd {
+			return m.do(func(ctx context.Context) error { return m.act.SplitOut(ctx, s, window, side) })
+		}
+	}
+	items := []menuItem{
+		{"New tab · session only", split(false, false)},
+		{"New tab · with sidebar", split(false, true)},
+		{"New window · session only", split(true, false)},
+		{"New window · with sidebar", split(true, true)},
+	}
+	top := y + 1
+	if top+len(items)+1 > m.h-footerMin {
+		top = max(bodyTop, y-len(items)-1)
+	}
+	m.menu, m.mode = &menu{title: "Split out " + name(s), items: items, y: top + 1}, modeMenu
+}
+
+// cursorLine is the screen line of the cursor's row.
+func (m *Model) cursorLine() int {
+	for i, l := range m.bodyLines() {
+		if l.key == m.cursor {
+			return bodyTop + i - m.top
+		}
+	}
+	return bodyTop
 }

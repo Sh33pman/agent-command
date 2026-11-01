@@ -29,6 +29,13 @@ func focusPane(ctx context.Context, loc core.PaneLoc) error {
 		return kittyAt(loc.KittySocket).Focus(ctx, loc.KittyWindow)
 	case loc.Terminal == "ghostty" && loc.GhosttyTerm != "":
 		return ghosttyApp().Focus(ctx, loc.GhosttyTerm)
+	case loc.Terminal == "ghostty" && loc.TTY != "":
+		// An external session: its terminal is found by tty (G1).
+		id, err := ghosttyApp().TermForTTY(ctx, loc.TTY)
+		if err != nil {
+			return err
+		}
+		return ghosttyApp().Focus(ctx, id)
 	}
 	return errors.New("can't focus that pane (not a Kitty or Ghostty pane acmd knows)")
 }

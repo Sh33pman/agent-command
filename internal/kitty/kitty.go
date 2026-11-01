@@ -292,3 +292,21 @@ func (k *Kitty) LaunchTab(ctx context.Context, id int, dir string, argv, env []s
 	_, err := k.run(ctx, append(append(args, "--"), argv...)...)
 	return err
 }
+
+// SendText types text into window id (with confirmation from the user
+// beforehand: used only for "move into acmd", SPEC §6.3).
+func (k *Kitty) SendText(ctx context.Context, id int, text string) error {
+	_, err := k.run(ctx, "send-text", "--match", match(id), text)
+	return err
+}
+
+// LaunchOSWindow opens an OS window (in the instance of window near)
+// running argv in dir (split out, SPEC §6.6).
+func (k *Kitty) LaunchOSWindow(ctx context.Context, near int, dir string, argv, env []string) error {
+	args := []string{"launch", "--type=os-window", "--match", match(near), "--cwd", dir}
+	for _, e := range env {
+		args = append(args, "--env", e)
+	}
+	_, err := k.run(ctx, append(append(args, "--"), argv...)...)
+	return err
+}

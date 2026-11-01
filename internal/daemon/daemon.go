@@ -57,6 +57,16 @@ type Daemon struct {
 
 	changes changes // bumped on every state change (OpWatch)
 	seen    seen    // view heartbeats
+
+	adopting map[string]adoption // session id → a move into acmd in progress (d.mu)
+}
+
+// adoption is an external session acmd typed /bg into: its conversation
+// continues as a new background session (new Claude id, M0 C4), linked
+// back by folder and time.
+type adoption struct {
+	cwd string
+	at  time.Time
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks
@@ -100,7 +110,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}),
-		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}}
+		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}, adopting: map[string]adoption{}}
 	defer os.Remove(sock)
 
 	if err := d.drainSpool(ctx); err != nil {
@@ -257,6 +267,12 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 			sess.ClaudeSessionID, linked = e.SessionID, true
 		}
 	}
+	adopted := false
+	if errors.Is(err, store.ErrNotFound) && e.Kind == core.HookSessionStart {
+		if s := d.adoptedBy(ctx, e); s != nil {
+			sess, err, linked, adopted = s, nil, true, true
+		}
+	}
 	isNew := errors.Is(err, store.ErrNotFound)
 	if err != nil && !isNew {
 		return err
@@ -265,6 +281,12 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		sess = sessionFromHook(e, ev.Context, d.cfg.Now())
 	}
 	tr := core.Apply(sess, e)
+	if adopted {
+		sess.Kind, sess.External, sess.Pid = core.KindBackground, nil, ev.Context.ClaudePid
+		if len(e.SessionID) >= 8 {
+			sess.BgID = e.SessionID[:8]
+		}
+	}
 	if tr.Changed() && tr.To.NeedsAttention() && !d.shown(ctx, sess.ID) {
 		sess.Unseen = true
 	}
@@ -280,6 +302,25 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
 		Detail: string(sess.Status), ToolName: e.ToolName,
 	})
+}
+
+// adoptedBy returns the session being moved into acmd that a new Claude
+// session (first hook) continues: same folder, within 30 s. d.mu is held.
+func (d *Daemon) adoptedBy(ctx context.Context, e core.Event) *core.Session {
+	for id, a := range d.adopting {
+		if d.cfg.Now().Sub(a.at) > 30*time.Second {
+			delete(d.adopting, id)
+			continue
+		}
+		if a.cwd != "" && a.cwd == e.Cwd {
+			delete(d.adopting, id)
+			s, err := d.store.Session(ctx, id)
+			if err == nil {
+				return s
+			}
+		}
+	}
+	return nil
 }
 
 // background runs the reconciler and the transcript tail until the daemon
@@ -386,7 +427,7 @@ func sessionFromHook(e core.Event, hc ipc.HookContext, now time.Time) *core.Sess
 	}
 	if hc.ViewID == "" && (hc.KittyWindowID != "" || hc.TermProgram != "") {
 		s.Kind = core.KindExternal
-		loc := &core.PaneLoc{Terminal: terminalName(hc.TermProgram, hc.KittyWindowID)}
+		loc := &core.PaneLoc{Terminal: terminalName(hc.TermProgram, hc.KittyWindowID), TTY: hc.TTY}
 		if hc.KittyWindowID != "" {
 			loc.KittySocket = hc.KittyListenOn
 			_, _ = fmt.Sscan(hc.KittyWindowID, &loc.KittyWindow)

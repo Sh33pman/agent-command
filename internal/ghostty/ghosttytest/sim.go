@@ -121,6 +121,17 @@ func (s *Sim) Run(_ context.Context, script string, args ...string) (string, err
 		s.Terms = append(s.Terms, &Term{ID: fmt.Sprintf("N%d", s.next), Command: arg(1), Cwd: arg(2), Tab: 100 + s.next})
 		s.record("tab %s %s", arg(2), arg(1))
 		return "ok", nil
+	case strings.Contains(script, "input text (item 2 of argv)"):
+		if s.find(arg(0)) == nil {
+			return "not found", nil
+		}
+		s.record("type %s %s", arg(0), arg(1))
+		return "ok", nil
+	case strings.Contains(script, "new window with configuration"):
+		s.next++
+		s.Terms = append(s.Terms, &Term{ID: fmt.Sprintf("W%d", s.next), Command: arg(0), Cwd: arg(1), Tab: 200 + s.next})
+		s.record("window %s %s", arg(1), arg(0))
+		return "ok", nil
 	case strings.Contains(script, "reload_config"):
 		s.record("reload")
 		return "ok", nil

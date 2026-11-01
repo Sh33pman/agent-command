@@ -67,6 +67,8 @@ var local = []Binding{
 	{"describe", Sidebar, "e", "describe", ""},
 	{"open", Sidebar, "E", "open in editor", ""},
 	{"move", Sidebar, "m", "move to group", ""},
+	{"split-out", Sidebar, "s", "split out to a tab/window", ""},
+	{"adopt", Sidebar, "M", "move your pane's session into acmd", ""},
 	{"mark", Sidebar, "space", "mark (bulk move/archive)", ""},
 	{"archive", Sidebar, "a", "archive", ""},
 	{"archived", Sidebar, "A", "show archived", ""},

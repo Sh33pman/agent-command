@@ -193,6 +193,11 @@ func (m *Model) openMenu(r core.Row, y int) {
 			{"Move to group…", func() tea.Cmd { return m.openPicker(pickMove, s.GroupID, "") }},
 			{"Archive", func() tea.Cmd { return m.archive([]*core.Session{s}) }},
 		}
+		if s.Kind == core.KindExternal {
+			items = append(items, menuItem{"Move into acmd", func() tea.Cmd { return m.adopt(s) }})
+		} else {
+			items = append(items, menuItem{"Split out…", func() tea.Cmd { m.openSplitMenu(s, y); return nil }})
+		}
 	} else {
 		g := r.Group
 		title = g.Name

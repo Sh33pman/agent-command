@@ -29,6 +29,7 @@ type Proc struct {
 	PPid int
 	Comm string
 	Args []string
+	TTY  string // controlling terminal, e.g. /dev/ttys010 ("" = none)
 }
 
 // Options configures Run; zero values use the real environment.
@@ -150,7 +151,7 @@ func (o *Options) context() (ipc.HookContext, bool) {
 	if !ok {
 		return hc, false
 	}
-	hc.ClaudePid = p.Pid
+	hc.ClaudePid, hc.TTY = p.Pid, p.TTY
 	return hc, IsHeadless(p.Args)
 }
 

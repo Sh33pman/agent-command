@@ -153,6 +153,19 @@ func (a *sidebarActions) Open(ctx context.Context, s *core.Session) error {
 	return openSession(ctx, s, a.view, openOptions{})
 }
 
+func (a *sidebarActions) Adopt(ctx context.Context, s *core.Session) error {
+	call := func(op string, in, out any) error { return a.vc.call(ctx, op, in, out) }
+	r, err := adoptSession(ctx, call, s)
+	if err != nil {
+		return err
+	}
+	return a.Show(ctx, r)
+}
+
+func (a *sidebarActions) SplitOut(ctx context.Context, s *core.Session, window, withSidebar bool) error {
+	return splitOut(ctx, a.view, s, window, withSidebar)
+}
+
 func (a *sidebarActions) Help(width int, groups bool) []string {
 	bs := keymap.Filter(bindings(a.view.Pane.Terminal), "", "", groups)
 	return keymap.Lines(bs, keymap.Ordered(keymap.Sidebar), width)

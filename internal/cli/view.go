@@ -20,6 +20,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/keymap"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/procenv"
 	"github.com/brettmostert/agent-command/internal/setup"
@@ -113,6 +114,7 @@ func runView(cmd *cobra.Command, viewID string) error {
 			return err
 		},
 		Showing: termShowing(vc, viewID),
+		Hints:   placeholderHints(p),
 		Term:    terminalIn(),
 	}
 	err = loop.Run(ctx)
@@ -674,4 +676,25 @@ func nameOf(s *core.Session) string {
 func homeDir() string {
 	h, _ := os.UserHomeDir()
 	return h
+}
+
+// placeholderHints are the empty view's shortcut lines, with the user's keys.
+func placeholderHints(p paths.Paths) []string {
+	keys := config.Default().Keys
+	if cfg, err := config.Load(p.Config()); err == nil {
+		keys = cfg.Keys
+	}
+	var out []string
+	add := func(key, what string) {
+		if key != "" {
+			out = append(out, fmt.Sprintf("%-6s %s", keymap.Pretty(key), what))
+		}
+	}
+	add(keys.Focus, "focus the sidebar")
+	add(keys.Picker, "find a session by name")
+	if keys.GotoPrefix != "" {
+		out = append(out, fmt.Sprintf("%-6s show the sidebar's session N (here: 1–9)", keymap.Pretty(keys.GotoPrefix)+"N"))
+	}
+	add(keys.Cheatsheet, "all shortcuts")
+	return out
 }

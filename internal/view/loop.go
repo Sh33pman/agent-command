@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -52,6 +51,9 @@ type Loop struct {
 	Out  io.Writer
 	// New starts a session from the placeholder ('n'); nil disables it.
 	New func(ctx context.Context) error
+	// Hints are the shortcut lines the placeholder shows (the user's own
+	// keys); nil: a default.
+	Hints []string
 	// Showing is called before the view shows session id (e.g. to bring
 	// back its terminal pane); nil: nothing.
 	Showing func(ctx context.Context, id string)
@@ -347,19 +349,22 @@ func (l *Loop) placeholder(ctx context.Context, rev uint64, note string) error {
 				rows = l.draw(snap, note)
 			}
 		case k >= '1' && k <= '9':
-			n := int(k - '0')
-			if n <= len(rows) {
-				err := error(nil)
-				if rows[n-1].NeedsResume() {
-					_, err = l.Client.Resume(ctx, rows[n-1].ID)
-				}
-				if err == nil {
-					err = l.Client.Select(ctx, l.ViewID, rows[n-1].ID)
-				}
-				if err != nil {
-					note = err.Error()
-					rows = l.draw(snap, note)
-				}
+			s := rows[int(k-'0')]
+			var err error
+			switch {
+			case s == nil:
+				continue
+			case s.Kind != core.KindBackground:
+				err = fmt.Errorf("%q runs in its own window: focus it there, or move it in with ⌘⇧M (sidebar M)", displayName(s))
+			case s.NeedsResume():
+				_, err = l.Client.Resume(ctx, s.ID)
+			}
+			if err == nil {
+				err = l.Client.Select(ctx, l.ViewID, s.ID)
+			}
+			if err != nil {
+				note = err.Error()
+				rows = l.draw(snap, note)
 			}
 		}
 	}
@@ -390,42 +395,34 @@ func (l *Loop) waitForSelection(ctx context.Context, rev uint64) (uint64, error)
 }
 
 // draw renders the placeholder and returns the numbered sessions.
-func (l *Loop) draw(snap ipc.Snapshot, note string) []*core.Session {
+func (l *Loop) draw(snap ipc.Snapshot, note string) map[int]*core.Session {
+	// The sidebar's numbers, so 1–9 here pick what they pick there.
+	byNumber := map[int]*core.Session{}
+	for _, r := range core.Layout(snap.Sessions, snap.Groups, snap.ViewState) {
+		if r.Session != nil && r.Number >= 1 && r.Number <= 9 {
+			byNumber[r.Number] = r.Session
+		}
+	}
 	var b strings.Builder
 	b.WriteString("\x1b[H\x1b[2J") // home, clear
-	b.WriteString("No session shown in this pane.\r\n\r\n")
-	var rows []*core.Session
-	for _, r := range core.Layout(snap.Sessions, snap.Groups, snap.ViewState) {
-		if r.Session == nil || r.Session.Kind != core.KindBackground || (r.Session.BgID == "" && !r.Session.NeedsResume()) {
-			continue
-		}
-		rows = append(rows, r.Session)
+	b.WriteString("No session is shown here.\r\n\r\n")
+	b.WriteString("  Pick one in the sidebar on the left (click it, or ↑↓ and Enter).\r\n\r\n")
+	hints := l.Hints
+	if hints == nil {
+		hints = []string{"1–9    show the sidebar's session N"}
 	}
-	if len(rows) == 0 {
-		b.WriteString("  No background sessions yet.\r\n")
+	for _, h := range hints {
+		b.WriteString("  " + h + "\r\n")
 	}
-	for i, s := range rows {
-		label := " "
-		if i < 9 {
-			label = strconv.Itoa(i + 1)
-		}
-		unseen := ""
-		if s.Unseen {
-			unseen = " •"
-		}
-		fmt.Fprintf(&b, "  %s  %-8s %s%s\r\n", label, s.Status, displayName(s), unseen)
-	}
-	b.WriteString("\r\n")
-	if note != "" {
-		b.WriteString("  " + note + "\r\n\r\n")
-	}
-	keys := "1–9 show"
 	if l.New != nil {
-		keys += " · n new session here"
+		b.WriteString("  n      new session in this folder\r\n")
 	}
-	b.WriteString("  " + keys + " · q close this view\r\n")
+	b.WriteString("  q      close this view (sessions keep running)\r\n")
+	if note != "" {
+		b.WriteString("\r\n  " + note + "\r\n")
+	}
 	fmt.Fprint(l.Out, b.String())
-	return rows
+	return byNumber
 }
 
 func displayName(s *core.Session) string {

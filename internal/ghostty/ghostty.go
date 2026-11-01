@@ -255,6 +255,7 @@ on run argv
 	if term is missing value then return "not found"
 	tell application "Ghostty"
 		input text (item 2 of argv) to term
+		delay 0.3 -- a separate Enter, not part of the paste
 		send key "enter" to term
 	end tell
 	return "ok"

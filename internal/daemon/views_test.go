@@ -549,3 +549,29 @@ func TestExternalPaneFollowsHooks(t *testing.T) {
 		t.Errorf("kept: %+v", s.External)
 	}
 }
+
+// A moved-in session keeps the name it had (an automatic one too): Claude
+// names the background session anew, and the reconciler mustn't take it.
+func TestAdoptKeepsTheName(t *testing.T) {
+	p := testPaths(t)
+	agents := &fakeAgents{}
+	start(t, p, func(c *Config) { c.Agents, c.ReconcileEvery = agents, 30*time.Millisecond })
+	c := dial(t, p)
+	t0 := time.Now()
+	ext := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/k"}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"old-2","source":"startup","cwd":"/w"}`, t0, ext), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"old-2","prompt":"fix the flaky login test"}`, t0.Add(time.Second), ext), nil))
+	s := byClaude(snapshot(t, c), "old-2")
+	if s.Name == "" || s.NameSource != core.NameAuto {
+		t.Fatalf("auto name: %q %s", s.Name, s.NameSource)
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutAdopt, ID: s.ID})
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"beef1234-new","source":"startup","cwd":"/w"}`, t0.Add(2*time.Second), ipc.HookContext{}), nil))
+	idle, pid := "idle", 5
+	agents.add(claudecli.Agent{ID: "beef1234", SessionID: "beef1234-new", Kind: "background", Name: "background-task-moo-chat", Status: &idle, Pid: &pid, Cwd: "/w"})
+	time.Sleep(200 * time.Millisecond) // a few reconcile rounds
+	got := byClaude(snapshot(t, c), "beef1234-new")
+	if got == nil || got.ID != s.ID || got.Name != s.Name {
+		t.Errorf("name after moving in: %+v (was %q)", got, s.Name)
+	}
+}

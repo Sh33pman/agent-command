@@ -328,6 +328,11 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	tr := core.Apply(sess, e)
 	if adopted {
 		sess.Kind, sess.External, sess.Pid = core.KindBackground, nil, ev.Context.ClaudePid
+		if sess.Name != "" {
+			// Keep the name it had: Claude names the background session
+			// anew, which made the moved session look like another one.
+			sess.NameSource = core.NameUser
+		}
 		if len(e.SessionID) >= 8 {
 			sess.BgID = e.SessionID[:8]
 		}

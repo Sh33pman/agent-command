@@ -117,10 +117,24 @@ var adoptWait = 15 * time.Second
 
 // typeInto types text + Enter into a pane (Kitty send-text, Ghostty input
 // text + enter).
+// typeEnterDelay separates typed text from its Enter (tests shorten it).
+var typeEnterDelay = 300 * time.Millisecond
+
 func typeInto(ctx context.Context, loc core.PaneLoc, text string) error {
 	switch {
 	case loc.Terminal == "kitty" && loc.KittySocket != "" && loc.KittyWindow != 0:
-		return kittyAt(loc.KittySocket).SendText(ctx, loc.KittyWindow, text+"\r")
+		// Text and Enter in one burst read as a paste to Claude: the Enter
+		// becomes a new line instead of sending. Press it on its own.
+		k := kittyAt(loc.KittySocket)
+		if err := k.SendText(ctx, loc.KittyWindow, text); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(typeEnterDelay):
+		}
+		return k.SendText(ctx, loc.KittyWindow, "\r")
 	case loc.Terminal == "ghostty":
 		term := loc.GhosttyTerm
 		if term == "" && loc.TTY != "" {

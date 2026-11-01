@@ -228,11 +228,11 @@ func TestSwitchDetachAndPick(t *testing.T) {
 	_ = d.Select(context.Background(), "v1", "s2")
 	h.waitFor("ATTACHED bbbbbbbb")
 
-	// The user detaches (even right away: a clean exit): the placeholder lists sessions.
+	// The user detaches (even right away: a clean exit): the placeholder
+	// points at the sidebar.
 	h.press("detach\n")
-	h.waitFor("No session shown in this pane.")
-	h.waitFor("1  busy     auth")
-	h.waitFor("2  done     flaky")
+	h.waitFor("No session is shown here.")
+	h.waitFor("Pick one in the sidebar on the left")
 	if d.selected() != "" {
 		t.Errorf("detach left %q selected", d.selected())
 	}
@@ -257,9 +257,21 @@ func TestSwitchDetachAndPick(t *testing.T) {
 func TestPlaceholderRedrawsAndCloses(t *testing.T) {
 	d := newFakeDaemon()
 	h := run(t, d)
-	h.waitFor("No background sessions yet.")
-	d.change(func() { d.sessions = append(d.sessions, bg("s1", "aaaaaaaa", "", core.StatusStarting)) })
-	h.waitFor("1  starting session aaaaaaaa")
+	h.waitFor("No session is shown here.")
+	// A change redraws it; a session in the user's own window can't be
+	// shown here: the placeholder says how to move it in.
+	ext := &core.Session{ID: "e1", Name: "own window", Kind: core.KindExternal, Status: core.StatusDone, GroupID: "default",
+		CreatedAt: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)}
+	d.change(func() { d.sessions = append(d.sessions, ext) })
+	deadline := time.Now().Add(5 * time.Second)
+	for strings.Count(h.out.String(), "No session is shown here.") < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("no redraw:\n%s", h.out.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	h.press("1")
+	h.waitFor(`"own window" runs in its own window`)
 	h.press("q")
 	select {
 	case err := <-h.done:

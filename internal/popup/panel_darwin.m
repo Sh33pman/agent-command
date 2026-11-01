@@ -153,6 +153,16 @@ static NSScrollView *scrolling(NSTextView *tv) {
             emit(action, nil, 0);
             return nil;
         }
+        // ⌘V anywhere in the panel pastes into the reply box.
+        NSEventModifierFlags f = e.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                                                    NSEventModifierFlagOption | NSEventModifierFlagShift);
+        if (f == NSEventModifierFlagCommand && [[e.charactersIgnoringModifiers lowercaseString] isEqualToString:@"v"] &&
+            self.canReply && self.panel.firstResponder != self.input) {
+            [self.panel makeFirstResponder:self.input];
+            [self.input setSelectedRange:NSMakeRange(self.input.string.length, 0)];
+            [self.input pasteAsPlainText:nil];
+            return nil;
+        }
         return e;
     }];
 }
@@ -261,6 +271,71 @@ static NSScrollView *scrolling(NSTextView *tv) {
 }
 @end
 
+// Self-test (acmd popup --demo --selftest): posts real key events into the
+// panel and checks copy and paste, then restores the clipboard.
+static NSString *selfTestResult;
+
+static void postKey(NSString *chars, unsigned short code, NSEventModifierFlags mods) {
+    NSEvent *e = [NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:mods
+        timestamp:0 windowNumber:ctl.panel.windowNumber context:nil characters:chars
+        charactersIgnoringModifiers:chars isARepeat:NO keyCode:code];
+    [NSApp postEvent:e atStart:NO];
+}
+
+void acmdPopupSelfTest(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSPasteboard *pb = NSPasteboard.generalPasteboard;
+        NSString *saved = [pb stringForType:NSPasteboardTypeString];
+        NSMutableArray *results = [NSMutableArray array];
+        [pb clearContents];
+        [pb setString:@"pasted from the clipboard" forType:NSPasteboardTypeString];
+        ctl.input.string = @"";
+        [ctl.panel makeFirstResponder:ctl.body]; // focus on the response, not the reply box
+        postKey(@"v", kVK_ANSI_V, NSEventModifierFlagCommand);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            [results addObject:[NSString stringWithFormat:@"paste-anywhere=%@",
+                [ctl.input.string isEqualToString:@"pasted from the clipboard"] ? @"ok" : ctl.input.string]];
+            [ctl.panel makeFirstResponder:ctl.body];
+            postKey(@"a", kVK_ANSI_A, NSEventModifierFlagCommand);
+            postKey(@"c", kVK_ANSI_C, NSEventModifierFlagCommand);
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                NSString *copied = [pb stringForType:NSPasteboardTypeString] ?: @"";
+                [results addObject:[NSString stringWithFormat:@"copy-response=%@",
+                    [copied isEqualToString:ctl.body.string] ? @"ok" : [copied substringToIndex:MIN(copied.length, 40u)]]];
+                [ctl.panel makeFirstResponder:ctl.input];
+                ctl.input.string = @"reply text to copy";
+                postKey(@"a", kVK_ANSI_A, NSEventModifierFlagCommand);
+                postKey(@"c", kVK_ANSI_C, NSEventModifierFlagCommand);
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 400 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                    NSString *c2 = [pb stringForType:NSPasteboardTypeString] ?: @"";
+                    [results addObject:[NSString stringWithFormat:@"copy-reply=%@", [c2 isEqualToString:@"reply text to copy"] ? @"ok" : c2]];
+                    postKey(@"x", kVK_ANSI_X, NSEventModifierFlagCommand);
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                        [results addObject:[NSString stringWithFormat:@"cut-reply=%@", ctl.input.string.length == 0 ? @"ok" : ctl.input.string]];
+                        [pb clearContents];
+                        [pb setString:@"pasted in the reply box" forType:NSPasteboardTypeString];
+                        [ctl.panel makeFirstResponder:ctl.input];
+                        postKey(@"v", kVK_ANSI_V, NSEventModifierFlagCommand);
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                            [results addObject:[NSString stringWithFormat:@"paste-in-reply=%@",
+                                [ctl.input.string isEqualToString:@"pasted in the reply box"] ? @"ok" : ctl.input.string]];
+                            [pb clearContents];
+                            if (saved) [pb setString:saved forType:NSPasteboardTypeString];
+                            selfTestResult = [results componentsJoinedByString:@" "];
+                        });
+                    });
+                });
+            });
+        });
+    });
+}
+
+const char *acmdPopupSelfTestResult(void) {
+    __block NSString *s;
+    dispatch_sync(dispatch_get_main_queue(), ^{ s = selfTestResult ?: @""; });
+    return strdup([s UTF8String]);
+}
+
 const char *acmdFrontmostApp(void) {
     NSString *b = NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier ?: @"";
     return strdup([b UTF8String]);
@@ -277,10 +352,36 @@ const char *acmdPopupFrame(void) {
     return strdup([s UTF8String]);
 }
 
+// editMenu gives the panel the standard editing keys (⌘X ⌘C ⌘V ⌘A ⌘Z):
+// AppKit routes them through the main menu, which a menu-bar-less
+// (accessory) app doesn't have unless it's set here.
+static void editMenu(void) {
+    NSMenu *main = [[NSMenu alloc] init];
+    NSMenuItem *appItem = [[NSMenuItem alloc] init];
+    NSMenu *app = [[NSMenu alloc] initWithTitle:@"acmd"];
+    [app addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
+    appItem.submenu = app;
+    [main addItem:appItem];
+    NSMenuItem *editItem = [[NSMenuItem alloc] init];
+    NSMenu *edit = [[NSMenu alloc] initWithTitle:@"Edit"];
+    [edit addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    NSMenuItem *redo = [edit addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"z"];
+    redo.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [edit addItem:[NSMenuItem separatorItem]];
+    [edit addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+    [edit addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+    [edit addItemWithTitle:@"Paste" action:@selector(pasteAsPlainText:) keyEquivalent:@"v"];
+    [edit addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    editItem.submenu = edit;
+    [main addItem:editItem];
+    NSApp.mainMenu = main;
+}
+
 void acmdPopupRun(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        editMenu();
         ctl = [[AcmdController alloc] init];
         [ctl build];
         [NSApp run];

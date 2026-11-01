@@ -22,3 +22,6 @@ func Frame() string { return "" }
 
 // FrontmostApp is unknown without the native panel.
 func FrontmostApp() string { return "" }
+
+// SelfTest is unavailable without the native panel.
+func SelfTest(func()) string { return "" }

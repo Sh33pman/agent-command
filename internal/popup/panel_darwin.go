@@ -12,6 +12,8 @@ void acmdPopupSetBindings(const char *json);
 int acmdPopupRegisterHotKey(int keyCode, int mods, int id);
 const char *acmdPopupFrame(void);
 const char *acmdFrontmostApp(void);
+void acmdPopupSelfTest(void);
+const char *acmdPopupSelfTestResult(void);
 */
 import "C"
 
@@ -144,4 +146,20 @@ func FrontmostApp() string {
 	cs := C.acmdFrontmostApp()
 	defer C.free(unsafe.Pointer(cs))
 	return C.GoString(cs)
+}
+
+// SelfTest posts copy and paste keys into the shown panel and returns what
+// worked ("" until done); for `acmd popup --demo --selftest`.
+func SelfTest(wait func()) string {
+	C.acmdPopupSelfTest()
+	for range 20 {
+		wait()
+		cs := C.acmdPopupSelfTestResult()
+		r := C.GoString(cs)
+		C.free(unsafe.Pointer(cs))
+		if r != "" {
+			return r
+		}
+	}
+	return "timed out"
 }

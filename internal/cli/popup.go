@@ -23,7 +23,7 @@ import (
 )
 
 func newPopupCmd() *cobra.Command {
-	var demo bool
+	var demo, selftest bool
 	cmd := &cobra.Command{
 		Use:    "popup",
 		Short:  "Run the reply popup (started by the daemon when the popup is on)",
@@ -34,19 +34,20 @@ func newPopupCmd() *cobra.Command {
 				return popup.ErrUnsupported
 			}
 			if demo {
-				return runPopupDemo(cmd)
+				return runPopupDemo(cmd, selftest)
 			}
 			return runPopupAgent(cmd)
 		},
 	}
 	cmd.Flags().BoolVar(&demo, "demo", false, "show sample items (development)")
+	cmd.Flags().BoolVar(&selftest, "selftest", false, "with --demo: check copy and paste, print the result and quit")
 	return cmd
 }
 
 // runPopupDemo shows three sample items, logs the panel's frame and every
 // event, and quits after --demo-seconds (ACMD_POPUP_DEMO_SECONDS, default 0
 // = stay).
-func runPopupDemo(cmd *cobra.Command) error {
+func runPopupDemo(cmd *cobra.Command, selftest bool) error {
 	out := cmd.ErrOrStderr()
 	items := []popup.State{
 		{Title: "auth work", Meta: "✓ done · ~/w/api", Body: "I refactored the auth middleware.\n\n" + longText(), CanReply: true, Placeholder: "Reply to auth work"},
@@ -69,6 +70,10 @@ func runPopupDemo(cmd *cobra.Command) error {
 		show()
 		time.Sleep(time.Second)
 		fmt.Fprintln(out, "frame:", popup.Frame())
+		if selftest {
+			fmt.Fprintln(out, "selftest:", popup.SelfTest(func() { time.Sleep(200 * time.Millisecond) }))
+			os.Exit(0)
+		}
 		if secs := os.Getenv("ACMD_POPUP_DEMO_SECONDS"); secs != "" {
 			var n int
 			_, _ = fmt.Sscan(secs, &n)

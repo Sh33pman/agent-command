@@ -2,7 +2,17 @@
 
 Track every Claude Code session from a sidebar in **Kitty** and **Ghostty**: live status (busy, waiting on you, done, paused, error), names, groups, notifications, and one-key navigation.
 
-> **Status:** early development. The current release only provides `acmd version`. See [SPEC.md](SPEC.md) for the design and roadmap.
+## Features
+
+- **Live session status** in a sidebar: busy, waiting on you, done, paused, error.
+- **Names, groups and notifications** for every Claude Code session.
+- **One-key navigation** between sessions, plus adopting sessions started elsewhere.
+- **Reply popup**: an inbox of finished turns, questions and permission requests you can answer without switching windows. Responses render as rich text.
+- **Read aloud**: have the latest response spoken with local text-to-speech.
+- **Remote control** enabled on every session `acmd` launches.
+- `acmd doctor` and `acmd init` to check and set up your terminal and hooks.
+
+> **Status:** early development. See [SPEC.md](SPEC.md) for the design and roadmap.
 
 ## Install (macOS)
 

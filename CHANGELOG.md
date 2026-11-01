@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/brettmostert/agent-command/compare/v0.27.1...v0.28.0) (2026-11-01)
+
+
+### Features
+
+* **popup:** reopen hotkey is cmd+ctrl+o and opens on an empty queue (PAN-12) ([#98](https://github.com/brettmostert/agent-command/issues/98)) ([bbe472f](https://github.com/brettmostert/agent-command/commit/bbe472f9fc31a096a773072cddb12efe4d6b00c0))
+
 ## [0.27.1](https://github.com/brettmostert/agent-command/compare/v0.27.0...v0.27.1) (2026-11-01)
 
 

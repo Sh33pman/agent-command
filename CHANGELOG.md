@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.0](https://github.com/brettmostert/agent-command/compare/v0.16.0...v0.17.0) (2026-11-01)
+
+
+### Features
+
+* **sidebar:** rename with the r key only, not double-click ([#48](https://github.com/brettmostert/agent-command/issues/48)) ([a88bae2](https://github.com/brettmostert/agent-command/commit/a88bae211cf3a0c8db05f12dd6a3cf750d4449cd))
+* **sidebar:** show messages in a status bar at the bottom ([#47](https://github.com/brettmostert/agent-command/issues/47)) ([25ebc08](https://github.com/brettmostert/agent-command/commit/25ebc0804beeca41b47714ea59932eb2cdb4fb67))
+
 ## [0.16.0](https://github.com/brettmostert/agent-command/compare/v0.15.0...v0.16.0) (2026-11-01)
 
 

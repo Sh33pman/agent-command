@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/brettmostert/agent-command/compare/v0.12.0...v0.12.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **kitty:** stop the sidebar width loop; add daemon stop and restart ([#41](https://github.com/brettmostert/agent-command/issues/41)) ([9453ff6](https://github.com/brettmostert/agent-command/commit/9453ff6307370cd551df341aaa50a6fa2e5eae63))
+
 ## [0.12.0](https://github.com/brettmostert/agent-command/compare/v0.11.0...v0.12.0) (2026-10-31)
 
 

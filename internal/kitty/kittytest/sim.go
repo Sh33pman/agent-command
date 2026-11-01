@@ -26,7 +26,9 @@ type Sim struct {
 	Fail    string // command that fails
 	FailErr error  // its error (default "<command> failed")
 	Stuck   bool   // resizes change nothing
-	Launch  string // override launch output
+	// Unfocused: the OS window doesn't have focus (another app is in front).
+	Unfocused bool
+	Launch    string // override launch output
 }
 
 // New returns a Kitty with one tab (layout fat) holding windows 1 and 2;
@@ -82,7 +84,7 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 				t.Windows[j].IsFocused = t.Windows[j].ID == s.Focused
 			}
 		}
-		return json.Marshal([]kitty.OSWindow{{ID: 1, Tabs: derefTabs(s.Tabs)}})
+		return json.Marshal([]kitty.OSWindow{{ID: 1, IsFocused: !s.Unfocused, Tabs: derefTabs(s.Tabs)}})
 	case "goto-layout":
 		t.Layout = args[len(args)-1]
 	case "send-text":

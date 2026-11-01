@@ -436,43 +436,41 @@ func (a *popupAgent) answer(ctx context.Context, it core.InboxItem, in replyInpu
 }
 
 // userInAcmd reports whether the user is in one of acmd's views (the
-// frontmost window is a view's pane, sidebar, header, bar or terminal),
-// and the session that view shows.
+// frontmost window is a view's pane, sidebar, header, bar or terminal), and
+// the session they're looking at: the one that view shows, or a session
+// running in the user's own pane that has focus (no popup for it either).
 func userInAcmd(ctx context.Context, snap ipc.Snapshot) (bool, string) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	switch popup.FrontmostApp() {
+	switch frontmostApp() {
 	case "net.kovidgoyal.kitty":
-		seen := map[string]bool{}
+		sockets := map[string]bool{}
 		for _, v := range snap.Views {
-			sock := v.Pane.KittySocket
-			if sock == "" || seen[sock] {
-				continue
+			if v.Pane.KittySocket != "" {
+				sockets[v.Pane.KittySocket] = true
 			}
-			seen[sock] = true
-			ws, err := kittyAt(sock).LS(ctx)
-			if err != nil {
-				continue
+		}
+		for _, s := range snap.Sessions {
+			if x := s.External; s.Kind == core.KindExternal && x != nil && x.Terminal == "kitty" && x.KittySocket != "" {
+				sockets[x.KittySocket] = true
 			}
-			focused := 0
-			for _, ow := range ws {
-				if !ow.IsFocused {
-					continue
-				}
-				for _, t := range ow.Tabs {
-					for _, w := range t.Windows {
-						if w.IsFocused {
-							focused = w.ID
-						}
-					}
-				}
+		}
+		for sock := range sockets {
+			focused := kittyFocused(ctx, sock)
+			if focused == 0 {
+				continue
 			}
 			for _, x := range snap.Views {
 				sb := x.Sidebar
-				if focused != 0 && x.Pane.KittySocket == sock && (x.Pane.KittyWindow == focused || sb.KittyWindow == focused ||
+				if x.Pane.KittySocket == sock && (x.Pane.KittyWindow == focused || sb.KittyWindow == focused ||
 					sb.HeaderWindow == focused || sb.BarWindow == focused || sb.TermWindow == focused) {
 					return true, x.Selected
 				}
+			}
+			if id := externalIn(snap, func(x *core.PaneLoc) bool {
+				return x.Terminal == "kitty" && x.KittySocket == sock && x.KittyWindow == focused
+			}); id != "" {
+				return false, id
 			}
 		}
 	case "com.mitchellh.ghostty":
@@ -486,8 +484,63 @@ func userInAcmd(ctx context.Context, snap ipc.Snapshot) (bool, string) {
 				return true, x.Selected
 			}
 		}
+		if id := externalIn(snap, func(x *core.PaneLoc) bool {
+			if x.Terminal != "ghostty" {
+				return false
+			}
+			if x.GhosttyTerm != "" {
+				return x.GhosttyTerm == term
+			}
+			t, err := ghosttyApp().TermForTTY(ctx, x.TTY)
+			return x.TTY != "" && err == nil && t == term
+		}); id != "" {
+			return false, id
+		}
 	}
 	return false, ""
+}
+
+// frontmostApp is the frontmost app's bundle id (swappable in tests).
+var frontmostApp = popup.FrontmostApp
+
+// kittyFocused is the focused window of the focused OS window of the Kitty
+// on sock (0: none, or Kitty didn't answer).
+func kittyFocused(ctx context.Context, sock string) int {
+	ws, err := kittyAt(sock).LS(ctx)
+	if err != nil {
+		return 0
+	}
+	for _, ow := range ws {
+		if !ow.IsFocused {
+			continue
+		}
+		for _, t := range ow.Tabs {
+			for _, w := range t.Windows {
+				if w.IsFocused {
+					return w.ID
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// externalIn is the live (not archived) external session whose pane
+// matches, most recently active first.
+func externalIn(snap ipc.Snapshot, match func(*core.PaneLoc) bool) string {
+	var best *core.Session
+	for _, s := range snap.Sessions {
+		if s.Kind != core.KindExternal || s.External == nil || s.Status == core.StatusArchived || !match(s.External) {
+			continue
+		}
+		if best == nil || s.LastEventAt.After(best.LastEventAt) {
+			best = s
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.ID
 }
 
 // lockFile takes an exclusive, non-blocking lock on path.

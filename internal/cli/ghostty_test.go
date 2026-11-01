@@ -131,7 +131,8 @@ func TestViewFocusedAndFallback(t *testing.T) {
 		t.Error("ghostty in the background counted as focused")
 	}
 	kv := &core.View{Pane: core.PaneLoc{Terminal: "kitty", KittySocket: "unix:/tmp/k", KittyWindow: 1}}
-	if viewFocused(ctx, kv) { // the simulated OS window isn't focused
+	ksim.Unfocused = true
+	if viewFocused(ctx, kv) {
 		t.Error("kitty: unfocused OS window counted")
 	}
 	if viewFocused(ctx, &core.View{}) {

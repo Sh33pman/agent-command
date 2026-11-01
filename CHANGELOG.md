@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/brettmostert/agent-command/compare/v0.26.0...v0.27.0) (2026-11-01)
+
+
+### Features
+
+* **claudecli:** enable remote control on all launched sessions ([#93](https://github.com/brettmostert/agent-command/issues/93)) ([d4d0469](https://github.com/brettmostert/agent-command/commit/d4d0469de1aab833aba8de0de1b97d5bb4d113fe))
+
+
+### Bug Fixes
+
+* **cli:** stop TestKeysCommand flaking on a loaded machine ([#92](https://github.com/brettmostert/agent-command/issues/92)) ([5401819](https://github.com/brettmostert/agent-command/commit/540181990b53ae27e0922fa54e1a31e698e82d0f))
+
 ## [0.26.0](https://github.com/brettmostert/agent-command/compare/v0.25.3...v0.26.0) (2026-11-01)
 
 

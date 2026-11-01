@@ -130,3 +130,40 @@ func TestBar(t *testing.T) {
 		t.Errorf("err %v", m.Err())
 	}
 }
+
+func TestBarVersion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := New(ctx, &fake{}, "v1")
+	m.Version = "0.21.0"
+	send(m, tea.WindowSizeMsg{Width: 50, Height: 1})
+	snap := ipc.Snapshot{Sessions: []*core.Session{{ID: "a", Status: core.StatusBusy}}}
+	send(m, stateMsg{resp: ipc.WatchResponse{Rev: 1}, snap: snap})
+	line := screen(m)[0]
+	if !strings.HasSuffix(line, " v0.21.0 ") || !strings.HasPrefix(line, " acmd · 1 busy") || ansi.StringWidth(line) != 50 {
+		t.Errorf("idle line %q", line)
+	}
+
+	// A wrapped error keeps the version on its first line, at the right.
+	send(m, stateMsg{resp: ipc.WatchResponse{Rev: 2, Note: &ipc.ViewNote{Text: strings.Repeat("word ", 20), Err: true}}, snap: snap})
+	m.Update(tea.WindowSizeMsg{Width: 50, Height: 4})
+	lines := screen(m)
+	if !strings.HasSuffix(lines[0], " v0.21.0 ") || strings.Contains(lines[1], "v0.21.0") {
+		t.Errorf("error bar:\n%s", strings.Join(lines, "\n"))
+	}
+	for _, l := range lines {
+		if ansi.StringWidth(l) != 50 {
+			t.Errorf("line %q is %d wide", l, ansi.StringWidth(l))
+		}
+	}
+
+	// Too narrow: the version gives way; dev builds show as they are.
+	m.Update(tea.WindowSizeMsg{Width: 16, Height: 4})
+	if strings.Contains(strings.Join(screen(m), "\n"), "v0.21") {
+		t.Error("version shown in a 16-column bar")
+	}
+	m.Version = "dev"
+	if m.version() != "dev" {
+		t.Errorf("dev version %q", m.version())
+	}
+}

@@ -46,6 +46,8 @@ type Model struct {
 	ctx    context.Context
 	act    Actions
 	viewID string
+	// Version is acmd's version, shown at the far right ("" = none).
+	Version string
 
 	note   *ipc.ViewNote
 	snap   ipc.Snapshot
@@ -169,18 +171,46 @@ func (m *Model) lines() []string {
 	if m.w <= 2 {
 		return []string{""}
 	}
+	ver := m.version()
+	if lipgloss.Width(ver)+12 > m.w {
+		ver = "" // too narrow: the message comes first
+	}
+	right := 0
+	if ver != "" {
+		right = lipgloss.Width(ver) + 2 // the version and a gap
+	}
 	if n := m.note; n != nil && n.Text != "" {
 		text, st := n.Text, dim
 		if n.Err {
 			text, st = "✗ "+text, errBar
 		}
-		lines := tui.BarLines(strings.Join(strings.Fields(text), " "), m.w-2, MaxLines)
+		lines := tui.BarLines(strings.Join(strings.Fields(text), " "), m.w-2-right, MaxLines)
 		for i, l := range lines {
+			if i == 0 && ver != "" {
+				lines[i] = st.Render(pad(" "+l, m.w-lipgloss.Width(ver)-1) + ver + " ")
+				continue
+			}
 			lines[i] = st.Render(pad(" "+l+" ", m.w))
 		}
 		return lines
 	}
-	return []string{dim.Render(pad(" "+m.summary(), m.w))}
+	left := " " + m.summary()
+	if ver == "" {
+		return []string{dim.Render(pad(left, m.w))}
+	}
+	return []string{dim.Render(pad(left, m.w-lipgloss.Width(ver)-1) + ver + " ")}
+}
+
+// version is how the bar shows Version ("v0.21.0"; dev builds as they are).
+func (m *Model) version() string {
+	v := m.Version
+	if v == "" {
+		return ""
+	}
+	if v[0] >= '0' && v[0] <= '9' {
+		v = "v" + v
+	}
+	return v
 }
 
 // summary counts the sessions by status, e.g. "acmd · 2 busy · 1 needs you".

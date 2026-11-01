@@ -16,6 +16,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/kitty"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/statusbar"
+	"github.com/brettmostert/agent-command/internal/version"
 )
 
 // The full-width status bar (SPEC §8.4): a thin Kitty pane along the
@@ -97,6 +98,7 @@ func newStatusbarCmd() *cobra.Command {
 			own := 0
 			_, _ = fmt.Sscan(os.Getenv("KITTY_WINDOW_ID"), &own)
 			model := statusbar.New(ctx, &barActions{vc: vc, view: v, own: own}, viewID)
+			model.Version = version.Get().Version
 			if _, err := tea.NewProgram(model, tea.WithContext(ctx)).Run(); err != nil && ctx.Err() == nil && model.Err() == nil {
 				return err
 			}

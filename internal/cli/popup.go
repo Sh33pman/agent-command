@@ -64,7 +64,7 @@ func runPopupDemo(cmd *cobra.Command, selftest bool) error {
 		popup.Update(s)
 	}
 	popup.SetBindings(popupBindings(config.Default().Popup.Keys))
-	if err := popup.RegisterHotKey(1, "cmd+shift+o"); err != nil {
+	if err := popup.RegisterHotKey(1, "cmd+ctrl+o"); err != nil {
 		fmt.Fprintln(out, "hotkey:", err)
 	}
 	go func() {

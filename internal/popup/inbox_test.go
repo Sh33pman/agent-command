@@ -116,3 +116,20 @@ func TestSurfaceKeepsOpenItem(t *testing.T) {
 		t.Fatalf("open panel switched to %q, want a", b.Current)
 	}
 }
+
+func TestShowOpensEmptyQueue(t *testing.T) {
+	b := &Inbox{}
+	b.Show("")
+	st := b.State()
+	if !b.Open || !st.Visible || st.Counter != "0 of 0" {
+		t.Fatalf("empty queue should open: open=%v state=%+v", b.Open, st)
+	}
+	b.Set(nil, nil) // a snapshot arriving must not close it
+	if !b.Open {
+		t.Fatal("snapshot closed the empty panel")
+	}
+	b.Set(items("a"), nil)
+	if b.ShowEmpty || b.Item() == nil {
+		t.Fatal("an item arriving should replace the empty view")
+	}
+}

@@ -14,8 +14,10 @@ type Inbox struct {
 	Items   []core.InboxItem
 	Current string // the shown item's session
 	Open    bool
-	Note    string // a line under the buttons ("Sending…", an error)
-	Playing bool
+	// ShowEmpty keeps the panel open on an empty queue: the user asked for it.
+	ShowEmpty bool
+	Note      string // a line under the buttons ("Sending…", an error)
+	Playing   bool
 	// Reply numbers the reply being written (see State.Reply).
 	Reply int
 	// Sessions names items (by session id) and gives their details line.
@@ -44,7 +46,9 @@ func (b *Inbox) Set(items []core.InboxItem, sessions map[string]*core.Session) [
 		}
 	}
 	if len(items) == 0 {
-		b.Open = false
+		b.Open = b.Open && b.ShowEmpty
+	} else {
+		b.ShowEmpty = false
 	}
 	return fresh
 }
@@ -89,7 +93,8 @@ func (b *Inbox) Show(id string) {
 	if b.index() < 0 && len(b.Items) > 0 {
 		b.Current = b.Items[0].SessionID
 	}
-	b.Open = len(b.Items) > 0
+	b.Open = true
+	b.ShowEmpty = len(b.Items) == 0
 }
 
 // Surface shows session id's new item. A panel that is already open keeps the
@@ -136,8 +141,12 @@ func (b *Inbox) Sent() {
 // State is what the panel shows.
 func (b *Inbox) State() State {
 	it := b.Item()
-	if !b.Open || it == nil {
+	if !b.Open {
 		return State{}
+	}
+	if it == nil {
+		return State{Visible: true, Title: "Inbox", Meta: "nothing waiting", Counter: "0 of 0",
+			Body: "The queue is empty. Items show up here when a session needs you."}
 	}
 	s := State{Visible: true, Body: it.Text, Options: it.Options, Playing: b.Playing, Note: b.Note, Reply: b.Reply,
 		Counter: fmt.Sprintf("%d of %d", b.index()+1, len(b.Items))}

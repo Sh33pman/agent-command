@@ -446,7 +446,7 @@ func TestInitAsksAboutPopup(t *testing.T) {
 		t.Errorf("output (spawned %d):\n%s", spawned, out.String())
 	}
 	cfg, _ := config.Load(s.paths.Config())
-	if !cfg.Popup.Enabled || !cfg.Popup.AutoPlay || cfg.Popup.Hotkey != "cmd+shift+o" {
+	if !cfg.Popup.Enabled || !cfg.Popup.AutoPlay || cfg.Popup.Hotkey != "cmd+ctrl+o" {
 		t.Errorf("popup config: %+v", cfg.Popup)
 	}
 	if rec, _, _ := setup.ReadRecord(s.paths.Setup()); !rec.PopupAsked {

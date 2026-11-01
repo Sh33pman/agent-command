@@ -5,9 +5,9 @@ package popup
 import "testing"
 
 func TestCarbonKey(t *testing.T) {
-	code, mods, err := carbonKey("cmd+shift+o")
-	if err != nil || code != 0x1F || mods != carbonCmd|carbonShift {
-		t.Errorf("cmd+shift+o: %#x %#x %v", code, mods, err)
+	code, mods, err := carbonKey("cmd+ctrl+o")
+	if err != nil || code != 0x1F || mods != carbonCmd|carbonCtrl {
+		t.Errorf("cmd+ctrl+o: %#x %#x %v", code, mods, err)
 	}
 	code, mods, err = carbonKey("ctrl+alt+left")
 	if err != nil || code != 0x7B || mods != carbonCtrl|carbonAlt {

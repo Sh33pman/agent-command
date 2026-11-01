@@ -112,7 +112,7 @@ func Default() Config {
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
 			DoneMinDuration: "30s", Cooldown: "20s", Sound: "default"},
 		Editor: Editor{RunIn: "background", Target: "cwd"},
-		Popup: Popup{Hotkey: "cmd+shift+o", ReadHotkey: "cmd+ctrl+p", Keys: PopupKeys{Prev: "cmd+ctrl+left", Next: "cmd+ctrl+right",
+		Popup: Popup{Hotkey: "cmd+ctrl+o", ReadHotkey: "cmd+ctrl+p", Keys: PopupKeys{Prev: "cmd+ctrl+left", Next: "cmd+ctrl+right",
 			Play: "cmd+ctrl+p", Skip: "cmd+ctrl+k", Close: "escape"}},
 		Speech: Speech{Model: "mlx-community/Kokoro-82M-bf16", Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
 		Keys: Keys{
@@ -185,7 +185,7 @@ enabled = false
 # Read each item aloud when it's shown (needs speech: acmd speech install).
 autoplay = false
 # System-wide shortcut that reopens the popup.
-hotkey = "cmd+shift+o"
+hotkey = "cmd+ctrl+o"
 
 [popup.keys]
 prev = "cmd+ctrl+left"

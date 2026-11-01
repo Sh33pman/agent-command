@@ -317,7 +317,7 @@ func askPopup(ctx context.Context, in *bufio.Reader, out io.Writer, p paths.Path
 		return a == "y" || a == "yes"
 	}
 	fmt.Fprintln(out, "\nReply popup: when a session finishes, asks a question or wants a permission while you're")
-	fmt.Fprintln(out, "working elsewhere, a popup shows it and takes your reply (cmd+shift+o reopens it).")
+	fmt.Fprintln(out, "working elsewhere, a popup shows it and takes your reply (cmd+ctrl+o reopens it).")
 	if !yes("Turn on the reply popup?") {
 		fmt.Fprintln(out, "Left off. Turn it on later with `enabled = true` under [popup] in config.toml.")
 		return

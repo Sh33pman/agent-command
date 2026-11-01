@@ -70,7 +70,7 @@ func SetBindings(bs []Binding) {
 	C.acmdPopupSetBindings(cs)
 }
 
-// RegisterHotKey makes key (e.g. "cmd+shift+o") a system-wide shortcut
+// RegisterHotKey makes key (e.g. "cmd+ctrl+o") a system-wide shortcut
 // that sends Event{Kind: "hotkey", N: id}. It needs no permission.
 func RegisterHotKey(id int, key string) error {
 	code, mods, err := carbonKey(key)
@@ -101,7 +101,7 @@ const (
 	carbonCtrl  = 1 << 12
 )
 
-// carbonKey turns "cmd+shift+o" into a virtual key code and Carbon
+// carbonKey turns "cmd+ctrl+o" into a virtual key code and Carbon
 // modifiers.
 func carbonKey(key string) (int, int, error) {
 	parts := strings.Split(strings.ToLower(key), "+")

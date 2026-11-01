@@ -18,6 +18,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/daemon"
+	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
@@ -34,6 +35,9 @@ var (
 	kittyDefaults   = runKittyDefaults
 	hasBundle       = mdfindBundle
 	kittyAppBinary  = "/Applications/kitty.app/Contents/MacOS/kitty"
+	ghosttyDefaults = runGhosttyDefaults
+	ghosttyAppBin   = "/Applications/Ghostty.app/Contents/MacOS/ghostty"
+	ghosttyApp      = ghostty.New
 )
 
 type initOptions struct {
@@ -41,6 +45,7 @@ type initOptions struct {
 	ask         bool // show the plan and ask before applying (automatic first run)
 	refreshEnv  bool
 	kitty       bool // configure Kitty even if it doesn't look installed
+	ghostty     bool // configure Ghostty even if it doesn't look installed
 	interactive bool // a person is at the terminal (prompts allowed)
 }
 
@@ -54,7 +59,7 @@ type gathered struct {
 	init  bool // setup.json exists
 }
 
-func gather(ctx context.Context, captureEnv, forceKitty bool) (*gathered, error) {
+func gather(ctx context.Context, captureEnv, forceKitty, forceGhostty bool) (*gathered, error) {
 	p, err := paths.Default()
 	if err != nil {
 		return nil, err
@@ -120,7 +125,41 @@ func gather(ctx context.Context, captureEnv, forceKitty bool) (*gathered, error)
 			}
 		}
 	}
+
+	ghosttyDir := setup.GhosttyConfigDir(home, os.Getenv)
+	if g.init && g.rec.GhosttyDir != "" {
+		ghosttyDir = g.rec.GhosttyDir
+	}
+	ghosttyBin := findGhostty(g.path)
+	if forceGhostty || ghosttyBin != "" || (g.init && g.rec.GhosttyDir != "") {
+		g.in.GhosttyDir = ghosttyDir
+		if ghosttyBin != "" {
+			if d, err := ghosttyDefaults(ctx, ghosttyBin); err == nil {
+				g.in.GhosttyKeys = d
+			}
+		}
+	}
 	return g, nil
+}
+
+func findGhostty(pathList string) string {
+	if p, err := setup.LookPathIn("ghostty", pathList); err == nil {
+		return p
+	}
+	if p, err := setup.LookPathIn(ghosttyAppBin, ""); err == nil {
+		return p
+	}
+	return ""
+}
+
+func runGhosttyDefaults(ctx context.Context, bin string) (map[string]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "+list-keybinds", "--default").Output() // #nosec G204 G702 -- the ghostty binary found on PATH, fixed args
+	if err != nil {
+		return nil, err
+	}
+	return setup.ParseGhosttyKeybinds(string(out)), nil
 }
 
 func findKitty(pathList string) string {
@@ -160,7 +199,7 @@ func mdfindBundle(id string) bool {
 // runInit plans and (unless dry-run or declined) applies `acmd init`. It
 // reports whether setup is complete afterwards.
 func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (bool, error) {
-	g, err := gather(ctx, o.refreshEnv, o.kitty)
+	g, err := gather(ctx, o.refreshEnv, o.kitty, o.ghostty)
 	if err != nil {
 		return false, err
 	}
@@ -229,9 +268,19 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	}
 	if err := setup.WriteRecord(g.paths.Setup(), setup.Record{
 		Version: version.Get().Version, At: time.Now().UTC(), AcmdPath: g.in.AcmdPath,
-		ClaudeDir: g.in.ClaudeDir, KittyDir: g.in.KittyDir, ConfigFile: g.in.ConfigFile,
+		ClaudeDir: g.in.ClaudeDir, KittyDir: g.in.KittyDir, GhosttyDir: g.in.GhosttyDir, ConfigFile: g.in.ConfigFile,
 	}); err != nil {
 		return false, err
+	}
+	if g.in.GhosttyDir != "" {
+		// Reload Ghostty's config, and trigger macOS's Automation prompt
+		// now rather than on the first sidebar action (SPEC §7.3).
+		app := ghosttyApp()
+		if _, err := app.Running(ctx); errors.Is(err, ghostty.ErrNotPermitted) {
+			fmt.Fprintln(out, "\nGhostty: acmd isn't allowed to control Ghostty. Allow it in System Settings → Privacy & Security → Automation.")
+		} else if err == nil {
+			_ = app.ReloadConfig(ctx)
+		}
 	}
 	if len(plan.Pending()) == 0 {
 		fmt.Fprintln(out, "\nAlready set up; nothing changed.")
@@ -323,7 +372,6 @@ func askCustomEditor(in *bufio.Reader, out io.Writer, pathList string) *config.E
 
 func newInitCmd() *cobra.Command {
 	var o initOptions
-	var ghostty bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Set up Claude Code hooks, terminal shortcuts and acmd's config (safe to rerun)",
@@ -332,9 +380,6 @@ func newInitCmd() *cobra.Command {
 			"and `acmd uninstall` removes it all again. Use --dry-run to see the changes without making them.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if ghostty {
-				return errors.New("Ghostty setup isn't available yet (it arrives with Ghostty support)") //nolint:staticcheck // ST1005: product name
-			}
 			o.interactive = isInteractive(cmd)
 			_, err := runInit(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), o)
 			return err
@@ -343,7 +388,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show the changes without making them")
 	cmd.Flags().BoolVar(&o.refreshEnv, "refresh-env", false, "capture the login-shell environment again")
 	cmd.Flags().BoolVar(&o.kitty, "kitty", false, "configure Kitty even if it isn't detected")
-	cmd.Flags().BoolVar(&ghostty, "ghostty", false, "configure Ghostty (not available yet)")
+	cmd.Flags().BoolVar(&o.ghostty, "ghostty", false, "configure Ghostty even if it isn't detected")
 	return cmd
 }
 
@@ -389,6 +434,13 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	}
 	if dirExists(kittyDir) {
 		in.KittyDir = kittyDir
+	}
+	ghosttyDir := setup.GhosttyConfigDir(home, os.Getenv)
+	if ok && rec.GhosttyDir != "" {
+		ghosttyDir = rec.GhosttyDir
+	}
+	if dirExists(ghosttyDir) {
+		in.GhosttyDir = ghosttyDir
 	}
 	plan, err := setup.PlanUninstall(in)
 	if err != nil {

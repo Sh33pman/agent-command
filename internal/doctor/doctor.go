@@ -25,8 +25,9 @@ import (
 
 // Minimum versions acmd is tested with (SPEC §2, M0 findings).
 const (
-	MinClaude = "2.1.314"
-	MinKitty  = "0.49.0"
+	MinClaude  = "2.1.314"
+	MinKitty   = "0.49.0"
+	MinGhostty = "1.4.0"
 )
 
 // ManagedSettings are Claude Code's managed (admin) settings on macOS.
@@ -142,6 +143,13 @@ type Env struct {
 	InitPlan func(ctx context.Context) (*setup.Plan, error)
 	// KittyBinary is the Kitty executable ("" = not installed).
 	KittyBinary string
+	// GhosttyBinary is the Ghostty executable ("" = not installed).
+	GhosttyBinary string
+	// GhosttyRunning reports whether Ghostty runs and acmd may control it
+	// (error ghostty.ErrNotPermitted); it never launches Ghostty.
+	GhosttyRunning func(ctx context.Context) (bool, error)
+	// NotPermitted is the error GhosttyRunning returns when Automation is denied.
+	NotPermitted error
 }
 
 // Run performs every check.
@@ -150,6 +158,7 @@ func Run(ctx context.Context, e Env) *Report {
 	rec, initDone := checkAcmd(r, e)
 	checkClaude(ctx, r, e, rec, initDone)
 	checkKitty(ctx, r, e, rec, initDone)
+	checkGhostty(ctx, r, e, rec, initDone)
 	checkDaemon(ctx, r, e)
 	if initDone {
 		checkPlan(ctx, r, e)
@@ -158,11 +167,12 @@ func Run(ctx context.Context, e Env) *Report {
 }
 
 const (
-	secAcmd   = "acmd"
-	secClaude = "Claude Code"
-	secKitty  = "Kitty"
-	secDaemon = "Daemon"
-	fixInit   = "acmd init"
+	secAcmd    = "acmd"
+	secClaude  = "Claude Code"
+	secKitty   = "Kitty"
+	secGhostty = "Ghostty"
+	secDaemon  = "Daemon"
+	fixInit    = "acmd init"
 )
 
 func checkAcmd(r *Report, e Env) (setup.Record, bool) {
@@ -414,6 +424,50 @@ func checkKitty(ctx context.Context, r *Report, e Env, rec setup.Record, initDon
 	user, err := setup.ParseKittyConfig(conf, e.Read)
 	if err == nil {
 		checkRemote(r, e, user, string(ownedText))
+	}
+}
+
+func checkGhostty(ctx context.Context, r *Report, e Env, rec setup.Record, initDone bool) {
+	setUp := initDone && rec.GhosttyDir != ""
+	if e.GhosttyBinary == "" && !setUp {
+		return // not a Ghostty user
+	}
+	if e.GhosttyBinary == "" {
+		r.add(secGhostty, Fail, "install Ghostty, or rerun `acmd init`", "Ghostty was set up but isn't installed")
+	} else {
+		checkVersion(ctx, r, e, secGhostty, e.GhosttyBinary, "ghostty", MinGhostty, firstVersion)
+	}
+	if initDone && !setUp {
+		r.add(secGhostty, Warn, "acmd init --ghostty", "Ghostty is installed but wasn't set up")
+	}
+	if setUp {
+		conf := filepath.Join(rec.GhosttyDir, "config")
+		if b, err := e.Read(filepath.Join(rec.GhosttyDir, "config.ghostty")); err == nil && len(b) > 0 {
+			conf = filepath.Join(rec.GhosttyDir, "config.ghostty")
+		}
+		if text, err := e.Read(conf); err != nil || !strings.Contains(string(text), setup.BlockBegin) {
+			r.add(secGhostty, Fail, fixInit, "%s doesn't include %s", setup.Tilde(conf, e.Home), setup.GhosttyConfName)
+		} else {
+			r.add(secGhostty, OK, "", "%s includes %s", filepath.Base(conf), setup.GhosttyConfName)
+		}
+		if _, err := e.Read(filepath.Join(rec.GhosttyDir, setup.GhosttyConfName)); err != nil {
+			r.add(secGhostty, Fail, fixInit, "%s is missing (no keybinds)", setup.Tilde(filepath.Join(rec.GhosttyDir, setup.GhosttyConfName), e.Home))
+		}
+	}
+	if e.GhosttyRunning == nil || e.GhosttyBinary == "" {
+		return
+	}
+	running, err := e.GhosttyRunning(ctx)
+	switch {
+	case err != nil && e.NotPermitted != nil && errors.Is(err, e.NotPermitted):
+		r.add(secGhostty, Fail, "System Settings → Privacy & Security → Automation: allow your terminal (and acmd) to control Ghostty",
+			"acmd isn't allowed to control Ghostty (Automation)")
+	case err != nil:
+		r.add(secGhostty, Warn, "", "couldn't talk to Ghostty: %v", err)
+	case !running:
+		r.add(secGhostty, Info, "", "not running (Automation permission is checked when it runs)")
+	default:
+		r.add(secGhostty, OK, "", "acmd may control Ghostty")
 	}
 }
 

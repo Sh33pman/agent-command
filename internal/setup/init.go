@@ -25,7 +25,11 @@ type Input struct {
 	Editor     *config.Editor    // the editor choice to save; nil = leave as is
 	LoginEnv   LoginEnv          // nil = leave env.json as is
 	KittyKeys  map[string]string // Kitty's default shortcuts; nil = unavailable
-	Read       func(string) ([]byte, error)
+	GhosttyDir string            // Ghostty's config directory; "" = don't configure Ghostty
+	// GhosttyKeys are Ghostty's default keybinds (normalized trigger →
+	// line); nil = unavailable.
+	GhosttyKeys map[string]string
+	Read        func(string) ([]byte, error)
 }
 
 // ClaudeSettingsFile is the user settings file hooks go into.
@@ -42,6 +46,11 @@ func PlanInit(in Input) (*Plan, error) {
 	}
 	if in.KittyDir != "" {
 		if err := planKittyInit(p, in); err != nil {
+			return nil, err
+		}
+	}
+	if in.GhosttyDir != "" {
+		if err := planGhosttyInit(p, in); err != nil {
 			return nil, err
 		}
 	}
@@ -74,6 +83,11 @@ func PlanUninstall(in Input) (*Plan, error) {
 	p := &Plan{}
 	if err := planClaude(p, in, false); err != nil {
 		return nil, err
+	}
+	if in.GhosttyDir != "" {
+		if err := planGhosttyUninstall(p, in); err != nil {
+			return nil, err
+		}
 	}
 	if in.KittyDir == "" {
 		return p, nil
@@ -310,6 +324,7 @@ type Record struct {
 	AcmdPath   string    `json:"acmd_path"`
 	ClaudeDir  string    `json:"claude_dir"`
 	KittyDir   string    `json:"kitty_dir,omitempty"`
+	GhosttyDir string    `json:"ghostty_dir,omitempty"`
 	ConfigFile string    `json:"config_file"`
 }
 

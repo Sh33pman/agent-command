@@ -143,7 +143,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.updateViewState(ctx, func(vs *core.ViewState) { vs.ShowArchived = m.Flag })
 	case ipc.MutViewFocus:
 		return nil, d.focus(ctx, m.GroupID)
-	case ipc.MutViewOpen, ipc.MutViewSelect, ipc.MutViewClose, ipc.MutViewTouch, ipc.MutViewSidebar:
+	case ipc.MutViewOpen, ipc.MutViewSelect, ipc.MutViewClose, ipc.MutViewTouch, ipc.MutViewSidebar, ipc.MutViewHidden:
 		return d.viewMutation(ctx, m)
 	default:
 		return nil, fmt.Errorf("unknown mutation %q", m.Kind)

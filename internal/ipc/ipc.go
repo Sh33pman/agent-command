@@ -68,6 +68,7 @@ const (
 	MutViewClose      = "view.close"        // ID = view
 	MutViewTouch      = "view.touch"        // ID = view: it was focused
 	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
+	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)
 )
 
 // Mutation is one change requested by a client.

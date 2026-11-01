@@ -363,3 +363,63 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestGhostty(t *testing.T) {
+	f := newFake(t)
+	denied := errors.New("denied")
+	env := f.Env()
+	env.GhosttyBinary = filepath.Join(f.home, "bin/ghostty")
+	f.write(env.GhosttyBinary, "#!/bin/sh\n", 0o755)
+	f.versions["ghostty"] = "Ghostty 1.4.0\n"
+	env.NotPermitted = denied
+	running := func(ok bool, err error) func(context.Context) (bool, error) {
+		return func(context.Context) (bool, error) { return ok, err }
+	}
+	report := func(env Env) string {
+		var b bytes.Buffer
+		Run(context.Background(), env).Write(&b)
+		return b.String()
+	}
+
+	// Installed, not set up.
+	env.GhosttyRunning = running(false, nil)
+	out := report(env)
+	for _, want := range []string{"Ghostty\n  ✓ ghostty 1.4.0", "! Ghostty is installed but wasn't set up\n      fix: acmd init --ghostty",
+		"· not running (Automation permission is checked when it runs)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+
+	// Set up: include and keybinds checked; permission denied; old version.
+	gdir := filepath.Join(f.home, ".config/ghostty")
+	f.write(f.paths().Setup(), `{"version":"0.7.0","at":"2026-10-31T10:00:00Z","acmd_path":"`+f.acmd+`","claude_dir":"`+
+		filepath.Join(f.home, ".claude")+`","kitty_dir":"`+filepath.Join(f.home, ".config/kitty")+`","ghostty_dir":"`+gdir+`"}`, 0o600)
+	f.write(filepath.Join(gdir, "config"), "theme = x\n", 0o644)
+	f.versions["ghostty"] = "Ghostty 1.3.1"
+	env.GhosttyRunning = running(false, denied)
+	out = report(env)
+	for _, want := range []string{"✗ ghostty 1.3.1 is older than 1.4.0", "✗ ~/.config/ghostty/config doesn't include agent-command.ghostty",
+		"✗ ~/.config/ghostty/agent-command.ghostty is missing", "✗ acmd isn't allowed to control Ghostty (Automation)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	text, _ := setup.EnsureBlock("theme = x\n", "config-file = ?agent-command.ghostty")
+	f.write(filepath.Join(gdir, "config.ghostty"), text, 0o644)
+	f.write(filepath.Join(gdir, setup.GhosttyConfName), "keybind = cmd+shift+b=toggle_split_zoom\n", 0o644)
+	f.versions["ghostty"] = "Ghostty 1.4.0"
+	env.GhosttyRunning = running(true, nil)
+	out = report(env)
+	if !strings.Contains(out, "✓ config.ghostty includes agent-command.ghostty") || !strings.Contains(out, "✓ acmd may control Ghostty") {
+		t.Errorf("healthy ghostty:\n%s", out)
+	}
+	env.GhosttyRunning = running(false, errors.New("timeout"))
+	if out = report(env); !strings.Contains(out, "! couldn't talk to Ghostty: timeout") {
+		t.Errorf("other error:\n%s", out)
+	}
+	env.GhosttyBinary = ""
+	if out = report(env); !strings.Contains(out, "✗ Ghostty was set up but isn't installed") {
+		t.Errorf("uninstalled:\n%s", out)
+	}
+}

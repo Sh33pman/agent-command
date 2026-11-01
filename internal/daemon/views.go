@@ -177,6 +177,13 @@ func (d *Daemon) viewMutation(ctx context.Context, m ipc.Mutation) (any, error) 
 		}
 		v.LastFocusedAt = now
 		return nil, d.store.PutView(ctx, v)
+	case ipc.MutViewHidden:
+		v, err := d.store.View(ctx, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		v.SidebarHidden = m.Flag
+		return nil, d.store.PutView(ctx, v)
 	case ipc.MutViewSidebar:
 		v, err := d.store.View(ctx, m.ID)
 		if err != nil {

@@ -11,16 +11,18 @@ import (
 	"testing"
 
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
 type sandbox struct {
-	home, bin string
-	paths     paths.Paths
-	settings  string // Claude settings.json
-	kittyDir  string
-	userJSON  []byte
+	home, bin    string
+	ghosttyCalls *[]string
+	paths        paths.Paths
+	settings     string // Claude settings.json
+	kittyDir     string
+	userJSON     []byte
 }
 
 // newSandbox points every location acmd setup reads or writes into a temp
@@ -56,6 +58,18 @@ func newSandbox(t *testing.T) *sandbox {
 	}
 
 	origCapture, origDefaults, origBundle, origApp := captureLoginEnv, kittyDefaults, hasBundle, kittyAppBinary
+	origGDefaults, origGBin, origGApp := ghosttyDefaults, ghosttyAppBin, ghosttyApp
+	ghosttyAppBin = filepath.Join(home, "no-ghostty-app")
+	ghosttyDefaults = func(context.Context, string) (map[string]string, error) {
+		return setup.ParseGhosttyKeybinds("keybind = super+shift+s=toggle_secure_input\n"), nil
+	}
+	s.ghosttyCalls = &[]string{}
+	ghosttyApp = func() *ghostty.App {
+		return &ghostty.App{Run: func(_ context.Context, script string, _ ...string) (string, error) {
+			*s.ghosttyCalls = append(*s.ghosttyCalls, firstWords(script))
+			return "running", nil
+		}}
+	}
 	captureLoginEnv = func(context.Context, string) (setup.LoginEnv, error) {
 		return setup.LoginEnv{"PATH": s.bin + ":/usr/bin:/bin", "TOKEN": "secret-value"}, nil
 	}
@@ -66,6 +80,7 @@ func newSandbox(t *testing.T) *sandbox {
 	kittyAppBinary = filepath.Join(home, "no-kitty-app")
 	t.Cleanup(func() {
 		captureLoginEnv, kittyDefaults, hasBundle, kittyAppBinary = origCapture, origDefaults, origBundle, origApp
+		ghosttyDefaults, ghosttyAppBin, ghosttyApp = origGDefaults, origGBin, origGApp
 	})
 	return s
 }
@@ -219,11 +234,59 @@ func TestInitEditorUninstall(t *testing.T) {
 	}
 }
 
-func TestGhosttyNotYet(t *testing.T) {
-	newSandbox(t)
-	if _, _, err := execute(t, "", "init", "--ghostty"); err == nil {
-		t.Error("--ghostty should say it isn't available yet")
+func TestGhosttyInitUninstall(t *testing.T) {
+	s := newSandbox(t)
+	gdir := filepath.Join(s.home, ".config", "ghostty")
+	must(t, os.MkdirAll(gdir, 0o755))
+	user := []byte("theme = tokyonight\nkeybind = cmd+shift+b=new_split:right\n")
+	must(t, os.WriteFile(filepath.Join(gdir, "config"), user, 0o644))
+	must(t, os.WriteFile(filepath.Join(s.bin, "ghostty"), []byte("#!/bin/sh\n"), 0o755))
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	out, _, err := execute(t, "", "init", "--ghostty", "--dry-run")
+	if err != nil {
+		t.Fatal(err)
 	}
+	for _, want := range []string{"~/.config/ghostty/config", "config-file = ?agent-command.ghostty", "~/.config/ghostty/agent-command.ghostty",
+		"Ghostty: skipped cmd+shift+b (toggle): conflicts with your `keybind = cmd+shift+b=new_split:right`",
+		"Ghostty: skipped cmd+shift+s (focus): conflicts with Ghostty's default keybind = super+shift+s=toggle_secure_input"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dry run lacks %q:\n%s", want, out)
+		}
+	}
+	if _, _, err := execute(t, "", "init", "--ghostty"); err != nil {
+		t.Fatal(err)
+	}
+	conf, _ := os.ReadFile(filepath.Join(gdir, "config"))
+	owned, _ := os.ReadFile(filepath.Join(gdir, setup.GhosttyConfName))
+	if !strings.HasPrefix(string(conf), string(user)) || !strings.Contains(string(conf), "config-file = ?agent-command.ghostty") ||
+		!strings.Contains(string(owned), "# skipped cmd+shift+b (toggle)") {
+		t.Errorf("config:\n%s\nowned:\n%s", conf, owned)
+	}
+	if got := strings.Join(*s.ghosttyCalls, ","); !strings.Contains(got, "if application") {
+		t.Errorf("Ghostty not reloaded / permission not triggered: %s", got)
+	}
+	rec, _, _ := setup.ReadRecord(s.paths.Setup())
+	if rec.GhosttyDir != gdir {
+		t.Errorf("record: %+v", rec)
+	}
+	if _, _, err := execute(t, "", "uninstall", "--yes"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(gdir, "config")); string(b) != string(user) {
+		t.Errorf("config not restored:\n%s", b)
+	}
+	if _, err := os.Stat(filepath.Join(gdir, setup.GhosttyConfName)); !os.IsNotExist(err) {
+		t.Error("agent-command.ghostty left behind")
+	}
+}
+
+func firstWords(script string) string {
+	f := strings.Fields(script)
+	if len(f) > 3 {
+		f = f[:3]
+	}
+	return strings.Join(f, " ")
 }
 
 func TestAutoInitHintWithoutTerminal(t *testing.T) {

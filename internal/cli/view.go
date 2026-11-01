@@ -45,11 +45,21 @@ func runView(cmd *cobra.Command, viewID string) error {
 	var v core.View
 	if viewID == "" {
 		pane := currentPane(os.Getenv)
+		if pane.Terminal == "ghostty" {
+			pane.TTY = ttyName()
+			if pane.TTY != "" {
+				if id, err := ghosttyApp().TermForTTY(ctx, pane.TTY); err == nil {
+					pane.GhosttyTerm = id
+				} else {
+					fmt.Fprintf(cmd.ErrOrStderr(), "acmd: couldn't find this Ghostty pane (%v); the view works without a sidebar\n", err)
+				}
+			}
+		}
 		if err := vc.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &pane}, &v); err != nil {
 			return err
 		}
 		viewID = v.ID
-		if pane.Terminal == "kitty" && pane.KittySocket != "" && pane.KittyWindow != 0 {
+		if (pane.Terminal == "kitty" && pane.KittySocket != "" && pane.KittyWindow != 0) || (pane.Terminal == "ghostty" && pane.GhosttyTerm != "") {
 			call := func(op string, in, out any) error { return vc.call(ctx, op, in, out) }
 			if v.Sidebar, err = addSidebar(ctx, call, &v); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "acmd: couldn't add the sidebar (%v); the view works without it\n", err)

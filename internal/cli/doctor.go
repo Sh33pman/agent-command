@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/doctor"
+	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
@@ -78,13 +79,16 @@ func doctorEnv() (doctor.Env, error) {
 		HasBundle: hasBundle,
 		Daemon:    func(ctx context.Context) (doctor.DaemonState, error) { return daemonState(ctx, p) },
 		InitPlan: func(ctx context.Context) (*setup.Plan, error) {
-			g, err := gather(ctx, false, false)
+			g, err := gather(ctx, false, false, false)
 			if err != nil {
 				return nil, err
 			}
 			return setup.PlanInit(g.in)
 		},
-		KittyBinary: findKitty(pathList),
+		KittyBinary:    findKitty(pathList),
+		GhosttyBinary:  findGhostty(pathList),
+		GhosttyRunning: func(ctx context.Context) (bool, error) { return ghosttyApp().Running(ctx) },
+		NotPermitted:   ghostty.ErrNotPermitted,
 	}, nil
 }
 

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	tea "charm.land/bubbletea/v2"
@@ -50,66 +49,8 @@ func sidebarWidth() int {
 	return config.Default().SidebarWidth
 }
 
-// addSidebar adds the view's sidebar split (left of the view pane) and
-// records it with the daemon.
-func addSidebar(ctx context.Context, call func(op string, in, out any) error, v *core.View) (core.PaneLoc, error) {
-	k := kittyAt(v.Pane.KittySocket)
-	var env []string
-	for _, kv := range os.Environ() { // test and dev overrides follow the view
-		if strings.HasPrefix(kv, "ACMD_") && !strings.HasPrefix(kv, "ACMD_VIEW_ID=") {
-			env = append(env, kv)
-		}
-	}
-	id, prev, err := k.AddSidebarLeft(ctx, kitty.SidebarSpec{View: v.Pane.KittyWindow, ViewID: v.ID, Width: sidebarWidth(),
-		Command: []string{acmdPath(), "sidebar", "--view", v.ID}, Env: env})
-	if err != nil {
-		return core.PaneLoc{}, err
-	}
-	if old := v.Sidebar.RestoreLayout; old != "" {
-		prev = old // re-added: the tab's layout from before acmd's first sidebar
-	}
-	loc := core.PaneLoc{Terminal: "kitty", KittySocket: v.Pane.KittySocket, KittyWindow: id, RestoreLayout: prev}
-	return loc, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewSidebar, ID: v.ID, Pane: &loc}, nil)
-}
-
-// removeSidebar closes a view's sidebar and gives its tab back its layout.
-func removeSidebar(ctx context.Context, v *core.View) {
-	if v.Sidebar.KittyWindow == 0 {
-		return
-	}
-	k := kittyAt(v.Sidebar.KittySocket)
-	// Through the sidebar's window: the view pane may be closed already.
-	if l := v.Sidebar.RestoreLayout; l != "" && l != "splits" {
-		_ = k.SetLayout(ctx, v.Sidebar.KittyWindow, l)
-	}
-	_ = k.Close(ctx, v.Sidebar.KittyWindow)
-}
-
-// kittyPanes implements view.Panes for a sidebar in Kitty.
-type kittyPanes struct {
-	k             *kitty.Kitty
-	view, sidebar int
-	width         int
-	fit           fitGate
-}
-
-func (p *kittyPanes) FocusView(ctx context.Context) error { return p.k.Focus(ctx, p.view) }
-func (p *kittyPanes) ToggleSidebar(ctx context.Context) error {
-	return p.k.ToggleSidebar(ctx, p.view)
-}
-func (p *kittyPanes) FitWidth(ctx context.Context) error {
-	return p.fit.Run(ctx, func(ctx context.Context) error { return p.k.SetWidth(ctx, p.sidebar, p.width) })
-}
-func (p *kittyPanes) FocusPane(ctx context.Context, loc core.PaneLoc) error {
-	return focusExternal(ctx, loc)
-}
-
-func focusExternal(ctx context.Context, loc core.PaneLoc) error {
-	if loc.Terminal != "kitty" || loc.KittySocket == "" || loc.KittyWindow == 0 {
-		return errors.New("can't focus that session's pane (not a Kitty pane acmd knows)")
-	}
-	return kittyAt(loc.KittySocket).Focus(ctx, loc.KittyWindow)
-}
+// focusExternal focuses an external session's own pane.
+func focusExternal(ctx context.Context, loc core.PaneLoc) error { return focusPane(ctx, loc) }
 
 func newSidebarCmd() *cobra.Command {
 	var viewID string
@@ -142,8 +83,9 @@ func newSidebarCmd() *cobra.Command {
 			}
 			own := 0
 			_, _ = fmt.Sscan(os.Getenv("KITTY_WINDOW_ID"), &own)
+			call := func(op string, in, out any) error { return vc.call(ctx, op, in, out) }
 			act := &sidebarActions{vc: vc, cmd: cmd, view: v,
-				panes: &kittyPanes{k: kittyAt(v.Pane.KittySocket), view: v.Pane.KittyWindow, sidebar: own, width: sidebarWidth()}}
+				panes: &viewPanes{v: v, call: call, own: own, width: sidebarWidth()}}
 			model := sidebar.New(ctx, act, viewID, homeDir())
 			if _, err := tea.NewProgram(model, tea.WithContext(ctx)).Run(); err != nil && ctx.Err() == nil && model.Err() == nil {
 				return err
@@ -167,7 +109,7 @@ type sidebarActions struct {
 	vc    *viewClient
 	cmd   *cobra.Command
 	view  *core.View
-	panes *kittyPanes
+	panes *viewPanes
 }
 
 func (a *sidebarActions) Watch(ctx context.Context, rev uint64, wait bool) (ipc.WatchResponse, error) {
@@ -222,14 +164,14 @@ func (a *sidebarActions) Help(width int, groups bool) []string {
 func newFromShortcut(ctx context.Context, cmd *cobra.Command, v *core.View, groupID, dir string) error {
 	_, err := startSession(ctx, cmd, newOptions{groupID: groupID, cwd: dir, showIn: v.ID})
 	var untrusted *errUntrusted
-	if !errors.As(err, &untrusted) || v.Pane.Terminal != "kitty" {
+	if !errors.As(err, &untrusted) || (v.Pane.Terminal != "kitty" && v.Pane.Terminal != "ghostty") {
 		return err
 	}
 	argv := []string{acmdPath(), "new", "--cwd", dir, "--view", v.ID}
 	if groupID != "" {
 		argv = append(argv, "--group-id", groupID)
 	}
-	return kittyAt(v.Pane.KittySocket).Overlay(ctx, v.Pane.KittyWindow, argv, nil)
+	return promptIn(ctx, v, argv)
 }
 
 // ---- global shortcuts (SPEC §8.3) ----
@@ -280,22 +222,17 @@ func newToggleCmd() *cobra.Command {
 
 // toggleSidebar hides/shows v's sidebar, adding it again if it was closed.
 func toggleSidebar(ctx context.Context, c *client, v *core.View) error {
-	if v.Pane.Terminal != "kitty" {
-		return errors.New("hiding the sidebar works in Kitty views only (for now)")
+	call := func(op string, in, out any) error { return c.conn.Call(op, in, out) }
+	alive, err := sidebarAlive(ctx, v)
+	if err != nil {
+		return err
 	}
-	k := kittyAt(v.Pane.KittySocket)
-	if v.Sidebar.KittyWindow != 0 {
-		ws, err := k.LS(ctx)
-		if err != nil {
-			return err
-		}
-		if _, _, ok := kitty.Find(ws, v.Sidebar.KittyWindow); ok {
-			_ = c.mutate(ipc.Mutation{Kind: ipc.MutViewTouch, ID: v.ID}, nil)
-			return k.ToggleSidebar(ctx, v.Pane.KittyWindow)
-		}
+	if !alive {
+		_, err := addSidebar(ctx, call, v)
+		return err
 	}
-	_, err := addSidebar(ctx, func(op string, in, out any) error { return c.conn.Call(op, in, out) }, v)
-	return err
+	_ = c.mutate(ipc.Mutation{Kind: ipc.MutViewTouch, ID: v.ID}, nil)
+	return flipSidebar(ctx, call, v)
 }
 
 func newFocusCmd() *cobra.Command {
@@ -310,27 +247,29 @@ func newFocusCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if v.Pane.Terminal != "kitty" {
-					return errors.New("focusing the sidebar works in Kitty views only (for now)")
-				}
-				k := kittyAt(v.Pane.KittySocket)
-				hidden, err := k.Hidden(cmd.Context(), v.Pane.KittyWindow)
+				hidden, err := sidebarHidden(cmd.Context(), v)
 				if err != nil {
 					return err
 				}
-				if hidden || v.Sidebar.KittyWindow == 0 {
+				alive, err := sidebarAlive(cmd.Context(), v)
+				if err != nil {
+					return err
+				}
+				if hidden || !alive {
 					if err := toggleSidebar(cmd.Context(), c, v); err != nil {
 						return err
 					}
 					if snap, err = c.snapshot(); err != nil {
 						return err
 					}
-					if v, err = shortcutView(snap, v.Pane.KittyWindow); err != nil {
-						return err
+					for _, x := range snap.Views {
+						if x.ID == v.ID {
+							v = x
+						}
 					}
 				}
 				_ = c.mutate(ipc.Mutation{Kind: ipc.MutViewTouch, ID: v.ID}, nil)
-				return k.Focus(cmd.Context(), v.Sidebar.KittyWindow)
+				return focusPane(cmd.Context(), v.Sidebar)
 			})
 		},
 	}
@@ -378,8 +317,8 @@ func show(ctx context.Context, c *client, v *core.View, s *core.Session) error {
 	if err := c.mutate(ipc.Mutation{Kind: ipc.MutViewSelect, ID: v.ID, Text: s.ID}, nil); err != nil {
 		return err
 	}
-	if v.Pane.Terminal == "kitty" && v.Pane.KittyWindow != 0 {
-		return kittyAt(v.Pane.KittySocket).Focus(ctx, v.Pane.KittyWindow)
+	if v.Pane.Terminal == "kitty" || v.Pane.Terminal == "ghostty" {
+		return focusPane(ctx, v.Pane)
 	}
 	return nil
 }

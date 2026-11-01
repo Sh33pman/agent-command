@@ -285,8 +285,8 @@ func openSession(ctx context.Context, s *core.Session, v *core.View, o openOptio
 			}
 			chosen.Target = e.Target
 			e = *chosen
-		case v != nil && v.Pane.Terminal == "kitty":
-			return kittyAt(v.Pane.KittySocket).Overlay(ctx, v.Pane.KittyWindow, []string{acmdPath(), "open", s.ID}, nil)
+		case v != nil && (v.Pane.Terminal == "kitty" || v.Pane.Terminal == "ghostty"):
+			return promptIn(ctx, v, []string{acmdPath(), "open", s.ID})
 		default:
 			return errors.New("no editor chosen yet: run acmd editor set (or acmd editor pick)")
 		}
@@ -298,10 +298,8 @@ func openSession(ctx context.Context, s *core.Session, v *core.View, o openOptio
 		Look:   func(n string) (string, error) { return setup.LookPathIn(n, pathList) },
 		Exists: isExecutableFile,
 	}
-	if v != nil && v.Pane.Terminal == "kitty" {
-		op.InTab = func(argv []string, dir string) error {
-			return kittyAt(v.Pane.KittySocket).LaunchTab(ctx, v.Pane.KittyWindow, dir, argv, nil)
-		}
+	if v != nil && (v.Pane.Terminal == "kitty" || v.Pane.Terminal == "ghostty") {
+		op.InTab = func(argv []string, dir string) error { return tabIn(ctx, v, dir, argv) }
 	}
 	if s.Cwd == "" {
 		return errors.New("that session has no folder yet")

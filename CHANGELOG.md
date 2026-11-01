@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/brettmostert/agent-command/compare/v0.21.0...v0.22.0) (2026-11-01)
+
+
+### Features
+
+* **statusbar:** show acmd's version at the far right ([#62](https://github.com/brettmostert/agent-command/issues/62)) ([77a94cd](https://github.com/brettmostert/agent-command/commit/77a94cdcfec62268f62b665223ac8e7d4ace451d))
+
 ## [0.21.0](https://github.com/brettmostert/agent-command/compare/v0.20.0...v0.21.0) (2026-11-01)
 
 

@@ -22,6 +22,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
+	"github.com/brettmostert/agent-command/internal/speech"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -262,14 +263,17 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	if err := g.paths.Ensure(); err != nil {
 		return false, err
 	}
+	prev, _, _ := setup.ReadRecord(g.paths.Setup())
 	backups, err := plan.Apply(g.paths.Backups(), g.in.Home, time.Now())
 	if err != nil {
 		return false, err
 	}
-	if err := setup.WriteRecord(g.paths.Setup(), setup.Record{
+	rec := setup.Record{
 		Version: version.Get().Version, At: time.Now().UTC(), AcmdPath: g.in.AcmdPath,
 		ClaudeDir: g.in.ClaudeDir, KittyDir: g.in.KittyDir, GhosttyDir: g.in.GhosttyDir, ConfigFile: g.in.ConfigFile,
-	}); err != nil {
+		PopupAsked: prev.PopupAsked,
+	}
+	if err := setup.WriteRecord(g.paths.Setup(), rec); err != nil {
 		return false, err
 	}
 	if g.in.GhosttyDir != "" {
@@ -293,7 +297,79 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	for _, a := range plan.After {
 		fmt.Fprintln(out, a)
 	}
+	if o.interactive && !rec.PopupAsked {
+		askPopup(ctx, reader, out, g.paths, g.in.ConfigFile)
+		rec.PopupAsked = true
+		if err := setup.WriteRecord(g.paths.Setup(), rec); err != nil {
+			return false, err
+		}
+	}
 	return true, nil
+}
+
+// askPopup asks, once, about the reply popup, auto-play and speech (SPEC
+// §8.8, off by default), and saves the answers in config.toml.
+func askPopup(ctx context.Context, in *bufio.Reader, out io.Writer, p paths.Paths, configFile string) {
+	yes := func(q string) bool {
+		fmt.Fprintf(out, "%s [y/N] ", q)
+		line, _ := in.ReadString('\n')
+		a := strings.ToLower(strings.TrimSpace(line))
+		return a == "y" || a == "yes"
+	}
+	fmt.Fprintln(out, "\nReply popup: when a session finishes, asks a question or wants a permission while you're")
+	fmt.Fprintln(out, "working elsewhere, a popup shows it and takes your reply (cmd+shift+o reopens it).")
+	if !yes("Turn on the reply popup?") {
+		fmt.Fprintln(out, "Left off. Turn it on later with `enabled = true` under [popup] in config.toml.")
+		return
+	}
+	autoplay := yes("Read each item aloud as it appears (auto-play)?")
+	for _, kv := range []struct {
+		key string
+		v   bool
+	}{{"enabled", true}, {"autoplay", autoplay}} {
+		if err := setConfigValue(configFile, "popup", kv.key, kv.v); err != nil {
+			fmt.Fprintln(out, "Couldn't save it:", err)
+			return
+		}
+	}
+	if err := spawnPopup(p); err != nil {
+		fmt.Fprintln(out, "Couldn't start the popup:", err)
+	} else {
+		fmt.Fprintln(out, "The reply popup is on.")
+	}
+	e, err := speechEngine()
+	if err != nil || e.Status() == "" {
+		return
+	}
+	if _, err := speech.FindUV(); err != nil {
+		fmt.Fprintln(out, "Speech (reading items aloud):", err)
+		return
+	}
+	if !yes(fmt.Sprintf("Set up speech now? Kokoro on MLX, about 900 MB in %s", tilde(e.Dir))) {
+		fmt.Fprintln(out, "Skipped. Set it up later with: acmd speech install")
+		return
+	}
+	if err := e.Install(ctx, out); err != nil {
+		fmt.Fprintln(out, "Speech setup failed:", err)
+		return
+	}
+	fmt.Fprintln(out, "Speech is set up.")
+}
+
+// setConfigValue sets section.key in config.toml, keeping everything else.
+func setConfigValue(file, section, key string, v any) error {
+	b, err := os.ReadFile(filepath.Clean(file))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if len(b) == 0 {
+		b = []byte(config.Template)
+	}
+	text, err := config.Set(string(b), section, key, v)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Clean(file), []byte(text), 0o600) // #nosec G703 -- acmd's own config.toml
 }
 
 // pickEditor asks which editor opens session folders (SPEC §9.5); nil

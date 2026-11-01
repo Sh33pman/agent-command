@@ -326,6 +326,8 @@ type Record struct {
 	KittyDir   string    `json:"kitty_dir,omitempty"`
 	GhosttyDir string    `json:"ghostty_dir,omitempty"`
 	ConfigFile string    `json:"config_file"`
+	// PopupAsked: init has asked about the reply popup (SPEC §8.8).
+	PopupAsked bool `json:"popup_asked,omitempty"`
 }
 
 // ReadRecord reads setup.json; ok is false if init hasn't run.

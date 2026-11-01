@@ -424,3 +424,57 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// Init asks once about the reply popup (off by default) and auto-play.
+func TestInitAsksAboutPopup(t *testing.T) {
+	s := newSandbox(t)
+	ctx := context.Background()
+	opts := initOptions{ask: true, interactive: true}
+	spawned := 0
+	orig := spawnPopup
+	spawnPopup = func(paths.Paths) error { spawned++; return nil }
+	t.Cleanup(func() { spawnPopup = orig })
+
+	// Set up acmd (Enter), editor (Enter), popup: yes, auto-play: yes,
+	// speech (offered only where uv is installed): no.
+	var out bytes.Buffer
+	done, err := runInit(ctx, strings.NewReader("\n\ny\ny\nn\n"), &out, opts)
+	if err != nil || !done {
+		t.Fatalf("init: %v %v\n%s", done, err, out.String())
+	}
+	if !strings.Contains(out.String(), "Turn on the reply popup? [y/N]") || !strings.Contains(out.String(), "The reply popup is on.") || spawned != 1 {
+		t.Errorf("output (spawned %d):\n%s", spawned, out.String())
+	}
+	cfg, _ := config.Load(s.paths.Config())
+	if !cfg.Popup.Enabled || !cfg.Popup.AutoPlay || cfg.Popup.Hotkey != "cmd+shift+o" {
+		t.Errorf("popup config: %+v", cfg.Popup)
+	}
+	if rec, _, _ := setup.ReadRecord(s.paths.Setup()); !rec.PopupAsked {
+		t.Error("not recorded as asked")
+	}
+
+	// Asked once: a later init doesn't ask again.
+	out.Reset()
+	if _, err := runInit(ctx, strings.NewReader("\n"), &out, initOptions{interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "reply popup") {
+		t.Errorf("asked again:\n%s", out.String())
+	}
+}
+
+// Declining leaves it off (the default).
+func TestInitPopupDeclined(t *testing.T) {
+	s := newSandbox(t)
+	orig := spawnPopup
+	spawnPopup = func(paths.Paths) error { t.Error("started the popup"); return nil }
+	t.Cleanup(func() { spawnPopup = orig })
+	var out bytes.Buffer
+	if _, err := runInit(context.Background(), strings.NewReader("\n\n\n"), &out, initOptions{ask: true, interactive: true}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := config.Load(s.paths.Config())
+	if cfg.Popup.Enabled || !strings.Contains(out.String(), "Left off.") {
+		t.Errorf("declined: %+v\n%s", cfg.Popup, out.String())
+	}
+}

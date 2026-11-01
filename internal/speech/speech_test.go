@@ -14,8 +14,9 @@ import (
 	"time"
 )
 
-// fakeEngine answers like engine.py: ping, and synth (writes a tiny file).
-func fakeEngine(t *testing.T, sock string, texts *[]string, mu *sync.Mutex) {
+// fakeEngine answers like engine.py: ping, synth (a tiny file) and
+// stream (one frame of 4 bytes per line of text). slow > 0 delays frames.
+func fakeEngine(t *testing.T, sock string, texts *[]string, mu *sync.Mutex, slow time.Duration) {
 	t.Helper()
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
@@ -34,18 +35,55 @@ func fakeEngine(t *testing.T, sock string, texts *[]string, mu *sync.Mutex) {
 				var req map[string]any
 				_ = json.Unmarshal(line, &req)
 				reply := map[string]any{"ok": true}
-				if req["op"] == "synth" {
-					mu.Lock()
-					*texts = append(*texts, req["text"].(string))
-					mu.Unlock()
+				switch req["op"] {
+				case "synth":
 					_ = os.WriteFile(req["out"].(string), []byte("RIFF"), 0o600)
 					reply["seconds"] = 1.5
+				case "stream":
+					_, _ = c.Write([]byte(`{"ok":true,"rate":24000}` + "\n"))
+					for _, l := range strings.Split(req["text"].(string), "\n") {
+						mu.Lock()
+						*texts = append(*texts, l)
+						mu.Unlock()
+						time.Sleep(slow)
+						if _, err := c.Write([]byte{0, 0, 0, 4, 1, 2, 3, 4}); err != nil {
+							return // the listener stopped
+						}
+					}
+					_, _ = c.Write([]byte{0, 0, 0, 0})
+					return
 				}
 				b, _ := json.Marshal(reply)
 				_, _ = c.Write(append(b, '\n'))
 			}()
 		}
 	}()
+}
+
+// fakePlayer records what it's given.
+type fakePlayer struct {
+	mu      sync.Mutex
+	bytes   int
+	drained bool
+	closed  bool
+}
+
+func (p *fakePlayer) Write(b []byte) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.bytes += len(b)
+	return nil
+}
+func (p *fakePlayer) Drain(context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.drained = true
+	return nil
+}
+func (p *fakePlayer) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
 }
 
 func testEngine(t *testing.T) *Engine {
@@ -93,51 +131,49 @@ func TestStatus(t *testing.T) {
 	}
 }
 
-func TestSayPipelinesAndStops(t *testing.T) {
+func TestSayStreams(t *testing.T) {
 	e := testEngine(t)
 	var texts []string
 	var mu sync.Mutex
-	fakeEngine(t, e.Socket(), &texts, &mu)
-
-	var played []string
-	orig := PlayFile
-	t.Cleanup(func() { PlayFile = orig })
-	PlayFile = func(_ context.Context, path string) error {
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("playing a missing file: %v", err)
+	fakeEngine(t, e.Socket(), &texts, &mu, 0)
+	player := &fakePlayer{}
+	orig := NewPlayer
+	t.Cleanup(func() { NewPlayer = orig })
+	NewPlayer = func(rate int) (pcmPlayer, error) {
+		if rate != 24000 {
+			t.Errorf("rate %d", rate)
 		}
-		played = append(played, filepath.Base(path))
-		return nil
+		return player, nil
 	}
 	md := "First part.\n\n```\ncode\n```\n\nLast part."
 	if err := e.Say(context.Background(), md); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(texts, "|") != "First part.|"+codeNote+"|Last part." || len(played) != 3 {
-		t.Errorf("texts %q played %v", texts, played)
+	if strings.Join(texts, "|") != "First part.|"+codeNote+"|Last part." || player.bytes != 12 || !player.drained || !player.closed {
+		t.Errorf("texts %q player %+v", texts, player)
 	}
+}
 
-	// Stopping mid-way: nothing more is played.
-	texts, played = nil, nil
-	ctx, cancel := context.WithCancel(context.Background())
-	PlayFile = func(ctx context.Context, path string) error {
-		played = append(played, path)
-		cancel()
-		<-ctx.Done()
-		return ctx.Err()
+func TestSayStops(t *testing.T) {
+	e := testEngine(t)
+	var texts []string
+	var mu sync.Mutex
+	fakeEngine(t, e.Socket(), &texts, &mu, 30*time.Millisecond)
+	player := &fakePlayer{}
+	orig := NewPlayer
+	t.Cleanup(func() { NewPlayer = orig })
+	NewPlayer = func(int) (pcmPlayer, error) { return player, nil }
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := e.Say(ctx, strings.Repeat("A sentence goes here. ", 200)); err != nil {
+		t.Fatalf("a stopped Say is not an error: %v", err)
 	}
-	if err := e.Say(ctx, strings.Repeat("A sentence. ", 200)); err != nil {
-		t.Fatal(err)
-	}
-	if len(played) != 1 {
-		t.Errorf("played %d chunks after stop", len(played))
-	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	mu.Lock()
 	n := len(texts)
 	mu.Unlock()
-	if n > 3 {
-		t.Errorf("kept synthesizing after stop: %d chunks", n)
+	if n > 6 || !player.closed {
+		t.Errorf("the engine kept going after stop (%d lines) or the player stayed open", n)
 	}
 }
 

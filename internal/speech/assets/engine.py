@@ -7,9 +7,13 @@ plays what it writes.
   engine.py --serve SOCKET --model REPO --voice SPEC [--idle SECONDS]
       load the model once and answer requests on a unix socket until idle
 
-A request is one JSON line: {"op": "synth", "text": ..., "out": WAV path,
-"speed": 1.0} or {"op": "ping"}; the reply is one JSON line {"ok": true,
-"seconds": ...} or {"ok": false, "error": ...}.
+A request is one JSON line: {"op": "stream", "text": ..., "speed": 1.0},
+{"op": "synth", "text": ..., "out": WAV path, "speed": 1.0} or {"op": "ping"}.
+The reply is one JSON line {"ok": true, ...} or {"ok": false, "error": ...};
+after the ok of a stream come frames of audio as Kokoro makes them, each a
+4-byte big-endian length and that many bytes of 16-bit little-endian mono
+PCM at "rate" Hz, ended by a 0 length (or 0xFFFFFFFF and an error line).
+Closing the connection stops the stream.
 
 A voice SPEC is a voice name or a weighted blend "af_heart:0.6,af_bella:0.4".
 """
@@ -18,6 +22,7 @@ import argparse
 import json
 import os
 import socket
+import struct
 import sys
 import threading
 import time
@@ -102,6 +107,17 @@ class Engine:
             blend = v if blend is None else blend + v
         self.pipeline.voices["acmd"] = blend
 
+    def stream(self, text, speed, write):
+        """Calls write with each piece of audio (PCM int16 LE) as it's made."""
+        import numpy as np
+
+        for _, _, audio in self.pipeline(text, voice="acmd", speed=speed):
+            if audio is None:
+                continue
+            pcm = (np.clip(np.array(audio).flatten(), -1, 1) * 32767).astype("<i2").tobytes()
+            if pcm:
+                write(struct.pack(">I", len(pcm)) + pcm)
+
     def synth(self, text, out, speed=1.0):
         import numpy as np
 
@@ -121,6 +137,27 @@ class Engine:
             w.writeframes(pcm.tobytes())
         os.replace(tmp, out)
         return len(a) / SAMPLE_RATE
+
+
+def stream_reply(engine, req, f, lock):
+    """Answers a stream request on f (see the module doc)."""
+
+    def write(b):
+        f.write(b)
+        f.flush()
+
+    try:
+        write((json.dumps({"ok": True, "rate": SAMPLE_RATE}) + "\n").encode())
+        with lock:
+            engine.stream(req["text"], float(req.get("speed", 1.0)), write)
+        write(struct.pack(">I", 0))
+    except (BrokenPipeError, ConnectionResetError):
+        pass  # the listener stopped playback
+    except Exception as e:
+        try:
+            write(struct.pack(">I", 0xFFFFFFFF) + (json.dumps({"ok": False, "error": str(e)}) + "\n").encode())
+        except OSError:
+            pass
 
 
 def serve(engine, path, idle):
@@ -147,6 +184,9 @@ def serve(engine, path, idle):
                 line = f.readline()
                 try:
                     req = json.loads(line)
+                    if req.get("op") == "stream":
+                        stream_reply(engine, req, f, lock)
+                        continue
                     if req.get("op") == "ping":
                         reply = {"ok": True}
                     else:

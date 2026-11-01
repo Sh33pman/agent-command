@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/brettmostert/agent-command/compare/v0.30.0...v0.30.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **sidebar:** cache repo roots in folder picker so navigation is instant ([#111](https://github.com/brettmostert/agent-command/issues/111)) ([29344d0](https://github.com/brettmostert/agent-command/commit/29344d053ef5567e101d8b238848d24245ea9ae5))
+
 ## [0.30.0](https://github.com/brettmostert/agent-command/compare/v0.29.0...v0.30.0) (2026-11-01)
 
 

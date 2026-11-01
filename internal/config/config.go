@@ -31,10 +31,13 @@ type Config struct {
 
 // Popup is the [popup] section: the reply popup (SPEC §8.8).
 type Popup struct {
-	Enabled  bool      `toml:"enabled"`  // off by default; init asks
-	AutoPlay bool      `toml:"autoplay"` // read each item aloud when it's shown
-	Hotkey   string    `toml:"hotkey"`   // system-wide: reopen the popup
-	Keys     PopupKeys `toml:"keys"`     // inside the popup
+	Enabled  bool   `toml:"enabled"`  // off by default; init asks
+	AutoPlay bool   `toml:"autoplay"` // read each item aloud when it's shown
+	Hotkey   string `toml:"hotkey"`   // system-wide: reopen the popup
+	// ReadHotkey is system-wide: read the latest response or question of the
+	// session you're in aloud (press again to stop). Empty turns it off.
+	ReadHotkey string    `toml:"read_hotkey"`
+	Keys       PopupKeys `toml:"keys"` // inside the popup
 }
 
 // PopupKeys are the popup's own keys (e.g. "cmd+ctrl+left", "escape").
@@ -109,7 +112,7 @@ func Default() Config {
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
 			DoneMinDuration: "30s", Cooldown: "20s", Sound: "default"},
 		Editor: Editor{RunIn: "background", Target: "cwd"},
-		Popup: Popup{Hotkey: "cmd+shift+o", Keys: PopupKeys{Prev: "cmd+ctrl+left", Next: "cmd+ctrl+right",
+		Popup: Popup{Hotkey: "cmd+shift+o", ReadHotkey: "cmd+ctrl+p", Keys: PopupKeys{Prev: "cmd+ctrl+left", Next: "cmd+ctrl+right",
 			Play: "cmd+ctrl+p", Skip: "cmd+ctrl+k", Close: "escape"}},
 		Speech: Speech{Model: "mlx-community/Kokoro-82M-bf16", Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
 		Keys: Keys{

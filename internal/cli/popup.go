@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -168,7 +169,12 @@ func runPopupAgent(cmd *cobra.Command) error {
 		events: make(chan popup.Event, 32), log: cmd.ErrOrStderr()}
 	popup.SetBindings(popupBindings(cfg.Popup.Keys))
 	if cfg.Popup.Hotkey != "" {
-		if err := popup.RegisterHotKey(1, cfg.Popup.Hotkey); err != nil {
+		if err := popup.RegisterHotKey(hotkeyPopup, cfg.Popup.Hotkey); err != nil {
+			fmt.Fprintln(a.log, "acmd popup:", err)
+		}
+	}
+	if cfg.Popup.ReadHotkey != "" {
+		if err := popup.RegisterHotKey(hotkeyRead, cfg.Popup.ReadHotkey); err != nil {
 			fmt.Fprintln(a.log, "acmd popup:", err)
 		}
 	}
@@ -193,7 +199,14 @@ type popupAgent struct {
 	b      *popup.Inbox
 	stop   context.CancelFunc // stops playback
 	played string             // the item auto-played last (session|time)
+	latest popup.Latest       // what to read aloud per session (hotkeyRead)
 }
+
+// Hotkey ids: the popup's own, and reading the current session aloud.
+const (
+	hotkeyPopup = 1
+	hotkeyRead  = 2
+)
 
 func (a *popupAgent) render() {
 	a.mu.Lock()
@@ -233,6 +246,7 @@ func (a *popupAgent) follow(ctx context.Context) {
 		}
 		a.mu.Lock()
 		fresh := a.b.Set(snap.Inbox, sessions)
+		a.latest.Observe(snap.Inbox)
 		a.mu.Unlock()
 		if len(fresh) > 0 {
 			inAcmd, looking := userInAcmd(ctx, snap)
@@ -305,6 +319,59 @@ func (a *popupAgent) play(text string) {
 	}()
 }
 
+// readCurrent is the read-aloud hotkey: it stops what's playing; else with
+// the panel open it plays the shown item (the same as the panel's play key,
+// which the hotkey shadows); else it reads the latest response or question
+// of the session the user is in (a focused view's, or the one in their own
+// focused Kitty/Ghostty pane), and does nothing when they're in neither.
+func (a *popupAgent) readCurrent(ctx context.Context, shown *core.InboxItem) {
+	a.mu.Lock()
+	playing, open := a.b.Playing, a.b.Open
+	a.mu.Unlock()
+	if playing {
+		a.stopPlaying()
+		a.render()
+		return
+	}
+	if open && shown != nil {
+		a.play(shown.Text)
+		return
+	}
+	snap, err := a.vc.Snapshot(ctx)
+	if err != nil {
+		return
+	}
+	_, id := userInAcmd(ctx, snap)
+	if id == "" {
+		return
+	}
+	var sess *core.Session
+	for _, s := range snap.Sessions {
+		if s.ID == id {
+			sess = s
+		}
+	}
+	a.mu.Lock()
+	text, ok := a.latest.Text(id, sess)
+	a.mu.Unlock()
+	if !ok {
+		return
+	}
+	if e, err := speechEngine(); err == nil {
+		if st := e.Status(); st != "" {
+			speechNotice("Speech isn't ready (" + st + "). Run: acmd speech install")
+			return
+		}
+	}
+	a.play(text)
+}
+
+// speechNotice tells the user something when no panel is open.
+var speechNotice = func(msg string) {
+	// G204: msg is built from acmd's own fixed text and speech's status, and is quoted.
+	_ = exec.Command("osascript", "-e", "display notification "+strconv.Quote(msg)+` with title "acmd"`).Run() //nolint:gosec // G204: msg is acmd's own text, quoted
+}
+
 func (a *popupAgent) stopPlaying() {
 	a.mu.Lock()
 	stop := a.stop
@@ -351,6 +418,10 @@ func (a *popupAgent) handle(ctx context.Context) {
 			a.mu.Unlock()
 			a.render()
 		case "hotkey":
+			if e.N == hotkeyRead {
+				a.readCurrent(ctx, it)
+				continue
+			}
 			a.mu.Lock()
 			if a.b.Open {
 				a.b.Open = false

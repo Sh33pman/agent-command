@@ -658,3 +658,16 @@ func TestBarLines(t *testing.T) {
 		t.Errorf("hard wrap and cut: %q", got)
 	}
 }
+
+func TestQuitClosesView(t *testing.T) {
+	h := newHarness(t, listSnap(), "")
+	n := len(h.f.mutations)
+	h.keys("q")
+	h.wantScreen("Close this view?")
+	h.keys("n")
+	if len(h.f.mutations) != n {
+		t.Fatalf("closed without a yes: %v", h.f.mutations[n:])
+	}
+	h.keys("q", "y")
+	h.wantMutation(ipc.Mutation{Kind: ipc.MutViewClose, ID: h.m.viewID})
+}

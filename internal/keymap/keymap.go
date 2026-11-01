@@ -77,6 +77,7 @@ var local = []Binding{
 	{"sort", Sidebar, "o O", "sort · direction", ""},
 	{"attention", Sidebar, "Tab", "next needing you", ""},
 	{"hide", Sidebar, "h", "hide sidebar", ""},
+	{"quit", Sidebar, "q", "close this view (sessions keep running)", ""},
 	{"compact", Sidebar, "c", "compact rows", ""},
 	{"back", Sidebar, "Esc", "back to the session", ""},
 	{"keys", Sidebar, "?", "shortcuts", ""},

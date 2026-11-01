@@ -512,6 +512,10 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(append(cmds, m.show(next))...)
 	case "h":
 		return m.do(m.act.ToggleSidebar)
+	case "q":
+		return m.ask2("Close this view? Your sessions keep running.", func() tea.Cmd {
+			return m.mutate(ipc.Mutation{Kind: ipc.MutViewClose, ID: m.viewID})
+		})
 	case "c":
 		m.compact = !m.compact
 	case "?":

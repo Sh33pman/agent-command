@@ -370,3 +370,31 @@ func TestAdoptLinksTheFork(t *testing.T) {
 		t.Error("adopted a background session")
 	}
 }
+
+type removes struct{ ids []string }
+
+func (r *removes) Remove(_ context.Context, id string) error {
+	r.ids = append(r.ids, id)
+	return fmt.Errorf("already gone") // logged, not fatal
+}
+
+func TestPurge(t *testing.T) {
+	p := testPaths(t)
+	rm := &removes{}
+	start(t, p, func(c *Config) { c.Remover, c.Stopper = rm, &stops{} })
+	c := dial(t, p)
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"beef0001-x","source":"startup","cwd":"/w"}`, time.Now(), ipc.HookContext{}), nil))
+	s := byClaude(snapshot(t, c), "beef0001-x")
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID}}, nil); err == nil {
+		t.Error("purged a live session")
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID})
+	var n int
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID}}, &n))
+	if n != 1 || len(snapshot(t, c).Sessions) != 0 || len(rm.ids) != 0 {
+		t.Errorf("purge: n=%d removes=%v", n, rm.ids) // no BgID known (hook-only session): no claude rm
+	}
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{"nope"}}, nil); err == nil {
+		t.Error("purged an unknown session")
+	}
+}

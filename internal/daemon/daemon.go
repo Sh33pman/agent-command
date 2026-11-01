@@ -42,6 +42,8 @@ type Config struct {
 	Stopper Stopper
 	// Claude starts and resumes background sessions (claudecli.CLI).
 	Claude Claude
+	// Remover deletes background sessions on purge (claudecli.CLI).
+	Remover Remover
 	// Notify configures notifications (nil = none).
 	Notify *config.Notify
 	// Fallback shows a notification when no view's sidebar can (SPEC §8.5:

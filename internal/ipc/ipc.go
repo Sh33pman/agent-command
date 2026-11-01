@@ -86,6 +86,7 @@ const (
 	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
 	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)
 	MutAdopt          = "session.adopt"     // ID: acmd is about to type /bg into this external session's pane
+	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
 )
 
 // Mutation is one change requested by a client.

@@ -363,3 +363,31 @@ func TestConfirmAndHelpers(t *testing.T) {
 		t.Errorf("empty table: %q %v", buf.String(), err)
 	}
 }
+
+func TestPurge(t *testing.T) {
+	env(t)
+	if out := mustRun(t, "purge", "--yes"); !strings.Contains(out, "No archived sessions to purge.") {
+		t.Errorf("nothing archived:\n%s", out)
+	}
+	mustRun(t, "archive", "docs", "--yes")
+	if out := mustRun(t, "purge", "--older-than", "30d", "--yes"); !strings.Contains(out, "No archived sessions") {
+		t.Errorf("recently archived purged:\n%s", out)
+	}
+	if _, err := acmd(t, "purge"); err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Errorf("purge without confirmation: %v", err)
+	}
+	if out := mustRun(t, "purge", "--yes"); !strings.Contains(out, "Purged 1 session(s).") {
+		t.Errorf("purge:\n%s", out)
+	}
+	if rows := listJSON(t, "--all"); len(rows) != 2 {
+		t.Errorf("%d sessions left", len(rows))
+	}
+	for _, bad := range []string{"x", "-1d", "-5h"} {
+		if _, err := acmd(t, "purge", "--older-than", bad, "--yes"); err == nil {
+			t.Errorf("--older-than %s accepted", bad)
+		}
+	}
+	if d, err := parseAge("12h"); err != nil || d != 12*time.Hour {
+		t.Errorf("12h: %v %v", d, err)
+	}
+}

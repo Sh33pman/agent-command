@@ -12,6 +12,11 @@ import (
 	"github.com/brettmostert/agent-command/internal/store"
 )
 
+// Remover deletes a background session (claudecli.CLI.Remove).
+type Remover interface {
+	Remove(ctx context.Context, id string) error
+}
+
 // Stopper stops a background session (claudecli.CLI.Stop in production).
 type Stopper interface {
 	Stop(ctx context.Context, id string) error
@@ -125,6 +130,27 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			}
 		}
 		return nil, nil
+	case ipc.MutPurge:
+		n := 0
+		for _, id := range m.IDs {
+			sess, err := st.Session(ctx, id)
+			if err != nil {
+				return n, err
+			}
+			if sess.Status != core.StatusArchived {
+				return n, fmt.Errorf("%s isn't archived", id)
+			}
+			if sess.Kind == core.KindBackground && sess.BgID != "" && d.cfg.Remover != nil {
+				if err := d.cfg.Remover.Remove(ctx, sess.BgID); err != nil {
+					d.cfg.Log.Printf("purge: claude rm %s: %v", sess.BgID, err) // already gone: fine
+				}
+			}
+			if err := st.DeleteSession(ctx, id); err != nil {
+				return n, err
+			}
+			n++
+		}
+		return n, nil
 	case ipc.MutAdopt:
 		sess, err := st.Session(ctx, m.ID)
 		if err != nil {

@@ -96,6 +96,19 @@ func (p Paths) TermIDFile(id string) string {
 	return filepath.Join(p.RuntimeDir, "t-"+termKey(id)+".id")
 }
 
+// HostSocket is the unix socket of session id's PTY host (SPEC §4.5): the
+// process that runs the session's CLI. It sits next to the terminal sockets
+// with an "h-" prefix.
+func (p Paths) HostSocket(id string) string {
+	return filepath.Join(p.RuntimeDir, "h-"+termKey(id)+".sock")
+}
+
+// HostIDFile holds the full session id next to HostSocket, so a daemon that
+// restarts can find the hosts that are still running.
+func (p Paths) HostIDFile(id string) string {
+	return filepath.Join(p.RuntimeDir, "h-"+termKey(id)+".id")
+}
+
 // termKey is the random tail of a ULID session id (unique enough).
 func termKey(id string) string {
 	if len(id) > 12 {

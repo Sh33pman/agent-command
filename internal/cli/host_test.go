@@ -1,0 +1,129 @@
+package cli
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/brettmostert/agent-command/internal/harness"
+	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/term"
+)
+
+func TestHostArgv(t *testing.T) {
+	h := harness.Claude{Path: "/c"}
+	if got, want := hostArgv(h, hostOptions{Dir: "/w", Name: "n", Prompt: "p"}), []string{"/c", "--remote-control", "--name", "n", "--", "p"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("new = %v", got)
+	}
+	if got, want := hostArgv(h, hostOptions{Resume: "sid", Name: "ignored"}), []string{"/c", "--remote-control", "--resume", "sid"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("resume = %v", got)
+	}
+}
+
+func TestHostEnvStripsClaudeAndTerminal(t *testing.T) {
+	env := hostEnv([]string{"PATH=/bin", "CLAUDECODE=1", "CLAUDE_CONFIG_DIR=/x", "TERM=dumb", "KITTY_WINDOW_ID=3", "HOME=/h"})
+	if got, want := strings.Join(env, " "), "PATH=/bin HOME=/h TERM=xterm-256color"; got != want {
+		t.Errorf("env = %q, want %q", got, want)
+	}
+}
+
+// A host runs the harness argv under a PTY, serves it on HostSocket, and
+// removes its socket and id file when the CLI exits. The "claude" here is a
+// script that prints its argv and CLAUDE* presence, then waits for a line.
+func TestHostServe(t *testing.T) {
+	dir, err := os.MkdirTemp("", "acmdhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r"), ConfigDir: filepath.Join(dir, "c")}
+	for k, v := range map[string]string{"ACMD_STATE_DIR": p.StateDir, "ACMD_RUNTIME_DIR": p.RuntimeDir, "ACMD_CONFIG_DIR": p.ConfigDir} {
+		t.Setenv(k, v)
+	}
+	t.Setenv("CLAUDECODE", "1") // as if run from inside a Claude session
+	for _, d := range []string{p.ConfigDir, p.RuntimeDir} {
+		must(t, os.MkdirAll(d, 0o700))
+	}
+	script := filepath.Join(dir, "claude")
+	must(t, os.WriteFile(script, []byte("#!/bin/sh\necho \"ARGS:$*\"\necho \"CLAUDECODE:${CLAUDECODE:-unset}\"\nread line\necho \"GOT:$line\"\n"), 0o700))
+	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+script+"\"\n"), 0o600))
+
+	id := "01HZZZZZZZZZZZZZZZZZZZZZZZ"
+	served := make(chan error, 1)
+	go func() {
+		_, err := acmd(t, "host", "serve", "--session", id, "--dir", dir, "--name", "auth", "--prompt", "hi", "--", "--model", "opus")
+		served <- err
+	}()
+	sock := p.HostSocket(id)
+	waitUntil(t, "host socket", func() bool { return term.Running(sock) })
+	if _, err := os.Stat(p.HostIDFile(id)); err != nil {
+		t.Errorf("id file: %v", err)
+	}
+
+	out := &syncBuf{}
+	in := make(chan []byte, 1)
+	size := make(chan [2]int)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	attached := make(chan error, 1)
+	go func() { attached <- term.Attach(ctx, sock, in, size, 24, 80, out) }()
+	waitUntil(t, "argv printed", func() bool { return strings.Contains(out.String(), "CLAUDECODE:unset") })
+	if got := out.String(); !strings.Contains(got, "ARGS:--remote-control --name auth --model opus -- hi") {
+		t.Errorf("argv not as expected:\n%s", got)
+	}
+	in <- []byte("go\n")
+	waitUntil(t, "input reached the CLI", func() bool { return strings.Contains(out.String(), "GOT:go") })
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Errorf("serve: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("host did not end when the CLI exited")
+	}
+	if term.Running(sock) {
+		t.Error("socket still answers")
+	}
+	if _, err := os.Stat(p.HostIDFile(id)); !os.IsNotExist(err) {
+		t.Errorf("id file left behind: %v", err)
+	}
+}
+
+func TestHostServeNeedsSessionAndDir(t *testing.T) {
+	viewEnvFor(t)
+	if _, err := acmd(t, "host", "serve"); err == nil {
+		t.Error("expected an error without --session/--dir")
+	}
+}
+
+type syncBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if cond() {
+			return
+		}
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}

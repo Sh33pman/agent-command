@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/brettmostert/agent-command/compare/v0.13.0...v0.14.0) (2026-11-01)
+
+
+### Features
+
+* **sessions:** move sessions into acmd and split them out ([#38](https://github.com/brettmostert/agent-command/issues/38)) ([41bf60f](https://github.com/brettmostert/agent-command/commit/41bf60f0994fdadf7abf44d0cd5f7c3a0a8feb5e))
+
 ## [0.13.0](https://github.com/brettmostert/agent-command/compare/v0.12.1...v0.13.0) (2026-11-01)
 
 

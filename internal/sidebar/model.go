@@ -574,6 +574,9 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 }
 
 func (m *Model) show(s *core.Session) tea.Cmd {
+	if s.NeedsResume() {
+		m.note = "Resuming " + quote(name(s)) + "…"
+	}
 	return m.do(func(ctx context.Context) error { return m.act.Show(ctx, s) })
 }
 

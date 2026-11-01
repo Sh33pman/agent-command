@@ -389,14 +389,61 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s, err = d.recordResume(ctx, id, bgID); err != nil {
+		return nil, err
+	}
+	// `claude --bg --resume` returns before the session runs; a view that
+	// attaches now gets "restarting in 10s" and drops to its placeholder.
+	if err := d.waitRunning(ctx, bgID); err != nil {
+		return nil, fmt.Errorf("resumed %s, but %w", bgID, err)
+	}
+	return s, nil
+}
+
+// recordResume stores session id as resumed under Claude background id bgID.
+func (d *Daemon) recordResume(ctx context.Context, id, bgID string) (*core.Session, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if s, err = d.store.Session(ctx, id); err != nil {
+	s, err := d.store.Session(ctx, id)
+	if err != nil {
 		return nil, err
 	}
 	s.BgID, s.Kind, s.External = bgID, core.KindBackground, nil
 	core.Apply(s, core.Event{Kind: core.EventResumed, Time: d.eventTime(s)})
 	return s, d.store.UpdateSession(ctx, s)
+}
+
+// Resume readiness: how long and how often resume waits for Claude to
+// list the session as running (tests shorten them).
+var (
+	resumeReady = 15 * time.Second
+	resumePoll  = 300 * time.Millisecond
+)
+
+// waitRunning waits until Claude lists background session bgID with a
+// process; without a lister it returns at once.
+func (d *Daemon) waitRunning(ctx context.Context, bgID string) error {
+	if d.cfg.Agents == nil {
+		return nil
+	}
+	deadline := time.Now().Add(resumeReady)
+	for {
+		if agents, err := d.cfg.Agents.Agents(ctx); err == nil {
+			for _, a := range agents {
+				if a.ID == bgID && !a.Stopped() {
+					return nil
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("Claude hasn't started it after %s (it may have no conversation to resume)", resumeReady)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(resumePoll):
+		}
+	}
 }
 
 // eventTime is the time for an event acmd itself applies to s: now, but

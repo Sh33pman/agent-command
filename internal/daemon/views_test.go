@@ -435,3 +435,44 @@ func watchView(t *testing.T, c *ipc.Conn, id string) ipc.WatchResponse {
 	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{ViewID: id}, &w))
 	return w
 }
+
+// Resume returns only once Claude lists the session as running, so a view
+// doesn't attach to a session that is still starting.
+func TestResumeWaitsUntilRunning(t *testing.T) {
+	oldReady, oldPoll := resumeReady, resumePoll
+	resumeReady, resumePoll = 2*time.Second, 20*time.Millisecond
+	t.Cleanup(func() { resumeReady, resumePoll = oldReady, oldPoll })
+
+	p := testPaths(t)
+	agents := &fakeAgents{}
+	start(t, p, func(c *Config) { c.Claude, c.Agents, c.ReconcileEvery = &fakeClaude{}, agents, time.Hour })
+	c := dial(t, p)
+	t0 := time.Now()
+	for _, id := range []string{"cafe0001-x", "dead0001-x"} {
+		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+id+`","source":"startup","cwd":"/w"}`, t0, ipc.HookContext{}), nil))
+		must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"`+id+`","reason":"other"}`, t0.Add(time.Second), ipc.HookContext{}), nil))
+	}
+	s := byClaude(snapshot(t, c), "cafe0001-x")
+
+	pid := 42
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		agents.add(claudecli.Agent{ID: "cafe0001", SessionID: "cafe0001-x", Kind: "background", Pid: &pid, Cwd: "/w"})
+	}()
+	began := time.Now()
+	var r core.Session
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
+	if took := time.Since(began); took < 250*time.Millisecond || r.BgID != "cafe0001" {
+		t.Errorf("returned after %v (before Claude ran it?): %+v", took, r)
+	}
+
+	// Never starts: a clear error, the bg id still recorded.
+	d := byClaude(snapshot(t, c), "dead0001-x")
+	err := c.Call(ipc.OpResume, ipc.Mutation{ID: d.ID}, nil)
+	if err == nil || !strings.Contains(err.Error(), "hasn't started it") {
+		t.Errorf("never running: %v", err)
+	}
+	if got := byClaude(snapshot(t, c), "dead0001-x"); got.BgID != "dead0001" {
+		t.Errorf("bg id not recorded: %+v", got)
+	}
+}

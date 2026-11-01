@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/brettmostert/agent-command/compare/v0.25.3...v0.26.0) (2026-11-01)
+
+
+### Features
+
+* **popup:** read the current session's latest response aloud with cmd+ctrl+p ([#90](https://github.com/brettmostert/agent-command/issues/90)) ([40e9e01](https://github.com/brettmostert/agent-command/commit/40e9e014f94f22f07483fa1e7923065bf8bcbb08))
+
 ## [0.25.3](https://github.com/brettmostert/agent-command/compare/v0.25.2...v0.25.3) (2026-11-01)
 
 

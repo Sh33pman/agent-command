@@ -86,7 +86,6 @@ var local = []Binding{
 	{"reorder", Groups, "K J", "move group up · down", ""},
 	{"delete-group", Groups, "D", "delete group", ""},
 	{"click", Mouse, "click", "show · collapse", ""},
-	{"double-click", Mouse, "double-click", "rename", ""},
 	{"right-click", Mouse, "right-click", "menu", ""},
 	{"wheel", Mouse, "wheel", "scroll", ""},
 }

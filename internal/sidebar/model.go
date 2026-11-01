@@ -95,11 +95,6 @@ type Model struct {
 	note    string
 	noteErr bool
 
-	lastClick struct {
-		at  time.Time
-		key string
-	}
-
 	lastNotice uint64    // newest notice seen
 	notified   string    // session of the last notification this sidebar showed
 	notifiedAt time.Time // when
@@ -758,13 +753,7 @@ func (m *Model) click(mo tea.Mouse) tea.Cmd {
 		m.openMenu(r, mo.Y)
 		return nil
 	case tea.MouseLeft:
-		now := m.now()
-		double := m.lastClick.key == k && now.Sub(m.lastClick.at) < 400*time.Millisecond
-		m.lastClick.key, m.lastClick.at = k, now
-		if double {
-			m.lastClick.key = ""
-			return m.rename(r)
-		}
+		// No double-click rename: renaming is the r key (or the menu).
 		if r.Session == nil {
 			return m.toggleCollapse(r.Group)
 		}

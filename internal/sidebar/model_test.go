@@ -493,12 +493,12 @@ func TestMouse(t *testing.T) {
 	}
 	click(tea.MouseLeft, 5)
 	h.wantMutation(ipc.Mutation{Kind: ipc.MutGroupCollapse, GroupID: "g2", Flag: false})
-	// Double-click renames.
-	h.m.now = func() time.Time { return t0.Add(time.Second) }
-	click(tea.MouseLeft, 7)
-	click(tea.MouseLeft, 8)
-	h.wantScreen("Rename:")
-	h.keys("esc")
+	// A quick second click on the same row shows it again; it doesn't rename.
+	click(tea.MouseLeft, 3)
+	click(tea.MouseLeft, 3)
+	if strings.Contains(h.screen(), "Rename:") {
+		t.Error("double-click opened rename")
+	}
 	click(tea.MouseLeft, 0) // the header: nothing
 	click(tea.MouseLeft, 29)
 

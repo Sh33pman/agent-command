@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/tui"
 )
 
 const (
@@ -202,31 +203,16 @@ const (
 // bar wrapped to the sidebar's width (so they can be read in full), other
 // notes dimmed. Any key clears it.
 func (m *Model) statusBar() []string {
-	if m.note == "" || m.w <= 2 {
+	if m.note == "" || m.w <= 2 || m.hasBar() {
 		return nil
 	}
 	text, limit, st := m.note, maxNoteLines, dimStyle
 	if m.noteErr {
 		text, limit, st = "✗ "+text, maxErrLines, errBarStyle
 	}
-	lines := barLines(strings.Join(strings.Fields(text), " "), m.w-2, limit)
+	lines := tui.BarLines(strings.Join(strings.Fields(text), " "), m.w-2, limit)
 	for i, l := range lines {
 		lines[i] = st.Render(padTo(" "+l+" ", m.w))
-	}
-	return lines
-}
-
-// barLines word-wraps s to width w (breaking words longer than w) and
-// keeps at most limit lines, marking a cut with "…".
-func barLines(s string, w, limit int) []string {
-	lines := strings.Split(ansi.Wrap(s, w, ""), "\n")
-	if len(lines) > limit {
-		lines = lines[:limit]
-		last := strings.TrimRight(lines[limit-1], " ")
-		if lipgloss.Width(last) >= w {
-			last = ansi.Truncate(last, w-1, "")
-		}
-		lines[limit-1] = last + "…"
 	}
 	return lines
 }

@@ -33,6 +33,11 @@ func TestKittyShortcuts(t *testing.T) {
 	if got := e.snapshot(t).Views[0].Sidebar; got != sb {
 		t.Errorf("daemon has sidebar %+v, want %+v", got, sb)
 	}
+	// The full-width status bar is the last window (bottom edge), 1 line.
+	ws := sim.Tabs[0].Windows
+	if bar := ws[len(ws)-1]; sb.BarWindow == 0 || bar.ID != sb.BarWindow || bar.Lines != 1 || bar.UserVars["acmd_role"] != "bar" {
+		t.Errorf("status bar %d, windows %+v", sb.BarWindow, ws)
+	}
 
 	// toggle hides and shows; focus shows a hidden sidebar and focuses it.
 	mustRun(t, "toggle", "--kitty-window", "1")
@@ -55,6 +60,15 @@ func TestKittyShortcuts(t *testing.T) {
 	v2 := e.snapshot(t).Views[0]
 	if v2.Sidebar.KittyWindow == sb.KittyWindow || v2.Sidebar.KittyWindow == 0 || v2.Sidebar.RestoreLayout != "fat" {
 		t.Errorf("sidebar not re-added: %+v", v2.Sidebar)
+	}
+	// With a new bar under it; the old bar is gone.
+	if v2.Sidebar.BarWindow == 0 || v2.Sidebar.BarWindow == sb.BarWindow {
+		t.Errorf("bar not re-added: %+v", v2.Sidebar)
+	}
+	for _, w := range sim.Tabs[0].Windows {
+		if w.ID == sb.BarWindow {
+			t.Error("old bar left open")
+		}
 	}
 
 	// Sessions: a trusted folder, then it becomes untrusted for the shortcut.
@@ -134,6 +148,11 @@ func TestKittyShortcuts(t *testing.T) {
 	removeSidebar(ctx, v3)
 	if sim.Tabs[0].Layout != "fat" {
 		t.Errorf("layout after removing the sidebar: %s", sim.Tabs[0].Layout)
+	}
+	for _, w := range sim.Tabs[0].Windows {
+		if w.ID == v3.Sidebar.BarWindow || w.ID == v3.Sidebar.KittyWindow {
+			t.Errorf("window %d left open", w.ID)
+		}
 	}
 	removeSidebar(ctx, &core.View{}) // no sidebar: nothing to do
 }

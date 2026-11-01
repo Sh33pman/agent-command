@@ -69,6 +69,7 @@ func FindKitten(lookPath func(string) (string, error)) string {
 type Window struct {
 	ID        int               `json:"id"`
 	Columns   int               `json:"columns"`
+	Lines     int               `json:"lines"`
 	IsFocused bool              `json:"is_focused"`
 	UserVars  map[string]string `json:"user_vars"`
 }
@@ -185,8 +186,12 @@ func (k *Kitty) AddSidebarLeft(ctx context.Context, s SidebarSpec) (sidebar int,
 	return sidebar, prevLayout, err
 }
 
-// minView is the fewest columns SetWidth leaves the other panes of the row.
+// minView is the fewest columns (or lines) a resize leaves the other
+// panes of the row (or column).
 const minView = 20
+
+// minViewLines is the fewest lines SetHeight leaves the panes above.
+const minViewLines = 5
 
 // SetWidth resizes window id to cols columns: resize, read back, correct
 // (resizes are off by the border width, M0 K2), at most 3 tries. The width
@@ -194,6 +199,16 @@ const minView = 20
 // resize makes no progress, and Kitty refusing a resize ("could not
 // resize", the split is at its limit) is not an error.
 func (k *Kitty) SetWidth(ctx context.Context, id, cols int) error {
+	return k.setSize(ctx, id, cols, "horizontal", minView, func(w Window) int { return w.Columns })
+}
+
+// SetHeight is SetWidth for lines (the status bar), leaving the panes
+// above at least minViewLines.
+func (k *Kitty) SetHeight(ctx context.Context, id, lines int) error {
+	return k.setSize(ctx, id, lines, "vertical", minViewLines, func(w Window) int { return w.Lines })
+}
+
+func (k *Kitty) setSize(ctx context.Context, id, want int, axis string, keep int, size func(Window) int) error {
 	last := -1
 	for range 3 {
 		ws, err := k.LS(ctx)
@@ -205,25 +220,26 @@ func (k *Kitty) SetWidth(ctx context.Context, id, cols int) error {
 			return fmt.Errorf("kitty window %d not found", id)
 		}
 		if tab.Layout == "stack" {
-			return nil // hidden (stacked) sidebars keep their split (K5)
+			return nil // hidden (stacked) panes keep their split (K5)
 		}
-		want := cols
+		cur, target := size(w), want
 		if len(tab.Windows) > 1 {
-			// The widest other pane approximates the rest of the row.
+			// The biggest other pane approximates the rest of the row
+			// (or column).
 			rest := 0
 			for _, o := range tab.Windows {
 				if o.ID != id {
-					rest = max(rest, o.Columns)
+					rest = max(rest, size(o))
 				}
 			}
-			want = min(cols, max(1, w.Columns+rest-minView))
+			target = min(want, max(1, cur+rest-keep))
 		}
-		if w.Columns == want || w.Columns == last {
+		if cur == target || cur == last {
 			return nil
 		}
-		last = w.Columns
-		if _, err := k.run(ctx, "resize-window", "--match", match(id), "--axis", "horizontal",
-			"--increment", strconv.Itoa(want-w.Columns)); err != nil {
+		last = cur
+		if _, err := k.run(ctx, "resize-window", "--match", match(id), "--axis", axis,
+			"--increment", strconv.Itoa(target-cur)); err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "could not resize") {
 				return nil
 			}
@@ -231,6 +247,47 @@ func (k *Kitty) SetWidth(ctx context.Context, id, cols int) error {
 		}
 	}
 	return nil
+}
+
+// BarSpec describes a view's full-width status bar.
+type BarSpec struct {
+	View    int      // the view pane's window id (focused afterwards)
+	ViewID  string   // acmd's view id (user var acmd_view)
+	Lines   int      // height
+	Command []string // argv, absolute path first
+	Env     []string // KEY=VALUE for the bar process
+}
+
+// AddBottomBar splits the view's tab and moves the new window to the
+// bottom edge, where it spans the tab's full width under the sidebar and
+// the view pane. The tab must already be in the splits layout (the
+// sidebar put it there). It returns the bar's window id.
+func (k *Kitty) AddBottomBar(ctx context.Context, s BarSpec) (int, error) {
+	args := []string{"launch", "--location=hsplit", "--match", match(s.View),
+		"--var", "acmd_role=bar", "--var", "acmd_view=" + s.ViewID, "--title", "acmd"}
+	for _, e := range s.Env {
+		args = append(args, "--env", e)
+	}
+	out, err := k.run(ctx, append(append(args, "--"), s.Command...)...)
+	if err != nil {
+		return 0, err
+	}
+	bar, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("kitten @ launch printed %q", out)
+	}
+	// move_to_screen_edge only works on the focused window of the active tab.
+	if _, err := k.run(ctx, "focus-window", "--match", match(bar)); err != nil {
+		return bar, err
+	}
+	if _, err := k.run(ctx, "action", "--match", match(bar), "layout_action", "move_to_screen_edge", "bottom"); err != nil {
+		return bar, err
+	}
+	if err := k.SetHeight(ctx, bar, s.Lines); err != nil {
+		return bar, err
+	}
+	_, err = k.run(ctx, "focus-window", "--match", match(s.View))
+	return bar, err
 }
 
 // Hidden reports whether the view's sidebar is hidden (its tab is stacked).

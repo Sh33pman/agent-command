@@ -398,3 +398,40 @@ func TestPurge(t *testing.T) {
 		t.Error("purged an unknown session")
 	}
 }
+
+func TestViewNotes(t *testing.T) {
+	p := testPaths(t)
+	start(t, p, func(c *Config) { c.Claude = &fakeClaude{} })
+	c := dial(t, p)
+	v := openView(t, c, "")
+
+	w := watchView(t, c, v.ID)
+	if w.Note != nil {
+		t.Fatalf("note before any: %+v", w.Note)
+	}
+	rev := w.Rev
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewNote, ID: v.ID, Text: "Could not resize", Flag: true})
+	w = watchView(t, c, v.ID)
+	if w.Rev == rev || w.Note == nil || w.Note.Text != "Could not resize" || !w.Note.Err {
+		t.Errorf("note not delivered: rev %d→%d %+v", rev, w.Rev, w.Note)
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewNote, ID: v.ID})
+	w = watchView(t, c, v.ID)
+	if w.Note != nil {
+		t.Errorf("note not cleared: %+v", w.Note)
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewNote, ID: v.ID, Text: "x"})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewClose, ID: v.ID})
+	w = watchView(t, c, v.ID)
+	if !w.Gone || w.Note != nil {
+		t.Errorf("closed view: %+v", w)
+	}
+}
+
+// watchView returns a fresh (non-waiting) watch response for view id.
+func watchView(t *testing.T, c *ipc.Conn, id string) ipc.WatchResponse {
+	t.Helper()
+	var w ipc.WatchResponse
+	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{ViewID: id}, &w))
+	return w
+}

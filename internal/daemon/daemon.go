@@ -65,6 +65,7 @@ type Daemon struct {
 
 	changes changes // bumped on every state change (OpWatch)
 	seen    seen    // view heartbeats
+	notes   notes   // status bar messages per view (not persisted)
 
 	adopting map[string]adoption // session id → a move into acmd in progress (d.mu)
 	notify   *notifier           // d.mu

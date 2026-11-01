@@ -648,17 +648,6 @@ func TestStatusBar(t *testing.T) {
 	}
 }
 
-func TestBarLines(t *testing.T) {
-	got := barLines("aaaa bbbb cccc", 9, 4)
-	if strings.Join(got, "|") != "aaaa bbbb|cccc" {
-		t.Errorf("wrap: %q", got)
-	}
-	got = barLines("/a/very/long/path/without/spaces", 10, 2)
-	if len(got) != 2 || !strings.HasSuffix(got[1], "…") || ansi.StringWidth(got[1]) > 10 {
-		t.Errorf("hard wrap and cut: %q", got)
-	}
-}
-
 func TestQuitClosesView(t *testing.T) {
 	h := newHarness(t, listSnap(), "")
 	n := len(h.f.mutations)
@@ -670,4 +659,16 @@ func TestQuitClosesView(t *testing.T) {
 	}
 	h.keys("q", "y")
 	h.wantMutation(ipc.Mutation{Kind: ipc.MutViewClose, ID: h.m.viewID})
+}
+
+func TestMessagesGoToTheBarPane(t *testing.T) {
+	h := newHarness(t, listSnap(), "")
+	h.send(snapMsg{snap: listSnap(), view: &core.View{ID: "v1", Sidebar: core.PaneLoc{Terminal: "kitty", BarWindow: 9}}, rev: 2})
+	h.send(noteMsg{text: "Could not resize", err: true})
+	h.wantMutation(ipc.Mutation{Kind: ipc.MutViewNote, ID: "v1", Text: "Could not resize", Flag: true})
+	if strings.Contains(h.screen(), "Could not resize") {
+		t.Errorf("shown in the sidebar too:\n%s", h.screen())
+	}
+	h.keys("down") // any key clears it, in the bar too
+	h.wantMutation(ipc.Mutation{Kind: ipc.MutViewNote, ID: "v1"})
 }

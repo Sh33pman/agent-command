@@ -3,6 +3,7 @@ package kitty_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -175,5 +176,31 @@ func TestSetWidthLimits(t *testing.T) {
 	s.Stuck = true
 	if err := s.Kitty().SetWidth(ctx, 1, 40); err != nil || resizes(s) != 1 {
 		t.Errorf("stuck: %v, %d resizes", err, resizes(s))
+	}
+}
+
+func TestAddBottomBar(t *testing.T) {
+	s := kittytest.New()
+	k := s.Kitty()
+	ctx := context.Background()
+	sb, _, err := k.AddSidebarLeft(ctx, kitty.SidebarSpec{View: 1, ViewID: "V1", Width: 32, Command: []string{"/bin/acmd", "sidebar"}})
+	must(t, err)
+	bar, err := k.AddBottomBar(ctx, kitty.BarSpec{View: 1, ViewID: "V1", Lines: 1, Command: []string{"/bin/acmd", "statusbar", "--view", "V1"}})
+	must(t, err)
+	w := s.Tabs[0].Windows
+	last := w[len(w)-1]
+	if last.ID != bar || last.Lines != 1 || last.UserVars["acmd_role"] != "bar" {
+		t.Errorf("bar not at the bottom edge at 1 line: %+v", w)
+	}
+	if w[0].ID != sb || s.Focused != 1 {
+		t.Errorf("sidebar moved or focus not back on the view: %+v focused %d", w, s.Focused)
+	}
+	if !strings.Contains(strings.Join(s.Calls, "\n"), "action --match id:"+strconv.Itoa(bar)+" layout_action move_to_screen_edge bottom") {
+		t.Errorf("calls:\n%s", strings.Join(s.Calls, "\n"))
+	}
+	// Grows for a long message, capped so the panes above keep 5 lines.
+	must(t, k.SetHeight(ctx, bar, 3))
+	if l := s.Tabs[0].Windows[len(w)-1].Lines; l != 3 {
+		t.Errorf("bar is %d lines, want 3", l)
 	}
 }

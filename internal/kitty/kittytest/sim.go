@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,7 +33,7 @@ type Sim struct {
 // window 1 is focused.
 func New() *Sim {
 	s := &Sim{next: 10}
-	s.Tabs = []*kitty.Tab{{ID: 1, Layout: "fat", Windows: []kitty.Window{{ID: 1, Columns: 120}, {ID: 2, Columns: 60}}}}
+	s.Tabs = []*kitty.Tab{{ID: 1, Layout: "fat", Windows: []kitty.Window{{ID: 1, Columns: 120, Lines: 40}, {ID: 2, Columns: 60, Lines: 40}}}}
 	s.Focused = 1
 	return s
 }
@@ -91,8 +92,14 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 			return []byte(s.Launch), nil
 		}
 		s.next++
-		w := kitty.Window{ID: s.next, Columns: t.Windows[i].Columns / 2, UserVars: map[string]string{}}
-		t.Windows[i].Columns -= w.Columns
+		w := kitty.Window{ID: s.next, Columns: t.Windows[i].Columns, Lines: t.Windows[i].Lines, UserVars: map[string]string{}}
+		if slices.Contains(args, "--location=hsplit") {
+			w.Lines = t.Windows[i].Lines / 2
+			t.Windows[i].Lines -= w.Lines
+		} else {
+			w.Columns = t.Windows[i].Columns / 2
+			t.Windows[i].Columns -= w.Columns
+		}
 		for j, a := range args {
 			if a == "--var" {
 				k, v, _ := strings.Cut(args[j+1], "=")
@@ -110,7 +117,12 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 				return nil, errors.New("move_to_screen_edge needs the window focused")
 			}
 			w := t.Windows[i]
-			t.Windows = append([]kitty.Window{w}, append(t.Windows[:i:i], t.Windows[i+1:]...)...)
+			t.Windows = slices.Delete(t.Windows, i, i+1)
+			if args[len(args)-1] == "bottom" {
+				t.Windows = append(t.Windows, w)
+			} else {
+				t.Windows = slices.Insert(t.Windows, 0, w)
+			}
 		case "toggle_layout":
 			if t.Layout == "stack" {
 				t.Layout = "splits"
@@ -123,6 +135,10 @@ func (s *Sim) Run(_ context.Context, kitten, to string, args ...string) ([]byte,
 			break
 		}
 		inc, _ := strconv.Atoi(args[len(args)-1])
+		if slices.Contains(args, "vertical") {
+			t.Windows[i].Lines += inc
+			break
+		}
 		if inc > 0 {
 			inc += 2 // borders
 		}

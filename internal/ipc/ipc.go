@@ -82,6 +82,7 @@ const (
 	MutViewOpen       = "view.open"         // Pane, ID = session to show ("" = most recently active) -> returns the view
 	MutViewSelect     = "view.select"       // ID = view, Text = session ("" = placeholder)
 	MutViewClose      = "view.close"        // ID = view
+	MutViewNote       = "view.note"         // ID = view, Text (empty clears), Flag = error
 	MutViewTouch      = "view.touch"        // ID = view: it was focused
 	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
 	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)
@@ -118,6 +119,14 @@ type WatchResponse struct {
 	Rev  uint64     `json:"rev"`
 	View *core.View `json:"view,omitempty"`
 	Gone bool       `json:"gone,omitempty"`
+	// Note is the view's status bar message (nil = none).
+	Note *ViewNote `json:"note,omitempty"`
+}
+
+// ViewNote is a message for a view's status bar (SPEC §8.4).
+type ViewNote struct {
+	Text string `json:"text"`
+	Err  bool   `json:"err,omitempty"`
 }
 
 // NewRequest starts a background session (SPEC §6.1). The client resolves

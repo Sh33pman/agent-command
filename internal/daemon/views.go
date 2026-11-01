@@ -115,6 +115,7 @@ func (d *Daemon) watch(ctx context.Context, req ipc.WatchRequest) (ipc.WatchResp
 			return resp, err
 		default:
 			resp.View = v
+			resp.Note = d.notes.get(req.ViewID)
 		}
 	}
 	return resp, nil
@@ -163,8 +164,16 @@ func (d *Daemon) viewMutation(ctx context.Context, m ipc.Mutation) (any, error) 
 		}
 		v.LastFocusedAt = now
 		return nil, d.show(ctx, v, m.Text)
+	case ipc.MutViewNote:
+		if m.Text == "" {
+			d.notes.set(m.ID, nil)
+		} else {
+			d.notes.set(m.ID, &ipc.ViewNote{Text: m.Text, Err: m.Flag})
+		}
+		return nil, nil
 	case ipc.MutViewClose:
 		d.seen.forget(m.ID)
+		d.notes.set(m.ID, nil)
 		err := d.store.DeleteView(ctx, m.ID)
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, nil
@@ -289,6 +298,7 @@ func (d *Daemon) pruneViews(ctx context.Context) (int, error) {
 			return n, err
 		}
 		d.seen.forget(v.ID)
+		d.notes.set(v.ID, nil)
 		n++
 	}
 	return n, nil
@@ -405,4 +415,34 @@ func decode[T any](raw json.RawMessage) (T, error) {
 		return v, fmt.Errorf("bad request: %w", err)
 	}
 	return v, nil
+}
+
+// notes holds each view's status bar message. They are short-lived (any
+// key in the sidebar clears them), so they aren't persisted.
+type notes struct {
+	mu sync.Mutex
+	m  map[string]*ipc.ViewNote
+}
+
+func (n *notes) set(view string, note *ipc.ViewNote) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if note == nil {
+		delete(n.m, view)
+		return
+	}
+	if n.m == nil {
+		n.m = map[string]*ipc.ViewNote{}
+	}
+	n.m[view] = note
+}
+
+func (n *notes) get(view string) *ipc.ViewNote {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if x := n.m[view]; x != nil {
+		c := *x
+		return &c
+	}
+	return nil
 }

@@ -93,6 +93,13 @@ func addSidebar(ctx context.Context, call func(op string, in, out any) error, v 
 			prev = old // re-added: the tab's layout from before acmd's first sidebar
 		}
 		loc = core.PaneLoc{Terminal: "kitty", KittySocket: v.Pane.KittySocket, KittyWindow: id, RestoreLayout: prev}
+		// A re-added sidebar spans the tab's height: put a new bar under it.
+		if old := v.Sidebar.BarWindow; old != 0 {
+			_ = kittyAt(v.Sidebar.KittySocket).Close(ctx, old)
+		}
+		if bar, err := addBar(ctx, v); err == nil {
+			loc.BarWindow = bar
+		}
 	case "ghostty":
 		id, err := ghosttyApp().AddSidebarLeft(ctx, v.Pane.GhosttyTerm, ghostty.Quote(argv), homeDir(), acmdEnv())
 		if err != nil {
@@ -114,6 +121,9 @@ func removeSidebar(ctx context.Context, v *core.View) {
 			return
 		}
 		k := kittyAt(v.Sidebar.KittySocket)
+		if v.Sidebar.BarWindow != 0 {
+			_ = k.Close(ctx, v.Sidebar.BarWindow)
+		}
 		if l := v.Sidebar.RestoreLayout; l != "" && l != "splits" {
 			_ = k.SetLayout(ctx, v.Sidebar.KittyWindow, l)
 		}

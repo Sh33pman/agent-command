@@ -94,6 +94,9 @@ type Model struct {
 	menu    *menu
 	note    string
 	noteErr bool
+	// sentNote/sentErr: the message last sent to the status bar pane.
+	sentNote string
+	sentErr  bool
 
 	lastNotice uint64    // newest notice seen
 	notified   string    // session of the last notification this sidebar showed
@@ -302,6 +305,26 @@ func (m *Model) currentGroup() string {
 
 // Update handles a message.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.update(msg)
+	return m, tea.Batch(cmd, m.syncNote())
+}
+
+// hasBar reports whether the view has a full-width status bar pane; then
+// messages go there instead of the sidebar's own bottom lines.
+func (m *Model) hasBar() bool { return m.view != nil && m.view.Sidebar.BarWindow != 0 }
+
+// syncNote sends the current message to the view's status bar pane when
+// it changed.
+func (m *Model) syncNote() tea.Cmd {
+	isErr := m.noteErr && m.note != ""
+	if !m.hasBar() || (m.note == m.sentNote && isErr == m.sentErr) {
+		return nil
+	}
+	m.sentNote, m.sentErr = m.note, isErr
+	return m.mutate(ipc.Mutation{Kind: ipc.MutViewNote, ID: m.viewID, Text: m.note, Flag: isErr})
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case snapMsg:
 		first := !m.loaded

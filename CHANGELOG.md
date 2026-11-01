@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/brettmostert/agent-command/compare/v0.14.0...v0.15.0) (2026-11-01)
+
+
+### Features
+
+* **notify:** add macOS notifications ([#39](https://github.com/brettmostert/agent-command/issues/39)) ([40e04a5](https://github.com/brettmostert/agent-command/commit/40e04a5f3d6c68ab076207d62813010399047612))
+
 ## [0.14.0](https://github.com/brettmostert/agent-command/compare/v0.13.0...v0.14.0) (2026-11-01)
 
 

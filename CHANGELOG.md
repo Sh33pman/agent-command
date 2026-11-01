@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/brettmostert/agent-command/compare/v0.17.0...v0.18.0) (2026-11-01)
+
+
+### Features
+
+* **sidebar:** close the view with q ([#50](https://github.com/brettmostert/agent-command/issues/50)) ([e51fab1](https://github.com/brettmostert/agent-command/commit/e51fab12ad53d9921a73677550650d93cf4c2819))
+
 ## [0.17.0](https://github.com/brettmostert/agent-command/compare/v0.16.0...v0.17.0) (2026-11-01)
 
 

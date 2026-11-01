@@ -32,15 +32,21 @@ type Client interface {
 	Select(ctx context.Context, viewID, sessionID string) error
 	Close(ctx context.Context, viewID string) error
 	Resume(ctx context.Context, sessionID string) (*core.Session, error)
+	// Finish stops the session and marks it finished (the user typed
+	// /exit in it, SPEC §6.4).
+	Finish(ctx context.Context, sessionID string) error
 }
 
 // Loop runs one view.
 type Loop struct {
 	ViewID string
 	Client Client
-	// Attach returns the command that shows a session (claude attach <bgID>),
-	// wired to the terminal.
-	Attach func(bgID string) *exec.Cmd
+	// Attach returns the command that shows a session (claude attach <bgID>
+	// in its folder), wired to the terminal.
+	Attach func(s *core.Session) *exec.Cmd
+	// Term, when set, is the user's terminal: attach then runs through a
+	// relay that notices Claude's agent view (← or /exit, see relay.go).
+	Term *os.File
 	// Keys reads single keys from the terminal in the placeholder.
 	Keys Keys
 	Out  io.Writer
@@ -143,12 +149,23 @@ func (l *Loop) show(ctx context.Context, id string) (string, error) {
 			l.Showing(ctx, s.ID)
 		}
 		started := l.Now()
-		switched, exitErr, err := l.attachUntil(ctx, s)
+		switched, left, exitErr, err := l.attachUntil(ctx, s)
 		if err != nil {
 			return "", err
 		}
 		if switched {
 			return "", nil
+		}
+		if left.agentView {
+			// ← or /exit in Claude: back to acmd's list; /exit also
+			// finishes the session (claude stop).
+			if left.exitTyped {
+				if err := l.Client.Finish(ctx, id); err != nil {
+					return fmt.Sprintf("Couldn't finish %q: %v", displayName(s), err), nil
+				}
+				return "", nil
+			}
+			return "", l.Client.Select(ctx, l.ViewID, "")
 		}
 		// The attach client ended by itself.
 		if exitErr == nil || l.Now().Sub(started) >= l.QuickExit {
@@ -156,7 +173,7 @@ func (l *Loop) show(ctx context.Context, id string) (string, error) {
 		}
 		// It failed at once: a stopped session Claude couldn't restart on
 		// attach is resumed explicitly, once (SPEC §6.2).
-		if resumed || s.Status != core.StatusPaused {
+		if resumed || !s.Stopped() {
 			return fmt.Sprintf("Couldn't show %q (claude attach %s ended at once).", displayName(s), s.BgID), nil
 		}
 		resumed = true
@@ -185,16 +202,38 @@ func (l *Loop) session(ctx context.Context, id string) (*core.Session, error) {
 // attachUntil runs the attach client for s; switched is true when the
 // loop ended it because the view now selects something else (or closed).
 // exitErr is how the client ended when it ended by itself.
-func (l *Loop) attachUntil(ctx context.Context, s *core.Session) (switched bool, exitErr, err error) {
-	cmd := l.Attach(s.BgID)
-	if err := cmd.Start(); err != nil {
-		return false, nil, fmt.Errorf("start %s: %w", strings.Join(cmd.Args, " "), err)
-	}
+func (l *Loop) attachUntil(ctx context.Context, s *core.Session) (switched bool, left relayed, exitErr, err error) {
+	cmd := l.Attach(s)
 	exited := make(chan struct{})
-	go func() {
-		exitErr = cmd.Wait()
-		close(exited)
-	}()
+	stop := make(chan struct{})
+	if l.Term != nil {
+		go func() {
+			left, exitErr = relay(cmd, l.Term, l.Out, stop)
+			close(exited)
+		}()
+	} else {
+		if err := cmd.Start(); err != nil {
+			return false, left, nil, fmt.Errorf("start %s: %w", strings.Join(cmd.Args, " "), err)
+		}
+		go func() {
+			exitErr = cmd.Wait()
+			close(exited)
+		}()
+	}
+	end := func() {
+		if l.Term != nil {
+			close(stop)
+			<-exited
+			return
+		}
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		select {
+		case <-exited:
+		case <-time.After(3 * time.Second):
+			_ = cmd.Process.Kill()
+			<-exited
+		}
+	}
 
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -203,23 +242,16 @@ func (l *Loop) attachUntil(ctx context.Context, s *core.Session) (switched bool,
 
 	select {
 	case <-exited:
-		return false, exitErr, nil
+		return false, left, exitErr, nil
 	case werr := <-changed:
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		select {
-		case <-exited:
-		case <-time.After(3 * time.Second):
-			_ = cmd.Process.Kill()
-			<-exited
-		}
+		end()
 		if werr != nil && !errors.Is(werr, ErrClosed) {
-			return true, nil, werr
+			return true, relayed{}, nil, werr
 		}
-		return true, nil, nil
+		return true, relayed{}, nil, nil
 	case <-ctx.Done():
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		<-exited
-		return true, nil, ctx.Err()
+		end()
+		return true, relayed{}, nil, ctx.Err()
 	}
 }
 

@@ -162,7 +162,7 @@ func newGroupArchiveCmd() *cobra.Command {
 				for _, s := range snap.Sessions {
 					if s.GroupID == g.ID && s.Status != core.StatusArchived {
 						n++
-						if s.Kind == core.KindBackground && s.Status != core.StatusPaused {
+						if s.Kind == core.KindBackground && !s.Stopped() {
 							running++
 						}
 					}

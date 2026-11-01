@@ -17,6 +17,9 @@ const (
 	StatusDone     Status = "done"
 	StatusError    Status = "error"
 	StatusPaused   Status = "paused"
+	// StatusFinished: the user finished the session (claude stop); its
+	// conversation is kept and showing it resumes it (SPEC §5.2).
+	StatusFinished Status = "finished"
 	StatusArchived Status = "archived"
 )
 
@@ -130,5 +133,9 @@ type ViewState struct {
 // before it can show it: a stopped background session acmd never got a
 // Claude background id for, with a conversation to resume.
 func (s *Session) NeedsResume() bool {
-	return s.Kind == KindBackground && s.BgID == "" && s.Status == StatusPaused && s.ClaudeSessionID != ""
+	return s.Kind == KindBackground && s.BgID == "" && s.Stopped() && s.ClaudeSessionID != ""
 }
+
+// Stopped reports whether s's Claude process isn't running by design:
+// paused (reboot, idle stop, claude stop) or finished by the user.
+func (s *Session) Stopped() bool { return s.Status == StatusPaused || s.Status == StatusFinished }

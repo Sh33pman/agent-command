@@ -31,6 +31,8 @@ func Glyph(s core.Status, spin int) string {
 		return c("1", "✗")
 	case core.StatusPaused:
 		return c("8", "‖")
+	case core.StatusFinished:
+		return c("8", "■")
 	default:
 		return dimGlyph.Render("-")
 	}
@@ -51,6 +53,8 @@ func StatusWord(s core.Status) string {
 		return "failed"
 	case core.StatusPaused:
 		return "paused"
+	case core.StatusFinished:
+		return "finished"
 	case core.StatusArchived:
 		return "archived"
 	}

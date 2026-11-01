@@ -121,7 +121,9 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 				set(s, &t, StatusDone, "")
 			}
 		case AgentStopped:
-			set(s, &t, StatusPaused, "stopped")
+			if s.Status != StatusFinished { // finishing stops it: that's expected
+				set(s, &t, StatusPaused, "stopped")
+			}
 		}
 
 	case HookSessionEnd:
@@ -129,15 +131,20 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 		case "clear", "resume":
 			// A SessionStart follows in the same process.
 		default:
-			set(s, &t, StatusPaused, e.Reason)
+			if s.Status != StatusFinished {
+				set(s, &t, StatusPaused, e.Reason)
+			}
 		}
 
 	case EventArchived:
 		s.ArchivedAt = e.Time
 		set(s, &t, StatusArchived, "")
 
+	case EventFinished:
+		set(s, &t, StatusFinished, "")
+
 	case EventResumed:
-		if s.Status == StatusPaused {
+		if s.Stopped() {
 			set(s, &t, StatusStarting, "")
 		}
 

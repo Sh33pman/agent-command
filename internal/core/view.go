@@ -157,7 +157,7 @@ func statusRank(s *Session) int {
 		return 4
 	case StatusStarting:
 		return 5
-	case StatusPaused:
+	case StatusPaused, StatusFinished:
 		return 6
 	default:
 		return 7

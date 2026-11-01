@@ -73,6 +73,7 @@ const (
 	MutRename         = "session.rename"    // ID, Text
 	MutDescribe       = "session.describe"  // ID, Text
 	MutArchive        = "session.archive"   // ID
+	MutFinish         = "session.finish"    // ID: stop it (claude stop) and mark it finished
 	MutUnarchive      = "session.unarchive" // ID
 	MutMove           = "session.move"      // IDs, GroupID
 	MutGroupCreate    = "group.create"      // Text (name), Color -> returns the group

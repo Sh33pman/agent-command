@@ -219,3 +219,62 @@ func TestArchiveWithoutClaude(t *testing.T) {
 func bgAgent(sid, id string, status *string, pid *int) claudecli.Agent {
 	return claudecli.Agent{SessionID: sid, ID: id, Kind: "background", Status: status, Pid: pid}
 }
+
+// Finish stops a running background session and marks it finished; it
+// stays finished when Claude reports it stopped, a view showing it goes
+// back to its list, and resuming it brings it back.
+func TestFinish(t *testing.T) {
+	p := testPaths(t)
+	st := &stops{}
+	pid := 9
+	agents := &fakeAgents{}
+	start(t, p, func(c *Config) {
+		c.Stopper, c.Agents, c.Claude = st, agents, &fakeClaude{}
+		c.ReconcileEvery = 30 * time.Millisecond
+	})
+	c := dial(t, p)
+	t0 := time.Now()
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"run00000-x","source":"startup"}`, t0, ipc.HookContext{ViewID: "v"}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{TermProgram: "ghostty"}), nil))
+	idle := "idle"
+	agents.add(bgAgent("run00000-x", "rrrrrrrr", &idle, &pid))
+	deadline := time.Now().Add(5 * time.Second)
+	for byClaude(snapshot(t, c), "run00000-x").BgID == "" {
+		if time.Now().After(deadline) {
+			t.Fatal("reconciler didn't set the short id")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	run := byClaude(snapshot(t, c), "run00000-x")
+	v := openView(t, c, run.ID)
+
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, ID: run.ID})
+	if strings.Join(st.ids, ",") != "rrrrrrrr" {
+		t.Errorf("stop calls = %v", st.ids)
+	}
+	// Claude now lists it as stopped: it stays finished.
+	agents.mu.Lock()
+	agents.agents = []claudecli.Agent{bgAgent("run00000-x", "rrrrrrrr", nil, nil)}
+	agents.mu.Unlock()
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"run00000-x","reason":"other"}`, time.Now(), ipc.HookContext{ViewID: "v"}), nil))
+	time.Sleep(150 * time.Millisecond)
+	snap := snapshot(t, c)
+	if s := byClaude(snap, "run00000-x"); s.Status != core.StatusFinished {
+		t.Errorf("after finish: %s", s.Status)
+	}
+	for _, x := range snap.Views {
+		if x.ID == v.ID && x.Selected != "" {
+			t.Errorf("view still shows it: %q", x.Selected)
+		}
+	}
+	// External sessions can't be finished; resuming brings it back.
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutFinish, ID: byClaude(snap, "ext").ID}, nil); err == nil {
+		t.Error("finished an external session")
+	}
+	agents.add(bgAgent("run00000-x", "run00000", &idle, &pid)) // Claude runs it again
+	var r core.Session
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: run.ID}, &r))
+	if r.Status != core.StatusStarting {
+		t.Errorf("resume: %s", r.Status)
+	}
+}

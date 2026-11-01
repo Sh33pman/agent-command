@@ -147,8 +147,9 @@ func (m *Model) render() string {
 	return strings.Join(out, "\n")
 }
 
-// line is "<glyph> <status> · <name> · <description>      <folder>",
-// exactly m.w wide; the description gives way first, then the folder.
+// line is "<glyph> <status> · <name> · <description>   <claude id>  <folder>",
+// exactly m.w wide. When it doesn't fit, the description gives way
+// first, then the Claude session id, then the folder.
 func (m *Model) line() string {
 	if m.w <= 0 {
 		return ""
@@ -166,24 +167,34 @@ func (m *Model) line() string {
 		status += ": " + s.StatusDetail
 	}
 	left := " " + tui.Glyph(s.Status, m.spin) + " " + dim.Render(status) + dim.Render(" · ") + bold.Render(displayName(s))
-	folder := dim.Render(tui.Tilde(s.Cwd, m.home) + " ")
+	right := []string{}
+	if s.ClaudeSessionID != "" {
+		right = append(right, dim.Render(s.ClaudeSessionID))
+	}
+	right = append(right, dim.Render(tui.Tilde(s.Cwd, m.home)))
 	desc := ""
 	if s.Description != "" {
 		desc = dim.Render(" · ") + s.Description
 	}
-	room := m.w - lipgloss.Width(left) - lipgloss.Width(folder) - 1
-	switch {
-	case room >= lipgloss.Width(desc):
-	case room > 4:
-		desc = ansi.Truncate(desc, room, "…")
+	tail := func() string { return strings.Join(right, "  ") + " " }
+	room := func() int { return m.w - lipgloss.Width(left) - lipgloss.Width(tail()) - 1 }
+	for room() < 0 && len(right) > 0 {
+		right = right[1:] // the id goes before the folder
+		desc = ""
+	}
+	switch r := room(); {
+	case r >= lipgloss.Width(desc):
+	case r > 4:
+		desc = ansi.Truncate(desc, r, "…")
 	default:
 		desc = ""
-		if room = m.w - lipgloss.Width(left) - 1; room < lipgloss.Width(folder) {
-			folder = ""
-		}
 	}
-	gap := m.w - lipgloss.Width(left) - lipgloss.Width(desc) - lipgloss.Width(folder)
-	return pad(left+desc+strings.Repeat(" ", max(1, gap))+folder, m.w)
+	t := ""
+	if len(right) > 0 {
+		t = tail()
+	}
+	gap := m.w - lipgloss.Width(left) - lipgloss.Width(desc) - lipgloss.Width(t)
+	return pad(left+desc+strings.Repeat(" ", max(1, gap))+t, m.w)
 }
 
 func displayName(s *core.Session) string {

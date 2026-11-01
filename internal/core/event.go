@@ -44,6 +44,8 @@ const (
 	EventArchived   EventKind = "acmd:archived"
 	EventUnarchived EventKind = "acmd:unarchived"
 	EventResumed    EventKind = "acmd:resumed"
+	// EventFinished: the user finished the session (acmd stopped it).
+	EventFinished EventKind = "acmd:finished"
 )
 
 // AgentStatus values from `claude agents --json` "status" (SPEC §5.3).

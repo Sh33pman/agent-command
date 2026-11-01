@@ -36,7 +36,7 @@ func adoptSession(ctx context.Context, call caller, s *core.Session, waiting fun
 	if err != nil {
 		return nil, err
 	}
-	if s.Status == core.StatusPaused || s.External == nil {
+	if s.Stopped() || s.External == nil {
 		var r core.Session
 		if err := call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r); err != nil {
 			return nil, err

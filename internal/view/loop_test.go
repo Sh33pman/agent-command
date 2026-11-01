@@ -42,6 +42,7 @@ type fakeDaemon struct {
 	gone     bool
 	sessions []*core.Session
 	resumed  []string
+	finished []string
 	resumeOK func(id string) // called on Resume
 }
 
@@ -105,6 +106,13 @@ func (f *fakeDaemon) Resume(_ context.Context, id string) (*core.Session, error)
 	return nil, nil
 }
 
+func (f *fakeDaemon) Finish(_ context.Context, id string) error {
+	f.mu.Lock()
+	f.finished = append(f.finished, id)
+	f.mu.Unlock()
+	return f.Select(context.Background(), "", "")
+}
+
 func (f *fakeDaemon) selected() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -157,8 +165,8 @@ func run(t *testing.T, d *fakeDaemon, agents ...string) *harness {
 
 	l := &Loop{
 		ViewID: "v1", Client: d, Out: h.out, Keys: &TermKeys{In: r},
-		Attach: func(bgID string) *exec.Cmd {
-			cmd := exec.Command(fakeClaude, "attach", bgID)
+		Attach: func(s *core.Session) *exec.Cmd {
+			cmd := exec.Command(fakeClaude, "attach", s.BgID)
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = r, h.out, h.out
 			cmd.Env = append(os.Environ(), "FAKECLAUDE_STATE="+h.state)
 			return cmd

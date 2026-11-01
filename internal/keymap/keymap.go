@@ -72,6 +72,7 @@ var local = []Binding{
 	{"split-out", Sidebar, "s", "split out to a tab/window", ""},
 	{"adopt", Sidebar, "M", "move your pane's session into acmd", ""},
 	{"mark", Sidebar, "space", "mark (bulk move/archive)", ""},
+	{"finish", Sidebar, "x", "finish (stop; stays listed)", ""},
 	{"archive", Sidebar, "a", "archive", ""},
 	{"archived", Sidebar, "A", "show archived", ""},
 	{"filter", Sidebar, "/", "filter (g:group)", ""},

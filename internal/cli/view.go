@@ -98,9 +98,14 @@ func runView(cmd *cobra.Command, viewID string) error {
 		Client: vc,
 		Out:    cmd.OutOrStdout(),
 		Keys:   &view.TermKeys{In: os.Stdin},
-		Attach: func(bgID string) *exec.Cmd {
-			c := exec.Command(claude, "attach", bgID) // #nosec G204 -- resolved claude binary, short id from Claude
+		Attach: func(s *core.Session) *exec.Cmd {
+			c := exec.Command(claude, "attach", s.BgID) // #nosec G204 -- resolved claude binary, short id from Claude
 			c.Stdin, c.Stdout, c.Stderr, c.Env = os.Stdin, os.Stdout, os.Stderr, env
+			// In the session's folder: Claude's agent view (← in attach)
+			// asks to trust the folder it starts in.
+			if st, err := os.Stat(s.Cwd); err == nil && st.IsDir() {
+				c.Dir = s.Cwd
+			}
 			return c
 		},
 		New: func(ctx context.Context) error {
@@ -108,6 +113,7 @@ func runView(cmd *cobra.Command, viewID string) error {
 			return err
 		},
 		Showing: termShowing(vc, viewID),
+		Term:    terminalIn(),
 	}
 	err = loop.Run(ctx)
 	switch {
@@ -190,7 +196,7 @@ func runPinned(cmd *cobra.Command, id string) error {
 	if s == nil || s.BgID == "" {
 		return errors.New("that session can't be shown here")
 	}
-	if s.Status == core.StatusPaused {
+	if s.Stopped() {
 		if s, err = vc.Resume(cmd.Context(), id); err != nil {
 			return err
 		}
@@ -323,6 +329,18 @@ func (v *viewClient) Select(ctx context.Context, viewID, sessionID string) error
 
 func (v *viewClient) Close(ctx context.Context, viewID string) error {
 	return v.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewClose, ID: viewID}, nil)
+}
+
+func (v *viewClient) Finish(ctx context.Context, id string) error {
+	return v.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutFinish, ID: id}, nil)
+}
+
+// terminalIn is stdin when it's a terminal (the view relays attach then).
+func terminalIn() *os.File {
+	if st, err := os.Stdin.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
+		return os.Stdin
+	}
+	return nil
 }
 
 func (v *viewClient) Resume(ctx context.Context, id string) (*core.Session, error) {
@@ -611,7 +629,7 @@ func newResumeCmd() *cobra.Command {
 				var targets []*core.Session
 				if all {
 					for _, s := range snap.Sessions {
-						if s.Status == core.StatusPaused && s.ClaudeSessionID != "" {
+						if s.Status == core.StatusPaused && s.ClaudeSessionID != "" { // --all: not finished ones
 							targets = append(targets, s)
 						}
 					}
@@ -624,7 +642,7 @@ func newResumeCmd() *cobra.Command {
 				}
 				var errs []error
 				for _, s := range targets {
-					if s.Status != core.StatusPaused {
+					if !s.Stopped() {
 						fmt.Fprintf(cmd.OutOrStdout(), "%s is already running.\n", nameOf(s))
 						continue
 					}

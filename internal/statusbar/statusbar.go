@@ -233,6 +233,7 @@ func (m *Model) summary() string {
 		{core.StatusStarting, "starting"},
 		{core.StatusDone, "done"},
 		{core.StatusPaused, "paused"},
+		{core.StatusFinished, "finished"},
 	} {
 		if n := count[c.st]; n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n, c.label))

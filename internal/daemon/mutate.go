@@ -68,6 +68,8 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		})
 	case ipc.MutArchive:
 		return nil, d.archive(ctx, m.ID)
+	case ipc.MutFinish:
+		return nil, d.finish(ctx, m.ID)
 	case ipc.MutUnarchive:
 		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
 			core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
@@ -214,6 +216,49 @@ func (d *Daemon) updateViewState(ctx context.Context, fn func(*core.ViewState)) 
 	return d.store.PutViewState(ctx, vs)
 }
 
+// finish stops a background session (claude stop; Claude keeps the
+// conversation) and marks it finished; views showing it go back to their
+// list. Showing it again resumes it (SPEC §5.2).
+func (d *Daemon) finish(ctx context.Context, id string) error {
+	s, err := d.store.Session(ctx, id)
+	if err != nil {
+		return err
+	}
+	switch {
+	case s.Status == core.StatusArchived:
+		return errors.New("that session is archived")
+	case s.Kind != core.KindBackground:
+		return errors.New("that session runs in your own pane: exit Claude there, or move it into acmd first")
+	case s.Status == core.StatusFinished:
+		return nil
+	}
+	if s.BgID != "" && s.Status != core.StatusPaused {
+		if d.cfg.Stopper == nil {
+			return errors.New("can't stop the background session: claude not available")
+		}
+		if err := d.cfg.Stopper.Stop(ctx, s.BgID); err != nil {
+			return fmt.Errorf("stop %s: %w", s.BgID, err)
+		}
+	}
+	core.Apply(s, core.Event{Kind: core.EventFinished, Time: d.eventTime(s)})
+	if err := d.store.UpdateSession(ctx, s); err != nil {
+		return err
+	}
+	views, err := d.store.Views(ctx)
+	if err != nil {
+		return err
+	}
+	for _, v := range views {
+		if v.Selected == s.ID {
+			if err := d.show(ctx, v, ""); err != nil {
+				return err
+			}
+		}
+	}
+	return d.store.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID, ClaudeSessionID: s.ClaudeSessionID,
+		Kind: string(core.EventFinished), Detail: string(s.Status)})
+}
+
 // archive stops a running background session (Claude keeps the
 // conversation) and marks it archived. External sessions are never
 // killed: acmd doesn't own the user's pane (SPEC §6.5).
@@ -225,7 +270,7 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 	if s.Status == core.StatusArchived {
 		return nil
 	}
-	if s.Kind == core.KindBackground && s.BgID != "" && s.Status != core.StatusPaused {
+	if s.Kind == core.KindBackground && s.BgID != "" && !s.Stopped() {
 		if d.cfg.Stopper == nil {
 			return errors.New("can't stop the background session: claude not available")
 		}

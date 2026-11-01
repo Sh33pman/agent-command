@@ -91,3 +91,28 @@ func TestHeader(t *testing.T) {
 		t.Errorf("err %v", m.Err())
 	}
 }
+
+func TestHeaderClaudeID(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := New(ctx, &fake{}, "v1", "/Users/me")
+	s := &core.Session{ID: "s1", Name: "auth", Description: "a long description of the work", Status: core.StatusDone,
+		ClaudeSessionID: "9bfb0e53-4a4c-4ce2-8afe-7c6798df5e13", Cwd: "/Users/me/w/api"}
+	state := stateMsg{resp: ipc.WatchResponse{Rev: 1, View: &core.View{ID: "v1", Selected: "s1"}}, snap: ipc.Snapshot{Sessions: []*core.Session{s}}}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 1})
+	m.Update(state)
+	if got := line(m); !strings.Contains(got, "9bfb0e53-4a4c-4ce2-8afe-7c6798df5e13  ~/w/api ") || !strings.Contains(got, "a long description") {
+		t.Errorf("wide: %q", got)
+	}
+	// Narrow: the description goes first, then the id; the folder stays.
+	m.Update(tea.WindowSizeMsg{Width: 66, Height: 1})
+	got := line(m)
+	if strings.Contains(got, "description") || !strings.Contains(got, "9bfb0e53") || ansi.StringWidth(got) != 66 {
+		t.Errorf("66 cols: %q", got)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 40, Height: 1})
+	got = line(m)
+	if strings.Contains(got, "9bfb0e53") || !strings.Contains(got, "~/w/api") || ansi.StringWidth(got) != 40 {
+		t.Errorf("40 cols: %q", got)
+	}
+}

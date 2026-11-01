@@ -191,6 +191,7 @@ func (m *Model) openMenu(r core.Row, y int) {
 			{"Edit description", func() tea.Cmd { return m.describe(s) }},
 			{"Open in editor", func() tea.Cmd { return m.do(func(ctx context.Context) error { return m.act.Open(ctx, s) }) }},
 			{"Move to group…", func() tea.Cmd { return m.openPicker(pickMove, s.GroupID, "") }},
+			{"Finish", func() tea.Cmd { return m.finish(s) }},
 			{"Archive", func() tea.Cmd { return m.archive([]*core.Session{s}) }},
 		}
 		if s.Kind == core.KindExternal {

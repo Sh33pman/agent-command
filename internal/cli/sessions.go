@@ -269,13 +269,41 @@ func newArchiveCmd() *cobra.Command {
 					return err
 				}
 				q := fmt.Sprintf("Archive %q?", s.Name)
-				if s.Kind == core.KindBackground && s.Status != core.StatusPaused {
+				if s.Kind == core.KindBackground && !s.Stopped() {
 					q = fmt.Sprintf("Archive %q? Its background session will be stopped (the conversation is kept).", s.Name)
 				}
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}
 				return c.mutate(ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil)
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
+}
+
+func newFinishCmd() *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "finish <N|id|name-prefix>",
+		Short: "Finish a session: Claude stops it; it stays listed and showing it resumes it",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+				s, err := resolveSession(snap, args[0])
+				if err != nil {
+					return err
+				}
+				q := fmt.Sprintf("Finish %s? Claude stops it; the conversation is kept and showing it resumes it.", nameOf(s))
+				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
+					return err
+				}
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutFinish, ID: s.ID}, nil); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Finished %s.\n", nameOf(s))
+				return nil
 			})
 		},
 	}

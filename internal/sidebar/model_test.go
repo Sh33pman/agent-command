@@ -506,8 +506,8 @@ func TestMouse(t *testing.T) {
 
 	// Right-click: a session menu; choose Archive with the mouse.
 	click(tea.MouseRight, 3)
-	h.wantScreen("Show", "Edit description", "Open in editor", "Move to group…", "Archive")
-	click(tea.MouseLeft, h.m.menu.y+5)
+	h.wantScreen("Show", "Edit description", "Open in editor", "Move to group…", "Finish", "Archive")
+	click(tea.MouseLeft, h.m.menu.y+6)
 	h.wantScreen("Archive “refactor auth")
 	h.keys("n")
 	// Group menu with keys; Esc closes; a click outside closes.
@@ -703,4 +703,17 @@ func TestGlobalKeysFromGhostty(t *testing.T) {
 	}
 	press("pick")
 	h.wantScreen("Filter")
+}
+
+func TestFinishKey(t *testing.T) {
+	h := newHarness(t, listSnap(), "")
+	n := len(h.f.mutations)
+	h.keys("x")
+	h.wantScreen("Finish “refactor")
+	h.keys("n")
+	if len(h.f.mutations) != n {
+		t.Fatal("finished without a yes")
+	}
+	h.keys("x", "y")
+	h.wantMutation(ipc.Mutation{Kind: ipc.MutFinish, ID: "a"})
 }

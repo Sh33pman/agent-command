@@ -382,7 +382,7 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 		return nil, errors.New("that session is archived (acmd unarchive first)")
 	case s.ClaudeSessionID == "":
 		return nil, errors.New("that session has no Claude conversation to resume")
-	case s.Status != core.StatusPaused:
+	case !s.Stopped():
 		return s, nil // already running
 	}
 	bgID, err := d.cfg.Claude.Resume(ctx, s.Cwd, s.ClaudeSessionID)

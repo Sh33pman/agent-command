@@ -514,6 +514,10 @@ func (m *Model) key(k tea.KeyPressMsg) tea.Cmd {
 		if ok && r.Session == nil {
 			return m.deleteGroup(r.Group)
 		}
+	case "x":
+		if ok && r.Session != nil {
+			return m.finish(r.Session)
+		}
 	case "a":
 		if ok && r.Session == nil {
 			return m.archiveGroup(r.Group, r.Count)
@@ -716,7 +720,7 @@ func (m *Model) archive(ss []*core.Session) tea.Cmd {
 	}
 	running := 0
 	for _, s := range ss {
-		if s.Kind == core.KindBackground && s.Status != core.StatusPaused && s.Status != core.StatusArchived {
+		if s.Kind == core.KindBackground && !s.Stopped() && s.Status != core.StatusArchived {
 			running++
 		}
 	}
@@ -828,7 +832,7 @@ func (m *Model) adopt(s *core.Session) tea.Cmd {
 	}
 	return m.ask2("Move "+quote(name(s))+" into acmd? Claude continues it in the background; your pane goes back to the shell.", func() tea.Cmd {
 		m.note = "Moving " + quote(name(s)) + " into acmd…"
-		if cur := m.session(s.ID); cur != nil && cur.Status != core.StatusDone && cur.Status != core.StatusError && cur.Status != core.StatusPaused {
+		if cur := m.session(s.ID); cur != nil && cur.Status != core.StatusDone && cur.Status != core.StatusError && !cur.Stopped() {
 			m.note = "Will move " + quote(name(s)) + " into acmd once Claude is idle there…"
 		}
 		return m.do(func(ctx context.Context) error { return m.act.Adopt(ctx, s) })
@@ -895,4 +899,20 @@ func (m *Model) globalKey(action string) tea.Cmd {
 		return nil
 	}
 	return m.key(k)
+}
+
+// finish asks, then finishes s: Claude stops it and it shows as finished
+// (it stays in the list; showing it resumes it; SPEC §5.2).
+func (m *Model) finish(s *core.Session) tea.Cmd {
+	switch {
+	case s.Kind != core.KindBackground:
+		m.note = "That session runs in your own pane: exit Claude there."
+		return nil
+	case s.Status == core.StatusFinished:
+		m.note = quote(name(s)) + " is finished already. Showing it resumes it."
+		return nil
+	}
+	return m.ask2("Finish "+quote(name(s))+"? Claude stops it; the conversation is kept and showing it resumes it.", func() tea.Cmd {
+		return m.mutate(ipc.Mutation{Kind: ipc.MutFinish, ID: s.ID})
+	})
 }

@@ -179,7 +179,7 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 // unlisted handles a live session Claude doesn't list.
 func (r *Reconciler) unlisted(s *core.Session) bool {
 	switch s.Status {
-	case core.StatusPaused, core.StatusArchived:
+	case core.StatusPaused, core.StatusFinished, core.StatusArchived:
 		return false
 	}
 	if s.Kind == core.KindExternal {
@@ -209,7 +209,7 @@ func (r *Reconciler) apply(s *core.Session, agentStatus string) bool {
 func agrees(ours core.Status, theirs string) bool {
 	switch theirs {
 	case core.AgentStopped:
-		return ours == core.StatusPaused
+		return ours == core.StatusPaused || ours == core.StatusFinished
 	case core.AgentBusy:
 		return ours == core.StatusBusy || ours == core.StatusStarting
 	case core.AgentWaiting:

@@ -255,7 +255,7 @@ func (m *Model) render() string {
 	active, paused := 0, 0
 	for _, s := range m.snap.Sessions {
 		switch s.Status {
-		case core.StatusPaused:
+		case core.StatusPaused, core.StatusFinished:
 			paused++
 		case core.StatusArchived:
 		default:

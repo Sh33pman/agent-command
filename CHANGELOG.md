@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/brettmostert/agent-command/compare/v0.15.0...v0.16.0) (2026-11-01)
+
+
+### Features
+
+* **sessions:** add acmd purge ([#40](https://github.com/brettmostert/agent-command/issues/40)) ([826d31e](https://github.com/brettmostert/agent-command/commit/826d31e03421ef7f567d3000f8d4b897480a51db))
+
 ## [0.15.0](https://github.com/brettmostert/agent-command/compare/v0.14.0...v0.15.0) (2026-11-01)
 
 

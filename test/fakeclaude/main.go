@@ -97,6 +97,24 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("ATTACHED %s\n", args[1])
+		if typed := os.Getenv("FAKECLAUDE_TYPED"); typed != "" {
+			// Record what's typed; Ctrl+Z (SIGTSTP in a terminal) detaches,
+			// like the real attach.
+			tstp := make(chan os.Signal, 1)
+			signal.Notify(tstp, syscall.SIGTSTP)
+			go func() {
+				sc := bufio.NewScanner(os.Stdin)
+				for sc.Scan() {
+					f, err := os.OpenFile(filepath.Clean(typed), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 G703 -- the test's own file
+					if err == nil {
+						fmt.Fprintln(f, sc.Text())
+						_ = f.Close()
+					}
+				}
+			}()
+			<-tstp
+			return
+		}
 		waitForEnd("detach", false)
 	case args[0] == "agents":
 		_ = json.NewEncoder(os.Stdout).Encode(st.Agents)

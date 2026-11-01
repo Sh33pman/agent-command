@@ -47,6 +47,14 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify}
 			if c, err := config.Load(p.Config()); err == nil {
 				cfg.Notify = &c.Notify
+				if c.Popup.Enabled { // the reply popup runs alongside (SPEC §8.8)
+					go func() {
+						time.Sleep(time.Second) // once the socket listens
+						if err := spawnPopup(p); err != nil {
+							logger.Printf("popup: %v", err)
+						}
+					}()
+				}
 			} else {
 				logger.Printf("config: %v (notifications off)", err)
 			}

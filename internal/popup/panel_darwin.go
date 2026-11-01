@@ -11,6 +11,7 @@ void acmdPopupUpdate(const char *json);
 void acmdPopupSetBindings(const char *json);
 int acmdPopupRegisterHotKey(int keyCode, int mods, int id);
 const char *acmdPopupFrame(void);
+const char *acmdFrontmostApp(void);
 */
 import "C"
 
@@ -134,6 +135,13 @@ var virtualKeys = map[string]int{
 // Frame describes the panel's window (diagnostics; not on AppKit's thread).
 func Frame() string {
 	cs := C.acmdPopupFrame()
+	defer C.free(unsafe.Pointer(cs))
+	return C.GoString(cs)
+}
+
+// FrontmostApp is the bundle id of the app in front (e.g. net.kovidgoyal.kitty).
+func FrontmostApp() string {
+	cs := C.acmdFrontmostApp()
 	defer C.free(unsafe.Pointer(cs))
 	return C.GoString(cs)
 }

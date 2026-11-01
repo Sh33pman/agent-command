@@ -19,3 +19,6 @@ func Supported() bool { return false }
 
 // Frame is empty without the native panel.
 func Frame() string { return "" }
+
+// FrontmostApp is unknown without the native panel.
+func FrontmostApp() string { return "" }

@@ -261,6 +261,11 @@ static NSScrollView *scrolling(NSTextView *tv) {
 }
 @end
 
+const char *acmdFrontmostApp(void) {
+    NSString *b = NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier ?: @"";
+    return strdup([b UTF8String]);
+}
+
 const char *acmdPopupFrame(void) {
     __block NSString *s = @"";
     dispatch_sync(dispatch_get_main_queue(), ^{

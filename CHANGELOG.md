@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/brettmostert/agent-command/compare/v0.19.0...v0.20.0) (2026-11-01)
+
+
+### Features
+
+* **sessions:** resume on show, and move a pane's session in with cmd+shift+m ([#54](https://github.com/brettmostert/agent-command/issues/54)) ([0f249a6](https://github.com/brettmostert/agent-command/commit/0f249a6250496257031556341c0cc0bbb076be0f))
+
 ## [0.19.0](https://github.com/brettmostert/agent-command/compare/v0.18.0...v0.19.0) (2026-11-01)
 
 

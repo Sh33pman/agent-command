@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/brettmostert/agent-command/compare/v0.28.1...v0.29.0) (2026-11-01)
+
+
+### Features
+
+* **sidebar:** folder picker for new sessions that never starts in a worktree ([#102](https://github.com/brettmostert/agent-command/issues/102)) ([2f8e59e](https://github.com/brettmostert/agent-command/commit/2f8e59e7c9fd7918020da401a04e29988a8f0408))
+
 ## [0.28.1](https://github.com/brettmostert/agent-command/compare/v0.28.0...v0.28.1) (2026-11-01)
 
 

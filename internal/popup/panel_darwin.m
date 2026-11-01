@@ -27,6 +27,7 @@ static void emit(NSString *kind, NSString *text, int n) {
 @property(strong) NSButton *play;
 @property(strong) NSArray *bindings;
 @property(assign) BOOL canReply;
+@property(assign) NSInteger reply;
 @end
 
 static AcmdController *ctl;
@@ -246,8 +247,12 @@ static NSScrollView *scrolling(NSTextView *tv) {
     self.canReply = [s[@"canReply"] boolValue];
     self.input.editable = self.canReply;
     self.inputScroll.hidden = !self.canReply;
-    if (![self.title.stringValue isEqualToString:oldTitle] || ![body isEqualToString:oldBody]) {
-        self.input.string = @""; // another item: start a fresh reply
+    // A new reply: the reply box starts empty (Go bumps "reply" when the
+    // last one was sent, or another item is shown).
+    NSInteger reply = [s[@"reply"] integerValue];
+    if (reply != self.reply || ![self.title.stringValue isEqualToString:oldTitle] || ![body isEqualToString:oldBody]) {
+        self.input.string = @"";
+        self.reply = reply;
     }
     for (NSView *v in [self.options.arrangedSubviews copy]) [v removeFromSuperview];
     NSArray *opts = s[@"options"];

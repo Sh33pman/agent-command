@@ -16,6 +16,8 @@ type Inbox struct {
 	Open    bool
 	Note    string // a line under the buttons ("Sending…", an error)
 	Playing bool
+	// Reply numbers the reply being written (see State.Reply).
+	Reply int
 	// Sessions names items (by session id) and gives their details line.
 	Sessions map[string]*core.Session
 	Home     string
@@ -76,6 +78,7 @@ func (b *Inbox) Move(delta int) {
 	}
 	b.Current = b.Items[((i+delta)%n+n)%n].SessionID
 	b.Note = ""
+	b.Reply++
 }
 
 // Show opens the panel on session id's item (or keeps the current one).
@@ -112,6 +115,13 @@ func (b *Inbox) Remove(id string) {
 		b.Open = false
 	}
 	b.Note = ""
+	b.Reply++
+}
+
+// Sent marks the reply as sent: the reply box is emptied.
+func (b *Inbox) Sent() {
+	b.Reply++
+	b.Note = ""
 }
 
 // State is what the panel shows.
@@ -120,7 +130,7 @@ func (b *Inbox) State() State {
 	if !b.Open || it == nil {
 		return State{}
 	}
-	s := State{Visible: true, Body: it.Text, Options: it.Options, Playing: b.Playing, Note: b.Note,
+	s := State{Visible: true, Body: it.Text, Options: it.Options, Playing: b.Playing, Note: b.Note, Reply: b.Reply,
 		Counter: fmt.Sprintf("%d of %d", b.index()+1, len(b.Items))}
 	title, meta := "session", ""
 	if sess := b.Sessions[it.SessionID]; sess != nil {

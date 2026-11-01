@@ -80,3 +80,24 @@ func TestInboxKinds(t *testing.T) {
 		t.Errorf("permission: %+v", s)
 	}
 }
+
+func TestInboxReplyResets(t *testing.T) {
+	b := &Inbox{}
+	b.Set(items("a", "b"), nil)
+	b.Show("a")
+	r := b.State().Reply
+	b.Sent()
+	if b.State().Reply == r {
+		t.Error("sending didn't empty the reply box")
+	}
+	r = b.State().Reply
+	b.Move(1)
+	if b.State().Reply == r {
+		t.Error("another item didn't empty the reply box")
+	}
+	r = b.State().Reply
+	b.Remove("b")
+	if b.State().Reply == r {
+		t.Error("removing the shown item didn't empty the reply box")
+	}
+}

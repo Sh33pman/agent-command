@@ -23,6 +23,9 @@ type State struct {
 	Playing     bool     `json:"playing"`     // speech is playing
 	CanReply    bool     `json:"canReply"`    // the reply box is enabled
 	Note        string   `json:"note"`        // a line under the buttons (errors, "Sending…")
+	// Reply numbers the reply being written: when it changes, the reply box
+	// is emptied (after a reply was sent, or for another item).
+	Reply int `json:"reply"`
 }
 
 // Binding is one key of the panel: Key is a key name ("left", "return",

@@ -428,6 +428,7 @@ func (a *popupAgent) answer(ctx context.Context, it core.InboxItem, in replyInpu
 		}
 		_ = a.vc.call(ctx, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutInboxSkip, ID: it.SessionID}, nil)
 		a.mu.Lock()
+		a.b.Sent()
 		a.b.Remove(it.SessionID)
 		a.mu.Unlock()
 		a.render()

@@ -112,7 +112,7 @@ func TestStartBackground(t *testing.T) {
 	if err != nil || id != "9df2c810" {
 		t.Fatalf("StartBackground = %q, %v", id, err)
 	}
-	want := []string{"/u/.local/bin/claude", "--bg", "--name", "fix it", "--model", "opus", "--", "-p looks like a flag"}
+	want := []string{"/u/.local/bin/claude", "--bg", "--remote-control", "--name", "fix it", "--model", "opus", "--", "-p looks like a flag"}
 	if !reflect.DeepEqual(f.calls[0], want) {
 		t.Errorf("argv = %q\nwant %q", f.calls[0], want)
 	}
@@ -124,6 +124,17 @@ func TestStartBackground(t *testing.T) {
 		if strings.HasPrefix(kv, "CLAUDE") {
 			t.Errorf("env leaked %s", kv)
 		}
+	}
+}
+
+func TestStartBackgroundRemoteControlNotDuplicated(t *testing.T) {
+	c, f := newFake(map[string]answer{"--bg": {out: fixture(t, "bg-start.txt")}})
+	if _, err := c.StartBackground(context.Background(), StartOptions{Dir: "/w", Args: []string{"--remote-control", "phone"}}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/u/.local/bin/claude", "--bg", "--remote-control", "phone"}
+	if !reflect.DeepEqual(f.calls[0], want) {
+		t.Errorf("argv = %q\nwant %q", f.calls[0], want)
 	}
 }
 
@@ -145,7 +156,7 @@ func TestResumeStopRemoveAgents(t *testing.T) {
 	if id, err := c.Resume(ctx, "/w", "77d411e3-6d72-4c37-890f-76c3f97f965c"); err != nil || id != "77d411e3" {
 		t.Errorf("Resume = %q %v", id, err)
 	}
-	if !reflect.DeepEqual(f.calls[0][1:], []string{"--bg", "--resume", "77d411e3-6d72-4c37-890f-76c3f97f965c"}) {
+	if !reflect.DeepEqual(f.calls[0][1:], []string{"--bg", "--remote-control", "--resume", "77d411e3-6d72-4c37-890f-76c3f97f965c"}) {
 		t.Errorf("resume argv = %q", f.calls[0])
 	}
 	if err := c.Stop(ctx, "77d411e3"); err != nil {

@@ -159,6 +159,20 @@ func (c *CLI) Agents(ctx context.Context) ([]Agent, error) {
 	return ParseAgents(out)
 }
 
+// remoteControlFlag enables Remote Control on every session acmd launches,
+// so they can be driven from a phone.
+const remoteControlFlag = "--remote-control"
+
+// hasRemoteControl reports whether the user's claude_args already set it.
+func hasRemoteControl(args []string) bool {
+	for _, a := range args {
+		if a == remoteControlFlag || strings.HasPrefix(a, remoteControlFlag+"=") {
+			return true
+		}
+	}
+	return false
+}
+
 // StartOptions configure a new background session.
 type StartOptions struct {
 	Dir    string   // folder to start in
@@ -171,6 +185,11 @@ type StartOptions struct {
 // ErrNotTrusted if Claude hasn't trusted Dir yet.
 func (c *CLI) StartBackground(ctx context.Context, o StartOptions) (string, error) {
 	args := []string{"--bg"}
+	if !hasRemoteControl(o.Args) {
+		// Placed before another flag so its optional [name] value can't
+		// swallow an argument.
+		args = append(args, remoteControlFlag)
+	}
 	if o.Name != "" {
 		args = append(args, "--name", o.Name)
 	}
@@ -187,7 +206,7 @@ func (c *CLI) StartBackground(ctx context.Context, o StartOptions) (string, erro
 
 // Resume runs `claude --bg --resume <sessionID>` (M0 C3: keeps the id).
 func (c *CLI) Resume(ctx context.Context, dir, sessionID string) (string, error) {
-	out, err := c.run(ctx, dir, "--bg", "--resume", sessionID)
+	out, err := c.run(ctx, dir, "--bg", remoteControlFlag, "--resume", sessionID)
 	if err != nil {
 		return "", err
 	}

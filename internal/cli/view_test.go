@@ -149,7 +149,7 @@ func TestNewGoResume(t *testing.T) {
 	if !strings.Contains(out, `Started "auth work" in `) || !strings.Contains(out, "Show it in a view: acmd go ") {
 		t.Errorf("new output:\n%s", out)
 	}
-	if calls := e.fakeCalls(t); !contains(calls, "--bg --name auth work --model opus -- fix it") {
+	if calls := e.fakeCalls(t); !contains(calls, "--bg --remote-control --name auth work --model opus -- fix it") {
 		t.Errorf("claude calls: %q", calls)
 	}
 	snap := e.snapshot(t)
@@ -326,7 +326,7 @@ func TestGoResumesSessionWithoutBgID(t *testing.T) {
 	var v core.View
 	must(t, e.conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, Pane: &core.PaneLoc{Terminal: "unknown"}}, &v))
 	mustRun(t, "go", s.ID)
-	if calls := e.fakeCalls(t); !contains(calls, "--bg --resume 7fcdd732-orphan") {
+	if calls := e.fakeCalls(t); !contains(calls, "--bg --remote-control --resume 7fcdd732-orphan") {
 		t.Errorf("claude calls: %q", calls)
 	}
 	for _, x := range e.snapshot(t).Views {

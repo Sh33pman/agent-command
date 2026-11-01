@@ -72,6 +72,11 @@ type Event struct {
 	Prompt           string // UserPromptSubmit only; used for the auto-name, never stored
 	Error            string // StopFailure matcher
 	AgentStatus      string // EventAgentStatus only
+	// LastMessage is Claude's final message of the turn (Stop), lines kept.
+	LastMessage string
+	// ToolInput is the tool's input (PermissionRequest, PreToolUse), as
+	// JSON, capped.
+	ToolInput json.RawMessage
 }
 
 // MaxHookPayload caps hook stdin (SPEC §11.1).
@@ -92,7 +97,15 @@ type hookPayload struct {
 	Message          string          `json:"message"`
 	Prompt           string          `json:"prompt"`
 	Error            json.RawMessage `json:"error"`
+	LastMessage      string          `json:"last_assistant_message"`
+	ToolInput        json.RawMessage `json:"tool_input"`
 }
+
+// Caps for the reply popup's data (SPEC §8.8).
+const (
+	maxLastMessage = 64 << 10
+	maxToolInput   = 16 << 10
+)
 
 // ParseHook turns a hook's stdin payload into an Event. name is the event
 // name acmd was invoked with (`acmd hook <Event>`); it wins over the
@@ -129,7 +142,34 @@ func ParseHook(name string, raw []byte, at time.Time) (Event, error) {
 		Message:          clean(p.Message, 512),
 		Prompt:           clean(p.Prompt, 4096),
 		Error:            clean(errorString(p.Error), 128),
+		LastMessage:      cleanText(p.LastMessage, maxLastMessage),
+		ToolInput:        capJSON(p.ToolInput, maxToolInput),
 	}, nil
+}
+
+// cleanText is clean for multi-line text: line breaks and tabs stay.
+func cleanText(s string, limit int) string {
+	var b strings.Builder
+	n := 0
+	for _, r := range s {
+		if n == limit {
+			break
+		}
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			continue
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// capJSON keeps raw only when it's valid JSON within limit bytes.
+func capJSON(raw json.RawMessage, limit int) json.RawMessage {
+	if len(raw) == 0 || len(raw) > limit || !json.Valid(raw) {
+		return nil
+	}
+	return append(json.RawMessage(nil), raw...)
 }
 
 // errorString accepts StopFailure's "error" as either a string or an object

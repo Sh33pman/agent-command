@@ -67,6 +67,7 @@ type Daemon struct {
 	seen    seen    // view heartbeats
 	notes   notes   // status bar messages per view (not persisted)
 	terms   terms   // sessions with a running terminal (not persisted)
+	inbox   inbox   // what the reply popup shows (not persisted)
 
 	adopting map[string]adoption // session id → a move into acmd in progress (d.mu)
 	notify   *notifier           // d.mu
@@ -315,6 +316,9 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		return err
 	}
 	d.transition(ctx, sess, tr)
+	if tr.Applied { // not a stale event
+		d.inbox.apply(sess, e)
+	}
 	return d.store.AppendEvent(ctx, store.LoggedEvent{
 		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
 		Detail: string(sess.Status), ToolName: e.ToolName,

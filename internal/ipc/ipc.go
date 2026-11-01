@@ -45,6 +45,8 @@ type Snapshot struct {
 	// Terminals are the sessions with a running terminal (SPEC §8.7),
 	// by session id.
 	Terminals map[string]Terminal `json:"terminals,omitempty"`
+	// Inbox is what the reply popup shows, oldest first (SPEC §8.8).
+	Inbox []core.InboxItem `json:"inbox,omitempty"`
 }
 
 // Terminal is a session's terminal: Shown is whether its pane is shown
@@ -95,6 +97,7 @@ const (
 	MutViewNote       = "view.note"         // ID = view, Text (empty clears), Flag = error
 	MutTerm           = "term.running"      // ID = session, Flag = running (the terminal server reports itself)
 	MutTermShown      = "term.shown"        // ID = session, Flag = shown
+	MutInboxSkip      = "inbox.skip"        // ID = session: drop its popup item
 	MutViewTouch      = "view.touch"        // ID = view: it was focused
 	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
 	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)

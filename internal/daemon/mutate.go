@@ -43,7 +43,8 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views, Notices: d.notices(), Terminals: d.terms.all()}, nil
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views, Notices: d.notices(),
+		Terminals: d.terms.all(), Inbox: d.inbox.all()}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.
@@ -181,6 +182,9 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.updateViewState(ctx, func(vs *core.ViewState) { vs.ShowArchived = m.Flag })
 	case ipc.MutViewFocus:
 		return nil, d.focus(ctx, m.GroupID)
+	case ipc.MutInboxSkip:
+		d.inbox.drop(m.ID)
+		return nil, nil
 	case ipc.MutTerm:
 		d.terms.set(m.ID, m.Flag)
 		return nil, nil
@@ -241,6 +245,7 @@ func (d *Daemon) finish(ctx context.Context, id string) error {
 		}
 	}
 	core.Apply(s, core.Event{Kind: core.EventFinished, Time: d.eventTime(s)})
+	d.inbox.drop(s.ID)
 	if err := d.store.UpdateSession(ctx, s); err != nil {
 		return err
 	}
@@ -279,6 +284,7 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 		}
 	}
 	core.Apply(s, core.Event{Kind: core.EventArchived, Time: d.eventTime(s)})
+	d.inbox.drop(s.ID)
 	if err := d.store.UpdateSession(ctx, s); err != nil {
 		return err
 	}

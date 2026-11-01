@@ -476,3 +476,46 @@ func TestResumeWaitsUntilRunning(t *testing.T) {
 		t.Errorf("bg id not recorded: %+v", got)
 	}
 }
+
+// The reply popup's inbox: a finished turn, a permission prompt that
+// replaces it, a prompt that drops it, skip, and order.
+func TestInbox(t *testing.T) {
+	p := testPaths(t)
+	start(t, p, func(c *Config) { c.Claude = &fakeClaude{} })
+	c := dial(t, p)
+	t0 := time.Now()
+	ev := func(name, payload string, at time.Time) {
+		t.Helper()
+		must(t, c.Call(ipc.OpEvent, hookEvent(name, payload, at, ipc.HookContext{ViewID: "v"}), nil))
+	}
+	ev("SessionStart", `{"session_id":"aaaa0000-1","source":"startup","cwd":"/w"}`, t0)
+	ev("SessionStart", `{"session_id":"bbbb0000-1","source":"startup","cwd":"/w"}`, t0)
+	ev("UserPromptSubmit", `{"session_id":"aaaa0000-1","prompt":"do it"}`, t0.Add(time.Second))
+	ev("Stop", `{"session_id":"aaaa0000-1","last_assistant_message":"All done.\n\nTests pass."}`, t0.Add(2*time.Second))
+	ev("PermissionRequest", `{"session_id":"bbbb0000-1","tool_name":"Bash","tool_input":{"command":"make"}}`, t0.Add(3*time.Second))
+
+	snap := snapshot(t, c)
+	a, b := byClaude(snap, "aaaa0000-1"), byClaude(snap, "bbbb0000-1")
+	if len(snap.Inbox) != 2 || snap.Inbox[0].SessionID != a.ID || snap.Inbox[0].Text != "All done.\n\nTests pass." ||
+		snap.Inbox[1].SessionID != b.ID || snap.Inbox[1].Kind != core.InboxPermission {
+		t.Fatalf("inbox: %+v", snap.Inbox)
+	}
+	// A newer item replaces the session's old one.
+	ev("UserPromptSubmit", `{"session_id":"aaaa0000-1","prompt":"more"}`, t0.Add(4*time.Second))
+	if in := snapshot(t, c).Inbox; len(in) != 1 || in[0].SessionID != b.ID {
+		t.Errorf("after working in a: %+v", in)
+	}
+	ev("Stop", `{"session_id":"aaaa0000-1","last_assistant_message":"Second answer."}`, t0.Add(5*time.Second))
+	// Answered elsewhere (the tool runs): b's prompt goes.
+	ev("PreToolUse", `{"session_id":"bbbb0000-1","tool_name":"Bash"}`, t0.Add(6*time.Second))
+	in := snapshot(t, c).Inbox
+	if len(in) != 1 || in[0].SessionID != a.ID || in[0].Text != "Second answer." {
+		t.Errorf("fresh: %+v", in)
+	}
+	// Stale events don't add anything.
+	ev("Stop", `{"session_id":"bbbb0000-1","last_assistant_message":"old"}`, t0)
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxSkip, ID: a.ID})
+	if in := snapshot(t, c).Inbox; len(in) != 0 {
+		t.Errorf("after skip: %+v", in)
+	}
+}

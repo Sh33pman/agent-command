@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/brettmostert/agent-command/compare/v0.27.0...v0.27.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **popup:** keep the open item selected when the queue updates ([#96](https://github.com/brettmostert/agent-command/issues/96)) ([a4845b8](https://github.com/brettmostert/agent-command/commit/a4845b87085b083a3267e7e1a7bb99810e8c1fd9))
+
 ## [0.27.0](https://github.com/brettmostert/agent-command/compare/v0.26.0...v0.27.0) (2026-11-01)
 
 

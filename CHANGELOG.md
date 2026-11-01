@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/brettmostert/agent-command/compare/v0.24.1...v0.24.2) (2026-11-01)
+
+
+### Bug Fixes
+
+* **daemon:** stop even when clients keep a connection open ([#75](https://github.com/brettmostert/agent-command/issues/75)) ([421a810](https://github.com/brettmostert/agent-command/commit/421a81039543948405b929f9099c431ac92e8670))
+
 ## [0.24.1](https://github.com/brettmostert/agent-command/compare/v0.24.0...v0.24.1) (2026-11-01)
 
 

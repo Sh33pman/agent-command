@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.2](https://github.com/brettmostert/agent-command/compare/v0.25.1...v0.25.2) (2026-11-01)
+
+
+### Bug Fixes
+
+* send popup replies, keep names on move-in, point the empty view at the sidebar ([#84](https://github.com/brettmostert/agent-command/issues/84)) ([d6935b5](https://github.com/brettmostert/agent-command/commit/d6935b52ff0e88f04e2ab8eb12e9b4357ab7c5aa))
+* **view:** reset the terminal when attach ends and the view closes ([#87](https://github.com/brettmostert/agent-command/issues/87)) ([d1b8c04](https://github.com/brettmostert/agent-command/commit/d1b8c04b18e8872c7c6a3514ff03cd0739f80435))
+
 ## [0.25.1](https://github.com/brettmostert/agent-command/compare/v0.25.0...v0.25.1) (2026-11-01)
 
 

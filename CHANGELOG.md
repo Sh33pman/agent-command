@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.0](https://github.com/brettmostert/agent-command/compare/v0.24.3...v0.25.0) (2026-11-01)
+
+
+### Features
+
+* **popup:** no popup for the session in the window you're in ([#81](https://github.com/brettmostert/agent-command/issues/81)) ([abeee41](https://github.com/brettmostert/agent-command/commit/abeee414e1f83b4f64f8c5e3752babeb99e13ae3))
+
+
+### Bug Fixes
+
+* **popup:** replace itself with the new version after an upgrade ([#79](https://github.com/brettmostert/agent-command/issues/79)) ([88e4097](https://github.com/brettmostert/agent-command/commit/88e40975ec3ef756a076618c9b7f65bcc044b483))
+
 ## [0.24.3](https://github.com/brettmostert/agent-command/compare/v0.24.2...v0.24.3) (2026-11-01)
 
 

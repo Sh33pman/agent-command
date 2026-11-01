@@ -519,3 +519,33 @@ func TestInbox(t *testing.T) {
 		t.Errorf("after skip: %+v", in)
 	}
 }
+
+// A session in the user's own pane that continues in another window (or
+// after the terminal restarted) gets its new pane from the next hook, so
+// focusing it and moving it into acmd reach the right window.
+func TestExternalPaneFollowsHooks(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	t0 := time.Now()
+	old := ipc.HookContext{KittyWindowID: "5", ClaudePid: 100}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext0000-1","source":"startup","cwd":"/w"}`, t0, old), nil))
+	s := byClaude(snapshot(t, c), "ext0000-1")
+	if s.Kind != core.KindExternal || s.External.KittyWindow != 5 || s.External.KittySocket != "" {
+		t.Fatalf("start: %+v %+v", s, s.External)
+	}
+	// Resumed in window 4 of a Kitty with remote control.
+	now := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/tmp/kitty-1", ClaudePid: 200}
+	must(t, c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"ext0000-1","prompt":"hi"}`, t0.Add(time.Second), now), nil))
+	s = byClaude(snapshot(t, c), "ext0000-1")
+	if s.External.KittyWindow != 4 || s.External.KittySocket != "unix:/tmp/kitty-1" || s.Pid != 200 {
+		t.Errorf("after moving: %+v pid %d", s.External, s.Pid)
+	}
+	// A hook without the socket (same window) keeps the one known; one
+	// from a view (ACMD_VIEW_ID) changes nothing.
+	must(t, c.Call(ipc.OpEvent, hookEvent("Stop", `{"session_id":"ext0000-1"}`, t0.Add(2*time.Second), ipc.HookContext{KittyWindowID: "4"}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("Notification", `{"session_id":"ext0000-1","notification_type":"idle_prompt"}`, t0.Add(3*time.Second), ipc.HookContext{ViewID: "v"}), nil))
+	if s = byClaude(snapshot(t, c), "ext0000-1"); s.External.KittyWindow != 4 || s.External.KittySocket != "unix:/tmp/kitty-1" {
+		t.Errorf("kept: %+v", s.External)
+	}
+}

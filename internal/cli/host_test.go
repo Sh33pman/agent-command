@@ -17,7 +17,7 @@ import (
 
 func TestHostArgv(t *testing.T) {
 	h := harness.Claude{Path: "/c"}
-	if got, want := hostArgv(h, hostOptions{Dir: "/w", Name: "n", Prompt: "p"}), []string{"/c", "--remote-control", "--name", "n", "--", "p"}; !reflect.DeepEqual(got, want) {
+	if got, want := hostArgv(h, hostOptions{Dir: "/w", Name: "n", Prompt: "p", ClaudeSession: "u"}), []string{"/c", "--remote-control", "--name", "n", "--session-id", "u", "--", "p"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("new = %v", got)
 	}
 	if got, want := hostArgv(h, hostOptions{Resume: "sid", Name: "ignored"}), []string{"/c", "--remote-control", "--resume", "sid"}; !reflect.DeepEqual(got, want) {
@@ -126,4 +126,30 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 		}
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+func TestAttachHost(t *testing.T) {
+	dir, err := os.MkdirTemp("", "acmdatt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "h.sock")
+	if err := attachHost(context.Background(), sock); err == nil {
+		t.Error("attach without a host should fail")
+	}
+	// The CLI exits while attached: attach returns without an error.
+	srv := &term.Server{Socket: sock, Shell: []string{"/bin/sh", "-c", "sleep 0.5"}, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"}}
+	go func() { _ = srv.Serve(context.Background()) }()
+	waitUntil(t, "host socket", func() bool { return term.Running(sock) })
+	done := make(chan error, 1)
+	go func() { done <- attachHost(context.Background(), sock) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("attach after exit: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("attach did not return when the CLI exited")
+	}
 }

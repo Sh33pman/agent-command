@@ -64,6 +64,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			} else {
 				logger.Printf("claude not found; reconciliation disabled: %v", err)
 			}
+			cfg.Hosts = execHosts{paths: p}
 			err = daemon.Run(ctx, cfg)
 			if errors.Is(err, daemon.ErrAlreadyRunning) {
 				return nil // another daemon won the race; fine

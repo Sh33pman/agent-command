@@ -163,9 +163,12 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 		s.Pid, changed = pid, true
 	}
 	// Correct the provisional classification from the hook (SPEC §6.3).
-	if a.Background() && s.Kind != core.KindBackground {
+	// (A hosted session is listed as interactive, which is expected.)
+	switch {
+	case s.Kind == core.KindHosted:
+	case a.Background() && s.Kind != core.KindBackground:
 		s.Kind, s.External, changed = core.KindBackground, nil, true
-	} else if a.Kind == "interactive" && s.Kind != core.KindExternal {
+	case a.Kind == "interactive" && s.Kind != core.KindExternal:
 		s.Kind, changed = core.KindExternal, true
 	}
 
@@ -193,6 +196,11 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 func (r *Reconciler) unlisted(s *core.Session) bool {
 	switch s.Status {
 	case core.StatusPaused, core.StatusFinished, core.StatusArchived:
+		return false
+	}
+	if s.Kind == core.KindHosted {
+		// Its host process is acmd's: SessionEnd and the host's exit say
+		// when it is gone, not Claude's listing.
 		return false
 	}
 	if s.Kind == core.KindExternal {

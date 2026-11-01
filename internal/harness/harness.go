@@ -26,14 +26,22 @@ func (s StatusSource) String() string {
 	return "unknown"
 }
 
+// Spec says what to start.
+type Spec struct {
+	Dir       string   // the folder the host runs in (informational: the host sets it)
+	Name      string   // display name, optional
+	Prompt    string   // first prompt, optional
+	SessionID string   // the CLI's own session id to use, when it can be chosen up front
+	Args      []string // the user's extra flags
+}
+
 // Harness describes one CLI that acmd can host. Argv always starts with the
 // absolute path of the binary and is run directly (never through a shell).
 type Harness interface {
 	// Name is the harness's short identifier ("claude").
 	Name() string
-	// Command is the argv that starts a new session. The host runs it in
-	// dir; name and prompt are optional; args are the user's extra flags.
-	Command(dir, name, prompt string, args []string) []string
+	// Command is the argv that starts a new session.
+	Command(Spec) []string
 	// Resume is the argv that continues an earlier session by its id.
 	Resume(sessionID string, args []string) []string
 	// StatusSource says where status comes from.

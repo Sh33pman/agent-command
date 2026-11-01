@@ -43,6 +43,9 @@ type Config struct {
 	Stopper Stopper
 	// Claude starts and resumes background sessions (claudecli.CLI).
 	Claude Claude
+	// Hosts runs hosted sessions (SPEC §4.5); when set, new and resumed
+	// sessions are hosted interactive sessions instead of `claude --bg`.
+	Hosts Hosts
 	// Remover deletes background sessions on purge (claudecli.CLI).
 	Remover Remover
 	// Notify configures notifications (nil = none).

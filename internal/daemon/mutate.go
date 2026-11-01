@@ -231,12 +231,13 @@ func (d *Daemon) finish(ctx context.Context, id string) error {
 	switch {
 	case s.Status == core.StatusArchived:
 		return errors.New("that session is archived")
-	case s.Kind != core.KindBackground:
+	case !s.Managed():
 		return errors.New("that session runs in your own pane: exit Claude there, or move it into acmd first")
 	case s.Status == core.StatusFinished:
 		return nil
 	}
-	if s.BgID != "" && s.Status != core.StatusPaused {
+	d.stopHost(s)
+	if s.Kind == core.KindBackground && s.BgID != "" && s.Status != core.StatusPaused {
 		if d.cfg.Stopper == nil {
 			return errors.New("can't stop the background session: claude not available")
 		}
@@ -275,6 +276,7 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 	if s.Status == core.StatusArchived {
 		return nil
 	}
+	d.stopHost(s)
 	if s.Kind == core.KindBackground && s.BgID != "" && !s.Stopped() {
 		if d.cfg.Stopper == nil {
 			return errors.New("can't stop the background session: claude not available")

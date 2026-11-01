@@ -101,6 +101,12 @@ func runView(cmd *cobra.Command, viewID string) error {
 		Out:    cmd.OutOrStdout(),
 		Keys:   &view.TermKeys{In: os.Stdin},
 		Attach: func(s *core.Session) *exec.Cmd {
+			if s.Kind == core.KindHosted {
+				exe, _ := executable()
+				c := exec.Command(exe, "host", "attach", "--session", s.ID) // #nosec G204 -- our own binary
+				c.Stdin, c.Stdout, c.Stderr, c.Env = os.Stdin, os.Stdout, os.Stderr, env
+				return c
+			}
 			c := exec.Command(claude, "attach", s.BgID) // #nosec G204 -- resolved claude binary, short id from Claude
 			c.Stdin, c.Stdout, c.Stderr, c.Env = os.Stdin, os.Stdout, os.Stderr, env
 			// In the session's folder: Claude's agent view (← in attach)
@@ -196,7 +202,7 @@ func runPinned(cmd *cobra.Command, id string) error {
 			s = x
 		}
 	}
-	if s == nil || s.BgID == "" {
+	if s == nil || !s.Managed() || (s.Kind == core.KindBackground && s.BgID == "") {
 		return errors.New("that session can't be shown here")
 	}
 	if s.Stopped() {
@@ -213,6 +219,9 @@ func runPinned(cmd *cobra.Command, id string) error {
 		for range sigs {
 		}
 	}()
+	if s.Kind == core.KindHosted {
+		return attachHost(cmd.Context(), p.HostSocket(s.ID))
+	}
 	c := exec.CommandContext(cmd.Context(), claude, "attach", s.BgID) // #nosec G204 -- resolved claude binary, short id from Claude
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	c.Env = procenv.Scrub(os.Environ())
@@ -407,9 +416,9 @@ func newNewCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Started %s in %s (claude attach %s).\n", nameOf(s), setup.Tilde(s.Cwd, homeDir()), s.BgID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Started %s in %s (%s).\n", nameOf(s), setup.Tilde(s.Cwd, homeDir()), attachNote(s))
 			if o.showIn == "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "Show it in a view: acmd go "+s.BgID)
+				fmt.Fprintln(cmd.OutOrStdout(), "Show it in a view: acmd go "+s.Ref())
 			}
 			return nil
 		},
@@ -654,7 +663,7 @@ func newResumeCmd() *cobra.Command {
 						errs = append(errs, fmt.Errorf("%s: %w", nameOf(s), err))
 						continue
 					}
-					fmt.Fprintf(cmd.OutOrStdout(), "Resumed %s (claude attach %s).\n", nameOf(&r), r.BgID)
+					fmt.Fprintf(cmd.OutOrStdout(), "Resumed %s (%s).\n", nameOf(&r), attachNote(&r))
 				}
 				if all && len(targets) == 0 {
 					fmt.Fprintln(cmd.OutOrStdout(), "No paused sessions.")
@@ -671,7 +680,7 @@ func nameOf(s *core.Session) string {
 	if s.Name != "" {
 		return fmt.Sprintf("%q", s.Name)
 	}
-	return "session " + s.BgID
+	return "session " + s.Ref()
 }
 
 func homeDir() string {
@@ -698,4 +707,13 @@ func placeholderHints(p paths.Paths) []string {
 	}
 	add(keys.Cheatsheet, "all shortcuts")
 	return out
+}
+
+// attachNote says how a started or resumed session is shown, for the
+// confirmation line.
+func attachNote(s *core.Session) string {
+	if s.Kind == core.KindHosted {
+		return "hosted " + s.Ref()
+	}
+	return "claude attach " + s.BgID
 }

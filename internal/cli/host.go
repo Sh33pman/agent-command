@@ -2,12 +2,18 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
+	xterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
+
+	"github.com/brettmostert/agent-command/internal/daemon"
 
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -27,14 +33,14 @@ func newHostCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 	}
-	cmd.AddCommand(newHostServeCmd())
+	cmd.AddCommand(newHostServeCmd(), newHostAttachCmd())
 	return cmd
 }
 
 // hostOptions say what a host runs.
 type hostOptions struct {
-	ID, Dir, Name, Prompt, Resume string
-	Args                          []string
+	ID, Dir, Name, Prompt, Resume, ClaudeSession string
+	Args                                         []string
 }
 
 // hostArgv builds the harness argv for a host.
@@ -42,7 +48,7 @@ func hostArgv(h harness.Harness, o hostOptions) []string {
 	if o.Resume != "" {
 		return h.Resume(o.Resume, o.Args)
 	}
-	return h.Command(o.Dir, o.Name, o.Prompt, o.Args)
+	return h.Command(harness.Spec{Dir: o.Dir, Name: o.Name, Prompt: o.Prompt, SessionID: o.ClaudeSession, Args: o.Args})
 }
 
 // hostEnv is the environment of a hosted CLI: the captured login-shell
@@ -97,6 +103,130 @@ func newHostServeCmd() *cobra.Command {
 	f.StringVar(&o.Dir, "dir", "", "the folder to run in")
 	f.StringVar(&o.Name, "name", "", "the session's name")
 	f.StringVar(&o.Prompt, "prompt", "", "the first prompt")
+	f.StringVar(&o.ClaudeSession, "claude-session", "", "the Claude session id to start with (a UUID)")
 	f.StringVar(&o.Resume, "resume", "", "continue this Claude session instead of starting a new one")
 	return cmd
+}
+
+// execHosts starts session hosts as detached `acmd host serve` processes.
+type execHosts struct{ paths paths.Paths }
+
+// Start implements daemon.Hosts.
+func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
+	exe, err := executable()
+	if err != nil {
+		return err
+	}
+	logf, err := os.OpenFile(filepath.Clean(h.paths.DaemonLog()), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer logf.Close()
+	args := []string{"host", "serve", "--session", r.ID, "--dir", r.Dir}
+	if r.Name != "" {
+		args = append(args, "--name", r.Name)
+	}
+	if r.Prompt != "" {
+		args = append(args, "--prompt", r.Prompt)
+	}
+	if r.ClaudeSession != "" {
+		args = append(args, "--claude-session", r.ClaudeSession)
+	}
+	if r.Resume != "" {
+		args = append(args, "--resume", r.Resume)
+	}
+	args = append(args, "--")
+	args = append(args, r.Args...)
+	c := exec.Command(exe, args...) // #nosec G204 -- our own binary
+	c.Env = procenv.Scrub(os.Environ())
+	c.Stdout, c.Stderr = logf, logf
+	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := c.Start(); err != nil {
+		return err
+	}
+	return c.Process.Release()
+}
+
+// newHostAttachCmd shows a session's host in this terminal until it is
+// detached (SIGTERM, how the view loop switches sessions) or the session's
+// CLI exits. It is what the view loop runs in place of `claude attach`.
+func newHostAttachCmd() *cobra.Command {
+	var id string
+	cmd := &cobra.Command{
+		Use:    "attach --session <id>",
+		Short:  "Attach this terminal to a session's host (internal)",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			p, err := paths.Default()
+			if err != nil {
+				return err
+			}
+			return attachHost(cmd.Context(), p.HostSocket(id))
+		},
+	}
+	cmd.Flags().StringVar(&id, "session", "", "the acmd session")
+	return cmd
+}
+
+// attachHost attaches the terminal to socket. A detach (SIGTERM) or the
+// CLI exiting end it without an error; no host listening is an error.
+func attachHost(parent context.Context, socket string) error {
+	if !term.Running(socket) {
+		return errors.New("the session's host isn't running")
+	}
+	ctx, cancel := signal.NotifyContext(parent, syscall.SIGTERM, syscall.SIGHUP)
+	defer cancel()
+	fd := os.Stdin.Fd()
+	if state, err := xterm.MakeRaw(fd); err == nil {
+		defer func() { _ = xterm.Restore(fd, state) }()
+	}
+	in := make(chan []byte, 16)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				in <- append([]byte(nil), buf[:n]...)
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	size := func() (int, int) {
+		cols, rows, err := xterm.GetSize(os.Stdout.Fd())
+		if err != nil {
+			return 24, 80
+		}
+		return rows, cols
+	}
+	sizes := make(chan [2]int, 1)
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	defer signal.Stop(winch)
+	go func() {
+		for range winch {
+			r, c := size()
+			select {
+			case sizes <- [2]int{r, c}:
+			default:
+			}
+		}
+	}()
+	// Raw mode hands Ctrl+C/Ctrl+Z to the CLI as input; signals that still
+	// arrive (sent to the process group) are ignored.
+	ignored := make(chan os.Signal, 4)
+	signal.Notify(ignored, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTSTP)
+	defer signal.Stop(ignored)
+	go func() {
+		for range ignored {
+		}
+	}()
+	rows, cols := size()
+	err := term.Attach(ctx, socket, in, sizes, rows, cols, os.Stdout)
+	if errors.Is(err, term.ErrEnded) {
+		return nil // the session's CLI exited
+	}
+	return err
 }

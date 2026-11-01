@@ -278,3 +278,21 @@ func TestLinksSessionsStartedByAcmd(t *testing.T) {
 		t.Errorf("%d sessions, want 1", len(all))
 	}
 }
+
+// A hosted session is listed by Claude as interactive: that must not turn
+// it into an external one, and leaving the listing must not pause it.
+func TestHostedStaysHosted(t *testing.T) {
+	r, st, l, _ := setup(t)
+	s := create(t, st, &core.Session{ClaudeSessionID: "h1", Kind: core.KindHosted, Status: core.StatusDone})
+	l.agents = []claudecli.Agent{agent("h1", "", "interactive", "busy", 11)}
+	once(t, r)
+	if got := get(t, st, s.ID); got.Kind != core.KindHosted {
+		t.Errorf("kind %v", got.Kind)
+	}
+	l.agents = nil
+	r.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status == core.StatusPaused {
+		t.Errorf("unlisted hosted session paused: %v", got.Status)
+	}
+}

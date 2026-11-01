@@ -19,9 +19,17 @@ func TestClaudeCommand(t *testing.T) {
 		{"", "-x", nil, []string{"/bin/claude", "--remote-control", "--", "-x"}},
 		{"", "", []string{"--remote-control=ci"}, []string{"/bin/claude", "--remote-control=ci"}},
 	} {
-		if got := c.Command("/w", tc.name, tc.prompt, tc.args); !reflect.DeepEqual(got, tc.want) {
+		if got := c.Command(Spec{Dir: "/w", Name: tc.name, Prompt: tc.prompt, Args: tc.args}); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("Command(%q,%q,%v) = %v, want %v", tc.name, tc.prompt, tc.args, got, tc.want)
 		}
+	}
+}
+
+func TestClaudeCommandSessionID(t *testing.T) {
+	got := Claude{Path: "/c"}.Command(Spec{Name: "n", SessionID: "u-1", Prompt: "p"})
+	want := []string{"/c", "--remote-control", "--name", "n", "--session-id", "u-1", "--", "p"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 

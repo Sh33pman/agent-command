@@ -36,6 +36,9 @@ type Kind string
 const (
 	// KindBackground is a Claude background session (`claude --bg`), viewable in acmd.
 	KindBackground Kind = "background"
+	// KindHosted is an interactive CLI that acmd hosts under its own PTY
+	// (SPEC §4.5), viewable in acmd. It replaces KindBackground for new sessions.
+	KindHosted Kind = "hosted"
 	// KindExternal is an interactive `claude` in one of the user's own panes.
 	KindExternal Kind = "external"
 )
@@ -129,13 +132,30 @@ type ViewState struct {
 	ShowArchived bool
 }
 
-// NeedsResume reports whether a view must resume s (claude --bg --resume)
-// before it can show it: a stopped background session acmd never got a
-// Claude background id for, with a conversation to resume.
+// Managed reports whether acmd runs s, so a view can show it: a background
+// or a hosted session (not one in the user's own pane).
+func (s *Session) Managed() bool { return s.Kind == KindBackground || s.Kind == KindHosted }
+
+// NeedsResume reports whether a view must resume s before it can show it:
+// a stopped background session acmd never got a Claude background id for,
+// or a stopped hosted session (its host is gone), with a conversation to
+// resume.
 func (s *Session) NeedsResume() bool {
-	return s.Kind == KindBackground && s.BgID == "" && s.Stopped() && s.ClaudeSessionID != ""
+	if s.ClaudeSessionID == "" || !s.Stopped() {
+		return false
+	}
+	return s.Kind == KindHosted || (s.Kind == KindBackground && s.BgID == "")
 }
 
 // Stopped reports whether s's Claude process isn't running by design:
 // paused (reboot, idle stop, claude stop) or finished by the user.
 func (s *Session) Stopped() bool { return s.Status == StatusPaused || s.Status == StatusFinished }
+
+// Ref names s on a command line (`acmd go <ref>`): the Claude background
+// id when it has one, else its acmd id.
+func (s *Session) Ref() string {
+	if s.BgID != "" {
+		return s.BgID
+	}
+	return s.ID
+}

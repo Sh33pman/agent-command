@@ -703,7 +703,7 @@ func (m *Model) archive(ss []*core.Session) tea.Cmd {
 	}
 	running := 0
 	for _, s := range ss {
-		if s.Kind == core.KindBackground && !s.Stopped() && s.Status != core.StatusArchived {
+		if s.Managed() && !s.Stopped() && s.Status != core.StatusArchived {
 			running++
 		}
 	}
@@ -827,7 +827,7 @@ func (m *Model) adopt(s *core.Session) tea.Cmd {
 // openSplitMenu asks where to split s out to (tab/window, session only or
 // with a sidebar; SPEC §6.6 asks every time).
 func (m *Model) openSplitMenu(s *core.Session, y int) {
-	if s.Kind != core.KindBackground {
+	if !s.Managed() {
 		m.note = "Move it into acmd first (M)."
 		return
 	}
@@ -890,7 +890,7 @@ func (m *Model) globalKey(action string) tea.Cmd {
 // (it stays in the list; showing it resumes it; SPEC §5.2).
 func (m *Model) finish(s *core.Session) tea.Cmd {
 	switch {
-	case s.Kind != core.KindBackground:
+	case !s.Managed():
 		m.note = "That session runs in your own pane: exit Claude there."
 		return nil
 	case s.Status == core.StatusFinished:

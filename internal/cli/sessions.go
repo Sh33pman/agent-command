@@ -186,6 +186,9 @@ func where(s *core.Session) string {
 		}
 		return t + " ↗"
 	}
+	if s.Kind == core.KindHosted {
+		return "acmd"
+	}
 	return "bg"
 }
 
@@ -269,7 +272,7 @@ func newArchiveCmd() *cobra.Command {
 					return err
 				}
 				q := fmt.Sprintf("Archive %q?", s.Name)
-				if s.Kind == core.KindBackground && !s.Stopped() {
+				if s.Managed() && !s.Stopped() {
 					q = fmt.Sprintf("Archive %q? Its background session will be stopped (the conversation is kept).", s.Name)
 				}
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {

@@ -178,6 +178,9 @@ func (l *Loop) show(ctx context.Context, id string) (string, error) {
 		// It failed at once: a stopped session Claude couldn't restart on
 		// attach is resumed explicitly, once (SPEC §6.2).
 		if resumed || !s.Stopped() {
+			if s.Kind == core.KindHosted {
+				return fmt.Sprintf("Couldn't show %q (its host ended at once).", displayName(s)), nil
+			}
 			return fmt.Sprintf("Couldn't show %q (claude attach %s ended at once).", displayName(s), s.BgID), nil
 		}
 		resumed = true
@@ -194,7 +197,7 @@ func (l *Loop) session(ctx context.Context, id string) (*core.Session, error) {
 	}
 	for _, s := range snap.Sessions {
 		if s.ID == id {
-			if s.BgID == "" {
+			if s.Kind == core.KindBackground && s.BgID == "" {
 				return nil, fmt.Errorf("%q has no Claude background id yet", displayName(s))
 			}
 			return s, nil
@@ -356,7 +359,7 @@ func (l *Loop) placeholder(ctx context.Context, rev uint64, note string) error {
 			switch {
 			case s == nil:
 				continue
-			case s.Kind != core.KindBackground:
+			case !s.Managed():
 				err = fmt.Errorf("%q runs in its own window: focus it there, or move it in with ⌘⇧M (sidebar M)", displayName(s))
 			case s.NeedsResume():
 				_, err = l.Client.Resume(ctx, s.ID)
@@ -431,7 +434,7 @@ func displayName(s *core.Session) string {
 	if s.Name != "" {
 		return s.Name
 	}
-	return "session " + s.BgID
+	return "session " + s.Ref()
 }
 
 // terminalReset turns off the modes Claude Code sets while attached, which

@@ -232,9 +232,9 @@ func (d *Daemon) viewable(ctx context.Context, id string) (*core.Session, error)
 	switch {
 	case s.Status == core.StatusArchived:
 		return nil, errors.New("that session is archived (acmd unarchive first)")
-	case s.Kind != core.KindBackground:
+	case !s.Managed():
 		return nil, errors.New("that session runs in your own pane, so a view can't show it")
-	case s.BgID == "":
+	case s.Kind == core.KindBackground && s.BgID == "":
 		return nil, errors.New("that session has no Claude background id yet")
 	}
 	return s, nil
@@ -248,7 +248,7 @@ func (d *Daemon) mostRecentViewable(ctx context.Context) (*core.Session, error) 
 	}
 	var best *core.Session
 	for _, s := range sessions {
-		if s.Kind != core.KindBackground || s.BgID == "" {
+		if !s.Managed() || (s.Kind == core.KindBackground && s.BgID == "") {
 			continue
 		}
 		if best == nil || activity(s).After(activity(best)) {
@@ -307,6 +307,12 @@ func (d *Daemon) pruneViews(ctx context.Context) (int, error) {
 // newSession starts `claude --bg` (outside the lock: it takes a second or
 // two and hooks must not wait) and records the session.
 func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
+	if d.cfg.Hosts != nil {
+		if req.Cwd == "" {
+			return nil, errors.New("no folder for the new session")
+		}
+		return d.hostSession(ctx, req)
+	}
 	if d.cfg.Claude == nil {
 		return nil, errors.New("claude not available: run `acmd doctor`")
 	}
@@ -368,6 +374,20 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 // (SPEC §6.2; Claude keeps the session id, M0 C3). Attaching restarts a
 // stopped session too; this is the fallback and `acmd resume`.
 func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
+	if d.cfg.Hosts != nil {
+		d.mu.Lock()
+		s, err := d.store.Session(ctx, id)
+		d.mu.Unlock()
+		if err == nil && s.Kind == core.KindHosted {
+			switch {
+			case s.Status == core.StatusArchived:
+				return nil, errors.New("that session is archived (acmd unarchive first)")
+			case !s.Stopped():
+				return s, nil
+			}
+			return d.resumeHosted(ctx, s)
+		}
+	}
 	if d.cfg.Claude == nil {
 		return nil, errors.New("claude not available: run `acmd doctor`")
 	}

@@ -16,8 +16,9 @@ type Claude struct {
 // Name implements Harness.
 func (Claude) Name() string { return "claude" }
 
-// Command implements Harness: `claude --remote-control [--name N] [args] [-- prompt]`.
-func (c Claude) Command(_, name, prompt string, args []string) []string {
+// Command implements Harness: `claude --remote-control [--name N] [--session-id U] [args] [-- prompt]`.
+func (c Claude) Command(sp Spec) []string {
+	name, prompt, args := sp.Name, sp.Prompt, sp.Args
 	argv := []string{c.Path}
 	if !hasRemoteControl(args) {
 		// Before any other flag, so its optional [name] value can't
@@ -26,6 +27,10 @@ func (c Claude) Command(_, name, prompt string, args []string) []string {
 	}
 	if name != "" {
 		argv = append(argv, "--name", name)
+	}
+	if sp.SessionID != "" {
+		// So acmd knows the id before the first hook: hooks link by it.
+		argv = append(argv, "--session-id", sp.SessionID)
 	}
 	argv = append(argv, args...)
 	if prompt != "" {

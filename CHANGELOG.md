@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.30.0](https://github.com/brettmostert/agent-command/compare/v0.29.0...v0.30.0) (2026-11-01)
+
+
+### Features
+
+* host sessions only; remove claude --bg, attach and /bg adopt ([#108](https://github.com/brettmostert/agent-command/issues/108)) ([2e52547](https://github.com/brettmostert/agent-command/commit/2e525471a85749e9de5817da256ebc6c2be2403a))
+* **host:** Harness interface and PTY host for interactive sessions ([#104](https://github.com/brettmostert/agent-command/issues/104)) ([80197b5](https://github.com/brettmostert/agent-command/commit/80197b575cee8579a71355cbc4dae5b6a35166cb))
+* **host:** new sessions run hosted; views attach through the host socket ([#106](https://github.com/brettmostert/agent-command/issues/106)) ([b01c6e6](https://github.com/brettmostert/agent-command/commit/b01c6e66397b0d6496e353d41e50a49da5fb9b84))
+* **host:** pause hosted sessions whose host is gone; sweep stale host files ([#107](https://github.com/brettmostert/agent-command/issues/107)) ([fced19a](https://github.com/brettmostert/agent-command/commit/fced19a9483f5fbb48b805a30fc4b1e82e2b12c8))
+
 ## [0.29.0](https://github.com/brettmostert/agent-command/compare/v0.28.1...v0.29.0) (2026-11-01)
 
 

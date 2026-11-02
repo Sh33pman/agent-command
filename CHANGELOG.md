@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/brettmostert/agent-command/compare/v0.32.0...v0.32.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **sidebar:** a click selects a session; Enter shows it ([#120](https://github.com/brettmostert/agent-command/issues/120)) ([6ae8374](https://github.com/brettmostert/agent-command/commit/6ae83744406204edd8f31d0c12704eb67361a368))
+
 ## [0.32.0](https://github.com/brettmostert/agent-command/compare/v0.31.1...v0.32.0) (2026-11-02)
 
 

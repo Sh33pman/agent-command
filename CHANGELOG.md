@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.32.0](https://github.com/brettmostert/agent-command/compare/v0.31.1...v0.32.0) (2026-11-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **speech:** remove the Python speech engine; install and uninstall clean up old Python setups ([#118](https://github.com/brettmostert/agent-command/issues/118))
+
+### Features
+
+* **speech:** remove the Python speech engine; install and uninstall clean up old Python setups ([#118](https://github.com/brettmostert/agent-command/issues/118)) ([78fc1d5](https://github.com/brettmostert/agent-command/commit/78fc1d5532256d6193be9af971dabcf50af4d636))
+
 ## [0.31.1](https://github.com/brettmostert/agent-command/compare/v0.31.0...v0.31.1) (2026-11-02)
 
 

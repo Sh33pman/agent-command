@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/brettmostert/agent-command/internal/config"
@@ -28,7 +29,8 @@ var Contexts = []string{Global, Sidebar, Groups, Mouse}
 type Binding struct {
 	Action  string `json:"action"`
 	Context string `json:"context"`
-	Key     string `json:"key"` // as shown, e.g. "⌘⇧N" or "⌘⇧S → n"
+	Section string `json:"section,omitempty"` // subsection within the sheet, e.g. "Groups"
+	Key     string `json:"key"`               // as shown, e.g. "⌘⇧N" or "⌘⇧S → n"
 	Desc    string `json:"description"`
 	Unbound string `json:"unbound,omitempty"` // why init didn't bind it
 }
@@ -58,41 +60,53 @@ var globals = []global{
 	}},
 }
 
+// Sidebar subsections (Binding.Section), in the order the sheet lists
+// them. Global and mouse keys have no subsections.
+const (
+	SecNavigate = "Navigate"
+	SecSessions = "Sessions"
+	SecGroups   = "Groups"
+	SecFilter   = "Filter & sort"
+	SecView     = "View"
+)
+
 // local are the sidebar's own keys and mouse actions (as implemented in
-// internal/sidebar).
+// internal/sidebar), in sheet order. Group-header keys are their own
+// context (hidden while no groups exist) but share the sidebar's Groups
+// subsection with the other grouping keys.
 var local = []Binding{
-	{"show", Sidebar, "↵ 1–9", "show session", ""},
-	{"move-cursor", Sidebar, "↑↓ j k", "move", ""},
-	{"new", Sidebar, "n", "new session", ""},
-	{"new-in", Sidebar, "N", "new session (same folder picker as n)", ""},
-	{"rename", Sidebar, "r", "rename", ""},
-	{"describe", Sidebar, "e", "describe", ""},
-	{"open", Sidebar, "E", "open in editor", ""},
-	{"move", Sidebar, "m", "move to group", ""},
-	{"split-out", Sidebar, "s", "split out to a tab/window", ""},
-	{"adopt", Sidebar, "M", "move your pane's session into acmd", ""},
-	{"mark", Sidebar, "space", "mark (bulk move/archive)", ""},
-	{"finish", Sidebar, "x", "finish (stop; stays listed)", ""},
-	{"archive", Sidebar, "a", "archive", ""},
-	{"archived", Sidebar, "A", "show archived", ""},
-	{"filter", Sidebar, "/", "filter (g:group)", ""},
-	{"view", Sidebar, "v", "groups ↔ list", ""},
-	{"sort", Sidebar, "o O", "sort · direction", ""},
-	{"attention", Sidebar, "Tab", "next needing you", ""},
-	{"hide", Sidebar, "h", "hide sidebar", ""},
-	{"term", Sidebar, "t", "session terminal: create · show/hide ($ = has one)", ""},
-	{"quit", Sidebar, "q", "close this view (sessions keep running)", ""},
-	{"compact", Sidebar, "c", "compact rows", ""},
-	{"back", Sidebar, "Esc", "back to the session", ""},
-	{"keys", Sidebar, "?", "shortcuts", ""},
-	{"collapse", Groups, "space ← →", "collapse · expand", ""},
-	{"focus-group", Groups, "f", "focus group (f/Esc leave)", ""},
-	{"collapse-all", Groups, "z", "collapse/expand all", ""},
-	{"reorder", Groups, "K J", "move group up · down", ""},
-	{"delete-group", Groups, "D", "delete group", ""},
-	{"click", Mouse, "click", "select · collapse", ""},
-	{"right-click", Mouse, "right-click", "menu", ""},
-	{"wheel", Mouse, "wheel", "scroll", ""},
+	{"show", Sidebar, SecNavigate, "↵ 1–9", "show session", ""},
+	{"move-cursor", Sidebar, SecNavigate, "↑↓ j k", "move", ""},
+	{"attention", Sidebar, SecNavigate, "Tab", "next needing you", ""},
+	{"back", Sidebar, SecNavigate, "Esc", "back to the session", ""},
+	{"new", Sidebar, SecSessions, "n", "new session", ""},
+	{"new-in", Sidebar, SecSessions, "N", "new session (same folder picker as n)", ""},
+	{"rename", Sidebar, SecSessions, "r", "rename", ""},
+	{"describe", Sidebar, SecSessions, "e", "describe", ""},
+	{"open", Sidebar, SecSessions, "E", "open in editor", ""},
+	{"term", Sidebar, SecSessions, "t", "session terminal: create · show/hide ($ = has one)", ""},
+	{"mark", Sidebar, SecSessions, "space", "mark (bulk move/archive)", ""},
+	{"finish", Sidebar, SecSessions, "x", "finish (stop; stays listed)", ""},
+	{"archive", Sidebar, SecSessions, "a", "archive", ""},
+	{"split-out", Sidebar, SecSessions, "s", "split out to a tab/window", ""},
+	{"adopt", Sidebar, SecSessions, "M", "move your pane's session into acmd", ""},
+	{"move", Sidebar, SecGroups, "m", "move to group", ""},
+	{"view", Sidebar, SecGroups, "v", "groups ↔ list", ""},
+	{"collapse", Groups, SecGroups, "space ← →", "collapse · expand", ""},
+	{"focus-group", Groups, SecGroups, "f", "focus group (f/Esc leave)", ""},
+	{"collapse-all", Groups, SecGroups, "z", "collapse/expand all", ""},
+	{"reorder", Groups, SecGroups, "K J", "move group up · down", ""},
+	{"delete-group", Groups, SecGroups, "D", "delete group", ""},
+	{"filter", Sidebar, SecFilter, "/", "filter (g:group)", ""},
+	{"archived", Sidebar, SecFilter, "A", "show archived", ""},
+	{"sort", Sidebar, SecFilter, "o O", "sort · direction", ""},
+	{"hide", Sidebar, SecView, "h", "hide sidebar", ""},
+	{"compact", Sidebar, SecView, "c", "compact rows", ""},
+	{"quit", Sidebar, SecView, "q", "close this view (sessions keep running)", ""},
+	{"keys", Sidebar, SecView, "?", "shortcuts", ""},
+	{"click", Mouse, "", "click", "select · collapse", ""},
+	{"right-click", Mouse, "", "right-click", "menu", ""},
+	{"wheel", Mouse, "", "wheel", "scroll", ""},
 }
 
 // Registry builds the bindings for a terminal ("kitty" or "ghostty"; the
@@ -113,8 +127,8 @@ func Registry(keys config.Keys, _ string, skipped map[string]string) []Binding {
 	return append(out, local...)
 }
 
-// Filter keeps bindings in context ("" = all) that match query (key or
-// description, case-insensitive). groups=false drops group-only entries
+// Filter keeps bindings in context ("" = all) that match query (key,
+// description or section, case-insensitive). groups=false drops group-only entries
 // (no groups yet: the sidebar shows no headers).
 func Filter(bs []Binding, context, query string, groups bool) []Binding {
 	q := strings.ToLower(strings.TrimSpace(query))
@@ -126,7 +140,7 @@ func Filter(bs []Binding, context, query string, groups bool) []Binding {
 		if !groups && b.Context == Groups {
 			continue
 		}
-		if q != "" && !strings.Contains(strings.ToLower(b.Key+" "+b.Desc+" "+b.Action), q) {
+		if q != "" && !strings.Contains(strings.ToLower(b.Key+" "+b.Desc+" "+b.Action+" "+b.Section), q) {
 			continue
 		}
 		out = append(out, b)
@@ -182,38 +196,89 @@ func Pretty(key string) string {
 	return b.String() + k
 }
 
+// section is one headed block of the sheet.
+type section struct {
+	heading string
+	items   []Binding
+}
+
+// parent is the context a context's keys are listed under: group-header
+// keys belong to the sidebar.
+func parent(c string) string {
+	if c == Groups {
+		return Sidebar
+	}
+	return c
+}
+
+// Heading is the title b is listed under, e.g. "Global" or
+// "Sidebar / Groups".
+func Heading(b Binding) string {
+	h := title(parent(b.Context))
+	if b.Section != "" {
+		h += " / " + b.Section
+	}
+	return h
+}
+
+// sections groups the bindings of the contexts in order under their
+// headings: contexts in order, and within a context its headings in
+// registry order. A heading shared by several contexts (Sidebar / Groups)
+// comes with the first of them and lists the keys of all of them, in
+// registry order.
+func sections(bs []Binding, order []string) []section {
+	var out []section
+	at := map[string]int{}
+	for _, c := range order {
+		for _, b := range bs {
+			if b.Context != c {
+				continue
+			}
+			if _, ok := at[Heading(b)]; !ok {
+				at[Heading(b)] = len(out)
+				out = append(out, section{heading: Heading(b)})
+			}
+		}
+	}
+	for _, b := range bs {
+		if i, ok := at[Heading(b)]; ok && slices.Contains(order, b.Context) {
+			out[i].items = append(out[i].items, b)
+		}
+	}
+	return out
+}
+
+// describe is b's description with why it's unbound, if it is.
+func describe(b Binding) string {
+	if b.Unbound != "" {
+		return b.Desc + " (unbound: " + b.Unbound + ")"
+	}
+	return b.Desc
+}
+
+// clip cuts l to width columns (0 = unlimited).
+func clip(l string, width int) string {
+	if width > 0 && len([]rune(l)) > width {
+		return string([]rune(l)[:width-1]) + "…"
+	}
+	return l
+}
+
 // Lines renders the sheet as plain lines of at most width columns (0 =
 // unlimited), sections in order.
 func Lines(bs []Binding, order []string, width int) []string {
 	var out []string
-	for _, c := range order {
-		var sec []Binding
-		for _, b := range bs {
-			if b.Context == c {
-				sec = append(sec, b)
-			}
-		}
-		if len(sec) == 0 {
-			continue
-		}
+	for _, sec := range sections(bs, order) {
 		if len(out) > 0 {
 			out = append(out, "")
 		}
-		out = append(out, "── "+title(c)+" ──")
+		out = append(out, clip("── "+sec.heading+" ──", width))
 		kw := 0
-		for _, b := range sec {
+		for _, b := range sec.items {
 			kw = max(kw, len([]rune(b.Key)))
 		}
-		for _, b := range sec {
-			desc := b.Desc
-			if b.Unbound != "" {
-				desc += " (unbound: " + b.Unbound + ")"
-			}
-			l := fmt.Sprintf("%-*s  %s", kw, b.Key, desc)
-			if width > 0 && len([]rune(l)) > width {
-				l = string([]rune(l)[:width-1]) + "…"
-			}
-			out = append(out, l)
+		for _, b := range sec.items {
+			out = append(out, clip(fmt.Sprintf("%-*s  %s", kw, b.Key, describe(b)), width))
 		}
 	}
 	return out
@@ -233,21 +298,10 @@ func Write(w io.Writer, bs []Binding, order []string, format, terminal string) e
 		return enc.Encode(bs)
 	case "markdown":
 		fmt.Fprintf(w, "# acmd shortcuts (%s)\n", terminal)
-		for _, c := range order {
-			first := true
-			for _, b := range bs {
-				if b.Context != c {
-					continue
-				}
-				if first {
-					fmt.Fprintf(w, "\n## %s\n\n| Key | Action |\n|---|---|\n", title(c))
-					first = false
-				}
-				desc := b.Desc
-				if b.Unbound != "" {
-					desc += " (unbound: " + b.Unbound + ")"
-				}
-				fmt.Fprintf(w, "| `%s` | %s |\n", strings.ReplaceAll(b.Key, "|", "\\|"), desc)
+		for _, sec := range sections(bs, order) {
+			fmt.Fprintf(w, "\n## %s\n\n| Key | Action |\n|---|---|\n", sec.heading)
+			for _, b := range sec.items {
+				fmt.Fprintf(w, "| `%s` | %s |\n", strings.ReplaceAll(b.Key, "|", "\\|"), describe(b))
 			}
 		}
 		return nil

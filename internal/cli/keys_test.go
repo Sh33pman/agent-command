@@ -39,16 +39,16 @@ func TestKeysCommand(t *testing.T) {
 	t.Setenv("KITTY_WINDOW_ID", "")
 
 	out := mustRun(t, "keys")
-	for _, want := range []string{"Shortcuts · Kitty", "⌘B     hide/show sidebar", "next needing you (unbound: conflicts with Kitty's default select_all)", "── Sidebar ──"} {
+	for _, want := range []string{"Shortcuts · Kitty", "⌘B     hide/show sidebar", "next needing you (unbound: conflicts with Kitty's default select_all)", "── Sidebar / Navigate ──", "── Sidebar / Groups ──", "── Sidebar / Filter & sort ──"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("keys lacks %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "── Groups ──") {
+	if strings.Contains(out, "delete group") {
 		t.Error("group keys shown without groups")
 	}
 	mustRun(t, "group", "create", "PROJ")
-	if out := mustRun(t, "keys", "--context", "groups", "--format", "markdown", "--terminal", "ghostty"); !strings.Contains(out, "## Groups") || strings.Contains(out, "## Sidebar") {
+	if out := mustRun(t, "keys", "--context", "groups", "--format", "markdown", "--terminal", "ghostty"); !strings.Contains(out, "## Sidebar / Groups") || strings.Contains(out, "## Sidebar / Navigate") {
 		t.Errorf("markdown groups:\n%s", out)
 	}
 	var bs []keymap.Binding

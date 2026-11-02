@@ -75,6 +75,86 @@ func TestRegistry(t *testing.T) {
 	}
 }
 
+// The sheet is split into subsections, with every grouping key (sidebar
+// m/v and the group-header keys) under one Sidebar / Groups heading
+// (PAN-19).
+func TestSections(t *testing.T) {
+	bs := Registry(config.Default().Keys, "kitty", nil)
+	for _, b := range bs {
+		if b.Context == Sidebar || b.Context == Groups {
+			if b.Section == "" {
+				t.Errorf("sidebar key without a section: %+v", b)
+			}
+		} else if b.Section != "" {
+			t.Errorf("unexpected section: %+v", b)
+		}
+	}
+	headings := func(lines []string) []string {
+		var hs []string
+		for _, l := range lines {
+			if strings.HasPrefix(l, "── ") {
+				hs = append(hs, strings.TrimSuffix(strings.TrimPrefix(l, "── "), " ──"))
+			}
+		}
+		return hs
+	}
+	want := []string{"Global", "Sidebar / Navigate", "Sidebar / Sessions", "Sidebar / Groups", "Sidebar / Filter & sort", "Sidebar / View", "Mouse"}
+	lines := Lines(bs, Ordered(""), 0)
+	if got := headings(lines); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("headings %q, want %q", got, want)
+	}
+	under := func(lines []string, heading string) string {
+		var sec []string
+		in := false
+		for _, l := range lines {
+			if strings.HasPrefix(l, "── ") {
+				in = l == "── "+heading+" ──"
+				continue
+			}
+			if in {
+				sec = append(sec, l)
+			}
+		}
+		return strings.Join(sec, "\n")
+	}
+	groups := under(lines, "Sidebar / Groups")
+	for _, k := range []string{"move to group", "groups ↔ list", "collapse · expand", "focus group", "delete group"} {
+		if !strings.Contains(groups, k) {
+			t.Errorf("Sidebar / Groups lacks %q:\n%s", k, groups)
+		}
+	}
+	if f := under(lines, "Sidebar / Filter & sort"); !strings.Contains(f, "filter (g:group)") || strings.Contains(f, "group up") {
+		t.Errorf("Filter section:\n%s", f)
+	}
+
+	// The sidebar's own sheet lists its sections first; without groups the
+	// Groups section keeps only m and v.
+	sb := Lines(Filter(bs, "", "", false), Ordered(Sidebar), 0)
+	if hs := headings(sb); hs[0] != "Sidebar / Navigate" || hs[len(hs)-2] != "Global" {
+		t.Errorf("sidebar order %q", hs)
+	}
+	if g := under(sb, "Sidebar / Groups"); strings.Contains(g, "delete group") || !strings.Contains(g, "move to group") {
+		t.Errorf("groups without groups:\n%s", g)
+	}
+	// --context groups: only the header keys, still under Sidebar / Groups.
+	if hs := headings(Lines(Filter(bs, Groups, "", true), Ordered(Groups), 0)); len(hs) != 1 || hs[0] != "Sidebar / Groups" {
+		t.Errorf("groups context %q", hs)
+	}
+	// Searching a section name finds its keys.
+	if got := Filter(bs, "", "filter & sort", true); len(got) != 3 {
+		t.Errorf("search section: %+v", got)
+	}
+	// Narrow sidebars clip headings too.
+	for _, l := range Lines(bs, Ordered(Sidebar), 12) {
+		if len([]rune(l)) > 12 {
+			t.Errorf("too wide: %q", l)
+		}
+	}
+	if testing.Verbose() {
+		t.Log("\n" + strings.Join(lines, "\n"))
+	}
+}
+
 func TestWrite(t *testing.T) {
 	bs := Registry(config.Default().Keys, "kitty", map[string]string{"pick": "x|y"})
 	var b bytes.Buffer

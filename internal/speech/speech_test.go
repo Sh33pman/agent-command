@@ -92,43 +92,7 @@ func testEngine(t *testing.T) *Engine {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	return &Engine{Dir: filepath.Join(dir, "speech"), Runtime: dir, Model: "m/x", Voice: "af_heart:0.6,af_bella:0.4"}
-}
-
-func TestStatus(t *testing.T) {
-	e := testEngine(t)
-	if e.Status() != "not installed" {
-		t.Errorf("fresh: %q", e.Status())
-	}
-	must := func(err error) {
-		t.Helper()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	must(os.MkdirAll(filepath.Join(e.Dir, "venv", "bin"), 0o700))
-	must(os.WriteFile(e.python(), nil, 0o700))
-	write := func(r record) {
-		b, _ := json.Marshal(r)
-		must(os.WriteFile(e.marker(), b, 0o600))
-	}
-	write(record{Requirements: "old", Model: e.Model, Voice: e.Voice})
-	if !strings.Contains(e.Status(), "older acmd") {
-		t.Errorf("old requirements: %q", e.Status())
-	}
-	write(record{Requirements: requirementsHash(), Model: e.Model, Voice: "af_heart:0.5,af_bella:0.5"})
-	if e.Status() != "" {
-		t.Errorf("only weights changed (same voices): %q", e.Status())
-	}
-	write(record{Requirements: requirementsHash(), Model: e.Model, Voice: "af_sky"})
-	if !strings.Contains(e.Status(), "another model or voice") {
-		t.Errorf("other voice: %q", e.Status())
-	}
-	other := *e
-	other.Voice = "af_sky"
-	if e.Socket() == other.Socket() {
-		t.Error("the socket doesn't follow the voice")
-	}
+	return &Engine{Dir: filepath.Join(dir, "speech"), Runtime: dir, Voice: "af_heart:0.6,af_bella:0.4", Helper: "/bin/true"}
 }
 
 func TestSayStreams(t *testing.T) {

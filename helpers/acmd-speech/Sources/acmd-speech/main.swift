@@ -1,5 +1,6 @@
-// acmd-speech: acmd's Swift speech engine (SPEC §8.9). It speaks the same
-// protocol as the Python engine (internal/speech/assets/engine.py):
+// acmd-speech: acmd's speech engine (SPEC §8.9). It speaks the protocol
+// acmd's Python engine used before v0.32, so internal/speech talks to it
+// unchanged:
 //
 //   acmd-speech --prefetch --dir DIR --voice SPEC
 //       download the model and voices into DIR, compile them, exit
@@ -46,7 +47,7 @@ func parseArgs(_ args: [String]) throws -> Options {
         case "--serve": o.serve = try value(a)
         case "--dir": o.dir = try value(a)
         case "--voice": o.voice = try value(a)
-        case "--model": _ = try value(a)  // accepted for engine.py compatibility; the model is fixed
+        case "--model": _ = try value(a)  // accepted and ignored (the old engine took one); the model is fixed
         case "--idle":
             guard let v = Double(try value(a)), v > 0 else { throw SpeechError.badRequest("bad --idle") }
             o.idle = v

@@ -1,146 +1,85 @@
-// Package speech reads text aloud with a local Kokoro text-to-speech model
-// (SPEC §8.9). The model runs in one of two speech engines, chosen by
-// [speech] engine while both are tried out:
-//
-//   - "python": assets/engine.py, mlx-audio (MLX) in a private Python
-//     environment that `acmd speech install` sets up with uv;
-//   - "swift": acmd-speech, a Swift helper shipped next to acmd that runs
-//     Kokoro on Core ML through FluidAudio (helpers/acmd-speech).
-//
-// Both answer the same unix-socket protocol. This package installs the
-// chosen engine, starts it when needed, prepares text and plays what it
-// makes.
+// Package speech reads text aloud with Kokoro-82M
+// (https://huggingface.co/hexgrad/Kokoro-82M), a local text-to-speech
+// model (SPEC §8.9). The model runs in acmd-speech, a Swift helper shipped
+// next to acmd that runs Kokoro on Core ML through FluidAudio
+// (helpers/acmd-speech) and answers on a unix socket. This package
+// installs it, starts it when needed, prepares text and plays what it
+// makes. It also removes the Python engine (mlx-audio in a uv
+// environment) that acmd used before v0.32.
 package speech
 
 import (
 	"bufio"
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
-//go:embed assets/engine.py assets/requirements.txt
-var assets embed.FS
-
 // ErrNotInstalled means speech hasn't been set up (acmd speech install).
 var ErrNotInstalled = errors.New("speech isn't set up: run `acmd speech install`")
 
-// The speech engines ([speech] engine).
-const (
-	Python = "python" // mlx-audio in a Python environment (engine.py)
-	Swift  = "swift"  // the acmd-speech helper (FluidAudio, Core ML)
-)
-
-// Kinds lists the engines.
-var Kinds = []string{Python, Swift}
-
-// Engine is acmd's speech engine for one model and voice.
+// Engine is acmd's speech engine for one voice.
 type Engine struct {
-	Dir     string  // where the environments and models live
+	Dir     string  // acmd's speech folder (state dir/speech)
 	Runtime string  // where the engine's socket lives
-	Kind    string  // Python or Swift ("" = Python)
-	Model   string  // Python: Hugging Face repo of an MLX TTS model
 	Voice   string  // voice or blend "af_heart:0.6,af_bella:0.4"
 	Speed   float64 // 1.0 = normal
 	// Idle is how long the engine stays loaded without requests.
 	Idle time.Duration
-	// UV is the uv binary ("" = look it up; Python).
-	UV string
-	// Helper is the acmd-speech binary ("" = look it up; Swift).
+	// Helper is the acmd-speech binary ("" = look it up).
 	Helper string
 }
 
-// kind is e.Kind with the default filled in.
-func (e *Engine) kind() string {
-	if e.Kind == Swift {
-		return Swift
-	}
-	return Python
-}
-
-// Name says which engine this is, for people.
-func (e *Engine) Name() string {
-	if e.kind() == Swift {
-		return "swift (Kokoro on Core ML, acmd-speech)"
-	}
-	return "python (Kokoro on MLX, mlx-audio)"
-}
-
-// home is the engine's own folder: the Swift engine keeps its models
-// apart from the Python environment, so both can be installed at once.
-func (e *Engine) home() string {
-	if e.kind() == Swift {
-		return filepath.Join(e.Dir, "swift")
-	}
-	return e.Dir
-}
-
-func (e *Engine) python() string  { return filepath.Join(e.Dir, "venv", "bin", "python") }
-func (e *Engine) script() string  { return filepath.Join(e.Dir, "engine.py") }
+// home holds the models. It's named "swift" from v0.31, when the Python
+// and Swift engines were installed side by side; kept so those installs
+// don't download the model again.
+func (e *Engine) home() string    { return filepath.Join(e.Dir, "swift") }
 func (e *Engine) marker() string  { return filepath.Join(e.home(), "installed.json") }
 func (e *Engine) logFile() string { return filepath.Join(e.home(), "engine.log") }
 func (e *Engine) pidFile() string { return filepath.Join(e.home(), "engine.pid") }
-func (e *Engine) env() []string {
-	return append(os.Environ(), "HF_HOME="+filepath.Join(e.Dir, "hf"), "HF_HUB_DISABLE_PROGRESS_BARS=1",
-		"TOKENIZERS_PARALLELISM=false")
-}
 
-// Socket is the engine's socket; it depends on the model and voice, so a
-// change starts a new engine (the old one stops when idle).
+// Socket is the engine's socket; it depends on the voice, so a change
+// starts a new engine (the old one stops when idle).
 func (e *Engine) Socket() string {
-	key := e.Model + "\x00" + e.Voice
-	if e.kind() == Swift {
-		key = "swift\x00" + e.Voice
-	}
-	h := sha256.Sum256([]byte(key))
+	h := sha256.Sum256([]byte("swift\x00" + e.Voice))
 	return filepath.Join(e.Runtime, "tts-"+hex.EncodeToString(h[:4])+".sock")
 }
 
 // record is what installed.json holds.
 type record struct {
-	Requirements string `json:"requirements,omitempty"` // Python: sha256 of requirements.txt
-	Model        string `json:"model,omitempty"`
-	Voice        string `json:"voice"`
-	At           string `json:"at"`
+	Voice string `json:"voice"`
+	At    string `json:"at"`
 }
 
-func requirementsHash() string {
-	b, _ := assets.ReadFile("assets/requirements.txt")
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
-}
-
-// Status says whether speech is set up for e's model and voice: "" when
-// it is, otherwise what's missing.
+// Status says whether speech is set up for e's voice: "" when it is,
+// otherwise what's missing.
 func (e *Engine) Status() string {
-	if e.kind() == Swift {
-		return e.swiftStatus()
+	if _, err := e.helper(); err != nil {
+		return "the acmd-speech helper is missing (reinstall acmd)"
 	}
 	b, err := os.ReadFile(e.marker())
-	if err != nil {
+	var r record
+	if err != nil || json.Unmarshal(b, &r) != nil {
+		if e.HasLegacy() {
+			return "set up for the old Python engine, which acmd no longer uses: run `acmd speech install` (it also removes the Python setup)"
+		}
 		return "not installed"
 	}
-	var r record
-	if json.Unmarshal(b, &r) != nil || r.Requirements != requirementsHash() {
-		return "installed for an older acmd: run `acmd speech install` again"
-	}
-	if _, err := os.Stat(e.python()); err != nil {
-		return "its Python environment is missing: run `acmd speech install`"
-	}
-	if r.Model != e.Model || !sameVoices(r.Voice, e.Voice) {
-		return "set up for another model or voice: run `acmd speech install` to download it"
+	if !sameVoices(r.Voice, e.Voice) {
+		return "set up for another voice: run `acmd speech install` to download it"
 	}
 	return ""
 }
@@ -159,106 +98,147 @@ func sameVoices(a, b string) bool {
 	return names(a) == names(b)
 }
 
-// FindUV locates uv: on PATH, then its usual install places.
-func FindUV() (string, error) {
-	if p, err := exec.LookPath("uv"); err == nil {
-		return p, nil
-	}
-	home, _ := os.UserHomeDir()
-	for _, p := range []string{filepath.Join(home, ".local", "bin", "uv"), "/opt/homebrew/bin/uv", "/usr/local/bin/uv", filepath.Join(home, ".cargo", "bin", "uv")} {
-		if st, err := os.Stat(p); err == nil && st.Mode()&0o111 != 0 {
-			return p, nil
-		}
-	}
-	return "", errors.New("speech needs uv (Python package manager) to set itself up: install it with `brew install uv` and run `acmd speech install` again")
-}
-
-// Install sets up the engine: a Python 3.12 environment with mlx-audio
-// (pinned versions) in e.Dir, and the model with only the voices in use.
-// It writes progress to out. Nothing outside e.Dir changes except uv's own
-// cache and Python downloads.
+// Install downloads the Core ML model and the voices in use into e.home()
+// and compiles them for this Mac (the helper's --prefetch), then removes
+// the old Python engine if it's there. It writes progress to out.
 func (e *Engine) Install(ctx context.Context, out io.Writer) error {
-	if e.kind() == Swift {
-		return e.installSwift(ctx, out)
-	}
-	uv := e.UV
-	if uv == "" {
-		var err error
-		if uv, err = FindUV(); err != nil {
-			return err
-		}
-	}
-	if err := os.MkdirAll(e.Dir, 0o700); err != nil {
+	helper, err := e.helper()
+	if err != nil {
 		return err
 	}
-	if err := e.writeAssets(); err != nil {
+	if err := os.MkdirAll(e.home(), 0o700); err != nil {
 		return err
 	}
-	run := func(what string, name string, args ...string) error {
-		fmt.Fprintf(out, "%s…\n", what)
-		c := exec.CommandContext(ctx, name, args...) // #nosec G204 -- uv and acmd's own environment
-		c.Env = e.env()
-		var buf strings.Builder
-		c.Stdout, c.Stderr = &buf, &buf
-		if err := c.Run(); err != nil {
-			return fmt.Errorf("%s: %w\n%s", strings.ToLower(what), err, lastLines(buf.String(), 15))
-		}
-		return nil
+	fmt.Fprintln(out, "Downloading Kokoro (Core ML) and its voices and compiling them for this Mac (about 400 MB, a minute or two)…")
+	c := exec.CommandContext(ctx, helper, "--prefetch", "--dir", e.home(), "--voice", e.Voice) // #nosec G204 -- acmd's own helper
+	var buf strings.Builder
+	c.Stdout, c.Stderr = &buf, &buf
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("setting up speech: %w\n%s", err, lastLines(buf.String(), 15))
 	}
-	if _, err := os.Stat(e.python()); err != nil {
-		if err := run("Creating a Python 3.12 environment", uv, "venv", "--python", "3.12", filepath.Join(e.Dir, "venv")); err != nil {
-			return err
-		}
-	}
-	if err := run("Installing mlx-audio and its dependencies (about 600 MB)", uv, "pip", "install", "--python", e.python(),
-		"-r", filepath.Join(e.Dir, "requirements.txt")); err != nil {
+	b, _ := json.MarshalIndent(record{Voice: e.Voice, At: time.Now().UTC().Format(time.RFC3339)}, "", "  ")
+	if err := os.WriteFile(e.marker(), b, 0o600); err != nil {
 		return err
 	}
-	if err := run("Downloading "+e.Model+" and its voices (about 320 MB)", e.python(), e.script(),
-		"--prefetch", "--model", e.Model, "--voice", e.Voice); err != nil {
-		return err
-	}
-	b, _ := json.MarshalIndent(record{Requirements: requirementsHash(), Model: e.Model, Voice: e.Voice,
-		At: time.Now().UTC().Format(time.RFC3339)}, "", "  ")
-	return os.WriteFile(e.marker(), b, 0o600)
-}
-
-// writeAssets writes the engine script and the requirements (the script
-// is rewritten before every start, so an upgraded acmd uses its own).
-func (e *Engine) writeAssets() error {
-	for _, name := range []string{"engine.py", "requirements.txt"} {
-		b, err := assets.ReadFile("assets/" + name)
+	if e.HasLegacy() {
+		freed, err := e.RemoveLegacy()
 		if err != nil {
-			return err
+			return fmt.Errorf("removing the old Python speech engine: %w", err)
 		}
-		if err := os.WriteFile(filepath.Join(e.Dir, name), b, 0o600); err != nil {
-			return err
-		}
+		fmt.Fprintf(out, "Removed the old Python speech engine (%s).\n", Size(freed))
 	}
 	return nil
 }
 
-// Uninstall stops the engines and removes everything in e.Dir (both
-// engines' files).
+// legacy is what the Python engine (acmd before v0.32) kept in e.Dir.
+var legacy = []string{"venv", "hf", "engine.py", "requirements.txt", "installed.json", "engine.pid", "engine.log"}
+
+// HasLegacy says whether the old Python engine's files are there.
+func (e *Engine) HasLegacy() bool {
+	for _, n := range legacy {
+		if _, err := os.Lstat(filepath.Join(e.Dir, n)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// LegacySize is how much the old Python engine's files take.
+func (e *Engine) LegacySize() int64 {
+	var n int64
+	for _, name := range legacy {
+		n += du(filepath.Join(e.Dir, name))
+	}
+	return n
+}
+
+// RemoveLegacy stops the old Python engine if it runs and removes its
+// files (only those: the models in e.home() stay). uv's own cache and
+// Python download aren't acmd's and are left alone.
+func (e *Engine) RemoveLegacy() (int64, error) {
+	stopPID(filepath.Join(e.Dir, "engine.pid"), "engine.py")
+	// Its sockets are named after a model acmd no longer knows: remove
+	// every one but the current engine's (they stop at their idle check).
+	socks, _ := filepath.Glob(filepath.Join(e.Runtime, "tts-*.sock"))
+	for _, s := range socks {
+		if s != e.Socket() {
+			_ = os.Remove(s)
+		}
+	}
+	freed := e.LegacySize()
+	for _, n := range legacy {
+		if err := os.RemoveAll(filepath.Join(e.Dir, n)); err != nil {
+			return 0, err
+		}
+	}
+	return freed, nil
+}
+
+// Uninstall stops the engines and removes everything in e.Dir (the
+// models, and the old Python engine if it's still there).
 func (e *Engine) Uninstall() error {
 	e.stopEngines()
 	return os.RemoveAll(e.Dir)
 }
 
 // stopEngines asks running engines to stop by removing their sockets
-// (they stop at their next idle check) and kills their processes.
+// (they stop at their next idle check) and stops their processes.
 func (e *Engine) stopEngines() {
 	socks, _ := filepath.Glob(filepath.Join(e.Runtime, "tts-*.sock"))
 	for _, s := range socks {
 		_ = os.Remove(s)
 	}
-	for _, f := range []string{filepath.Join(e.Dir, "engine.pid"), filepath.Join(e.Dir, "swift", "engine.pid")} {
-		if b, err := os.ReadFile(f); err == nil { // #nosec G304 -- acmd's own pid files
-			var pid int
-			if _, err := fmt.Sscan(string(b), &pid); err == nil && pid > 0 {
-				_ = syscall.Kill(pid, syscall.SIGTERM)
+	stopPID(e.pidFile(), HelperName)
+	stopPID(filepath.Join(e.Dir, "engine.pid"), "engine.py")
+}
+
+// processCommand is the command line of a process ("" if gone);
+// swappable in tests.
+var processCommand = func(pid int) string {
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output() // #nosec G204 -- a pid
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// stopPID sends SIGTERM to the process in a pid file if it's still the
+// engine (its command line contains want), so a reused pid is left alone.
+func stopPID(file, want string) {
+	b, err := os.ReadFile(file) // #nosec G304 -- acmd's own pid files
+	if err != nil {
+		return
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 0 || !strings.Contains(processCommand(pid), want) {
+		return
+	}
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+}
+
+// du is the size of the files under p.
+func du(p string) int64 {
+	var n int64
+	_ = filepath.WalkDir(p, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				n += info.Size()
 			}
 		}
+		return nil
+	})
+	return n
+}
+
+// Size formats a byte count for people.
+func Size(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%d MB", n>>20)
+	default:
+		return fmt.Sprintf("%d KB", n>>10)
 	}
 }
 
@@ -354,21 +334,12 @@ func (e *Engine) Start(ctx context.Context) error {
 
 // serveCommand is the command that runs the engine on e.Socket().
 func (e *Engine) serveCommand(idle time.Duration) (*exec.Cmd, error) {
-	secs := fmt.Sprint(int(idle.Seconds()))
-	if e.kind() == Swift {
-		helper, err := e.helper()
-		if err != nil {
-			return nil, err
-		}
-		return exec.Command(helper, "--serve", e.Socket(), "--dir", e.home(), "--voice", e.Voice, "--idle", secs), nil // #nosec G204 -- acmd's own helper
-	}
-	if err := e.writeAssets(); err != nil {
+	helper, err := e.helper()
+	if err != nil {
 		return nil, err
 	}
-	c := exec.Command(e.python(), e.script(), "--serve", e.Socket(), "--model", e.Model, "--voice", e.Voice, // #nosec G204 -- acmd's own environment
-		"--idle", secs)
-	c.Env = append(e.env(), "HF_HUB_OFFLINE=1")
-	return c, nil
+	return exec.Command(helper, "--serve", e.Socket(), "--dir", e.home(), "--voice", e.Voice, // #nosec G204 -- acmd's own helper
+		"--idle", fmt.Sprint(int(idle.Seconds()))), nil
 }
 
 // Synth writes text spoken to the WAV file out and returns its length.

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 
@@ -18,15 +17,8 @@ import (
 	"github.com/brettmostert/agent-command/internal/speech"
 )
 
-// speechEngine is acmd's speech engine for the configured engine, model
-// and voice.
+// speechEngine is acmd's speech engine for the configured voice.
 func speechEngine() (*speech.Engine, error) {
-	return speechEngineKind("")
-}
-
-// speechEngineKind is speechEngine with the engine kind overridden ("" =
-// the configured one).
-func speechEngineKind(kind string) (*speech.Engine, error) {
 	p, err := paths.Default()
 	if err != nil {
 		return nil, err
@@ -35,37 +27,28 @@ func speechEngineKind(kind string) (*speech.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	if kind == "" {
-		kind = cfg.Speech.Engine
-	}
-	if kind == "" {
-		kind = speech.Python
-	}
-	if !slices.Contains(speech.Kinds, kind) {
-		return nil, fmt.Errorf("config.toml: [speech] engine = %q: want \"python\" or \"swift\"", kind)
-	}
-	return &speech.Engine{Dir: filepath.Join(p.StateDir, "speech"), Runtime: p.RuntimeDir, Kind: kind,
-		Model: cfg.Speech.Model, Voice: cfg.Speech.Voice, Speed: cfg.Speech.Speed}, nil
+	return &speech.Engine{Dir: filepath.Join(p.StateDir, "speech"), Runtime: p.RuntimeDir,
+		Voice: cfg.Speech.Voice, Speed: cfg.Speech.Speed}, nil
 }
 
 // installQuestion asks to set up e.
 func installQuestion(e *speech.Engine) string {
-	if e.Kind == speech.Swift {
-		return fmt.Sprintf("Set up speech (swift engine) in %s? It downloads Kokoro for Core ML with its voices and compiles it for this Mac (about 400 MB). No Python; nothing else on your Mac changes.", tilde(e.Dir))
+	q := fmt.Sprintf("Set up speech in %s? It downloads Kokoro for Core ML with its voices and compiles it for this Mac (about 400 MB). Nothing else on your Mac changes.", tilde(e.Dir))
+	if e.HasLegacy() {
+		q += fmt.Sprintf(" The old Python speech engine there (%s) is removed.", speech.Size(e.LegacySize()))
 	}
-	return fmt.Sprintf("Set up speech (python engine) in %s? It installs mlx-audio (pinned versions, about 600 MB) into a private Python 3.12 environment with uv and downloads %s with its voices (about 320 MB). Nothing else on your Mac changes.", tilde(e.Dir), e.Model)
+	return q
 }
 
 func newSpeechCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "speech",
-		Short: "Read responses aloud with a local text-to-speech model (Kokoro)",
+		Short: "Read responses aloud with a local text-to-speech model (Kokoro on Core ML)",
 		Long: `acmd can read sessions' responses aloud with Kokoro, a text-to-speech model
-that runs on this Mac (Apple Silicon). Two engines can run it, chosen by
-[speech] engine in config.toml: "python" (MLX through mlx-audio, set up with uv)
-or "swift" (Core ML through the acmd-speech helper, no Python). The voice is
-[speech] voice. ` + "`acmd speech install`" + ` sets up the chosen engine in acmd's own folder;
-` + "`acmd speech bench`" + ` compares the engines.`,
+that runs on this Mac (Apple Silicon, Core ML) in acmd-speech, a helper that
+ships with acmd. The voice is [speech] voice in config.toml.
+` + "`acmd speech install`" + ` downloads the model into acmd's own folder (and removes the
+Python engine older versions used); ` + "`acmd speech bench`" + ` times it.`,
 	}
 	cmd.AddCommand(newSpeechInstallCmd(), newSpeechUninstallCmd(), newSpeechStatusCmd(), newSpeechSayCmd(), newSpeechBenchCmd())
 	return cmd
@@ -73,21 +56,16 @@ or "swift" (Core ML through the acmd-speech helper, no Python). The voice is
 
 func newSpeechInstallCmd() *cobra.Command {
 	var yes bool
-	var engine string
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Set up speech for the configured engine (python: about 900 MB; swift: about 400 MB)",
+		Short: "Set up speech: download and compile the model (about 400 MB); removes the old Python engine",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			e, err := speechEngineKind(engine)
+			e, err := speechEngine()
 			if err != nil {
 				return err
 			}
-			if e.Kind == speech.Python {
-				if _, err := speech.FindUV(); err != nil {
-					return err
-				}
-			} else if _, err := speech.FindHelper(); err != nil {
+			if _, err := speech.FindHelper(); err != nil {
 				return err
 			}
 			if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, installQuestion(e)); err != nil {
@@ -101,7 +79,6 @@ func newSpeechInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
-	cmd.Flags().StringVar(&engine, "engine", "", "set up this engine (python or swift) instead of the configured one")
 	return cmd
 }
 
@@ -109,7 +86,7 @@ func newSpeechUninstallCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove speech (both engines' files and models)",
+		Short: "Remove speech (the model, and the old Python engine if it's still there)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := speechEngine()
@@ -133,7 +110,7 @@ func newSpeechUninstallCmd() *cobra.Command {
 func newSpeechStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show whether speech is set up, and its engine, model and voice",
+		Short: "Show whether speech is set up, and its voice",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := speechEngine()
@@ -144,18 +121,10 @@ func newSpeechStatusCmd() *cobra.Command {
 			if st == "" {
 				st = "set up"
 			}
-			model := e.Model
-			if e.Kind == speech.Swift {
-				model = "Kokoro-82M, Core ML (FluidAudio Kokoro ANE v3)"
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Speech: %s\nEngine: %s\nModel:  %s\nVoice:  %s\nFolder: %s\n", st, e.Name(), model, e.Voice, tilde(e.Dir))
-			for _, k := range speech.Kinds {
-				if k == e.Kind {
-					continue
-				}
-				if o, err := speechEngineKind(k); err == nil && o.Status() == "" {
-					fmt.Fprintf(cmd.OutOrStdout(), "Also set up: the %s engine ([speech] engine = %q)\n", k, k)
-				}
+			fmt.Fprintf(cmd.OutOrStdout(), "Speech: %s\nModel:  Kokoro-82M on Core ML (acmd-speech)\nVoice:  %s\nFolder: %s\n", st, e.Voice, tilde(e.Dir))
+			if e.HasLegacy() {
+				fmt.Fprintf(cmd.OutOrStdout(), "Old Python speech engine: %s in %s, no longer used (`acmd speech install` or `acmd speech uninstall` removes it)\n",
+					speech.Size(e.LegacySize()), tilde(e.Dir))
 			}
 			return nil
 		},
@@ -212,14 +181,13 @@ func newSpeechSayCmd() *cobra.Command {
 }
 
 func newSpeechBenchCmd() *cobra.Command {
-	var engines []string
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "bench [text | -]",
-		Short: "Time the speech engines on the same text (nothing plays)",
-		Long: `Speaks the text with each engine that is set up, without playing it, and
-prints how long until the first audio, how long in all, and the real-time
-factor (generation time per second of audio). An engine that isn't running
-yet is started first, and its load time is shown.`,
+		Short: "Time the speech engine on a text (nothing plays)",
+		Long: `Speaks the text twice without playing it and prints how long until the first
+audio, how long in all, and the real-time factor (generation time per second
+of audio). If the engine isn't running yet it's started first, and its load
+time is shown.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			text := "Hello from acmd. The build finished, and all 512 tests passed in 3.4 seconds. Shall I open a pull request for version 0.31.0?"
@@ -235,40 +203,29 @@ yet is started first, and its load time is shown.`,
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			e, err := speechEngine()
+			if err != nil {
+				return err
+			}
+			if st := e.Status(); st != "" {
+				return errors.New("speech: " + st)
+			}
 			out := cmd.OutOrStdout()
-			ran := 0
-			for _, k := range engines {
-				e, err := speechEngineKind(k)
+			for _, run := range []string{"first", "again"} {
+				r, err := e.Bench(ctx, text)
 				if err != nil {
 					return err
 				}
-				if st := e.Status(); st != "" {
-					fmt.Fprintf(out, "%-7s %s\n", k, st)
-					continue
+				load := "running"
+				if r.Started {
+					load = fmt.Sprintf("loaded in %.2fs", r.Ready.Seconds())
 				}
-				for _, run := range []string{"first", "again"} {
-					r, err := e.Bench(ctx, text)
-					if err != nil {
-						fmt.Fprintf(out, "%-7s error: %v\n", k, err)
-						break
-					}
-					load := "running"
-					if r.Started {
-						load = fmt.Sprintf("loaded in %.2fs", r.Ready.Seconds())
-					}
-					fmt.Fprintf(out, "%-7s %-5s first audio %.3fs, all %.3fs for %.2fs of audio (RTF %.3f), %s\n",
-						k, run, r.FirstAudio.Seconds(), r.Total.Seconds(), r.Audio.Seconds(), r.RTF(), load)
-				}
-				ran++
-			}
-			if ran == 0 {
-				return errors.New("no speech engine is set up: run `acmd speech install` (--engine python or swift)")
+				fmt.Fprintf(out, "%-5s first audio %.3fs, all %.3fs for %.2fs of audio (RTF %.3f), %s\n",
+					run, r.FirstAudio.Seconds(), r.Total.Seconds(), r.Audio.Seconds(), r.RTF(), load)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().StringSliceVar(&engines, "engine", speech.Kinds, "engines to time")
-	return cmd
 }
 
 func tilde(p string) string {

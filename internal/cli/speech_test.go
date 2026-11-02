@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/brettmostert/agent-command/internal/speech"
 )
 
 // speechSandbox points acmd at temporary folders with this config.toml.
@@ -25,49 +23,63 @@ func speechSandbox(t *testing.T, config string) string {
 	return dir
 }
 
-func TestSpeechEngineSwitch(t *testing.T) {
-	speechSandbox(t, "")
-	if e, err := speechEngine(); err != nil || e.Kind != speech.Python {
-		t.Errorf("default: %+v %v", e, err)
+func TestSpeechEngineOldConfig(t *testing.T) {
+	// configs from the Python engine still load; engine and model are ignored
+	speechSandbox(t, "[speech]\nengine = \"python\"\nmodel = \"mlx-community/Kokoro-82M-bf16\"\nvoice = \"af_sky\"\n")
+	e, err := speechEngine()
+	if err != nil || e.Voice != "af_sky" {
+		t.Errorf("old config: %+v %v", e, err)
 	}
-	speechSandbox(t, "[speech]\nengine = \"swift\"\n")
-	if e, err := speechEngine(); err != nil || e.Kind != speech.Swift {
-		t.Errorf("swift: %+v %v", e, err)
-	}
-	if e, err := speechEngineKind(speech.Python); err != nil || e.Kind != speech.Python {
-		t.Errorf("override: %+v %v", e, err)
-	}
-	if !strings.Contains(installQuestion(&speech.Engine{Kind: speech.Swift}), "No Python") ||
-		!strings.Contains(installQuestion(&speech.Engine{Kind: speech.Python}), "uv") {
-		t.Error("install questions")
-	}
-	speechSandbox(t, "[speech]\nengine = \"rust\"\n")
-	if _, err := speechEngine(); err == nil || !strings.Contains(err.Error(), "rust") {
-		t.Errorf("bad engine: %v", err)
+	if strings.Contains(installQuestion(e), "Python") {
+		t.Error("asks about removing a Python engine that isn't there")
 	}
 }
 
-func TestSpeechStatusShowsEngine(t *testing.T) {
-	speechSandbox(t, "[speech]\nengine = \"swift\"\n")
-	t.Setenv("ACMD_SPEECH_HELPER", "")
+func TestSpeechStatusShowsOldPythonEngine(t *testing.T) {
+	dir := speechSandbox(t, "")
+	t.Setenv("ACMD_SPEECH_HELPER", "/bin/sh")
+	venv := filepath.Join(dir, "s", "speech", "venv", "bin")
+	if err := os.MkdirAll(venv, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(venv, "python"), make([]byte, 3<<20), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	cmd := newSpeechStatusCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Engine: swift") || !strings.Contains(out.String(), "Core ML") {
-		t.Errorf("%s", out.String())
+	s := out.String()
+	if !strings.Contains(s, "Speech: set up for the old Python engine") || !strings.Contains(s, "Old Python speech engine: 3 MB") {
+		t.Errorf("%s", s)
+	}
+	e, _ := speechEngine()
+	if !strings.Contains(installQuestion(e), "old Python speech engine there (3 MB) is removed") {
+		t.Errorf("install question: %s", installQuestion(e))
+	}
+
+	// uninstall removes it
+	un := newSpeechUninstallCmd()
+	un.SetOut(&out)
+	un.SetArgs([]string{"--yes"})
+	if err := un.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "s", "speech")); !os.IsNotExist(err) {
+		t.Errorf("speech folder left after uninstall: %v", err)
 	}
 }
 
-func TestSpeechBenchNothingSetUp(t *testing.T) {
+func TestSpeechBenchNotSetUp(t *testing.T) {
 	speechSandbox(t, "")
+	t.Setenv("ACMD_SPEECH_HELPER", "/bin/sh")
 	cmd := newSpeechBenchCmd()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"hi"})
-	if err := cmd.Execute(); err == nil || !strings.Contains(out.String(), "python  not installed") {
-		t.Errorf("%v\n%s", err, out.String())
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "not installed") {
+		t.Errorf("%v", err)
 	}
 }

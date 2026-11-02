@@ -50,13 +50,11 @@ type PopupKeys struct {
 }
 
 // Speech is the [speech] section: text to speech (SPEC §8.9).
+// (Older configs may still have engine and model, from the Python engine;
+// they're ignored.)
 type Speech struct {
-	// Engine is "python" (mlx-audio on MLX) or "swift" (acmd-speech,
-	// Core ML); both run Kokoro while they're compared (PAN-17).
-	Engine string  `toml:"engine"`
-	Model  string  `toml:"model"` // python engine: Hugging Face repo of an MLX TTS model
-	Voice  string  `toml:"voice"` // a voice, or a blend "af_heart:0.6,af_bella:0.4"
-	Speed  float64 `toml:"speed"`
+	Voice string  `toml:"voice"` // a voice, or a blend "af_heart:0.6,af_bella:0.4"
+	Speed float64 `toml:"speed"`
 }
 
 // Notify is the [notify] section (SPEC §8.5).
@@ -117,7 +115,7 @@ func Default() Config {
 		Editor: Editor{RunIn: "background", Target: "cwd"},
 		Popup: Popup{Hotkey: "cmd+ctrl+o", ReadHotkey: "cmd+ctrl+p", Keys: PopupKeys{Prev: "cmd+ctrl+left", Next: "cmd+ctrl+right",
 			Play: "cmd+ctrl+p", Skip: "cmd+ctrl+k", Close: "escape"}},
-		Speech: Speech{Engine: "python", Model: "mlx-community/Kokoro-82M-bf16", Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
+		Speech: Speech{Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
 		Keys: Keys{
 			Toggle: "cmd+shift+b", New: "cmd+shift+n", Focus: "cmd+shift+s", Attention: "cmd+shift+a",
 			Picker: "cmd+shift+l", Cheatsheet: "cmd+shift+k", Editor: "cmd+shift+e", Adopt: "cmd+shift+m", Term: "cmd+shift+x", GotoPrefix: "ctrl+cmd",
@@ -198,13 +196,8 @@ skip = "cmd+ctrl+k"
 close = "escape"
 
 [speech]
-# The engine that runs Kokoro: "python" (MLX through mlx-audio, set up with
-# uv) or "swift" (Core ML through the acmd-speech helper, no Python). Run
+# Kokoro's voice; a blend is "voice:weight,voice:weight". Run
 # "acmd speech install" after changing it.
-engine = "python"
-# The python engine's MLX text-to-speech model (Hugging Face repo), and the
-# voice; a blend is "voice:weight,voice:weight".
-model = "mlx-community/Kokoro-82M-bf16"
 voice = "af_heart:0.6,af_bella:0.4"
 speed = 1.0
 `

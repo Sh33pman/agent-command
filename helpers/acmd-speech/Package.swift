@@ -1,8 +1,8 @@
 // swift-tools-version: 6.2
 // acmd-speech: acmd's Swift speech engine (SPEC §8.9). Kokoro-82M
 // (https://huggingface.co/hexgrad/Kokoro-82M) on Core ML through
-// FluidAudio's Kokoro ANE v3, behind the same unix-socket protocol as the
-// Python engine (internal/speech/assets/engine.py).
+// FluidAudio's Kokoro ANE v3, answering acmd on a unix socket
+// (internal/speech).
 import PackageDescription
 
 let package = Package(

@@ -786,11 +786,11 @@ func (m *Model) click(mo tea.Mouse) tea.Cmd {
 		m.openMenu(r, mo.Y)
 		return nil
 	case tea.MouseLeft:
+		// A click on a session only selects it; Enter shows it (PAN-13).
 		// No double-click rename: renaming is the r key (or the menu).
 		if r.Session == nil {
 			return m.toggleCollapse(r.Group)
 		}
-		return m.show(r.Session)
 	}
 	return nil
 }

@@ -90,7 +90,7 @@ var local = []Binding{
 	{"collapse-all", Groups, "z", "collapse/expand all", ""},
 	{"reorder", Groups, "K J", "move group up · down", ""},
 	{"delete-group", Groups, "D", "delete group", ""},
-	{"click", Mouse, "click", "show · collapse", ""},
+	{"click", Mouse, "click", "select · collapse", ""},
 	{"right-click", Mouse, "right-click", "menu", ""},
 	{"wheel", Mouse, "wheel", "scroll", ""},
 }

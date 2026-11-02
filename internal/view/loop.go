@@ -415,7 +415,7 @@ func (l *Loop) draw(snap ipc.Snapshot, note string) map[int]*core.Session {
 	var b strings.Builder
 	b.WriteString("\x1b[H\x1b[2J") // home, clear
 	b.WriteString("No session is shown here.\r\n\r\n")
-	b.WriteString("  Pick one in the sidebar on the left (click it, or ↑↓ and Enter).\r\n\r\n")
+	b.WriteString("  Pick one in the sidebar on the left (click it or use ↑↓, then press Enter).\r\n\r\n")
 	hints := l.Hints
 	if hints == nil {
 		hints = []string{"1–9    show the sidebar's session N"}

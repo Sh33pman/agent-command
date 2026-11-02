@@ -492,17 +492,29 @@ func TestMouse(t *testing.T) {
 	h := newHarness(t, groupSnap(), "")
 	click := func(btn tea.MouseButton, y int) { h.send(tea.MouseClickMsg{Button: btn, Y: y, X: 3}) }
 	// Lines: 0 header, 1 rule, 2 PROJ-123, 3-4 session a, 5 spikes, 6 Default, 7-8 session c.
+	// A click on a session only selects it; Enter shows it (PAN-13).
+	click(tea.MouseLeft, 7)
+	if h.m.cursor != "s:c" || len(h.f.shown) != 0 {
+		t.Errorf("click: cursor %q, shown %v", h.m.cursor, h.f.shown)
+	}
 	click(tea.MouseLeft, 3)
+	if h.m.cursor != "s:a" || len(h.f.shown) != 0 {
+		t.Errorf("click: cursor %q, shown %v", h.m.cursor, h.f.shown)
+	}
+	h.keys("enter")
 	if strings.Join(h.f.shown, ",") != "a" {
-		t.Errorf("click: %v", h.f.shown)
+		t.Errorf("enter after click: %v", h.f.shown)
 	}
 	click(tea.MouseLeft, 5)
 	h.wantMutation(ipc.Mutation{Kind: ipc.MutGroupCollapse, GroupID: "g2", Flag: false})
-	// A quick second click on the same row shows it again; it doesn't rename.
+	// A quick second click on the same row neither shows nor renames.
 	click(tea.MouseLeft, 3)
 	click(tea.MouseLeft, 3)
 	if strings.Contains(h.screen(), "Rename:") {
 		t.Error("double-click opened rename")
+	}
+	if strings.Join(h.f.shown, ",") != "a" {
+		t.Errorf("double-click showed: %v", h.f.shown)
 	}
 	click(tea.MouseLeft, 0) // the header: nothing
 	click(tea.MouseLeft, 29)

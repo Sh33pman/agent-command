@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/brettmostert/agent-command/compare/v0.32.1...v0.33.0) (2026-11-02)
+
+
+### Features
+
+* **keys:** group the shortcut sheet into subsections (PAN-19) ([#121](https://github.com/brettmostert/agent-command/issues/121)) ([0acb166](https://github.com/brettmostert/agent-command/commit/0acb166b6c1bc6eec5b0c6a982ead1af15eb42ee))
+
 ## [0.32.1](https://github.com/brettmostert/agent-command/compare/v0.32.0...v0.32.1) (2026-11-02)
 
 

@@ -341,11 +341,16 @@ func askPopup(ctx context.Context, in *bufio.Reader, out io.Writer, p paths.Path
 	if err != nil || e.Status() == "" {
 		return
 	}
-	if _, err := speech.FindUV(); err != nil {
+	if e.Kind == speech.Python {
+		if _, err := speech.FindUV(); err != nil {
+			fmt.Fprintln(out, "Speech (reading items aloud):", err)
+			return
+		}
+	} else if _, err := speech.FindHelper(); err != nil {
 		fmt.Fprintln(out, "Speech (reading items aloud):", err)
 		return
 	}
-	if !yes(fmt.Sprintf("Set up speech now? Kokoro on MLX, about 900 MB in %s", tilde(e.Dir))) {
+	if !yes(installQuestion(e)) {
 		fmt.Fprintln(out, "Skipped. Set it up later with: acmd speech install")
 		return
 	}

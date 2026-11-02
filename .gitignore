@@ -38,3 +38,7 @@ go.work.sum
 /build/
 /notes.md
 /tap/
+
+# Swift speech engine build output
+/helpers/acmd-speech/.build/
+/helpers/acmd-speech/.swiftpm/

@@ -41,6 +41,18 @@ LDFLAGS   := -s -w \
 
 INSTALL_DIR ?= $(HOME)/.local/bin
 
+# The Swift speech engine (helpers/acmd-speech, SPEC §8.9): arm64 only,
+# built with the Command Line Tools. On the runner its build folder lives
+# in the tool cache, so checkouts don't rebuild FluidAudio from scratch.
+SPEECH_PKG := $(CURDIR)/helpers/acmd-speech
+ifdef RUNNER_TOOL_CACHE
+SPEECH_SCRATCH ?= $(RUNNER_TOOL_CACHE)/acmd-swift-build
+else
+SPEECH_SCRATCH ?= $(SPEECH_PKG)/.build
+endif
+SPEECH_OUT ?= $(CURDIR)/build/acmd-speech
+SWIFT_BUILD := swift build --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) -c release --arch arm64
+
 ##@ General
 
 .PHONY: help hooks
@@ -108,16 +120,29 @@ fuzz: ## Run each fuzz target briefly (FUZZTIME=30s)
 vuln: $(BIN)/govulncheck ## Scan for known vulnerabilities
 	$(BIN)/govulncheck ./...
 
+.PHONY: speech-test
+speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
+	swift run --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) speech-core-checks
+
 .PHONY: ci
-ci: lint test vuln build ## Everything CI checks on a PR (except snapshot/formula)
+ci: lint test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
 
 ##@ Build & release
 
+.PHONY: speech-helper
+speech-helper: ## Build the Swift speech engine into $(SPEECH_OUT)
+	$(SWIFT_BUILD) --product acmd-speech
+	mkdir -p $(dir $(SPEECH_OUT))
+	install -m 0755 "$$($(SWIFT_BUILD) --show-bin-path)/acmd-speech" $(SPEECH_OUT)
+	@if otool -L $(SPEECH_OUT) | grep -qi espeak; then echo "acmd-speech links espeak (GPL)"; exit 1; fi
+	$(SPEECH_OUT) --version
+
 .PHONY: build
-build: ## Build ./dist/agent-command (+ acmd symlink) for this machine
+build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech) for this machine
 	mkdir -p $(DIST)
 	CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
 	ln -sf agent-command $(DIST)/acmd
+	$(MAKE) speech-helper SPEECH_OUT=$(DIST)/acmd-speech
 	$(DIST)/acmd version
 
 .PHONY: snapshot
@@ -138,6 +163,7 @@ formula-test: ## Install the snapshot universal tarball via a throwaway local ta
 install: build ## Dev install into $(INSTALL_DIR) (agent-command + acmd)
 	mkdir -p $(INSTALL_DIR)
 	install -m 0755 $(DIST)/agent-command $(INSTALL_DIR)/agent-command
+	install -m 0755 $(DIST)/acmd-speech $(INSTALL_DIR)/acmd-speech
 	ln -sf agent-command $(INSTALL_DIR)/acmd
 	@echo "installed to $(INSTALL_DIR) (make sure it's on PATH)"
 

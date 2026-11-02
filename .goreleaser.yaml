@@ -5,6 +5,12 @@ version: 2
 
 project_name: agent-command
 
+# The Swift speech engine (helpers/acmd-speech, SPEC §8.9) ships next to
+# acmd in every archive (arm64 only: speech needs Apple Silicon).
+before:
+  hooks:
+    - make speech-helper SPEECH_OUT=build/acmd-speech
+
 builds:
   - id: agent-command
     main: ./cmd/agent-command
@@ -38,6 +44,8 @@ archives:
     files:
       - LICENSE
       - README.md
+      - src: build/acmd-speech
+        strip_parent: true
 
 checksum:
   name_template: checksums.txt

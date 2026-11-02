@@ -25,4 +25,8 @@ echo "$out"
 [[ "$out" == "agent-command ${version} "* ]] || { echo "unexpected version output (want ${version})"; exit 1; }
 lipo -archs "$tmp/agent-command" | grep -q arm64
 lipo -archs "$tmp/agent-command" | grep -q x86_64
+# the Swift speech engine: present, runs, arm64, no GPL espeak linked
+"$tmp/acmd-speech" --version
+lipo -archs "$tmp/acmd-speech" | grep -q arm64
+if otool -L "$tmp/acmd-speech" | grep -qi espeak; then echo "acmd-speech links espeak"; exit 1; fi
 echo "dist OK: ${project} ${version}"

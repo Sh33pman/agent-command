@@ -10,6 +10,8 @@ class AgentCommand < Formula
   def install
     bin.install "agent-command"
     bin.install_symlink "agent-command" => "acmd"
+    # the Swift speech engine (acmd finds it in ../libexec)
+    libexec.install "acmd-speech"
     generate_completions_from_executable(bin/"agent-command", "completion")
   end
 
@@ -23,5 +25,6 @@ class AgentCommand < Formula
   test do
     assert_match version.to_s, shell_output("#{bin}/agent-command version")
     assert_match version.to_s, shell_output("#{bin}/acmd version")
+    assert_match "acmd-speech", shell_output("#{libexec}/acmd-speech --version")
   end
 end

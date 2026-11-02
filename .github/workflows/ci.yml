@@ -41,6 +41,17 @@ jobs:
           cache: false # the self-hosted runner keeps Go's caches between runs
       - run: make lint
 
+  swift:
+    runs-on: [self-hosted, acmd]
+    if: >-
+      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
+      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: speech engine unit tests + release build
+        run: make speech-test speech-helper
+
   vuln:
     runs-on: [self-hosted, acmd]
     if: >-
@@ -61,7 +72,7 @@ jobs:
     if: >-
       (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
       (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -40,6 +40,27 @@ func (e *Engine) Say(ctx context.Context, markdown string) error {
 	if err := e.Start(ctx); err != nil {
 		return err
 	}
+	var p pcmPlayer
+	defer func() {
+		if p != nil {
+			p.Close()
+		}
+	}()
+	err := e.stream(ctx, chunks, func(rate int) error {
+		var err error
+		p, err = NewPlayer(rate)
+		return err
+	}, func(pcm []byte) error { return p.Write(pcm) })
+	if err == nil && p != nil {
+		err = p.Drain(ctx)
+	}
+	return stopped(ctx, err)
+}
+
+// stream sends chunks to the running engine as one stream request: start
+// gets the sample rate before any audio, then pcm each frame as it comes.
+// Ending ctx closes the connection, which stops the engine too.
+func (e *Engine) stream(ctx context.Context, chunks []string, start func(rate int) error, pcm func([]byte) error) error {
 	speed := e.Speed
 	if speed <= 0 {
 		speed = 1
@@ -52,7 +73,7 @@ func (e *Engine) Say(ctx context.Context, markdown string) error {
 	defer c.Close()
 	stop := context.AfterFunc(ctx, func() { _ = c.Close() }) // stops the engine too
 	defer stop()
-	// One line per chunk: Kokoro splits on newlines and streams each.
+	// One line per chunk: the engine speaks each line in turn.
 	req, _ := json.Marshal(map[string]any{"op": "stream", "text": strings.Join(chunks, "\n"), "speed": speed})
 	if _, err := c.Write(append(req, '\n')); err != nil {
 		return err
@@ -60,7 +81,7 @@ func (e *Engine) Say(ctx context.Context, markdown string) error {
 	r := bufio.NewReaderSize(c, 64<<10)
 	head, err := r.ReadBytes('\n')
 	if err != nil {
-		return stopped(ctx, err)
+		return err
 	}
 	var hdr struct {
 		OK    bool   `json:"ok"`
@@ -70,20 +91,18 @@ func (e *Engine) Say(ctx context.Context, markdown string) error {
 	if err := json.Unmarshal(head, &hdr); err != nil || !hdr.OK {
 		return fmt.Errorf("speech engine: %s", hdr.Error)
 	}
-	p, err := NewPlayer(hdr.Rate)
-	if err != nil {
+	if err := start(hdr.Rate); err != nil {
 		return err
 	}
-	defer p.Close()
 	var n [4]byte
 	for {
 		if _, err := io.ReadFull(r, n[:]); err != nil {
-			return stopped(ctx, err)
+			return err
 		}
 		size := binary.BigEndian.Uint32(n[:])
 		switch size {
 		case 0:
-			return stopped(ctx, p.Drain(ctx))
+			return nil
 		case endOfError:
 			line, _ := r.ReadBytes('\n')
 			var e struct {
@@ -95,11 +114,11 @@ func (e *Engine) Say(ctx context.Context, markdown string) error {
 		if size > 64<<20 {
 			return errors.New("speech engine: bad audio frame")
 		}
-		pcm := make([]byte, size)
-		if _, err := io.ReadFull(r, pcm); err != nil {
-			return stopped(ctx, err)
+		b := make([]byte, size)
+		if _, err := io.ReadFull(r, b); err != nil {
+			return err
 		}
-		if err := p.Write(pcm); err != nil {
+		if err := pcm(b); err != nil {
 			return err
 		}
 	}
@@ -113,6 +132,6 @@ func stopped(ctx context.Context, err error) error {
 	return err
 }
 
-// chunkSize is the most characters per line sent to the engine: Kokoro
-// streams each line as soon as it's spoken.
+// chunkSize is the most characters per line sent to the engine: the
+// engine streams each line as soon as it's spoken.
 const chunkSize = 350

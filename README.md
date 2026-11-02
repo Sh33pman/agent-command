@@ -8,7 +8,7 @@ Track every Claude Code session from a sidebar in **Kitty** and **Ghostty**: liv
 - **Names, groups and notifications** for every Claude Code session.
 - **One-key navigation** between sessions, plus adopting sessions started elsewhere.
 - **Reply popup**: an inbox of finished turns, questions and permission requests you can answer without switching windows. Responses render as rich text.
-- **Read aloud**: have the latest response spoken with local text-to-speech.
+- **Read aloud**: have the latest response spoken with local text-to-speech (Kokoro; `[speech] engine` picks MLX via Python or Core ML via the bundled Swift helper).
 - **Remote control** enabled on every session `acmd` launches.
 - `acmd doctor` and `acmd init` to check and set up your terminal and hooks.
 

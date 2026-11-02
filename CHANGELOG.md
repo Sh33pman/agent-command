@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/brettmostert/agent-command/compare/v0.30.1...v0.31.0) (2026-11-02)
+
+
+### Features
+
+* **speech:** add a Swift speech engine (FluidAudio Kokoro on Core ML) beside the Python one ([#114](https://github.com/brettmostert/agent-command/issues/114)) ([d71e480](https://github.com/brettmostert/agent-command/commit/d71e480d6b2d124b28dc8185d74eab8b65234ee7))
+
 ## [0.30.1](https://github.com/brettmostert/agent-command/compare/v0.30.0...v0.30.1) (2026-11-01)
 
 

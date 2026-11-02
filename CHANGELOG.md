@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/brettmostert/agent-command/compare/v0.31.0...v0.31.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **view:** deflake TestFailedAttachResumesOnce ([#116](https://github.com/brettmostert/agent-command/issues/116)) ([050c0ea](https://github.com/brettmostert/agent-command/commit/050c0eaf96b026bafcba72c330f9cbaa65027c4e))
+
 ## [0.31.0](https://github.com/brettmostert/agent-command/compare/v0.30.1...v0.31.0) (2026-11-02)
 
 

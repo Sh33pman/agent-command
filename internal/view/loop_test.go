@@ -176,7 +176,10 @@ func run(t *testing.T, d *fakeDaemon, agents ...string) *harness {
 			return errors.New("new isn't wired in this test")
 		},
 		HeartbeatWait: 200 * time.Millisecond,
-		QuickExit:     300 * time.Millisecond,
+		// Generous: the fake attach is a real process, and a failing one
+		// that takes longer to start than this under a loaded test run
+		// reads as the user detaching (seen in CI).
+		QuickExit: 3 * time.Second,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
@@ -298,10 +301,9 @@ func TestPlaceholderRedrawsAndCloses(t *testing.T) {
 func TestFailedAttachResumesOnce(t *testing.T) {
 	d := newFakeDaemon(bg("s1", "cccccccc", "old", core.StatusPaused))
 	d.view.Selected = "s1"
-	h := run(t, d) // claude doesn't know cccccccc: attach fails at once
-	d.mu.Lock()
+	// Before the loop starts: it may resume at once (a race seen in CI).
 	d.resumeOK = func(string) {}
-	d.mu.Unlock()
+	h := run(t, d) // claude doesn't know cccccccc: attach fails at once
 	h.waitFor(`Couldn't show "old" (claude attach cccccccc ended at once).`)
 	if len(d.resumed) != 1 {
 		t.Errorf("resumed %d times", len(d.resumed))

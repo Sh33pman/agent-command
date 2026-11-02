@@ -360,7 +360,10 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.mode == modeInput || m.mode == modePicker || m.mode == modeFolder {
+	if m.mode == modeFolder {
+		return m, m.folderInput(msg)
+	}
+	if m.mode == modeInput || m.mode == modePicker {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd

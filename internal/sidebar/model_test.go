@@ -431,10 +431,10 @@ func TestPickerNewAndMove(t *testing.T) {
 	// N is the same flow; a typed path starts there.
 	h.m.cursor = "s:a"
 	h.keys("N", "enter") // group
-	h.typeText("/tmp/x")
-	h.wantScreen("… /tmp/x")
+	h.typeText("/tmp")   // exists, so it's chosen as is (not created)
+	h.wantScreen("… /tmp")
 	h.keys("enter")
-	if got := h.f.news[len(h.f.news)-1]; got != "g1 /tmp/x" {
+	if got := h.f.news[len(h.f.news)-1]; got != "g1 /tmp" {
 		t.Errorf("N: %s", got)
 	}
 

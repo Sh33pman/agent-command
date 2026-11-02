@@ -58,4 +58,39 @@ func TestRootGitLinkedWorktree(t *testing.T) {
 	if got := Root(main); got != main {
 		t.Fatalf("main checkout: Root = %q, want itself", got)
 	}
+	if !IsWorktreeTop(otherReal) || IsWorktreeTop(main) {
+		t.Fatalf("IsWorktreeTop: linked %v, main %v", IsWorktreeTop(otherReal), IsWorktreeTop(main))
+	}
+}
+
+func TestIsWorktreeTopWithoutGit(t *testing.T) {
+	root := t.TempDir()
+	dir := func(name, gitFile string) string {
+		t.Helper()
+		d := filepath.Join(root, name)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if gitFile != "" {
+			if err := os.WriteFile(filepath.Join(d, ".git"), []byte(gitFile), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return d
+	}
+	cases := []struct {
+		dir  string
+		want bool
+	}{
+		{dir("plain", ""), false},
+		{dir("linked", "gitdir: /r/.git/worktrees/linked\n"), true},
+		{dir("submodule", "gitdir: ../.git/modules/submodule\n"), false},
+		{"/w/proj/.claude/worktrees/feat-x", true},
+		{"/w/proj/.claude", false},
+	}
+	for _, c := range cases {
+		if got := IsWorktreeTop(c.dir); got != c.want {
+			t.Errorf("IsWorktreeTop(%s) = %v, want %v", c.dir, got, c.want)
+		}
+	}
 }

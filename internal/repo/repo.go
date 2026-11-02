@@ -50,6 +50,23 @@ func CleanEnv(env []string) []string {
 // IsWorktree reports whether dir is inside a linked worktree.
 func IsWorktree(dir string) bool { return Root(dir) != filepath.Clean(dir) }
 
+// IsWorktreeTop reports, without running git, whether dir is the top of a
+// linked worktree: one of Claude's worktrees (by path), or a folder whose
+// .git is a file pointing into a repository's worktrees folder. Submodules
+// also have a .git file, but theirs points into modules, so they don't count.
+func IsWorktreeTop(dir string) bool {
+	dir = filepath.Clean(dir)
+	if strings.Contains(dir+string(filepath.Separator), worktreesSeg) {
+		return true
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".git")) // #nosec G304 -- a .git file in a folder the user is browsing
+	if err != nil {
+		return false // no .git, or a .git folder (a main checkout)
+	}
+	gitdir, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
+	return ok && strings.Contains(filepath.ToSlash(strings.TrimSpace(gitdir)), "/worktrees/")
+}
+
 // gitMain asks git for the main checkout when dir is in a linked worktree.
 func gitMain(dir string) (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

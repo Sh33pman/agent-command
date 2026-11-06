@@ -7,6 +7,7 @@ struct SidebarView: View {
     let keys: SidebarKeyView
     let showCommands: () -> Void
     let archive: (Session) -> Void
+    let rename: (Session) -> Void
     let moveOut: (Session) -> Void
     let openSet: (Session) -> Void
     /// A click gives the sidebar the keyboard, with its cursor on that row.
@@ -67,6 +68,7 @@ struct SidebarView: View {
                                 if row.link != .none {
                                     Button("Move Out of Set") { moveOut(session) }
                                 }
+                                Button("Rename…") { rename(session) }
                                 Button("Archive…") { archive(session) }
                             }
                     }

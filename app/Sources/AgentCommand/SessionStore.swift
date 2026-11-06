@@ -77,16 +77,54 @@ final class SessionStore {
         if markedIDs.remove(cursorID) == nil { markedIDs.insert(cursorID) }
     }
 
-    /// What an archive applies to: what's marked, else the cursor while the sidebar
-    /// has the keyboard, else the selected session.
-    var archiveTargets: [Session] {
+    /// What an action applies to, in sidebar order: what's marked, else the cursor
+    /// while the sidebar has the keyboard, else the selected session.
+    var actionTargets: [Session] {
         let ids: Set<String>
         switch (sidebarFocused, cursorID) {
         case (true, _) where !markedIDs.isEmpty: ids = markedIDs
         case (true, let cursor?): ids = [cursor]
         default: ids = selectedID.map { [$0] } ?? []
         }
-        return sessions.filter { ids.contains($0.id) }
+        return inSidebarOrder(ids)
+    }
+
+    /// What a right click on a row applies to: all that's marked if it's marked.
+    func actionTargets(forRow session: Session) -> [Session] {
+        markedIDs.contains(session.id) ? inSidebarOrder(markedIDs) : [session]
+    }
+
+    private func inSidebarOrder(_ ids: Set<String>) -> [Session] {
+        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        return sidebarIDs.filter(ids.contains).compactMap { byID[$0] }
+    }
+
+    /// The sidebar's cursor and marks while it has the keyboard, to come back to.
+    var sidebarState: (cursor: String?, marks: Set<String>)? {
+        sidebarFocused ? (cursorID, markedIDs) : nil
+    }
+
+    func restoreSidebar(_ state: (cursor: String?, marks: Set<String>)) {
+        cursorID = state.cursor
+        markedIDs = state.marks
+    }
+
+    func clearMarks() {
+        markedIDs = []
+    }
+
+    /// Renames sessions: to the name for one, numbered in order for several.
+    func rename(_ targets: [Session], to base: String) {
+        struct Mutation: Encodable {
+            let kind: String
+            let id: String
+            let text: String
+        }
+        for (session, name) in zip(targets, RenameNames.names(base: base, count: targets.count)) {
+            run(failure: "Couldn't rename the session") { conn in
+                try conn.send("mutate", Mutation(kind: "session.rename", id: session.id, text: name))
+            } done: { _ in }
+        }
     }
 
     /// Archives sessions, leaving the cursor on the next row.

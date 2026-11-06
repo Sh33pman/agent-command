@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var pendingPreview: DispatchWorkItem?
     private var pendingSave: DispatchWorkItem?
     private var restored = false
+    /// The sidebar's state to return to when a popup closes, if it had the keyboard.
+    private var popupReturn: (cursor: String?, marks: Set<String>)?
     private let sidebarKeys = SidebarKeyView()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -45,7 +47,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 store: store,
                 keys: sidebarKeys,
                 showCommands: { [weak self] in self?.toggleCommands() },
-                archive: { [weak self] session in self?.archive([session]) },
+                archive: { [weak self] session in
+                    guard let self else { return }
+                    self.archive(self.store.actionTargets(forRow: session))
+                },
+                rename: { [weak self] session in
+                    guard let self else { return }
+                    self.showRename(self.store.actionTargets(forRow: session))
+                },
                 moveOut: { [weak self] session in self?.pane?.moveOut(sessionID: session.id) },
                 openSet: { [weak self] session in self?.pane?.showSet(containing: session.id) },
                 clickRow: { [weak self] session in self?.clickSidebarRow(session) },
@@ -116,6 +125,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if args.contains("--open-resume") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.resumeSession() }
+        }
+        if args.contains("--open-rename") {
+            // Renames up to three sessions, to check how the popup looks.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                self.showRename(Array(self.store.sessions.prefix(3)))
+            }
         }
         if args.contains("--open-commands") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -259,7 +274,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func archiveSelection() {
-        archive(store.archiveTargets)
+        archive(store.actionTargets)
+    }
+
+    @objc private func renameSelection() {
+        showRename(store.actionTargets)
+    }
+
+    /// A popup to rename sessions, which goes back to where the keyboard was.
+    private func showRename(_ sessions: [Session]) {
+        guard !sessions.isEmpty else { return }
+        closePopup()
+        showPopup(RenameView(
+            sessions: sessions,
+            close: { [weak self] in self?.closePopup() },
+            rename: { [weak self] name in
+                self?.store.rename(sessions, to: name)
+                self?.closePopup()
+                self?.store.clearMarks()
+            }
+        ))
     }
 
     @objc private func focusLeft() { pane?.focus(.left) }
@@ -331,8 +365,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             closePopup()
             return
         }
+        // Before the popup takes the keyboard: it's what the commands act on.
+        let targets = store.actionTargets
         showPopup(CommandPopupView(
-            commands: commands(),
+            commands: commands(targets: targets),
             close: { [weak self] in self?.closePopup() },
             run: { [weak self] command in
                 self?.closePopup()
@@ -397,6 +433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Popups go over the whole window, so they stay centered across panes.
     private func showPopup(_ view: some View) {
         guard let content = window?.contentView else { return }
+        popupReturn = store.sidebarState
         let hosting = NSHostingView(rootView: view)
         hosting.frame = content.bounds
         hosting.autoresizingMask = [.width, .height]
@@ -405,17 +442,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func closePopup() {
-        popup?.removeFromSuperview()
+        guard let shown = popup else { return }
+        shown.removeFromSuperview()
         popup = nil
-        pane?.focusTerminal()
+        if let state = popupReturn {
+            window?.makeFirstResponder(sidebarKeys)
+            store.restoreSidebar(state)
+        } else {
+            pane?.focusTerminal()
+        }
+        popupReturn = nil
     }
 
     /// What can be done right now: what the popup lists depends on what's showing.
-    private func commands() -> [PopupCommand] {
+    private func commands(targets: [Session]) -> [PopupCommand] {
         var list: [PopupCommand] = []
-        let current = store.selected
+        let current = targets.count == 1 ? targets[0] : nil
+        if targets.count > 1 {
+            let section = "\(targets.count) sessions"
+            list.append(PopupCommand(section: section, title: "Rename…", shortcut: "⌘R") { [weak self] in
+                self?.showRename(targets)
+            })
+            list.append(PopupCommand(section: section, title: "Archive…", shortcut: "⇧⌘⌫") { [weak self] in
+                self?.archive(targets)
+            })
+        }
         if let session = current {
             let section = session.isTerminal ? "Terminal session" : "Claude session"
+            list.append(PopupCommand(section: section, title: "Rename…", shortcut: "⌘R") { [weak self] in
+                self?.showRename([session])
+            })
             list.append(PopupCommand(section: section, title: "Archive…", shortcut: "⇧⌘⌫") { [weak self] in
                 self?.archive([session])
             })
@@ -554,6 +610,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             item.target = self
             file.submenu?.addItem(item)
         }
+        let renameItem = NSMenuItem(title: "Rename…", action: #selector(renameSelection), keyEquivalent: "r")
+        renameItem.target = self
+        file.submenu?.addItem(renameItem)
         let archiveItem = NSMenuItem(title: "Archive…", action: #selector(archiveSelection), keyEquivalent: "\u{8}")
         archiveItem.keyEquivalentModifierMask = [.command, .shift]
         archiveItem.target = self

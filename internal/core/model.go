@@ -120,16 +120,6 @@ type Group struct {
 	ArchivedAt time.Time
 }
 
-// View is a pane where the user ran `acmd` (SPEC §6.4).
-type View struct {
-	ID            string
-	Pane          PaneLoc
-	Sidebar       PaneLoc
-	Selected      string
-	SidebarHidden bool
-	LastFocusedAt time.Time
-}
-
 // ViewState is the list presentation shared by every sidebar (SPEC §8.4).
 type ViewState struct {
 	Mode         string // "groups" | "list"

@@ -43,20 +43,10 @@ type Snapshot struct {
 	Sessions  []*core.Session `json:"sessions"`
 	Groups    []*core.Group   `json:"groups"`
 	ViewState core.ViewState  `json:"view_state"`
-	Views     []*core.View    `json:"views"`
 	// Notices are the most recent notifications (SPEC §8.5), oldest first.
 	Notices []Notice `json:"notices,omitempty"`
-	// Terminals are the sessions with a running terminal (SPEC §8.7),
-	// by session id.
-	Terminals map[string]Terminal `json:"terminals,omitempty"`
 	// Inbox is what the reply popup shows, oldest first (SPEC §8.8).
 	Inbox []core.InboxItem `json:"inbox,omitempty"`
-}
-
-// Terminal is a session's terminal: Shown is whether its pane is shown
-// under the view's Claude pane when that session is shown.
-type Terminal struct {
-	Shown bool `json:"shown"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view
@@ -98,16 +88,7 @@ const (
 	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)
 	MutViewFilter     = "view.filter"       // Text
 	MutViewArchived   = "view.archived"     // Flag = show archived
-	MutViewOpen       = "view.open"         // Pane, ID = session to show ("" = most recently active) -> returns the view
-	MutViewSelect     = "view.select"       // ID = view, Text = session ("" = placeholder)
-	MutViewClose      = "view.close"        // ID = view
-	MutViewNote       = "view.note"         // ID = view, Text (empty clears), Flag = error
-	MutTerm           = "term.running"      // ID = session, Flag = running (the terminal server reports itself)
-	MutTermShown      = "term.shown"        // ID = session, Flag = shown
 	MutInboxSkip      = "inbox.skip"        // ID = session: drop its popup item
-	MutViewTouch      = "view.touch"        // ID = view: it was focused
-	MutViewSidebar    = "view.sidebar"      // ID = view, Pane = its sidebar pane
-	MutViewHidden     = "view.hidden"       // ID = view, Flag = sidebar hidden (Ghostty can't report zoom)
 	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
 )
 
@@ -127,11 +108,7 @@ type Mutation struct {
 // passes). With a ViewID it also counts as that view's heartbeat.
 type WatchRequest struct {
 	Rev    uint64 `json:"rev"`
-	ViewID string `json:"view_id,omitempty"`
 	WaitMS int    `json:"wait_ms,omitempty"`
-	// Passive watches (a sidebar) don't count as the view's heartbeat:
-	// only its view loop keeps a view alive.
-	Passive bool `json:"passive,omitempty"`
 	// App marks the app's watch, which tells the daemon the app can show notices.
 	App bool `json:"app,omitempty"`
 }
@@ -139,17 +116,7 @@ type WatchRequest struct {
 // WatchResponse is the current revision and, for a ViewID, the view (Gone
 // when it was closed or pruned).
 type WatchResponse struct {
-	Rev  uint64     `json:"rev"`
-	View *core.View `json:"view,omitempty"`
-	Gone bool       `json:"gone,omitempty"`
-	// Note is the view's status bar message (nil = none).
-	Note *ViewNote `json:"note,omitempty"`
-}
-
-// ViewNote is a message for a view's status bar (SPEC §8.4).
-type ViewNote struct {
-	Text string `json:"text"`
-	Err  bool   `json:"err,omitempty"`
+	Rev uint64 `json:"rev"`
 }
 
 // NewRequest starts a background session (SPEC §6.1). The client resolves

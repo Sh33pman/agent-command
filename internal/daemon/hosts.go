@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +12,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
-	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
 )
 
@@ -87,16 +85,6 @@ func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Ses
 	if s.IsTerminal() {
 		s.Status = core.StatusRunning
 		if err := d.store.UpdateSession(ctx, s); err != nil {
-			return nil, err
-		}
-	}
-	if req.ShowIn != "" {
-		v, err := d.store.View(ctx, req.ShowIn)
-		if err == nil {
-			v.LastFocusedAt = d.cfg.Now()
-			err = d.show(ctx, v, s.ID)
-		}
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return nil, err
 		}
 	}

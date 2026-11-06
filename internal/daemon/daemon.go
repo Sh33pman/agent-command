@@ -72,9 +72,6 @@ type Daemon struct {
 	once  sync.Once
 
 	changes      changes      // bumped on every state change (OpWatch)
-	seen         seen         // view heartbeats
-	notes        notes        // status bar messages per view (not persisted)
-	terms        terms        // sessions with a running terminal (not persisted)
 	appWatches   atomic.Int32 // the app's open watches (notify.go)
 	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
 	inbox        inbox        // what the reply popup shows (not persisted)
@@ -122,9 +119,7 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = ln.Close()
 		return err
 	}
-	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}),
-		seen: seen{at: map[string]time.Time{}, start: cfg.Now()}}
-	d.terms.rescan(cfg.Paths)
+	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{})}
 	sweepHosts(cfg.Paths)
 	if cfg.Notify != nil {
 		d.notify = newNotifier(*cfg.Notify)
@@ -339,8 +334,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		}
 	}
 	tr := core.Apply(sess, e)
-	shown := d.shown(ctx, sess.ID)
-	if tr.Changed() && tr.To.NeedsAttention() && !shown {
+	if tr.Changed() && tr.To.NeedsAttention() {
 		sess.Unseen = true
 	}
 	if isNew {
@@ -351,7 +345,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	if err != nil {
 		return err
 	}
-	d.transition(ctx, sess, tr)
+	d.transition(sess, tr)
 	if tr.Applied { // not a stale event
 		d.inbox.apply(sess, e)
 	}
@@ -384,10 +378,8 @@ func (d *Daemon) background(ctx context.Context) {
 	tail := reconcile.NewTailer()
 	reconcileT := time.NewTicker(d.cfg.ReconcileEvery)
 	tailT := time.NewTicker(d.cfg.TailEvery)
-	pruneT := time.NewTicker(10 * time.Second)
 	defer reconcileT.Stop()
 	defer tailT.Stop()
-	defer pruneT.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -413,15 +405,6 @@ func (d *Daemon) background(ctx context.Context) {
 				d.cfg.Log.Printf("transcript tail: %v", err)
 			}
 			if changed {
-				d.changes.bump()
-			}
-		case <-pruneT.C:
-			n, err := d.pruneViews(ctx)
-			if err != nil {
-				d.cfg.Log.Printf("prune views: %v", err)
-			}
-			if n > 0 {
-				d.cfg.Log.Printf("pruned %d closed views", n)
 				d.changes.bump()
 			}
 		}
@@ -451,8 +434,8 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 		if !tr.Changed() {
 			continue
 		}
-		d.transition(ctx, s, tr)
-		s.Unseen = !d.shown(ctx, s.ID)
+		d.transition(s, tr)
+		s.Unseen = true
 		changed = true
 		if err := d.store.UpdateSession(ctx, s); err != nil {
 			return changed, err

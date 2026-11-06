@@ -387,37 +387,6 @@ func TestViewsAndViewState(t *testing.T) {
 	if got, _ := s.ViewState(ctx); !reflect.DeepEqual(got, want) {
 		t.Errorf("view state: %+v", got)
 	}
-
-	older := &core.View{Pane: core.PaneLoc{Terminal: "kitty", KittyWindow: 3}, LastFocusedAt: time.UnixMilli(1000).UTC()}
-	newer := &core.View{Pane: core.PaneLoc{Terminal: "ghostty", GhosttyTerm: "T", TTY: "/dev/ttys010"},
-		Sidebar: core.PaneLoc{Terminal: "ghostty", GhosttyTerm: "S"}, Selected: "sess", SidebarHidden: true,
-		LastFocusedAt: time.UnixMilli(2000).UTC()}
-	for _, v := range []*core.View{older, newer} {
-		if err := s.PutView(ctx, v); err != nil {
-			t.Fatal(err)
-		}
-	}
-	views, _ := s.Views(ctx)
-	if len(views) != 2 || views[0].ID != newer.ID {
-		t.Fatalf("views order: %+v", views)
-	}
-	if !reflect.DeepEqual(views[0], newer) {
-		t.Errorf("view round trip:\n got %+v\nwant %+v", views[0], newer)
-	}
-	newer.Selected = "other"
-	must(t, s.PutView(ctx, newer))
-	if v, _ := s.View(ctx, newer.ID); v.Selected != "other" {
-		t.Errorf("upsert: %+v", v)
-	}
-	if err := s.DeleteView(ctx, older.ID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.View(ctx, older.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("deleted view: %v", err)
-	}
-	if err := s.DeleteView(ctx, older.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("double delete view: %v", err)
-	}
 }
 
 func TestEventLogIsCappedAndMinimal(t *testing.T) {

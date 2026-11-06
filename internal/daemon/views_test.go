@@ -3,24 +3,13 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
-	"github.com/brettmostert/agent-command/internal/store"
 )
-
-func openView(t *testing.T, c *ipc.Conn, sessionID string) *core.View {
-	t.Helper()
-	var v core.View
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutViewOpen, ID: sessionID, Pane: &core.PaneLoc{Terminal: "kitty", KittyWindow: 3}}, &v); err != nil {
-		t.Fatal(err)
-	}
-	return &v
-}
 
 func newSess(t *testing.T, c *ipc.Conn, req ipc.NewRequest) *core.Session {
 	t.Helper()
@@ -29,88 +18,6 @@ func newSess(t *testing.T, c *ipc.Conn, req ipc.NewRequest) *core.Session {
 		t.Fatal(err)
 	}
 	return &s
-}
-
-func TestWatchAndPrune(t *testing.T) {
-	p := testPaths(t)
-	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p} })
-	c := dial(t, p)
-	v := openView(t, c, "")
-
-	var w ipc.WatchResponse
-	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{ViewID: v.ID}, &w))
-	if w.View == nil || w.View.ID != v.ID || w.Gone {
-		t.Fatalf("watch: %+v", w)
-	}
-	// Waiting returns on a change.
-	got := make(chan ipc.WatchResponse)
-	go func() {
-		var r ipc.WatchResponse
-		_ = dial(t, p).Call(ipc.OpWatch, ipc.WatchRequest{Rev: w.Rev, ViewID: v.ID, WaitMS: 5000}, &r)
-		got <- r
-	}()
-	time.Sleep(50 * time.Millisecond)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w", ShowIn: v.ID})
-	select {
-	case r := <-got:
-		if r.Rev == w.Rev || r.View.Selected != s.ID {
-			t.Errorf("watch after change: %+v", r)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("watch didn't return on a change")
-	}
-	// Without a change it times out with the same revision.
-	start := time.Now()
-	var same ipc.WatchResponse
-	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{Rev: w.Rev + 1, WaitMS: 100}, &same))
-	if same.Rev != w.Rev+1 || time.Since(start) < 90*time.Millisecond {
-		t.Errorf("idle watch: %+v after %v", same, time.Since(start))
-	}
-
-	// A closed view is gone for its loop.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewClose, ID: v.ID})
-	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{ViewID: v.ID}, &w))
-	if !w.Gone {
-		t.Errorf("closed view not gone: %+v", w)
-	}
-}
-
-func TestPruneViews(t *testing.T) {
-	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "state.db"))
-	must(t, err)
-	t.Cleanup(func() { st.Close() })
-	clock := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
-	d := &Daemon{cfg: Config{Now: func() time.Time { return clock }}, store: st, seen: seen{at: map[string]time.Time{}, start: clock}}
-	ctx := context.Background()
-	old, watched, fresh := &core.View{}, &core.View{}, &core.View{}
-	for _, v := range []*core.View{old, watched, fresh} {
-		must(t, st.PutView(ctx, v))
-	}
-	clock = clock.Add(time.Minute)
-	d.seen.mark(watched.ID, clock)
-	clock = clock.Add(time.Minute)
-	d.seen.mark(fresh.ID, clock)
-	n, err := d.pruneViews(ctx)
-	must(t, err)
-	views, _ := st.Views(ctx)
-	if n != 1 || len(views) != 2 {
-		t.Fatalf("pruned %d, %d left", n, len(views))
-	}
-	for _, v := range views {
-		if v.ID == old.ID {
-			t.Error("the view nobody watched for 2 minutes survived")
-		}
-	}
-	// shown counts only live views.
-	watched.Selected = "s1"
-	must(t, st.PutView(ctx, watched))
-	if !d.shown(ctx, "s1") {
-		t.Error("watched view's session not shown")
-	}
-	clock = clock.Add(2 * time.Minute)
-	if d.shown(ctx, "s1") {
-		t.Error("a view that stopped watching still shows its session")
-	}
 }
 
 func TestWithoutClaude(t *testing.T) {
@@ -192,43 +99,6 @@ func TestPurge(t *testing.T) {
 	}
 }
 
-func TestViewNotes(t *testing.T) {
-	p := testPaths(t)
-	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p} })
-	c := dial(t, p)
-	v := openView(t, c, "")
-
-	w := watchView(t, c, v.ID)
-	if w.Note != nil {
-		t.Fatalf("note before any: %+v", w.Note)
-	}
-	rev := w.Rev
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewNote, ID: v.ID, Text: "Could not resize", Flag: true})
-	w = watchView(t, c, v.ID)
-	if w.Rev == rev || w.Note == nil || w.Note.Text != "Could not resize" || !w.Note.Err {
-		t.Errorf("note not delivered: rev %d→%d %+v", rev, w.Rev, w.Note)
-	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewNote, ID: v.ID})
-	w = watchView(t, c, v.ID)
-	if w.Note != nil {
-		t.Errorf("note not cleared: %+v", w.Note)
-	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewNote, ID: v.ID, Text: "x"})
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewClose, ID: v.ID})
-	w = watchView(t, c, v.ID)
-	if !w.Gone || w.Note != nil {
-		t.Errorf("closed view: %+v", w)
-	}
-}
-
-// watchView returns a fresh (non-waiting) watch response for view id.
-func watchView(t *testing.T, c *ipc.Conn, id string) ipc.WatchResponse {
-	t.Helper()
-	var w ipc.WatchResponse
-	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{ViewID: id}, &w))
-	return w
-}
-
 // The reply popup's inbox: a finished turn, a permission prompt that
 // replaces it, a prompt that drops it, skip, and order.
 func TestInbox(t *testing.T) {
@@ -299,5 +169,24 @@ func TestExternalPaneFollowsHooks(t *testing.T) {
 	must(t, c.Call(ipc.OpEvent, hookEvent("Notification", `{"session_id":"ext0000-1","notification_type":"idle_prompt"}`, t0.Add(3*time.Second), ipc.HookContext{ViewID: "v"}), nil))
 	if s = byClaude(snapshot(t, c), "ext0000-1"); s.External.KittyWindow != 4 || s.External.KittySocket != "unix:/tmp/kitty-1" {
 		t.Errorf("kept: %+v", s.External)
+	}
+}
+
+// A watch returns when something changes, or when its wait is up.
+func TestWatch(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	var w ipc.WatchResponse
+	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{}, &w))
+	rev := w.Rev
+	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{Rev: rev, WaitMS: 10}, &w))
+	if w.Rev != rev {
+		t.Errorf("nothing changed: %d, %d", rev, w.Rev)
+	}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"w1","source":"startup"}`, time.Now(), ipc.HookContext{}), nil))
+	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{Rev: rev, WaitMS: 1000}, &w))
+	if w.Rev == rev {
+		t.Error("a change should move the revision")
 	}
 }

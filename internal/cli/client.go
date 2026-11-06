@@ -83,7 +83,24 @@ func withClient(cmdCtx context.Context, fn func(*client, ipc.Snapshot) error) er
 	if err != nil {
 		return err
 	}
+	snap.Sessions = visibleSessions(snap.Sessions)
 	return fn(c, snap)
+}
+
+// visibleSessions is what commands see; swappable in tests, whose sessions come
+// from hooks rather than hosts.
+var visibleSessions = hostedSessions
+
+// hostedSessions keeps the sessions the app runs, as its sidebar does. The rest are
+// rows left over from v1, which tracked sessions it didn't start.
+func hostedSessions(sessions []*core.Session) []*core.Session {
+	var hosted []*core.Session
+	for _, s := range sessions {
+		if s.Kind == core.KindHosted {
+			hosted = append(hosted, s)
+		}
+	}
+	return hosted
 }
 
 // resolveSession finds a session by number (current view), id, short id,

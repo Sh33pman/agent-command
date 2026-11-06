@@ -25,7 +25,7 @@ func notifyDaemon(t *testing.T, cfg config.Notify) (*Daemon, *time.Time, func() 
 		mu.Lock()
 		fallback = append(fallback, n)
 		mu.Unlock()
-	}}, store: st, seen: seen{at: map[string]time.Time{}, start: clock}, notify: newNotifier(cfg)}
+	}}, store: st, notify: newNotifier(cfg)}
 	return d, &clock, func() []ipc.Notice {
 		mu.Lock()
 		defer mu.Unlock()
@@ -34,14 +34,13 @@ func notifyDaemon(t *testing.T, cfg config.Notify) (*Daemon, *time.Time, func() 
 }
 
 func TestNotifyDecisions(t *testing.T) {
-	ctx := context.Background()
 	d, clock, fallback := notifyDaemon(t, config.Default().Notify)
 	s := &core.Session{ID: "s1", Name: "auth", Cwd: "/w/api", StatusDetail: "permission: Bash"}
 	step := func(to core.Status, after time.Duration) {
 		*clock = clock.Add(after)
 		from := s.Status
 		s.Status = to
-		d.transition(ctx, s, core.Transition{From: from, To: to})
+		d.transition(s, core.Transition{From: from, To: to})
 	}
 	step(core.StatusBusy, 0)
 	step(core.StatusWaiting, time.Second)
@@ -78,20 +77,6 @@ func TestNotifyDecisions(t *testing.T) {
 		t.Errorf("fallback got %d: %+v", len(got), got)
 	}
 
-	// A live view with a visible sidebar emits.
-	v := &core.View{Sidebar: core.PaneLoc{Terminal: "kitty", KittyWindow: 3}}
-	must(t, d.store.PutView(ctx, v))
-	d.seen.mark(v.ID, *clock)
-	step(core.StatusWaiting, time.Minute)
-	if n = d.notices(); n[len(n)-1].Emitter != v.ID {
-		t.Errorf("emitter: %+v", n[len(n)-1])
-	}
-	v.SidebarHidden = true // hidden Ghostty sidebars can't be clicked (N7)
-	must(t, d.store.PutView(ctx, v))
-	step(core.StatusError, time.Minute)
-	if n = d.notices(); n[len(n)-1].Emitter != "" {
-		t.Errorf("hidden sidebar chosen: %+v", n[len(n)-1])
-	}
 	for range 60 {
 		step(core.StatusWaiting, time.Minute)
 		step(core.StatusBusy, 0)
@@ -102,27 +87,26 @@ func TestNotifyDecisions(t *testing.T) {
 }
 
 func TestNotifyOff(t *testing.T) {
-	ctx := context.Background()
 	cfg := config.Default().Notify
 	cfg.Enabled, cfg.OnPaused = false, true
 	d, _, _ := notifyDaemon(t, cfg)
 	s := &core.Session{ID: "s1"}
-	d.transition(ctx, s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
+	d.transition(s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
 	if len(d.notices()) != 0 {
 		t.Error("notified while disabled")
 	}
 	cfg.Enabled = true
 	d, _, _ = notifyDaemon(t, cfg)
-	d.transition(ctx, s, core.Transition{From: core.StatusDone, To: core.StatusPaused})
+	d.transition(s, core.Transition{From: core.StatusDone, To: core.StatusPaused})
 	if n := d.notices(); len(n) != 1 || n[0].Kind != "paused" || n[0].Title != "‖ session  stopped" {
 		t.Errorf("paused: %+v", n)
 	}
-	d.transition(ctx, s, core.Transition{From: core.StatusPaused, To: core.StatusPaused}) // no change
+	d.transition(s, core.Transition{From: core.StatusPaused, To: core.StatusPaused}) // no change
 	if len(d.notices()) != 1 {
 		t.Error("notified without a change")
 	}
 	plain := &Daemon{}
-	plain.transition(ctx, s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting}) // notifications not configured
+	plain.transition(s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting}) // notifications not configured
 	if plain.notices() != nil {
 		t.Error("notices without a notifier")
 	}
@@ -156,7 +140,7 @@ func TestNoticeGoesToTheApp(t *testing.T) {
 	d, _, fallback := notifyDaemon(t, config.Default().Notify)
 	d.appWatches.Add(1)
 	s := &core.Session{ID: "s1", Name: "auth", Cwd: "/w/api"}
-	d.transition(context.Background(), s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
+	d.transition(s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
 	n := d.notices()
 	if len(n) != 1 || n[0].Emitter != ipc.EmitterApp {
 		t.Fatalf("notices: %+v", n)

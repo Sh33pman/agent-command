@@ -26,7 +26,7 @@ func newListCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List sessions in the sidebar's order",
+		Short: "List the sessions the app runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
@@ -56,9 +56,9 @@ func newListCmd() *cobra.Command {
 	f.BoolVar(&all, "all", false, "include archived sessions")
 	f.StringVar(&group, "group", "", "only sessions in this group")
 	f.StringVar(&status, "status", "", "only these statuses (comma-separated, e.g. busy,waiting)")
-	f.StringVar(&filter, "filter", "", "filter text (overrides the sidebar's filter; g:<group> works)")
-	f.StringVar(&view, "view", "", "groups or list (default: the sidebar's view)")
-	f.StringVar(&sortKey, "sort", "", "created, name, activity, status or cwd (default: the sidebar's sort)")
+	f.StringVar(&filter, "filter", "", "filter text (g:<group> works)")
+	f.StringVar(&view, "view", "", "groups or list (default: set with acmd view-mode)")
+	f.StringVar(&sortKey, "sort", "", "created, name, activity, status or cwd (default: set with acmd sort)")
 	f.BoolVar(&desc, "desc", false, "sort descending (with --sort)")
 	f.BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
@@ -263,7 +263,7 @@ func newArchiveCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "archive <N|id|name-prefix>",
-		Short: "Archive a session (stops a background session; the conversation is kept)",
+		Short: "Archive a session (ends it; an agent's conversation is kept)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {

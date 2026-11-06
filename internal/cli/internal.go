@@ -76,7 +76,7 @@ func newDaemonStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stop the background service",
-		Long: `Stop the background service. Open views and sidebars start it again
+		Long: `Stop the background service. The app starts it again
 the next time they need it; close them first to keep it stopped.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -97,7 +97,7 @@ the next time they need it; close them first to keep it stopped.`,
 func newDaemonRestartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restart",
-		Short: "Restart the background service (open views reconnect by themselves)",
+		Short: "Restart the background service (the app reconnects by itself)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths.Default()

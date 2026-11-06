@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"context"
 	"path/filepath"
 	"time"
 
@@ -39,7 +38,7 @@ func newNotifier(cfg config.Notify) *notifier {
 
 // transition records a status change of s and returns the notices it
 // causes (d.mu is held).
-func (d *Daemon) transition(ctx context.Context, s *core.Session, tr core.Transition) {
+func (d *Daemon) transition(s *core.Session, tr core.Transition) {
 	n := d.notify
 	if n == nil || !tr.Changed() {
 		return
@@ -69,7 +68,7 @@ func (d *Daemon) transition(ctx context.Context, s *core.Session, tr core.Transi
 	}
 	if tr.From == core.StatusWaiting && n.waiting[s.ID] {
 		delete(n.waiting, s.ID)
-		d.addNotice(ctx, ipc.Notice{SessionID: s.ID, Kind: "withdraw"})
+		d.addNotice(ipc.Notice{SessionID: s.ID, Kind: "withdraw"})
 	}
 	if tr.To != core.StatusBusy {
 		delete(n.busySince, s.ID)
@@ -100,16 +99,16 @@ func (d *Daemon) transition(ctx context.Context, s *core.Session, tr core.Transi
 	case "paused":
 		no.Title, no.Body = "‖ "+name+" stopped", filepath.Base(s.Cwd)
 	}
-	d.addNotice(ctx, no)
+	d.addNotice(no)
 }
 
 // addNotice picks the emitter and records the notice; without one the
 // fallback shows it now.
-func (d *Daemon) addNotice(ctx context.Context, no ipc.Notice) {
+func (d *Daemon) addNotice(no ipc.Notice) {
 	n := d.notify
 	n.seq++
 	no.Seq = n.seq
-	no.Emitter = d.emitter(ctx)
+	no.Emitter = d.emitter()
 	n.notices = append(n.notices, no)
 	if len(n.notices) > keepNotices {
 		n.notices = n.notices[len(n.notices)-keepNotices:]
@@ -119,21 +118,10 @@ func (d *Daemon) addNotice(ctx context.Context, no ipc.Notice) {
 	}
 }
 
-// emitter is the app if it's running, else the most recently focused live view
-// with a visible sidebar.
-func (d *Daemon) emitter(ctx context.Context) string {
+// emitter is the app if it's running; otherwise the daemon shows it itself.
+func (d *Daemon) emitter() string {
 	if d.appRunning() {
 		return ipc.EmitterApp
-	}
-	views, err := d.store.Views(ctx) // most recently focused first
-	if err != nil {
-		return ""
-	}
-	for _, v := range views {
-		if v.Sidebar.Terminal == "" || v.SidebarHidden || d.cfg.Now().Sub(d.seen.last(v.ID)) >= viewTimeout {
-			continue
-		}
-		return v.ID
 	}
 	return ""
 }

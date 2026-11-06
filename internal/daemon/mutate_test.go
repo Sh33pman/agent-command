@@ -246,7 +246,6 @@ func TestFinish(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	run := byClaude(snapshot(t, c), "run00000-x")
-	v := openView(t, c, run.ID)
 
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, ID: run.ID})
 	if strings.Join(st.ids, ",") != "rrrrrrrr" {
@@ -261,11 +260,6 @@ func TestFinish(t *testing.T) {
 	snap := snapshot(t, c)
 	if s := byClaude(snap, "run00000-x"); s.Status != core.StatusFinished {
 		t.Errorf("after finish: %s", s.Status)
-	}
-	for _, x := range snap.Views {
-		if x.ID == v.ID && x.Selected != "" {
-			t.Errorf("view still shows it: %q", x.Selected)
-		}
 	}
 	// External sessions can't be finished; resuming brings it back.
 	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutFinish, ID: byClaude(snap, "ext").ID}, nil); err == nil {

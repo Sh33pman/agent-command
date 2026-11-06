@@ -60,9 +60,7 @@ func TestHostedSessionLifecycle(t *testing.T) {
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
 	c := dial(t, p)
-	v := openView(t, c, "")
-
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Name: "auth", Prompt: "go", Args: []string{"--model", "opus"}, ShowIn: v.ID})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Name: "auth", Prompt: "go", Args: []string{"--model", "opus"}})
 	if s.Kind != core.KindHosted || s.Status != core.StatusStarting || s.Name != "auth" || !uuidRe.MatchString(s.ClaudeSessionID) || s.BgID != "" {
 		t.Fatalf("new session: %+v", s)
 	}
@@ -72,9 +70,6 @@ func TestHostedSessionLifecycle(t *testing.T) {
 	}
 	if !term.Running(p.HostSocket(s.ID)) {
 		t.Error("host not running")
-	}
-	if snap := snapshot(t, c); len(snap.Views) != 1 || snap.Views[0].Selected != s.ID {
-		t.Errorf("view didn't switch: %+v", snap.Views)
 	}
 
 	// Its first hook finds the row by the id acmd chose.

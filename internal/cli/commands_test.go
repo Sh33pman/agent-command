@@ -56,6 +56,9 @@ func (s *stopRecorder) stopped() []string {
 // three sessions through hook events, like Claude would.
 func env(t *testing.T) *stopRecorder {
 	t.Helper()
+	origVisible := visibleSessions
+	visibleSessions = func(sessions []*core.Session) []*core.Session { return sessions }
+	t.Cleanup(func() { visibleSessions = origVisible })
 	dir, err := os.MkdirTemp("", "acmdcli")
 	if err != nil {
 		t.Fatal(err)
@@ -389,5 +392,14 @@ func TestPurge(t *testing.T) {
 	}
 	if d, err := parseAge("12h"); err != nil || d != 12*time.Hour {
 		t.Errorf("12h: %v %v", d, err)
+	}
+}
+
+// Commands show what the app shows, not rows left over from v1.
+func TestHostedSessions(t *testing.T) {
+	hosted := &core.Session{ID: "h", Kind: core.KindHosted}
+	got := hostedSessions([]*core.Session{{ID: "e", Kind: core.KindExternal}, hosted, {ID: "b", Kind: core.KindBackground}})
+	if len(got) != 1 || got[0] != hosted {
+		t.Errorf("hosted: %+v", got)
 	}
 }

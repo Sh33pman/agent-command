@@ -152,7 +152,6 @@ final class SessionStore {
         struct Watch: Encodable {
             let rev: UInt64
             let wait_ms: Int
-            let passive: Bool
             let app: Bool
         }
         struct Watched: Decodable {
@@ -178,7 +177,7 @@ final class SessionStore {
                 var rev: UInt64 = 0
                 while true {
                     let watched: Watched = try conn.call(
-                        "watch", Watch(rev: rev, wait_ms: 25_000, passive: true, app: true))
+                        "watch", Watch(rev: rev, wait_ms: 25_000, app: true))
                     rev = watched.rev
                     let snapshot: Snapshot = try conn.call("snapshot")
                     publish(snapshot)

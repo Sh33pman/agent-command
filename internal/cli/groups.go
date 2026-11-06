@@ -234,7 +234,7 @@ func newGroupCollapseCmd(use string, collapsed bool) *cobra.Command {
 func newViewModeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:       "view-mode groups|list",
-		Short:     "Switch the sidebar between group view and list view",
+		Short:     "Switch acmd list between group view and list view",
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"groups", "list"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -249,7 +249,7 @@ func newSortCmd() *cobra.Command {
 	var desc bool
 	cmd := &cobra.Command{
 		Use:       "sort created|name|activity|status|cwd",
-		Short:     "Set the sort order (shared by all sidebars)",
+		Short:     "Set the sort order for acmd list",
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"created", "name", "activity", "status", "cwd"},
 		RunE: func(cmd *cobra.Command, args []string) error {

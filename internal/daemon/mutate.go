@@ -39,12 +39,7 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	views, err := d.store.Views(ctx)
-	if err != nil {
-		return ipc.Snapshot{}, err
-	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Views: views, Notices: d.notices(),
-		Terminals: d.terms.all(), Inbox: d.inbox.all()}, nil
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Notices: d.notices(), Inbox: d.inbox.all()}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.
@@ -178,16 +173,6 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	case ipc.MutInboxSkip:
 		d.inbox.drop(m.ID)
 		return nil, nil
-	case ipc.MutTerm:
-		d.terms.set(m.ID, m.Flag)
-		return nil, nil
-	case ipc.MutTermShown:
-		if !d.terms.show(m.ID, m.Flag) {
-			return nil, errors.New("that session has no terminal")
-		}
-		return nil, nil
-	case ipc.MutViewOpen, ipc.MutViewSelect, ipc.MutViewClose, ipc.MutViewTouch, ipc.MutViewSidebar, ipc.MutViewHidden, ipc.MutViewNote:
-		return d.viewMutation(ctx, m)
 	default:
 		return nil, fmt.Errorf("unknown mutation %q", m.Kind)
 	}
@@ -242,17 +227,6 @@ func (d *Daemon) finish(ctx context.Context, id string) error {
 	d.inbox.drop(s.ID)
 	if err := d.store.UpdateSession(ctx, s); err != nil {
 		return err
-	}
-	views, err := d.store.Views(ctx)
-	if err != nil {
-		return err
-	}
-	for _, v := range views {
-		if v.Selected == s.ID {
-			if err := d.show(ctx, v, ""); err != nil {
-				return err
-			}
-		}
 	}
 	return d.store.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID, ClaudeSessionID: s.ClaudeSessionID,
 		Kind: string(core.EventFinished), Detail: string(s.Status)})

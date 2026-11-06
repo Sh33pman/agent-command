@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/brettmostert/agent-command/compare/v0.37.2...v0.38.0) (2026-11-06)
+
+
+### Features
+
+* add an Inbox for what your agents send you ([#161](https://github.com/brettmostert/agent-command/issues/161)) ([e3a8127](https://github.com/brettmostert/agent-command/commit/e3a81273854a116589d10fdef75655c45fa9a738))
+
 ## [0.37.2](https://github.com/brettmostert/agent-command/compare/v0.37.1...v0.37.2) (2026-11-06)
 
 

@@ -462,3 +462,48 @@ func TestHostedAgentIsNotTreatedAsTerminal(t *testing.T) {
 		t.Errorf("hosted agent: %+v", got)
 	}
 }
+
+// /clear changes Claude's session id, but not the session it runs in.
+func TestStatusFollowsAHostedSessionThroughClear(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) { c.Hosts = fh })
+	c := dial(t, p)
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api"})
+	first := s.ClaudeSessionID
+	in := ipc.HookContext{HostSession: s.ID}
+	t0 := time.Now().Add(time.Hour)
+	send := func(name, payload string, offset int) {
+		t.Helper()
+		must(t, c.Call(ipc.OpEvent, hookEvent(name, payload, t0.Add(time.Duration(offset)*time.Second), in), nil))
+	}
+	send("UserPromptSubmit", `{"session_id":"`+first+`","prompt":"go"}`, 0)
+	send("Stop", `{"session_id":"`+first+`"}`, 1)
+	send("SessionEnd", `{"session_id":"`+first+`","reason":"clear"}`, 2)
+	send("SessionStart", `{"session_id":"after-clear","source":"clear"}`, 3)
+	send("UserPromptSubmit", `{"session_id":"after-clear","prompt":"more"}`, 4)
+	got := sessionByID(t, c, s.ID)
+	if got.Status != core.StatusBusy || got.ClaudeSessionID != "after-clear" {
+		t.Fatalf("after /clear: status %s, id %q", got.Status, got.ClaudeSessionID)
+	}
+	if len(got.ClaudeHistory) != 1 || got.ClaudeHistory[0] != first {
+		t.Errorf("history: %v", got.ClaudeHistory)
+	}
+	var snap ipc.Snapshot
+	must(t, c.Call(ipc.OpSnapshot, nil, &snap))
+	if len(snap.Sessions) != 1 {
+		t.Errorf("sessions = %d, want one", len(snap.Sessions))
+	}
+	// Without a SessionStart, the next event still lands here and moves the id on.
+	send("Stop", `{"session_id":"missed-start"}`, 5)
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusDone || got.ClaudeSessionID != "missed-start" {
+		t.Errorf("missed start: status %s, id %q", got.Status, got.ClaudeSessionID)
+	}
+	// A late event from an earlier conversation doesn't move it back.
+	send("Stop", `{"session_id":"`+first+`"}`, 6)
+	send("UserPromptSubmit", `{"session_id":"missed-start","prompt":"again"}`, 6)
+	send("Stop", `{"session_id":"`+first+`"}`, 7)
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusBusy || got.ClaudeSessionID != "missed-start" {
+		t.Errorf("late event: status %s, id %q", got.Status, got.ClaudeSessionID)
+	}
+}

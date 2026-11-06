@@ -14,7 +14,6 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
-	"github.com/brettmostert/agent-command/internal/store"
 )
 
 // Lister lists Claude sessions (claudecli.CLI.Agents in production).
@@ -78,7 +77,6 @@ func (r *Reconciler) Once(ctx context.Context) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	known := make(map[string]bool, len(sessions))
 	for _, s := range sessions {
 		if s.ClaudeSessionID == "" && s.BgID != "" {
 			// Started by acmd, no hook yet: link it by the short id.
@@ -90,41 +88,12 @@ func (r *Reconciler) Once(ctx context.Context) (Result, error) {
 				res.Updated++
 			}
 		}
-		known[s.ClaudeSessionID] = true
-		for _, h := range s.ClaudeHistory {
-			known[h] = true
-		}
 		if r.reconcileSession(s, bySession) {
 			if err := r.Store.UpdateSession(ctx, s); err != nil {
 				return res, err
 			}
 			res.Updated++
 		}
-	}
-
-	// Background sessions acmd has no row for (started elsewhere, or hooks
-	// were lost): create them.
-	for _, a := range agents {
-		if !a.Background() || a.SessionID == "" || known[a.SessionID] {
-			continue
-		}
-		if _, err := r.Store.SessionByClaudeID(ctx, a.SessionID); err == nil {
-			continue // archived session we didn't list
-		} else if !errors.Is(err, store.ErrNotFound) {
-			return res, err
-		}
-		s := &core.Session{
-			ClaudeSessionID: a.SessionID, BgID: a.ID, Kind: core.KindBackground, Cwd: a.Cwd,
-			Name: a.Name, NameSource: core.NameAuto, CreatedAt: r.Now().UTC(),
-		}
-		if a.Pid != nil {
-			s.Pid = *a.Pid
-		}
-		core.Apply(s, core.Event{Kind: core.EventAgentStatus, AgentStatus: a.StatusString(), Time: r.Now()})
-		if err := r.Store.CreateSession(ctx, s); err != nil {
-			return res, err
-		}
-		res.Discovered++
 	}
 	return res, nil
 }

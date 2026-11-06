@@ -78,38 +78,6 @@ func once(t *testing.T, r *Reconciler) Result {
 	return res
 }
 
-func TestDiscoversBackgroundSessionsFromRecordedListing(t *testing.T) {
-	r, st, l, _ := setup(t)
-	b, err := os.ReadFile(filepath.Join("..", "..", "testdata", "claudecli", "agents-mixed.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if l.agents, err = claudecli.ParseAgents(b); err != nil {
-		t.Fatal(err)
-	}
-	if res := once(t, r); res.Discovered != 3 {
-		t.Fatalf("discovered %d, want the 3 background sessions (not the interactive one)", res.Discovered)
-	}
-	want := map[string]core.Status{
-		"9df2c810-bd4d-4db9-90ce-2ea000b7917c": core.StatusDone,
-		"c95849b2-1a6b-4d75-b4a6-9160270b9fc9": core.StatusWaiting,
-		"77d411e3-6d72-4c37-890f-76c3f97f965c": core.StatusPaused,
-	}
-	for sid, status := range want {
-		s, err := st.SessionByClaudeID(ctx, sid)
-		if err != nil {
-			t.Fatalf("%s: %v", sid, err)
-		}
-		if s.Status != status || s.Kind != core.KindBackground || s.BgID != sid[:8] || s.Name == "" || s.Cwd != "/work/project" {
-			t.Errorf("%s: %+v", sid[:8], s)
-		}
-	}
-	// A second pass changes nothing.
-	if res := once(t, r); res.Discovered != 0 || res.Updated != 0 {
-		t.Errorf("second pass: %+v", res)
-	}
-}
-
 func TestCorrectsKindIDsPidAndName(t *testing.T) {
 	r, st, l, _ := setup(t)
 	s := create(t, st, &core.Session{ClaudeSessionID: "s1", Kind: core.KindExternal, Status: core.StatusDone,
@@ -232,18 +200,6 @@ func TestUnlistedSessions(t *testing.T) {
 	}
 }
 
-func TestArchivedSessionsAreNotRediscovered(t *testing.T) {
-	r, st, l, _ := setup(t)
-	a := create(t, st, &core.Session{ClaudeSessionID: "s1", Status: core.StatusArchived, ArchivedAt: time.Now()})
-	l.agents = []claudecli.Agent{agent("s1", "aaaaaaaa", "background", "idle", 9)}
-	if res := once(t, r); res.Discovered != 0 {
-		t.Errorf("archived session rediscovered: %+v", res)
-	}
-	if all, _ := st.Sessions(ctx, true); len(all) != 1 || all[0].ID != a.ID {
-		t.Errorf("sessions: %+v", all)
-	}
-}
-
 func TestListerError(t *testing.T) {
 	r, _, l, _ := setup(t)
 	l.err = errors.New("claude not found")
@@ -357,5 +313,15 @@ func TestTerminalWithDeadHostStops(t *testing.T) {
 	once(t, r)
 	if got := get(t, st, s.ID); got.Status != core.StatusPaused || got.ClaudeSessionID != "" {
 		t.Errorf("dead host: %+v", got)
+	}
+}
+
+// Claude's listing never adds a row: the app only lists sessions it runs.
+func TestListingDoesNotCreateSessions(t *testing.T) {
+	r, st, l, _ := setup(t)
+	l.agents = []claudecli.Agent{agent("s1", "aaaaaaaa", "background", "busy", 5)}
+	once(t, r)
+	if all, err := st.Sessions(ctx, true); err != nil || len(all) != 0 {
+		t.Errorf("sessions: %+v, %v", all, err)
 	}
 }

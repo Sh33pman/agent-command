@@ -282,9 +282,8 @@ func TestDaemonBackgroundLoops(t *testing.T) {
 	transcript := filepath.Join(p.StateDir, "t.jsonl")
 	must(t, p.Ensure())
 	must(t, os.WriteFile(transcript, []byte("{\"type\":\"user\"}\n"), 0o600))
-	idle := "idle"
 	pid := 777
-	agents := &fakeAgents{agents: []claudecli.Agent{{SessionID: "bg-1", ID: "bbbbbbbb", Kind: "background", Name: "found it", Status: &idle, Pid: &pid, Cwd: "/w"}}}
+	agents := &fakeAgents{}
 	start(t, p, func(c *Config) {
 		c.Agents = agents
 		c.ReconcileEvery = 50 * time.Millisecond
@@ -309,17 +308,16 @@ func TestDaemonBackgroundLoops(t *testing.T) {
 	for {
 		st, err := store.Open(context.Background(), p.DB())
 		must(t, err)
-		esc, err1 := st.SessionByClaudeID(context.Background(), "esc-1")
-		found, err2 := st.SessionByClaudeID(context.Background(), "bg-1")
+		esc, err := st.SessionByClaudeID(context.Background(), "esc-1")
 		st.Close()
-		if err1 == nil && err2 == nil && esc.Status == core.StatusDone && found.Name == "found it" {
-			if esc.BgID != "eeeeeeee" || !esc.Unseen || found.Status != core.StatusDone {
-				t.Errorf("esc=%+v found=%+v", esc, found)
+		if err == nil && esc.Status == core.StatusDone {
+			if esc.BgID != "eeeeeeee" || !esc.Unseen {
+				t.Errorf("esc=%+v", esc)
 			}
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("loops didn't converge: esc=%+v (%v) found=%+v (%v)", esc, err1, found, err2)
+			t.Fatalf("loops didn't converge: esc=%+v (%v)", esc, err)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

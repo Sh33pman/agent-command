@@ -316,12 +316,17 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	sess, isNew := d.terminalOf(ctx, ev.Context), false
-	if sess != nil {
+	sess, isNew := d.hostedSessionOf(ctx, ev.Context), false
+	switch {
+	case sess != nil && sess.IsTerminal():
 		if !sess.TakeAgentEvent(e, ev.Context.ClaudePid) {
 			return nil
 		}
-	} else {
+	case sess != nil:
+		if !sess.FollowConversation(e) {
+			return nil
+		}
+	default:
 		sess, err = d.store.SessionByClaudeID(ctx, e.SessionID)
 		isNew = errors.Is(err, store.ErrNotFound)
 		if err != nil && !isNew {
@@ -353,13 +358,14 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	})
 }
 
-// terminalOf is the terminal session a hook's agent runs in, if it's in one.
-func (d *Daemon) terminalOf(ctx context.Context, hc ipc.HookContext) *core.Session {
+// hostedSessionOf is the session a hook's agent runs in, if it names one. This holds
+// through /clear, when Claude's own session id changes.
+func (d *Daemon) hostedSessionOf(ctx context.Context, hc ipc.HookContext) *core.Session {
 	if hc.HostSession == "" {
 		return nil
 	}
 	s, err := d.store.Session(ctx, hc.HostSession)
-	if err != nil || !s.IsTerminal() {
+	if err != nil {
 		return nil
 	}
 	return s

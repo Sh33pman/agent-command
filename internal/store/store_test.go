@@ -500,3 +500,30 @@ func TestViewsTableDropped(t *testing.T) {
 		t.Errorf("views tables = %d, %v", n, err)
 	}
 }
+
+// The migration keeps sessions the app runs, and removes the rest with their ids.
+func TestUnhostedSessionsAreDeleted(t *testing.T) {
+	st, _ := open(t)
+	ctx := context.Background()
+	hosted := &core.Session{Kind: core.KindHosted, ClaudeSessionID: "keep"}
+	gone := &core.Session{Kind: core.KindExternal, ClaudeSessionID: "gone", External: &core.PaneLoc{Terminal: "kitty"}}
+	for _, s := range []*core.Session{hosted, gone} {
+		if err := st.CreateSession(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := migrationFS.ReadFile("migrations/0005_drop_unhosted_sessions.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, string(b)); err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.Sessions(ctx, true)
+	if err != nil || len(all) != 1 || all[0].ID != hosted.ID {
+		t.Errorf("sessions: %+v, %v", all, err)
+	}
+	if _, err := st.SessionByClaudeID(ctx, "gone"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("gone id: %v", err)
+	}
+}

@@ -4,7 +4,10 @@
 // result.
 package core
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // Status is a session's user-visible state (SPEC §5.2).
 type Status string
@@ -158,6 +161,30 @@ func (s *Session) TakeAgentEvent(e Event, pid int) bool {
 	if pid > 0 {
 		s.Pid = pid
 	}
+	return true
+}
+
+// FollowConversation reports whether a hosted session should apply an event from
+// the agent it runs, and moves it to that event's conversation if it's a new one.
+// Claude changes its session id on /clear and the like, and the session stays the
+// same. A late event from an earlier conversation is dropped.
+func (s *Session) FollowConversation(e Event) bool {
+	if e.SessionID == "" || e.SessionID == s.ClaudeSessionID {
+		return true
+	}
+	if slices.Contains(s.ClaudeHistory, e.SessionID) {
+		return false
+	}
+	switch e.Kind {
+	case HookSessionStart:
+		return true // Apply adopts its id
+	case HookSessionEnd:
+		return false
+	}
+	if s.ClaudeSessionID != "" {
+		s.ClaudeHistory = append(s.ClaudeHistory, s.ClaudeSessionID)
+	}
+	s.ClaudeSessionID = e.SessionID
 	return true
 }
 

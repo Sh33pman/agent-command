@@ -66,9 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let root = NSViewController()
         root.view = NSView(frame: NSRect(x: 0, y: 0, width: 1180, height: 720))
         root.addChild(split)
-        split.view.frame = root.view.bounds
+        var splitFrame = root.view.bounds
+        splitFrame.origin.y = StatusBarView.height
+        splitFrame.size.height -= StatusBarView.height
+        split.view.frame = splitFrame
         split.view.autoresizingMask = [.width, .height]
         root.view.addSubview(split.view)
+        let statusBar = NSHostingView(rootView: StatusBarView())
+        statusBar.frame = NSRect(x: 0, y: 0, width: root.view.bounds.width, height: StatusBarView.height)
+        statusBar.autoresizingMask = [.width]
+        root.view.addSubview(statusBar)
         window.contentViewController = root
         self.split = split
         window.setContentSize(NSSize(width: 1180, height: 720))

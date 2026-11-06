@@ -33,7 +33,7 @@ struct SidebarView: View {
                         heading("Sessions")
                         Spacer()
                         if store.sidebarFocused {
-                            Text("x mark · ⏎ open · esc")
+                            Text("x ⏎ esc")
                                 .font(AppFont.ui(11))
                                 .foregroundStyle(theme.dim)
                                 .padding(.horizontal, 12)

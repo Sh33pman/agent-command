@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.2](https://github.com/brettmostert/agent-command/compare/v0.37.1...v0.37.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* warn when notifications are off and notify after 10s turns ([#159](https://github.com/brettmostert/agent-command/issues/159)) ([a08f3de](https://github.com/brettmostert/agent-command/commit/a08f3ded2615a1c77fdfa398650aa26fe59bf762))
+
 ## [0.37.1](https://github.com/brettmostert/agent-command/compare/v0.37.0...v0.37.1) (2026-11-06)
 
 

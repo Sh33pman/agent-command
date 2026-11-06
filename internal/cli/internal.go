@@ -45,6 +45,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			defer stop()
 			logger := log.New(cmd.ErrOrStderr(), "acmd daemon: ", log.LstdFlags)
 			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify}
+			cfg.LockWait = 3 * time.Second
 			if home, err := os.UserHomeDir(); err == nil {
 				cfg.ClaudeDir = claudecli.ConfigDir(os.Getenv, home)
 			}

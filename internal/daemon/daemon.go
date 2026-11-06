@@ -54,6 +54,9 @@ type Config struct {
 	// Fallback shows a notification when no view's sidebar can (SPEC §8.5:
 	// terminal-notifier, else osascript).
 	Fallback func(ipc.Notice)
+	// LockWait is how long to wait for a daemon that's on its way out. A hook that
+	// replaces an older daemon starts this one straight after asking it to stop.
+	LockWait time.Duration
 	// ReconcileEvery and TailEvery default to 3 s and 1 s (SPEC §6.7, §5.4).
 	ReconcileEvery time.Duration
 	TailEvery      time.Duration
@@ -97,7 +100,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if err := cfg.Paths.Ensure(); err != nil {
 		return err
 	}
-	unlock, err := lock(cfg.Paths.Lock())
+	unlock, err := lockWaiting(cfg.Paths.Lock(), cfg.LockWait)
 	if err != nil {
 		return err
 	}
@@ -589,6 +592,18 @@ func lock(path string) (func(), error) {
 		_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 		_ = f.Close()
 	}, nil
+}
+
+// lockWaiting takes the lock, waiting a moment if another daemon holds it.
+func lockWaiting(path string, wait time.Duration) (func(), error) {
+	deadline := time.Now().Add(wait)
+	for {
+		unlock, err := lock(path)
+		if !errors.Is(err, ErrAlreadyRunning) || !time.Now().Before(deadline) {
+			return unlock, err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 // Running reports whether a daemon holds the lock in p (a stopping daemon

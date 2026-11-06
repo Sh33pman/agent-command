@@ -345,3 +345,20 @@ func TestShutdownWithIdleClient(t *testing.T) {
 		t.Fatal("the daemon didn't stop while a client was connected")
 	}
 }
+
+// A new daemon waits for one that's on its way out, but not for one that stays.
+func TestLockWaiting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daemon.lock")
+	unlock, err := lockWaiting(path, 0)
+	must(t, err)
+	if _, err := lockWaiting(path, 100*time.Millisecond); !errors.Is(err, ErrAlreadyRunning) {
+		t.Errorf("held lock: %v", err)
+	}
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		unlock()
+	}()
+	next, err := lockWaiting(path, 5*time.Second)
+	must(t, err)
+	next()
+}

@@ -10,12 +10,15 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
-// Notifications (SPEC §8.5): the daemon decides when to notify and which
-// view's sidebar shows the notification (so macOS attributes it to the
-// terminal and a click lands in that view). With no view whose sidebar
-// is visible, the daemon shows it itself through Config.Fallback.
+// Notifications (SPEC §8.5): the daemon decides when to notify, and the app
+// shows the notification, so a click lands on the session. With the app closed,
+// the daemon shows it itself through Config.Fallback.
 
 const keepNotices = 50
+
+// appGap is how long after a watch ends the app still counts as running: it starts
+// the next one straight after reading what changed.
+const appGap = 5 * time.Second
 
 type notifier struct {
 	cfg       config.Notify
@@ -79,6 +82,9 @@ func (d *Daemon) transition(ctx context.Context, s *core.Session, tr core.Transi
 	}
 	n.last[s.ID] = now
 	name := s.Name
+	if name == "" && s.Cwd != "" {
+		name = filepath.Base(s.Cwd)
+	}
 	if name == "" {
 		name = "session " + s.BgID
 	}
@@ -113,8 +119,12 @@ func (d *Daemon) addNotice(ctx context.Context, no ipc.Notice) {
 	}
 }
 
-// emitter is the most recently focused live view with a visible sidebar.
+// emitter is the app if it's running, else the most recently focused live view
+// with a visible sidebar.
 func (d *Daemon) emitter(ctx context.Context) string {
+	if d.appRunning() {
+		return ipc.EmitterApp
+	}
 	views, err := d.store.Views(ctx) // most recently focused first
 	if err != nil {
 		return ""
@@ -126,6 +136,15 @@ func (d *Daemon) emitter(ctx context.Context) string {
 		return v.ID
 	}
 	return ""
+}
+
+// appRunning reports whether the app is watching, or was a moment ago.
+func (d *Daemon) appRunning() bool {
+	if d.appWatches.Load() > 0 {
+		return true
+	}
+	last := d.appLastWatch.Load()
+	return last != 0 && d.cfg.Now().Sub(time.Unix(0, last)) < appGap
 }
 
 func (d *Daemon) notices() []ipc.Notice {

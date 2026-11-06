@@ -3,6 +3,37 @@ import Foundation
 /// The parts of the daemon's state the app shows (internal/ipc, internal/core).
 struct Snapshot: Decodable {
     let sessions: [Session]?
+    let notices: [Notice]?
+}
+
+/// Something the daemon decided to notify about.
+struct Notice: Decodable {
+    let seq: UInt64
+    let sessionID: String
+    let kind: String
+    let title: String
+    let body: String
+    let sound: String
+    let emitter: String
+
+    var isWithdrawal: Bool { kind == "withdraw" }
+    var isForApp: Bool { emitter == "app" }
+
+    private enum CodingKeys: String, CodingKey {
+        case seq, kind, title, body, sound, emitter
+        case sessionID = "session_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        seq = try c.decode(UInt64.self, forKey: .seq)
+        sessionID = try c.decode(String.self, forKey: .sessionID)
+        kind = try c.decode(String.self, forKey: .kind)
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+        body = try c.decodeIfPresent(String.self, forKey: .body) ?? ""
+        sound = try c.decodeIfPresent(String.self, forKey: .sound) ?? ""
+        emitter = try c.decodeIfPresent(String.self, forKey: .emitter) ?? ""
+    }
 }
 
 struct Session: Decodable, Identifiable, Equatable {

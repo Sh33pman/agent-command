@@ -8,6 +8,7 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 - **Keyboard:** click a session or press ⇧⌘B to move the keyboard to the sidebar. There, the arrow keys or ⌃J and ⌃K move, X marks several sessions, Return or a double click opens one and Esc goes back. ⌘R renames and ⇧⌘⌫ archives, acting on what's marked, the row in the sidebar, or the session you're in. Renaming several numbers them: `name - 1`, `name - 2`.
 - **Live status** in the sidebar, including an agent you start by typing `claude` in a terminal.
 - **Sessions that last:** closing a pane only detaches. Only archiving ends a session, and agents can be unarchived and resumed.
+- **Notifications** when a session needs you, fails or finishes a long turn. Clicking one opens that session. With the app closed, they still appear, but a click can't open the session.
 - **Resume** an earlier Claude conversation by ID or from a list.
 - **Command popup** and a live **theme picker**, using Ghostty's themes.
 - **Remote control** enabled on every Claude session it starts.

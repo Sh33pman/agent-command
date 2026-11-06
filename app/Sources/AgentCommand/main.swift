@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The sidebar's state to return to when a popup closes, if it had the keyboard.
     private var popupReturn: (cursor: String?, marks: Set<String>)?
     private let sidebarKeys = SidebarKeyView()
+    private let notifier = AppNotifier()
+    /// A clicked notification's session, if it arrived before the session list.
+    private var pendingOpen: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let window = NSWindow(
@@ -101,6 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         pane.onChange = { [weak self] sets in self?.panesChanged(sets) }
         store.onListChanged = { [weak pane] ids in pane?.sessionsChanged(listed: ids) }
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }
+        notifier.isLooking = { [weak store] id in NSApp.isActive && store?.visibleIDs.contains(id) == true }
+        notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
+        notifier.start()
+        store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
         let args = CommandLine.arguments
         offerSetup()
         store.start()
@@ -204,6 +211,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pane?.select(sessionID: args[flag + 1])
         }
         if let sets = pane?.sets { reflect(sets) }
+        if let id = pendingOpen {
+            pendingOpen = nil
+            openFromNotification(id)
+        }
+    }
+
+    /// A clicked notification brings up the window on its session.
+    private func openFromNotification(_ id: String) {
+        guard restored else {
+            pendingOpen = id
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+        if store.sessions.contains(where: { $0.id == id }) { openSidebarRow(id) }
     }
 
     private func reflect(_ sets: PaneSets) {

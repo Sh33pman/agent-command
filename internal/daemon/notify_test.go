@@ -127,3 +127,41 @@ func TestNotifyOff(t *testing.T) {
 		t.Error("notices without a notifier")
 	}
 }
+
+// With the app watching, it shows notices; once it's gone, it doesn't.
+func TestAppRunning(t *testing.T) {
+	clock := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	d := &Daemon{cfg: Config{Now: func() time.Time { return clock }}}
+	if d.appRunning() {
+		t.Error("no app yet")
+	}
+	d.appWatches.Add(1)
+	if !d.appRunning() {
+		t.Error("watching")
+	}
+	d.appLastWatch.Store(clock.UnixNano())
+	d.appWatches.Add(-1)
+	clock = clock.Add(appGap - time.Second)
+	if !d.appRunning() {
+		t.Error("between watches")
+	}
+	clock = clock.Add(2 * time.Second)
+	if d.appRunning() {
+		t.Error("should have gone")
+	}
+}
+
+// The app shows notices while it runs, so the fallback doesn't too.
+func TestNoticeGoesToTheApp(t *testing.T) {
+	d, _, fallback := notifyDaemon(t, config.Default().Notify)
+	d.appWatches.Add(1)
+	s := &core.Session{ID: "s1", Name: "auth", Cwd: "/w/api"}
+	d.transition(context.Background(), s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
+	n := d.notices()
+	if len(n) != 1 || n[0].Emitter != ipc.EmitterApp {
+		t.Fatalf("notices: %+v", n)
+	}
+	if got := fallback(); len(got) != 0 {
+		t.Errorf("fallback: %+v", got)
+	}
+}

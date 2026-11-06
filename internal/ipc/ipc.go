@@ -70,8 +70,11 @@ type Notice struct {
 	Body      string `json:"body,omitempty"`
 	Urgent    bool   `json:"urgent,omitempty"`
 	Sound     string `json:"sound,omitempty"`
-	Emitter   string `json:"emitter,omitempty"`
+	Emitter   string `json:"emitter,omitempty"` // a view's id, or EmitterApp
 }
+
+// EmitterApp in a Notice means the app shows it.
+const EmitterApp = "app"
 
 // Mutation kinds (OpMutate). Selectors are resolved by the client; the
 // daemon gets ids.
@@ -129,6 +132,8 @@ type WatchRequest struct {
 	// Passive watches (a sidebar) don't count as the view's heartbeat:
 	// only its view loop keeps a view alive.
 	Passive bool `json:"passive,omitempty"`
+	// App marks the app's watch, which tells the daemon the app can show notices.
+	App bool `json:"app,omitempty"`
 }
 
 // WatchResponse is the current revision and, for a ViewID, the view (Gone

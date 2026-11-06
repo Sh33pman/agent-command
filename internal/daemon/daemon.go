@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -67,11 +68,13 @@ type Daemon struct {
 	stop  chan struct{}
 	once  sync.Once
 
-	changes changes // bumped on every state change (OpWatch)
-	seen    seen    // view heartbeats
-	notes   notes   // status bar messages per view (not persisted)
-	terms   terms   // sessions with a running terminal (not persisted)
-	inbox   inbox   // what the reply popup shows (not persisted)
+	changes      changes      // bumped on every state change (OpWatch)
+	seen         seen         // view heartbeats
+	notes        notes        // status bar messages per view (not persisted)
+	terms        terms        // sessions with a running terminal (not persisted)
+	appWatches   atomic.Int32 // the app's open watches (notify.go)
+	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
+	inbox        inbox        // what the reply popup shows (not persisted)
 
 	notify *notifier // d.mu
 }

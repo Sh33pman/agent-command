@@ -30,6 +30,8 @@ final class SessionStore {
     @ObservationIgnored var onSelect: ((Session?) -> Void)?
     /// Called with the ids of the listed sessions when they change.
     @ObservationIgnored var onListChanged: ((Set<String>) -> Void)?
+    /// Called with the daemon's recent notices, whenever its state is read.
+    @ObservationIgnored var onNotices: (([Notice]) -> Void)?
     /// Called once with the saved pane layout, after the first list of sessions.
     @ObservationIgnored var onLayoutLoaded: ((String) -> Void)?
 
@@ -151,6 +153,7 @@ final class SessionStore {
             let rev: UInt64
             let wait_ms: Int
             let passive: Bool
+            let app: Bool
         }
         struct Watched: Decodable {
             let rev: UInt64
@@ -175,7 +178,7 @@ final class SessionStore {
                 var rev: UInt64 = 0
                 while true {
                     let watched: Watched = try conn.call(
-                        "watch", Watch(rev: rev, wait_ms: 25_000, passive: true))
+                        "watch", Watch(rev: rev, wait_ms: 25_000, passive: true, app: true))
                     rev = watched.rev
                     let snapshot: Snapshot = try conn.call("snapshot")
                     publish(snapshot)
@@ -203,6 +206,7 @@ final class SessionStore {
                 self.onListChanged?(Set(visible.map(\.id)))
             }
             if archived != self.archived { self.archived = archived }
+            self.onNotices?(snapshot.notices ?? [])
         }
     }
 

@@ -1,5 +1,6 @@
 // Package hook implements `acmd hook <Event>`, which Claude Code runs for
-// every hook event (SPEC §4.1, §9.1). It must be fast and fail-open: it
+// every hook event (SPEC §4.1, §9.1). It only acts for a Claude running in one
+// of acmd's sessions. It must be fast and fail-open: it
 // never writes to stdout, never influences Claude's decisions and always
 // exits 0. If the daemon is unreachable (or a different version) the event
 // is spooled and a fresh daemon is started.
@@ -63,6 +64,11 @@ const (
 // Run handles one hook invocation.
 func Run(name string, o Options) (Outcome, error) {
 	o.defaults()
+	// Hooks fire for every Claude on the machine. Only one running in a session
+	// of ours is our business: nothing else may reach or start the daemon.
+	if o.Getenv("ACMD_SESSION_ID") == "" {
+		return Ignored, nil
+	}
 	at := o.Now()
 
 	raw, err := io.ReadAll(io.LimitReader(o.Stdin, core.MaxHookPayload+1))
@@ -76,10 +82,6 @@ func Run(name string, o Options) (Outcome, error) {
 		return Rejected, errors.New("hook payload is not JSON")
 	}
 
-	// Claude's trust prompt run by `acmd new` (SPEC §6.1) isn't a session.
-	if o.Getenv("ACMD_IGNORE_HOOKS") != "" {
-		return Ignored, nil
-	}
 	hc, headless := o.context()
 	if headless {
 		return Ignored, nil
@@ -146,6 +148,7 @@ func (o *Options) context() (ipc.HookContext, bool) {
 		KittyWindowID: o.Getenv("KITTY_WINDOW_ID"),
 		TermProgram:   o.Getenv("TERM_PROGRAM"),
 		ViewID:        o.Getenv("ACMD_VIEW_ID"),
+		HostSession:   o.Getenv("ACMD_SESSION_ID"),
 	}
 	p, ok := findClaude(o.ParentPid, o.ProcInfo)
 	if !ok {

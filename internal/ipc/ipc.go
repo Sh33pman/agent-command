@@ -31,6 +31,10 @@ const (
 	OpWatch    = "watch"    // wait for a change (WatchRequest → WatchResponse); a view's heartbeat
 	OpNew      = "new"      // start a background session (NewRequest → *core.Session)
 	OpResume   = "resume"   // resume a paused background session (Mutation.ID → *core.Session)
+	// OpConversations lists earlier Claude sessions to resume (→ []Conversation).
+	OpConversations = "conversations"
+	OpLayout        = "layout"     // the app's pane layout (→ Layout)
+	OpSetLayout     = "layout.set" // stores it (Layout)
 )
 
 // Snapshot is everything a client needs to render the list; clients
@@ -146,13 +150,36 @@ type ViewNote struct {
 // NewRequest starts a background session (SPEC §6.1). The client resolves
 // the group and folder; ShowIn is the view that switches to it ("" = none).
 type NewRequest struct {
-	GroupID     string   `json:"group_id,omitempty"`
-	Cwd         string   `json:"cwd"`
+	GroupID string `json:"group_id,omitempty"`
+	Cwd     string `json:"cwd"`
+	Harness string `json:"harness,omitempty"` // "" = claude
+	// Resume continues this Claude conversation, by its id or an id prefix.
+	// Its folder comes from the conversation, so Cwd can be empty.
+	Resume      string   `json:"resume,omitempty"`
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Args        []string `json:"args,omitempty"`
 	Prompt      string   `json:"prompt,omitempty"`
 	ShowIn      string   `json:"show_in,omitempty"`
+}
+
+// Layout is the app's pane layout. It belongs to the app: the daemon only keeps
+// it, so it comes back after a restart.
+type Layout struct {
+	JSON string `json:"json"`
+}
+
+// Conversation is an earlier Claude session that can be resumed.
+type Conversation struct {
+	ID        string    `json:"id"`
+	Cwd       string    `json:"cwd"`
+	Title     string    `json:"title,omitempty"`
+	Branch    string    `json:"branch,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
+	// Running: Claude reports it as live, possibly in another terminal.
+	Running bool `json:"running,omitempty"`
+	// SessionID is the hosted acmd session that already has it ("" = none).
+	SessionID string `json:"session_id,omitempty"`
 }
 
 // Request is one client message.
@@ -191,8 +218,9 @@ type HookContext struct {
 	KittyListenOn string `json:"kitty_listen_on,omitempty"`
 	KittyWindowID string `json:"kitty_window_id,omitempty"`
 	TermProgram   string `json:"term_program,omitempty"`
-	TTY           string `json:"tty,omitempty"`     // the Claude process's terminal (/dev/ttysNNN)
-	ViewID        string `json:"view_id,omitempty"` // ACMD_VIEW_ID: started by acmd
+	TTY           string `json:"tty,omitempty"`          // the Claude process's terminal (/dev/ttysNNN)
+	ViewID        string `json:"view_id,omitempty"`      // ACMD_VIEW_ID: started by acmd
+	HostSession   string `json:"host_session,omitempty"` // ACMD_SESSION_ID: the acmd session it runs in
 }
 
 // Status is the daemon's summary.

@@ -3,16 +3,18 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/doctor"
-	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
@@ -31,14 +33,21 @@ var versionOutput = func(ctx context.Context, name string, args ...string) ([]by
 }
 
 func newDoctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var fix bool
+	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check acmd's setup, Claude Code, Kitty and the daemon, and show how to fix problems",
-		Long: "Checks that acmd's hooks and shortcuts are in place and point at this binary, that nothing disables\n" +
-			"Claude Code's hooks, that Kitty's remote control works and that versions are supported. It changes\n" +
-			"nothing: each problem comes with the command that fixes it.",
+		Short: "Check acmd's setup, Claude Code and the daemon, and show how to fix problems",
+		Long: "Checks that acmd's hooks are in place and point at this binary, that nothing disables\n" +
+			"Claude Code's hooks and that versions are supported. It changes\n" +
+			"nothing unless you pass --fix, which removes and re-adds the hooks and replaces a stale daemon.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if fix {
+				if err := runFix(cmd); err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
 			env, err := doctorEnv()
 			if err != nil {
 				return err
@@ -51,6 +60,29 @@ func newDoctorCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&fix, "fix", false, "fix what it can: re-add the hooks and replace a stale daemon")
+	return cmd
+}
+
+// runFix removes and re-adds the hooks, and stops a daemon that doesn't match
+// this binary. The next command or the app starts the right one.
+func runFix(cmd *cobra.Command) error {
+	if _, err := runInit(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), initOptions{}); err != nil {
+		return err
+	}
+	p, err := paths.Default()
+	if err != nil {
+		return err
+	}
+	d, err := daemonState(cmd.Context(), p)
+	if err != nil {
+		return err
+	}
+	if d.Mismatch != "" || (d.Binary != "" && !isExecutableFile(d.Binary)) {
+		stopDaemon(cmd.Context(), p)
+		fmt.Fprintln(cmd.OutOrStdout(), "Stopped the old background service.")
+	}
+	return nil
 }
 
 func doctorEnv() (doctor.Env, error) {
@@ -79,16 +111,12 @@ func doctorEnv() (doctor.Env, error) {
 		HasBundle: hasBundle,
 		Daemon:    func(ctx context.Context) (doctor.DaemonState, error) { return daemonState(ctx, p) },
 		InitPlan: func(ctx context.Context) (*setup.Plan, error) {
-			g, err := gather(ctx, false, false, false)
+			g, err := gather(ctx, false)
 			if err != nil {
 				return nil, err
 			}
 			return setup.PlanInit(g.in)
 		},
-		KittyBinary:    findKitty(pathList),
-		GhosttyBinary:  findGhostty(pathList),
-		GhosttyRunning: func(ctx context.Context) (bool, error) { return ghosttyApp().Running(ctx) },
-		NotPermitted:   ghostty.ErrNotPermitted,
 	}, nil
 }
 
@@ -101,7 +129,7 @@ func daemonState(ctx context.Context, p paths.Paths) (doctor.DaemonState, error)
 	switch {
 	case errors.As(err, &mismatch):
 		_ = conn.Close()
-		return doctor.DaemonState{Running: true, Mismatch: mismatch.Daemon.Version}, nil
+		return doctor.DaemonState{Running: true, Mismatch: mismatch.Daemon.Version, Binary: processBinary(mismatch.Daemon.Pid)}, nil
 	case errors.Is(err, fs.ErrPermission):
 		return doctor.DaemonState{}, err
 	case err != nil:
@@ -112,5 +140,17 @@ func daemonState(ctx context.Context, p paths.Paths) (doctor.DaemonState, error)
 	if err := conn.Call(ipc.OpStatus, nil, &st); err != nil {
 		return doctor.DaemonState{}, err
 	}
-	return doctor.DaemonState{Running: true, Status: st}, nil
+	return doctor.DaemonState{Running: true, Status: st, Binary: processBinary(st.Pid)}, nil
+}
+
+// processBinary is the program a process runs, even if its file is gone.
+func processBinary(pid int) string {
+	if pid <= 0 {
+		return ""
+	}
+	out, err := exec.Command("ps", "-o", "comm=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- fixed program; a pid
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

@@ -37,7 +37,7 @@ func TestHookSpawnsDaemonEndToEnd(t *testing.T) {
 	}
 	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r")}
 	env := append(os.Environ(),
-		"ACMD_STATE_DIR="+p.StateDir, "ACMD_RUNTIME_DIR="+p.RuntimeDir,
+		"ACMD_STATE_DIR="+p.StateDir, "ACMD_RUNTIME_DIR="+p.RuntimeDir, "ACMD_SESSION_ID=e2e",
 		"CLAUDECODE=1", "CLAUDE_CODE_CHILD_SESSION=1", "CLAUDE_CODE_SESSION_ID=parent",
 	)
 

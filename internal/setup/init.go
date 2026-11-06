@@ -15,44 +15,24 @@ import (
 // caller (so planning has no side effects and is testable).
 type Input struct {
 	Home       string
-	ConfigFile string // acmd's config.toml
-	EnvFile    string // env.json
-	AcmdPath   string // stable path written into hooks and keybinds
-	ClaudeDir  string // directory holding Claude's settings.json
-	KittyDir   string // Kitty's config directory; "" = don't configure Kitty
-	ClaudePath string // resolved claude binary; "" = not found
-	Keys       Keys
-	Editor     *config.Editor    // the editor choice to save; nil = leave as is
-	LoginEnv   LoginEnv          // nil = leave env.json as is
-	KittyKeys  map[string]string // Kitty's default shortcuts; nil = unavailable
-	GhosttyDir string            // Ghostty's config directory; "" = don't configure Ghostty
-	// GhosttyKeys are Ghostty's default keybinds (normalized trigger →
-	// line); nil = unavailable.
-	GhosttyKeys map[string]string
-	Read        func(string) ([]byte, error)
+	ConfigFile string         // acmd's config.toml
+	EnvFile    string         // env.json
+	AcmdPath   string         // stable path written into hooks and keybinds
+	ClaudeDir  string         // directory holding Claude's settings.json
+	ClaudePath string         // resolved claude binary; "" = not found
+	Editor     *config.Editor // the editor choice to save; nil = leave as is
+	LoginEnv   LoginEnv       // nil = leave env.json as is
+	Read       func(string) ([]byte, error)
 }
 
 // ClaudeSettingsFile is the user settings file hooks go into.
 func (in Input) ClaudeSettingsFile() string { return filepath.Join(in.ClaudeDir, "settings.json") }
-
-func (in Input) kittyConf() string  { return filepath.Join(in.KittyDir, "kitty.conf") }
-func (in Input) kittyOwned() string { return filepath.Join(in.KittyDir, KittyConfName) }
 
 // PlanInit plans `acmd init` (SPEC §9).
 func PlanInit(in Input) (*Plan, error) {
 	p := &Plan{}
 	if err := planClaude(p, in, true); err != nil {
 		return nil, err
-	}
-	if in.KittyDir != "" {
-		if err := planKittyInit(p, in); err != nil {
-			return nil, err
-		}
-	}
-	if in.GhosttyDir != "" {
-		if err := planGhosttyInit(p, in); err != nil {
-			return nil, err
-		}
 	}
 	if err := planConfig(p, in); err != nil {
 		return nil, err
@@ -77,42 +57,12 @@ func PlanInit(in Input) (*Plan, error) {
 	return p, nil
 }
 
-// PlanUninstall plans `acmd uninstall` (SPEC §9.6): acmd's hook entries,
-// managed block and own Kitty file go; nothing else is touched.
+// PlanUninstall plans `acmd uninstall` (SPEC §9.6): acmd's hook entries go, and
+// nothing else is touched.
 func PlanUninstall(in Input) (*Plan, error) {
 	p := &Plan{}
 	if err := planClaude(p, in, false); err != nil {
 		return nil, err
-	}
-	if in.GhosttyDir != "" {
-		if err := planGhosttyUninstall(p, in); err != nil {
-			return nil, err
-		}
-	}
-	if in.KittyDir == "" {
-		return p, nil
-	}
-	old, exists, err := readOptional(in.Read, in.kittyConf())
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		text, found := RemoveBlock(string(old))
-		c := Change{Path: in.kittyConf(), Exists: true, Old: old, New: []byte(text),
-			Summary: "remove acmd's include block (your lines are unchanged)"}
-		if !found {
-			c.Summary = "no acmd block"
-		}
-		p.Changes = append(p.Changes, c)
-	}
-	owned, ownedExists, err := readOptional(in.Read, in.kittyOwned())
-	if err != nil {
-		return nil, err
-	}
-	if ownedExists {
-		p.Changes = append(p.Changes, Change{Path: in.kittyOwned(), Exists: true, Old: owned, Remove: true,
-			Summary: "acmd's Kitty shortcuts and remote-control settings"})
-		p.After = append(p.After, "Restart Kitty (quit with cmd+q and reopen) to turn acmd's remote control and shortcuts off.")
 	}
 	return p, nil
 }
@@ -128,7 +78,7 @@ func planClaude(p *Plan, in Input, add bool) error {
 	}
 	var out []byte
 	if add {
-		out, _, err = AddHooks(old, in.AcmdPath)
+		out, err = resetHooks(old, in.AcmdPath)
 	} else {
 		out, _, err = RemoveHooks(old)
 	}
@@ -160,6 +110,18 @@ func planClaude(p *Plan, in Input, add bool) error {
 	}
 	p.Changes = append(p.Changes, c)
 	return nil
+}
+
+// resetHooks takes out every acmd hook and adds the current set, so nothing stale
+// survives: an old binary path, or an event no longer used. Claude is the only
+// agent with hooks for now.
+func resetHooks(settings []byte, acmdPath string) ([]byte, error) {
+	clean, _, err := RemoveHooks(settings)
+	if err != nil {
+		return nil, err
+	}
+	out, _, err := AddHooks(clean, acmdPath)
+	return out, err
 }
 
 // countHooks counts hook entries in settings that are (ours) or aren't acmd's.
@@ -197,71 +159,6 @@ func reformats(settings []byte) bool {
 	}
 	pretty, err := root.pretty()
 	return err == nil && string(pretty) != string(settings)
-}
-
-func planKittyInit(p *Plan, in Input) error {
-	old, exists, err := readOptional(in.Read, in.kittyConf())
-	if err != nil {
-		return err
-	}
-	user := KittyConfig{Maps: map[string]string{}, Settings: map[string]string{}}
-	if exists {
-		if user, err = ParseKittyConfig(in.kittyConf(), in.Read); err != nil {
-			return err
-		}
-	}
-	body := "include " + KittyConfName
-	text, _ := EnsureBlock(string(old), body)
-	conf := Change{Path: in.kittyConf(), Exists: exists, Old: old, New: []byte(text), Mode: 0o644}
-	if exists {
-		conf.Summary = "add a managed block that includes " + KittyConfName + " (your lines are unchanged)"
-	} else {
-		conf.Summary = "create it with just the include for " + KittyConfName
-	}
-	conf.Detail = []string{BlockBegin, body, BlockEnd}
-	p.Changes = append(p.Changes, conf)
-
-	binds := KittyBinds(in.AcmdPath, in.Keys)
-	skip := Conflicts(binds, user, in.KittyKeys)
-	rendered := RenderKittyConf(binds, skip, user)
-	ownedOld, ownedExists, err := readOptional(in.Read, in.kittyOwned())
-	if err != nil {
-		return err
-	}
-	owned := Change{Path: in.kittyOwned(), Exists: ownedExists, Old: ownedOld, New: []byte(rendered), Mode: 0o644,
-		Summary: fmt.Sprintf("acmd's own file: remote control and %d shortcuts", len(binds)-len(skip))}
-	owned.Detail = strings.Split(strings.TrimRight(rendered, "\n"), "\n")
-	p.Changes = append(p.Changes, owned)
-
-	_, notes := KittyRemoteSettings(user)
-	p.Notes = append(p.Notes, notes...)
-	for _, b := range binds {
-		if reason, ok := skip[NormalizeKey(b.Key, "")]; ok {
-			p.Notes = append(p.Notes, fmt.Sprintf("Kitty: skipped %s (%s): %s", b.Key, b.Action, reason))
-		}
-	}
-	if in.KittyKeys == nil {
-		p.Notes = append(p.Notes, "Kitty: couldn't read Kitty's built-in shortcuts, so only your own maps were checked for conflicts")
-	}
-
-	switch {
-	case conf.Action() != "unchanged" || !ownedExists || remoteLines(ownedOld) != remoteLines([]byte(rendered)):
-		p.After = append(p.After, "Restart Kitty (quit with cmd+q and reopen): remote control and the socket only take effect at startup.")
-	case owned.Action() != "unchanged":
-		p.After = append(p.After, "Reload Kitty's config (ctrl+cmd+,) to pick up the changed shortcuts.")
-	}
-	return nil
-}
-
-// remoteLines extracts the settings that need a Kitty restart.
-func remoteLines(conf []byte) string {
-	var out []string
-	for _, l := range strings.Split(string(conf), "\n") {
-		if strings.HasPrefix(l, "allow_remote_control ") || strings.HasPrefix(l, "listen_on ") {
-			out = append(out, l)
-		}
-	}
-	return strings.Join(out, "\n")
 }
 
 func planConfig(p *Plan, in Input) error {
@@ -323,11 +220,7 @@ type Record struct {
 	At         time.Time `json:"at"`
 	AcmdPath   string    `json:"acmd_path"`
 	ClaudeDir  string    `json:"claude_dir"`
-	KittyDir   string    `json:"kitty_dir,omitempty"`
-	GhosttyDir string    `json:"ghostty_dir,omitempty"`
 	ConfigFile string    `json:"config_file"`
-	// PopupAsked: init has asked about the reply popup (SPEC §8.8).
-	PopupAsked bool `json:"popup_asked,omitempty"`
 }
 
 // ReadRecord reads setup.json; ok is false if init hasn't run.
@@ -362,18 +255,6 @@ func ClaudeConfigDir(home string, getenv func(string) string) string {
 		return d
 	}
 	return filepath.Join(home, ".claude")
-}
-
-// KittyConfigDir is Kitty's config directory: KITTY_CONFIG_DIRECTORY, then
-// $XDG_CONFIG_HOME/kitty, then ~/.config/kitty.
-func KittyConfigDir(home string, getenv func(string) string) string {
-	if d := getenv("KITTY_CONFIG_DIRECTORY"); d != "" {
-		return d
-	}
-	if x := getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "kitty")
-	}
-	return filepath.Join(home, ".config", "kitty")
 }
 
 // StableBinary is the acmd path to write into hooks and keybinds (SPEC

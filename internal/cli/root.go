@@ -16,8 +16,8 @@ import (
 func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:           name,
-		Short:         "Track and navigate Claude Code sessions from a terminal sidebar",
-		Long:          "agent-command (acmd) tracks Claude Code sessions and shows them in a sidebar in Kitty and Ghostty.",
+		Short:         "Manage the sessions of the Agent Command app from the command line",
+		Long:          "agent-command (acmd) is the command line of the Agent Command app, which runs agents and terminals in panes.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -27,28 +27,23 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 		newListCmd(), newRenameCmd(), newDescribeCmd(), newFinishCmd(), newArchiveCmd(), newUnarchiveCmd(), newMoveCmd(),
 		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd(),
 		newInitCmd(), newUninstallCmd(), newEditorCmd(), newDoctorCmd(),
-		newViewCmd(), newNewCmd(), newGoCmd(), newResumeCmd(),
-		newSidebarCmd(), newStatusbarCmd(), newHeaderCmd(), newPopupCmd(), newSpeechCmd(), newTermCmd(), newHostCmd(), newToggleCmd(), newFocusCmd(), newNextAttentionCmd(),
-		newKeysCmd(), newPickCmd(), newOpenCmd(), newAdoptCmd(), newSplitOutCmd(), newPurgeCmd())
+		newNewCmd(), newResumeCmd(), newSpeechCmd(), newHostCmd(), newOpenCmd(), newPurgeCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 
 	// Using acmd for the first time offers setup (SPEC §9).
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "list", "rename", "describe", "archive", "unarchive", "move", "group", "view-mode", "sort", "focus-group",
-			"new", "go", "resume", "toggle", "focus", "next-attention", "pick", "open", "adopt", "split-out", "purge":
+			"new", "resume", "open", "purge":
 			c.Annotations = map[string]string{needsSetup: "yes"}
 		}
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error { return autoInit(cmd) }
-	// Plain `acmd` in a terminal turns this pane into a view (SPEC §6.4).
+	// Plain `acmd` brings up the app, or its window if it's running.
+	var newInstance bool
 	root.Args = cobra.NoArgs
-	root.RunE = func(cmd *cobra.Command, _ []string) error {
-		if !isInteractive(cmd) {
-			return cmd.Help()
-		}
-		return runView(cmd, "")
-	}
+	root.Flags().BoolVar(&newInstance, "new-instance", false, "start another copy of the app, even if one is running")
+	root.RunE = func(*cobra.Command, []string) error { return openApp(newInstance) }
 	return root
 }
 

@@ -73,6 +73,9 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.finish(ctx, m.ID)
 	case ipc.MutUnarchive:
 		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
+			if s.IsTerminal() {
+				return errors.New("an archived terminal's shell has ended: start a new one")
+			}
 			core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
 			return nil
 		})
@@ -111,7 +114,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			return nil, err
 		}
 		for _, s := range sessions {
-			if s.GroupID == m.GroupID && s.Status == core.StatusArchived {
+			if s.GroupID == m.GroupID && s.Status == core.StatusArchived && !s.IsTerminal() {
 				core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
 				if err := st.UpdateSession(ctx, s); err != nil {
 					return nil, err

@@ -131,6 +131,9 @@ func (r *Reconciler) Once(ctx context.Context) (Result, error) {
 
 // reconcileSession updates s from Claude's listing; it reports whether s changed.
 func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]claudecli.Agent) bool {
+	if s.IsTerminal() {
+		return r.terminal(s)
+	}
 	a, listed := bySession[s.ClaudeSessionID]
 	if !listed {
 		return r.unlisted(s)
@@ -181,6 +184,25 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 	}
 	delete(r.disagreeSince, s.ID)
 	return r.apply(s, status) || changed
+}
+
+// terminal handles a terminal session. Its host says whether the shell runs,
+// and hooks give an agent's status. An agent that died without saying so, as a
+// killed process does, is noticed here.
+func (r *Reconciler) terminal(s *core.Session) bool {
+	if s.Stopped() || s.Status == core.StatusArchived {
+		return false
+	}
+	if r.HostAlive != nil && !r.HostAlive(s) && r.Now().Sub(s.CreatedAt) >= r.StartupGrace {
+		s.EndAgent()
+		r.apply(s, core.AgentStopped)
+		return true
+	}
+	if s.ClaudeSessionID != "" && s.Pid > 0 && !r.Alive(s.Pid) {
+		s.EndAgent()
+		return true
+	}
+	return false
 }
 
 // unlisted handles a live session Claude doesn't list.

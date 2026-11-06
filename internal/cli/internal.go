@@ -45,16 +45,11 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			defer stop()
 			logger := log.New(cmd.ErrOrStderr(), "acmd daemon: ", log.LstdFlags)
 			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify}
+			if home, err := os.UserHomeDir(); err == nil {
+				cfg.ClaudeDir = claudecli.ConfigDir(os.Getenv, home)
+			}
 			if c, err := config.Load(p.Config()); err == nil {
 				cfg.Notify = &c.Notify
-				if c.Popup.Enabled { // the reply popup runs alongside (SPEC §8.8)
-					go func() {
-						time.Sleep(time.Second) // once the socket listens
-						if err := spawnPopup(p); err != nil {
-							logger.Printf("popup: %v", err)
-						}
-					}()
-				}
 			} else {
 				logger.Printf("config: %v (notifications off)", err)
 			}
@@ -152,6 +147,19 @@ func debugf(cmd *cobra.Command, format string, a ...any) {
 	}
 }
 
+// loginEnv is the environment for what acmd starts: the captured login-shell
+// environment when there is one, without CLAUDE* variables (SPEC §4.4).
+func loginEnv(p paths.Paths) []string {
+	env := os.Environ()
+	if b, err := os.ReadFile(p.Env()); err == nil {
+		var saved setup.LoginEnv
+		if err := json.Unmarshal(b, &saved); err == nil && saved["PATH"] != "" {
+			env = saved.Environ()
+		}
+	}
+	return procenv.Scrub(env)
+}
+
 // claudeCommand is the claude binary and environment for processes acmd
 // starts: config's claude_command (pinned to an absolute path by `acmd
 // init`) and the saved login-shell environment, falling back to PATH and
@@ -161,14 +169,7 @@ func claudeCommand(p paths.Paths) (string, []string, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	env := os.Environ()
-	if b, err := os.ReadFile(p.Env()); err == nil {
-		var saved setup.LoginEnv
-		if err := json.Unmarshal(b, &saved); err == nil && saved["PATH"] != "" {
-			env = saved.Environ()
-		}
-	}
-	env = procenv.Scrub(env)
+	env := loginEnv(p)
 	claude := cfg.ClaudeCommand
 	if !filepath.IsAbs(claude) {
 		pathList := ""

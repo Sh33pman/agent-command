@@ -19,10 +19,8 @@ DIST    := $(CURDIR)/dist
 
 # Pinned tool versions (Dependabot doesn't track these; bump deliberately).
 GOLANGCI_LINT_VERSION := v2.15.0
-GORELEASER_VERSION    := v2.19.0
 GOVULNCHECK_VERSION   := v1.9.0
-SYFT_VERSION          := v1.55.0
-BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GORELEASER_VERSION)_$(GOVULNCHECK_VERSION)_$(SYFT_VERSION)
+BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GOVULNCHECK_VERSION)
 export PATH := $(BIN):$(PATH)
 
 # Coverage gates (SPEC §12 Testing).
@@ -73,17 +71,11 @@ endef
 $(BIN)/golangci-lint:
 	$(call go_install,github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION))
 
-$(BIN)/goreleaser:
-	$(call go_install,github.com/goreleaser/goreleaser/v2@$(GORELEASER_VERSION))
-
 $(BIN)/govulncheck:
 	$(call go_install,golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION))
 
-$(BIN)/syft:
-	$(call go_install,github.com/anchore/syft/cmd/syft@$(SYFT_VERSION))
-
 .PHONY: tools
-tools: $(BIN)/golangci-lint $(BIN)/goreleaser $(BIN)/govulncheck $(BIN)/syft ## Install pinned tools into $(TOOLS_DIR)
+tools: $(BIN)/golangci-lint $(BIN)/govulncheck ## Install pinned tools into $(TOOLS_DIR)
 
 ##@ Checks
 
@@ -125,6 +117,9 @@ speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
 	swift run --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) speech-core-checks
 
 .PHONY: ci
+test-vt: ## Run the host's tests with libghostty-vt (needs scripts/build-ghostty.sh)
+	go test -race -shuffle=on -tags libghostty ./internal/vt ./internal/term
+
 ci: lint test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
 
 ##@ Build & release
@@ -137,6 +132,10 @@ speech-helper: ## Build the Swift speech engine into $(SPEECH_OUT)
 	@if otool -L $(SPEECH_OUT) | grep -qi espeak; then echo "acmd-speech links espeak (GPL)"; exit 1; fi
 	$(SPEECH_OUT) --version
 
+.PHONY: app
+app: ## Build "dist/Agent Command.app" (needs scripts/build-ghostty.sh first)
+	scripts/build-app.sh
+
 .PHONY: build
 build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech) for this machine
 	mkdir -p $(DIST)
@@ -144,20 +143,6 @@ build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech) for this ma
 	ln -sf agent-command $(DIST)/acmd
 	$(MAKE) speech-helper SPEECH_OUT=$(DIST)/acmd-speech
 	$(DIST)/acmd version
-
-.PHONY: snapshot
-snapshot: $(BIN)/goreleaser $(BIN)/syft ## Full release dry-run (no publish) into ./dist
-	$(BIN)/goreleaser check
-	$(BIN)/goreleaser release --snapshot --clean
-	scripts/check-dist.sh $(DIST)
-
-.PHONY: release
-release: $(BIN)/goreleaser $(BIN)/syft ## CI only: publish the tagged release with GoReleaser (needs GITHUB_TOKEN)
-	$(BIN)/goreleaser release --clean
-
-.PHONY: formula-test
-formula-test: ## Install the snapshot universal tarball via a throwaway local tap and run brew test
-	scripts/test-formula.sh $(DIST)
 
 .PHONY: install
 install: build ## Dev install into $(INSTALL_DIR) (agent-command + acmd)
@@ -167,13 +152,6 @@ install: build ## Dev install into $(INSTALL_DIR) (agent-command + acmd)
 	ln -sf agent-command $(INSTALL_DIR)/acmd
 	@echo "installed to $(INSTALL_DIR) (make sure it's on PATH)"
 
-##@ Integration (opt-in, real terminals)
-
-.PHONY: it-kitty it-ghostty
-it-kitty: ## Integration tests against a real Kitty (added in M2)
-	ACMD_IT_KITTY=1 go test -run Integration ./...
-it-ghostty: ## Integration tests against a real Ghostty (local only; added in M4)
-	ACMD_IT_GHOSTTY=1 go test -run Integration ./...
 
 .PHONY: clean
 hooks: ## Use the repo's git hooks (pre-push runs lint and test)

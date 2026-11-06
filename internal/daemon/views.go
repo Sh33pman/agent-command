@@ -300,6 +300,9 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 	if d.cfg.Hosts == nil {
 		return nil, errors.New("claude not available: run `acmd doctor`")
 	}
+	if req.Resume != "" {
+		return d.resumeConversation(ctx, req)
+	}
 	if req.Cwd == "" {
 		return nil, errors.New("no folder for the new session")
 	}
@@ -324,7 +327,7 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 	switch {
 	case s.Status == core.StatusArchived:
 		return nil, errors.New("that session is archived (acmd unarchive first)")
-	case s.ClaudeSessionID == "":
+	case s.ClaudeSessionID == "" && !s.IsTerminal():
 		return nil, errors.New("that session has no Claude conversation to resume")
 	case s.Kind == core.KindHosted && !s.Stopped():
 		return s, nil // already running

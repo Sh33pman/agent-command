@@ -13,7 +13,7 @@ import (
 
 const sessionCols = `id, name, description, group_id, name_source, cwd, claude_session_id,
 	claude_history, transcript_path, status, status_detail, unseen, kind, bg_id, pid,
-	external, created_at, last_event_at, archived_at`
+	external, created_at, last_event_at, archived_at, harness`
 
 // CreateSession inserts a new session. An empty ID gets a new ULID, an empty
 // GroupID the Default group, and a zero CreatedAt the current time.
@@ -30,6 +30,9 @@ func (s *Store) CreateSession(ctx context.Context, sess *core.Session) error {
 	if sess.Kind == "" {
 		sess.Kind = core.KindBackground
 	}
+	if sess.Harness == "" {
+		sess.Harness = core.HarnessClaude
+	}
 	if sess.CreatedAt.IsZero() {
 		sess.CreatedAt = s.now().UTC()
 	}
@@ -38,7 +41,7 @@ func (s *Store) CreateSession(ctx context.Context, sess *core.Session) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args...); err != nil {
 			return fmt.Errorf("create session: %w", err)
 		}
 		return syncClaudeIDs(ctx, tx, sess)
@@ -54,7 +57,7 @@ func (s *Store) UpdateSession(ctx context.Context, sess *core.Session) error {
 		}
 		res, err := tx.ExecContext(ctx, `UPDATE sessions SET name=?, description=?, group_id=?, name_source=?, cwd=?,
 			claude_session_id=?, claude_history=?, transcript_path=?, status=?, status_detail=?, unseen=?, kind=?,
-			bg_id=?, pid=?, external=?, created_at=?, last_event_at=?, archived_at=? WHERE id=?`,
+			bg_id=?, pid=?, external=?, created_at=?, last_event_at=?, archived_at=?, harness=? WHERE id=?`,
 			append(args[1:], args[0])...)
 		if err != nil {
 			return fmt.Errorf("update session: %w", err)
@@ -151,6 +154,11 @@ func (s *Store) MoveSessions(ctx context.Context, groupID string, ids ...string)
 }
 
 func syncClaudeIDs(ctx context.Context, tx *sql.Tx, sess *core.Session) error {
+	// An agent in a terminal visits it. Its conversation stays the user's to
+	// resume, or the row's that already holds it.
+	if sess.IsTerminal() {
+		return nil
+	}
 	ids := append([]string{}, sess.ClaudeHistory...)
 	if sess.ClaudeSessionID != "" {
 		ids = append(ids, sess.ClaudeSessionID)
@@ -183,7 +191,7 @@ func sessionArgs(sess *core.Session) ([]any, error) {
 	return []any{sess.ID, sess.Name, sess.Description, sess.GroupID, string(sess.NameSource), sess.Cwd,
 		sess.ClaudeSessionID, string(hist), sess.TranscriptPath, string(sess.Status), sess.StatusDetail,
 		b2i(sess.Unseen), string(sess.Kind), sess.BgID, sess.Pid, ext,
-		ms(sess.CreatedAt), ms(sess.LastEventAt), ms(sess.ArchivedAt)}, nil
+		ms(sess.CreatedAt), ms(sess.LastEventAt), ms(sess.ArchivedAt), sess.Harness}, nil
 }
 
 type scanner interface{ Scan(...any) error }
@@ -198,7 +206,7 @@ func scanSession(row scanner) (*core.Session, error) {
 	)
 	err := row.Scan(&sess.ID, &sess.Name, &sess.Description, &sess.GroupID, &nameSource, &sess.Cwd,
 		&sess.ClaudeSessionID, &hist, &sess.TranscriptPath, &status, &sess.StatusDetail, &unseen, &kind,
-		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived)
+		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived, &sess.Harness)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

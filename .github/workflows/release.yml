@@ -2,7 +2,7 @@
 #   1. release-please keeps a release PR open; merging it tags vX.Y.Z and
 #      creates the (private) GitHub Release.
 #   2. In the same workflow (tags created by tokens don't trigger workflows):
-#      gate -> goreleaser -> publish binaries to the public tap -> formula.
+#      gate -> build and sign the app -> publish it to the public tap -> cask.
 # Nothing is published if the gate fails.
 name: release
 
@@ -74,46 +74,73 @@ jobs:
         run: make ci
       - name: gate - fuzz
         run: make fuzz FUZZTIME=30s
-      - name: gate - snapshot + formula
-        run: make snapshot formula-test
+
+      # ---- build ----
+      - name: build libghostty
+        run: scripts/build-ghostty.sh
+
+      - name: import the signing certificate
+        env:
+          SIGNING_P12: ${{ secrets.ACMD_SIGNING_P12 }}
+          SIGNING_PASSWORD: ${{ secrets.ACMD_SIGNING_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          key_password="$(openssl rand -base64 24)"
+          security create-keychain -p "$key_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$key_password" "$keychain"
+          printf '%s' "$SIGNING_P12" | base64 -d > "$RUNNER_TEMP/signing.p12"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$SIGNING_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$key_password" "$keychain"
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
+      - name: build and sign the app
+        env:
+          ACMD_SIGN_IDENTITY: Agent Command Self-Signed
+          ACMD_SIGN_KEYCHAIN: ${{ env.KEYCHAIN }}
+          ACMD_VERSION: ${{ needs.release-please.outputs.version }}
+        run: scripts/build-app.sh
+
+      - name: check the app
+        run: |
+          codesign --verify --strict "dist/Agent Command.app"
+          "dist/Agent Command.app/Contents/MacOS/agent-command" version | grep -F "$VERSION"
+          "dist/Agent Command.app/Contents/MacOS/acmd-speech" --version
 
       # ---- publish ----
-      - name: goreleaser (private release assets)
-        env:
-          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
-        run: make release # via make so ./bin (syft) is on PATH
-
-      - name: publish binaries to the public tap
+      - name: publish the app to the public tap
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          (cd dist && shasum -a 256 AgentCommand.zip > checksums.txt)
           gh release create "$TAP_TAG" --repo "$TAP_REPO" --title "agent-command $VERSION" \
-            --notes-file notes.md \
-            dist/agent-command_${VERSION}_darwin_*.tar.gz dist/checksums.txt dist/*.sbom.json
+            --notes-file notes.md dist/AgentCommand.zip dist/checksums.txt
 
-      - name: render + test formula against the public release
-        run: |
-          url="https://github.com/${TAP_REPO}/releases/download/${TAP_TAG}/agent-command_${VERSION}_darwin_all.tar.gz"
-          sha=$(shasum -a 256 "dist/agent-command_${VERSION}_darwin_all.tar.gz" | awk '{print $1}')
-          scripts/render-formula.sh "$url" "$sha" build/agent-command.rb
-          scripts/test-formula.sh --formula build/agent-command.rb
-
-      - name: commit formula to the tap
+      - name: commit the cask to the tap
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
+          sha=$(shasum -a 256 dist/AgentCommand.zip | awk '{print $1}')
+          scripts/render-cask.sh "$VERSION" "$sha" build/agent-command.rb
           bot_id=$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)
           git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" tap
-          mkdir -p tap/Formula
-          cp build/agent-command.rb tap/Formula/agent-command.rb
+          mkdir -p tap/Casks
+          cp build/agent-command.rb tap/Casks/agent-command.rb
           cd tap
+          git rm -q --ignore-unmatch Formula/agent-command.rb
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git add Formula/agent-command.rb
+          git add Casks/agent-command.rb
           git commit -m "agent-command ${VERSION}"
           git push origin HEAD
+
+      - name: remove the signing keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN:-}" ]; then security delete-keychain "$KEYCHAIN" || true; fi
 
       - name: mark release as failed
         if: failure()

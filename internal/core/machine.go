@@ -131,7 +131,11 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 		case "clear", "resume":
 			// A SessionStart follows in the same process.
 		default:
-			if s.Status != StatusFinished {
+			switch {
+			case s.IsTerminal(): // the agent has gone, not the shell
+				set(s, &t, StatusRunning, "")
+				s.EndAgent()
+			case s.Status != StatusFinished:
 				set(s, &t, StatusPaused, e.Reason)
 			}
 		}

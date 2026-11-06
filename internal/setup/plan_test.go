@@ -12,8 +12,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 )
 
-// fakeHome lays out a home with the fixture Claude settings (with user
-// hooks) and a dotfiles-style symlinked kitty.conf with includes.
+// fakeHome lays out a home with the fixture Claude settings (with user hooks).
 func fakeHome(t *testing.T) (Input, map[string][]byte) {
 	t.Helper()
 	home := t.TempDir()
@@ -25,10 +24,6 @@ func fakeHome(t *testing.T) (Input, map[string][]byte) {
 		orig[rel] = data
 	}
 	put(".claude/settings.json", read(t, "claude-settings-with-user-hooks.json"))
-	put("dotfiles/kitty.conf", read(t, "kitty.conf"))
-	put(".config/kitty/keybinds.conf", read(t, "keybinds.conf"))
-	put(".config/kitty/theme.conf", read(t, "theme.conf"))
-	must(t, os.Symlink(filepath.Join(home, "dotfiles/kitty.conf"), filepath.Join(home, ".config/kitty/kitty.conf")))
 	state := filepath.Join(home, ".local/state/agent-command")
 	must(t, os.MkdirAll(state, 0o700))
 	return Input{
@@ -37,11 +32,8 @@ func fakeHome(t *testing.T) (Input, map[string][]byte) {
 		EnvFile:    filepath.Join(state, "env.json"),
 		AcmdPath:   "/opt/homebrew/bin/acmd",
 		ClaudeDir:  filepath.Join(home, ".claude"),
-		KittyDir:   filepath.Join(home, ".config/kitty"),
 		ClaudePath: "/Users/me/.local/bin/claude",
-		Keys:       DefaultKeys,
 		LoginEnv:   LoginEnv{"PATH": "/usr/bin:/bin", "SECRET_TOKEN": "hunter2"},
-		KittyKeys:  map[string]string{"shift+super+slash": "open_url …"},
 		Read:       os.ReadFile,
 	}, orig
 }
@@ -68,7 +60,7 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 
 	plan, err := PlanInit(in)
 	must(t, err)
-	want := map[string]string{"settings.json": "modify", "kitty.conf": "modify", KittyConfName: "create", "config.toml": "create", "env.json": "create"}
+	want := map[string]string{"settings.json": "modify", "config.toml": "create", "env.json": "create"}
 	if got := actions(plan); !equalMaps(got, want) {
 		t.Errorf("init actions %v, want %v", got, want)
 	}
@@ -76,8 +68,8 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 	plan.Write(&out, in.Home)
 	text := out.String()
 	for _, s := range []string{"~/.claude/settings.json", "register acmd's hooks for 15 events; your 2 other hook entries are kept",
-		"include agent-command.conf", "map cmd+shift+b launch", `claude_command = "/Users/me/.local/bin/claude"`,
-		"2 variables (values not shown)", "skipped cmd+shift+e (open): conflicts with your"} {
+		`claude_command = "/Users/me/.local/bin/claude"`,
+		"2 variables (values not shown)"} {
 		if !strings.Contains(text, s) {
 			t.Errorf("plan output lacks %q:\n%s", s, text)
 		}
@@ -85,25 +77,16 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 	if strings.Contains(text, "hunter2") || strings.Contains(text, "SECRET_TOKEN") {
 		t.Errorf("plan output shows the login environment:\n%s", text)
 	}
-	if len(plan.After) != 1 || !strings.Contains(plan.After[0], "Restart Kitty") {
-		t.Errorf("after: %v", plan.After)
-	}
 
 	bdir, err := plan.Apply(backups, in.Home, now)
 	must(t, err)
 	if filepath.Base(bdir) != "20261031T120000Z" {
 		t.Errorf("backup dir %s", bdir)
 	}
-	for _, rel := range []string{".claude/settings.json", ".config/kitty/kitty.conf"} {
+	for _, rel := range []string{".claude/settings.json"} {
 		if b, err := os.ReadFile(filepath.Join(bdir, rel)); err != nil || !bytes.Equal(b, orig[strings.Replace(rel, ".config/kitty", "dotfiles", 1)]) {
 			t.Errorf("backup of %s: %v", rel, err)
 		}
-	}
-	if fi, err := os.Lstat(filepath.Join(in.KittyDir, "kitty.conf")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
-		t.Errorf("kitty.conf symlink replaced: %v", err)
-	}
-	if b, _ := os.ReadFile(filepath.Join(in.Home, "dotfiles/kitty.conf")); !bytes.Contains(b, []byte("include agent-command.conf")) {
-		t.Error("symlink target not updated")
 	}
 	if fi, err := os.Stat(filepath.Join(in.Home, ".claude/settings.json")); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Errorf("settings.json permissions not kept: %v", fi.Mode())
@@ -127,9 +110,6 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 	if p := again.Pending(); len(p) != 0 {
 		t.Errorf("second init not idempotent: %v", actions(again))
 	}
-	if len(again.After) != 0 {
-		t.Errorf("no restart needed when nothing changed: %v", again.After)
-	}
 	if d, err := again.Apply(backups, in.Home, now); err != nil || d != "" {
 		t.Errorf("empty apply: %q %v", d, err)
 	}
@@ -137,7 +117,7 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 	// Uninstall restores the user's files byte for byte.
 	un, err := PlanUninstall(in)
 	must(t, err)
-	want = map[string]string{"settings.json": "modify", "kitty.conf": "modify", KittyConfName: "remove"}
+	want = map[string]string{"settings.json": "modify"}
 	if got := actions(un); !equalMaps(got, want) {
 		t.Errorf("uninstall actions %v, want %v", got, want)
 	}
@@ -156,9 +136,6 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 			t.Errorf("%s not restored exactly:\n%s", rel, b)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(in.KittyDir, KittyConfName)); !os.IsNotExist(err) {
-		t.Errorf("%s not removed: %v", KittyConfName, err)
-	}
 	if b, _ := os.ReadFile(filepath.Join(bdir, ".claude/settings.json")); !bytes.Equal(b, orig[".claude/settings.json"]) {
 		t.Error("the first backup was overwritten")
 	}
@@ -175,18 +152,18 @@ func TestInitFreshHome(t *testing.T) {
 	home := t.TempDir()
 	in := Input{
 		Home: home, ConfigFile: filepath.Join(home, "cfg/config.toml"), EnvFile: filepath.Join(home, "state/env.json"),
-		AcmdPath: "/opt/homebrew/bin/acmd", ClaudeDir: filepath.Join(home, ".claude"), KittyDir: filepath.Join(home, ".config/kitty"),
-		Keys: DefaultKeys, Read: os.ReadFile,
+		AcmdPath: "/opt/homebrew/bin/acmd", ClaudeDir: filepath.Join(home, ".claude"),
+		Read:   os.ReadFile,
 		Editor: &config.Editor{Preset: "zed", Resolved: "/usr/local/bin/zed", RunIn: "background"},
 	}
 	plan, err := PlanInit(in)
 	must(t, err)
-	want := map[string]string{"settings.json": "create", "kitty.conf": "create", KittyConfName: "create", "config.toml": "create"}
+	want := map[string]string{"settings.json": "create", "config.toml": "create"}
 	if got := actions(plan); !equalMaps(got, want) {
 		t.Errorf("actions %v, want %v", got, want)
 	}
 	notes := strings.Join(plan.Notes, "\n")
-	for _, s := range []string{"claude wasn't found", "couldn't read Kitty's built-in shortcuts"} {
+	for _, s := range []string{"claude wasn't found"} {
 		if !strings.Contains(notes, s) {
 			t.Errorf("notes lack %q: %s", s, notes)
 		}
@@ -201,12 +178,8 @@ func TestInitFreshHome(t *testing.T) {
 	if cfg.Editor.Preset != "zed" || cfg.Editor.Resolved != "/usr/local/bin/zed" || cfg.ClaudeCommand != "claude" {
 		t.Errorf("config: %+v", cfg)
 	}
-	b, _ := os.ReadFile(filepath.Join(in.KittyDir, "kitty.conf"))
-	if !strings.HasPrefix(string(b), BlockBegin) {
-		t.Errorf("kitty.conf: %q", b)
-	}
 
-	// Without Kitty and with no settings file, uninstall has nothing to do.
+	// With no settings file, uninstall has nothing to do.
 	empty := Input{Home: home, ClaudeDir: filepath.Join(home, "none"), Read: os.ReadFile}
 	un, err := PlanUninstall(empty)
 	must(t, err)
@@ -223,7 +196,7 @@ func TestApplyRefusesChangedFiles(t *testing.T) {
 	if _, err := plan.Apply(filepath.Join(in.Home, "b"), in.Home, time.Now()); err == nil || !strings.Contains(err.Error(), "changed since the plan") {
 		t.Fatalf("err = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(in.KittyDir, KittyConfName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(in.ConfigFile); !os.IsNotExist(err) {
 		t.Error("files were written although the plan was stale")
 	}
 }
@@ -246,20 +219,6 @@ func TestPlanErrors(t *testing.T) {
 	}
 	if _, err := PlanInit(in2); err == nil {
 		t.Error("read error should surface")
-	}
-}
-
-func TestKittyReloadVersusRestart(t *testing.T) {
-	in, _ := fakeHome(t)
-	plan, err := PlanInit(in)
-	must(t, err)
-	_, err = plan.Apply(filepath.Join(in.Home, "b"), in.Home, time.Now())
-	must(t, err)
-	in.Keys.Toggle = "cmd+shift+y" // only a shortcut changes
-	plan, err = PlanInit(in)
-	must(t, err)
-	if len(plan.After) != 1 || !strings.Contains(plan.After[0], "Reload") {
-		t.Errorf("after: %v", plan.After)
 	}
 }
 
@@ -300,16 +259,9 @@ func TestConfigDirs(t *testing.T) {
 	if got := ClaudeConfigDir("/h", getenv); got != "/h/.claude" {
 		t.Error(got)
 	}
-	if got := KittyConfigDir("/h", getenv); got != "/h/.config/kitty" {
-		t.Error(got)
-	}
-	env["XDG_CONFIG_HOME"] = "/x"
-	if got := KittyConfigDir("/h", getenv); got != "/x/kitty" {
-		t.Error(got)
-	}
-	env["KITTY_CONFIG_DIRECTORY"], env["CLAUDE_CONFIG_DIR"] = "/k", "/c"
-	if KittyConfigDir("/h", getenv) != "/k" || ClaudeConfigDir("/h", getenv) != "/c" {
-		t.Error("overrides ignored")
+	env["CLAUDE_CONFIG_DIR"] = "/c"
+	if ClaudeConfigDir("/h", getenv) != "/c" {
+		t.Error("override ignored")
 	}
 }
 
@@ -318,7 +270,7 @@ func TestRecord(t *testing.T) {
 	if _, ok, err := ReadRecord(p); ok || err != nil {
 		t.Fatalf("missing record: %v %v", ok, err)
 	}
-	r := Record{Version: "0.7.0", At: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC), AcmdPath: "/a", ClaudeDir: "/c", KittyDir: "/k", ConfigFile: "/f"}
+	r := Record{Version: "0.7.0", At: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC), AcmdPath: "/a", ClaudeDir: "/c", ConfigFile: "/f"}
 	must(t, WriteRecord(p, r))
 	got, ok, err := ReadRecord(p)
 	if err != nil || !ok || got != r {

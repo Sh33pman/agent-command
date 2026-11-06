@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -74,8 +75,13 @@ func TestOpenBacksUpBeforeMigrating(t *testing.T) {
 	}
 	s.Close()
 
-	// A newer binary with a second migration.
+	// A newer binary with one more migration.
 	orig := migrations
+	current, err := orig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := len(current)
 	t.Cleanup(func() { migrations = orig })
 	migrations = func() ([]migration, error) {
 		ms, err := orig()
@@ -91,14 +97,14 @@ func TestOpenBacksUpBeforeMigrating(t *testing.T) {
 	if err := s2.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if v != 2 {
-		t.Errorf("user_version = %d, want 2", v)
+	if v != base+1 {
+		t.Errorf("user_version = %d, want %d", v, base+1)
 	}
-	backups, _ := filepath.Glob(p + ".bak-v1-*")
+	backups, _ := filepath.Glob(fmt.Sprintf("%s.bak-v%d-*", p, base))
 	if len(backups) != 1 {
-		t.Fatalf("backups = %v, want one v1 backup", backups)
+		t.Fatalf("backups = %v, want one v%d backup", backups, base)
 	}
-	// The backup is the pre-migration database (schema 1, data intact).
+	// The backup is the pre-migration database (old schema, data intact).
 	migrations = orig
 	b, err := Open(ctx, backups[0])
 	if err != nil {
@@ -457,5 +463,61 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionHarness(t *testing.T) {
+	s, _ := open(t)
+	defer s.Close()
+	agent := &core.Session{Name: "agent"}
+	shell := &core.Session{Name: "shell", Harness: core.HarnessTerminal}
+	for _, sess := range []*core.Session{agent, shell} {
+		if err := s.CreateSession(ctx, sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := s.Session(ctx, agent.ID); err != nil || got.Harness != core.HarnessClaude {
+		t.Errorf("default harness = %+v, %v", got, err)
+	}
+	if got, err := s.Session(ctx, shell.ID); err != nil || !got.IsTerminal() {
+		t.Errorf("terminal harness = %+v, %v", got, err)
+	}
+}
+
+func TestAppState(t *testing.T) {
+	s, _ := open(t)
+	defer s.Close()
+	if got, err := s.AppState(ctx, "layout"); err != nil || got != "" {
+		t.Errorf("empty = %q, %v", got, err)
+	}
+	for _, want := range []string{"one", "two"} {
+		if err := s.SetAppState(ctx, "layout", want); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := s.AppState(ctx, "layout"); err != nil || got != want {
+			t.Errorf("got %q, %v, want %q", got, err, want)
+		}
+	}
+}
+
+// A conversation that visits a terminal isn't the terminal's to keep.
+func TestTerminalDoesNotClaimConversation(t *testing.T) {
+	st, _ := open(t)
+	ctx := context.Background()
+	owner := &core.Session{ClaudeSessionID: "conv"}
+	if err := st.CreateSession(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	term := &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted}
+	if err := st.CreateSession(ctx, term); err != nil {
+		t.Fatal(err)
+	}
+	term.ClaudeSessionID = "conv"
+	if err := st.UpdateSession(ctx, term); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.SessionByClaudeID(ctx, "conv")
+	if err != nil || got.ID != owner.ID {
+		t.Errorf("conv belongs to %+v, %v; want %s", got, err, owner.ID)
 	}
 }

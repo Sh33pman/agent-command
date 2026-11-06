@@ -87,16 +87,6 @@ func TestOpen(t *testing.T) {
 	if got := strings.Join(*launched, ";"); got != "/usr/bin/open -b com.jetbrains.intellij /w;/usr/bin/open -b com.jetbrains.intellij.ce /w" {
 		t.Errorf("idea fallback to Community: %s", got)
 	}
-	tab := config.Editor{Preset: "custom", Command: []string{"/x/nvim", "{dir}"}, RunIn: "tab"}
-	o, _ = opener(tab, nil, "/x/nvim")
-	if err := o.Open(ctx, "/w"); err == nil {
-		t.Error("tab without a view accepted")
-	}
-	var inTab string
-	o.InTab = func(argv []string, dir string) error { inTab = strings.Join(argv, " ") + " @" + dir; return nil }
-	if err := o.Open(ctx, "/w"); err != nil || inTab != "/x/nvim /w @/w" {
-		t.Errorf("tab: %q %v", inTab, err)
-	}
 	o, _ = opener(config.Editor{}, nil)
 	if err := o.Open(ctx, "/w"); !errors.Is(err, ErrNotConfigured) {
 		t.Errorf("unconfigured: %v", err)

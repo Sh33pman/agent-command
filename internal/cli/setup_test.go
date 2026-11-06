@@ -1,52 +1,43 @@
 package cli
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/brettmostert/agent-command/internal/config"
-	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
 type sandbox struct {
-	home, bin    string
-	ghosttyCalls *[]string
-	paths        paths.Paths
-	settings     string // Claude settings.json
-	kittyDir     string
-	userJSON     []byte
+	home, bin string
+	paths     paths.Paths
+	settings  string // Claude settings.json
+	userJSON  []byte
 }
 
-// newSandbox points every location acmd setup reads or writes into a temp
-// home and stubs the login shell, Kitty and Spotlight.
+// newSandbox points every location acmd setup reads or writes into a temp home
+// and stubs the login shell and Spotlight.
 func newSandbox(t *testing.T) *sandbox {
 	t.Helper()
 	home := t.TempDir()
-	s := &sandbox{home: home, bin: filepath.Join(home, "bin"), kittyDir: filepath.Join(home, ".config", "kitty")}
+	s := &sandbox{home: home, bin: filepath.Join(home, "bin")}
 	s.paths = paths.Paths{StateDir: filepath.Join(home, ".local/state/agent-command"), RuntimeDir: filepath.Join(home, "run"),
 		ConfigDir: filepath.Join(home, ".config/agent-command")}
 	for k, v := range map[string]string{
 		"HOME": home, "ACMD_STATE_DIR": s.paths.StateDir, "ACMD_RUNTIME_DIR": s.paths.RuntimeDir, "ACMD_CONFIG_DIR": s.paths.ConfigDir,
-		"CLAUDE_CONFIG_DIR": filepath.Join(home, ".claude"), "KITTY_CONFIG_DIRECTORY": s.kittyDir, "XDG_CONFIG_HOME": "",
-		"ACMD_NO_AUTO_INIT": "",
+		"CLAUDE_CONFIG_DIR": filepath.Join(home, ".claude"), "ACMD_NO_AUTO_INIT": "",
 	} {
 		t.Setenv(k, v)
 	}
 	if err := os.MkdirAll(s.bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"claude", "code", "nvim", "kitty"} {
-		if err := os.WriteFile(filepath.Join(s.bin, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(filepath.Join(s.bin, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	s.settings = filepath.Join(home, ".claude", "settings.json")
 	s.userJSON = []byte("{\n  \"model\": \"opus\"\n}\n")
@@ -56,37 +47,17 @@ func newSandbox(t *testing.T) *sandbox {
 	if err := os.WriteFile(s.settings, s.userJSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
-
-	origCapture, origDefaults, origBundle, origApp := captureLoginEnv, kittyDefaults, hasBundle, kittyAppBinary
-	origGDefaults, origGBin, origGApp := ghosttyDefaults, ghosttyAppBin, ghosttyApp
-	ghosttyAppBin = filepath.Join(home, "no-ghostty-app")
-	ghosttyDefaults = func(context.Context, string) (map[string]string, error) {
-		return setup.ParseGhosttyKeybinds("keybind = super+shift+s=toggle_secure_input\n"), nil
-	}
-	s.ghosttyCalls = &[]string{}
-	ghosttyApp = func() *ghostty.App {
-		return &ghostty.App{Run: func(_ context.Context, script string, _ ...string) (string, error) {
-			*s.ghosttyCalls = append(*s.ghosttyCalls, firstWords(script))
-			return "running", nil
-		}}
-	}
+	origCapture, origBundle := captureLoginEnv, hasBundle
 	captureLoginEnv = func(context.Context, string) (setup.LoginEnv, error) {
 		return setup.LoginEnv{"PATH": s.bin + ":/usr/bin:/bin", "TOKEN": "secret-value"}, nil
 	}
-	kittyDefaults = func(context.Context, string) (map[string]string, error) {
-		return map[string]string{"shift+super+a": "select_all"}, nil
-	}
 	hasBundle = func(id string) bool { return id == "dev.zed.Zed" }
-	kittyAppBinary = filepath.Join(home, "no-kitty-app")
-	t.Cleanup(func() {
-		captureLoginEnv, kittyDefaults, hasBundle, kittyAppBinary = origCapture, origDefaults, origBundle, origApp
-		ghosttyDefaults, ghosttyAppBin, ghosttyApp = origGDefaults, origGBin, origGApp
-	})
+	t.Cleanup(func() { captureLoginEnv, hasBundle = origCapture, origBundle })
 	return s
 }
 
 // testArgv0 is the path acmd runs as in tests.
-var testArgv0 = "/opt/homebrew/bin/acmd"
+var testArgv0 = "/Applications/Agent Command.app/Contents/MacOS/agent-command"
 
 func execute(t *testing.T, stdin string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
@@ -105,376 +76,221 @@ func TestInitDryRunChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"dry run: nothing is changed", "~/.claude/settings.json", "register acmd's hooks for 15 events",
-		"[ -x /opt/homebrew/bin/acmd ] && /opt/homebrew/bin/acmd hook <Event> || true # managed by acmd",
-		"create    ~/.config/kitty/kitty.conf", "map cmd+shift+b launch --type=background --allow-remote-control /opt/homebrew/bin/acmd toggle",
-		"skipped cmd+shift+a (next-attention): conflicts with Kitty's default select_all", "claude_command = \"" + s.bin + "/claude\"", "2 variables (values not shown)", "Editor: not chosen yet"} {
+	for _, want := range []string{"dry run: nothing is changed", "~/.claude/settings.json", "register acmd's hooks",
+		"'" + testArgv0 + "' hook <Event> || true # managed by acmd"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("dry run lacks %q:\n%s", want, out)
+			t.Errorf("missing %q in:\n%s", want, out)
 		}
 	}
 	if strings.Contains(out, "secret-value") {
-		t.Error("dry run printed an environment value")
+		t.Error("printed a login-shell value")
 	}
 	if b, _ := os.ReadFile(s.settings); !bytes.Equal(b, s.userJSON) {
-		t.Error("dry run changed settings.json")
+		t.Errorf("settings changed: %s", b)
 	}
-	for _, p := range []string{s.paths.StateDir, s.paths.ConfigDir, s.kittyDir} {
-		if _, err := os.Stat(p); !os.IsNotExist(err) {
-			t.Errorf("dry run created %s", p)
-		}
+	if _, err := os.Stat(s.paths.Setup()); !os.IsNotExist(err) {
+		t.Errorf("setup.json: %v", err)
 	}
 }
 
-func TestInitEditorUninstall(t *testing.T) {
+func TestInitUninstall(t *testing.T) {
 	s := newSandbox(t)
-	out, _, err := execute(t, "", "init")
-	if err != nil {
+	if _, _, err := execute(t, "", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "Done.") || !strings.Contains(out, "Originals backed up to ~/.local/state/agent-command/backups/") ||
-		!strings.Contains(out, "Restart Kitty") {
-		t.Errorf("init output:\n%s", out)
+	b, _ := os.ReadFile(s.settings)
+	if !strings.Contains(string(b), "managed by acmd") || !strings.Contains(string(b), `"model": "opus"`) {
+		t.Errorf("settings after init: %s", b)
 	}
-	settings, _ := os.ReadFile(s.settings)
-	if !setup.HasHooks(settings, "/opt/homebrew/bin/acmd") {
-		t.Error("hooks not registered")
+	env, err := os.ReadFile(s.paths.Env())
+	if err != nil || !strings.Contains(string(env), "secret-value") {
+		t.Errorf("env.json: %s, %v", env, err)
 	}
-	rec, ok, err := setup.ReadRecord(s.paths.Setup())
-	if err != nil || !ok || rec.KittyDir != s.kittyDir || rec.AcmdPath != "/opt/homebrew/bin/acmd" {
-		t.Errorf("record: %+v %v %v", rec, ok, err)
+	if st, _ := os.Stat(s.paths.Env()); st == nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("env.json mode: %v", st)
 	}
-	if fi, err := os.Stat(s.paths.StateDir); err != nil || fi.Mode().Perm() != 0o700 {
-		t.Errorf("state dir: %v", err)
+	cfg, _ := os.ReadFile(s.paths.Config())
+	if !strings.Contains(string(cfg), filepath.Join(s.bin, "claude")) {
+		t.Errorf("config: %s", cfg)
 	}
-	claude, env, err := claudeCommand(s.paths)
-	if err != nil || claude != filepath.Join(s.bin, "claude") || !contains(env, "TOKEN=secret-value") {
-		t.Errorf("claudeCommand = %s %v", claude, err)
-	}
-
-	// Editors.
-	if _, _, err := execute(t, "", "editor", "set", "cursor"); err == nil {
-		t.Error("cursor isn't installed in the sandbox")
-	}
-	if _, _, err := execute(t, "", "editor", "set", "emacs"); err == nil {
-		t.Error("unknown preset accepted")
-	}
-	if _, _, err := execute(t, "", "editor", "set", "zed"); err != nil {
-		t.Errorf("zed (app only): %v", err)
-	}
-	if _, _, err := execute(t, "", "editor", "set", "vscode"); err != nil {
-		t.Fatal(err)
-	}
-	out, _, _ = execute(t, "", "editor", "show")
-	if !strings.Contains(out, "preset:   vscode") || !strings.Contains(out, "resolved: "+s.bin+"/code") {
-		t.Errorf("editor show:\n%s", out)
-	}
-	if _, _, err := execute(t, "", "editor", "set", "custom", "--run-in", "tab", "--", "nvim", "-p"); err != nil {
-		t.Fatal(err)
-	}
-	cfg, _ := config.Load(s.paths.Config())
-	if cfg.Editor.Preset != "custom" || strings.Join(cfg.Editor.Command, " ") != "nvim -p {dir}" || cfg.Editor.RunIn != "tab" {
-		t.Errorf("custom editor: %+v", cfg.Editor)
-	}
-	for _, bad := range [][]string{{"editor", "set", "custom"}, {"editor", "set", "custom", "--run-in", "x", "--", "nvim"},
-		{"editor", "set", "custom", "--", "no-such-editor"}, {"editor", "set", "vscode", "extra"}} {
-		if _, _, err := execute(t, "", bad...); err == nil {
-			t.Errorf("%v accepted", bad)
-		}
-	}
-	out, _, _ = execute(t, "", "editor", "detect")
-	if !strings.Contains(out, "vscode  VS Code        ✓ "+s.bin+"/code") || !strings.Contains(out, "app installed") || !strings.Contains(out, "not found") {
-		t.Errorf("editor detect:\n%s", out)
-	}
-
-	// Again: nothing to change; the custom editor is left alone.
-	out, _, err = execute(t, "", "init")
-	if err != nil || !strings.Contains(out, "Already set up; nothing changed.") {
-		t.Errorf("second init: %v\n%s", err, out)
-	}
-
-	// Uninstall.
-	out, _, err = execute(t, "", "uninstall", "--dry-run")
-	if err != nil || !strings.Contains(out, "remove acmd's 15 hook entries") || !strings.Contains(out, "stop      the acmd daemon") {
-		t.Errorf("uninstall dry run: %v\n%s", err, out)
-	}
-	if _, _, err := execute(t, "", "uninstall"); err == nil || !strings.Contains(err.Error(), "--yes") {
-		t.Errorf("uninstall without a terminal or --yes: %v", err)
-	}
-	out, _, err = execute(t, "", "uninstall", "--yes")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(s.settings); !bytes.Equal(b, s.userJSON) {
-		t.Errorf("settings.json not restored:\n%s", b)
-	}
-	if b, _ := os.ReadFile(filepath.Join(s.kittyDir, "kitty.conf")); len(b) != 0 {
-		t.Errorf("kitty.conf: %q", b)
-	}
-	if _, ok, _ := setup.ReadRecord(s.paths.Setup()); ok {
-		t.Error("setup record kept")
-	}
-	if _, err := os.Stat(s.paths.Config()); err != nil {
-		t.Error("--keep-data is the default: config.toml must stay")
-	}
-	if !strings.Contains(out, "Restart Kitty") {
-		t.Errorf("uninstall output:\n%s", out)
-	}
-
-	// Delete data: everything but the backups.
-	if _, _, err := execute(t, "", "uninstall", "--yes", "--keep-data=false"); err != nil {
-		t.Fatal(err)
-	}
-	entries, _ := os.ReadDir(s.paths.StateDir)
-	if len(entries) != 1 || entries[0].Name() != "backups" {
-		t.Errorf("state left: %v", entries)
-	}
-	if _, err := os.Stat(s.paths.ConfigDir); !os.IsNotExist(err) {
-		t.Error("config dir not deleted")
-	}
-}
-
-func TestGhosttyInitUninstall(t *testing.T) {
-	s := newSandbox(t)
-	gdir := filepath.Join(s.home, ".config", "ghostty")
-	must(t, os.MkdirAll(gdir, 0o755))
-	user := []byte("theme = tokyonight\nkeybind = cmd+shift+b=new_split:right\n")
-	must(t, os.WriteFile(filepath.Join(gdir, "config"), user, 0o644))
-	must(t, os.WriteFile(filepath.Join(s.bin, "ghostty"), []byte("#!/bin/sh\n"), 0o755))
-	t.Setenv("XDG_CONFIG_HOME", "")
-
-	out, _, err := execute(t, "", "init", "--ghostty", "--dry-run")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"~/.config/ghostty/config", "config-file = ?agent-command.ghostty", "~/.config/ghostty/agent-command.ghostty",
-		"Ghostty: skipped cmd+shift+b (toggle): conflicts with your `keybind = cmd+shift+b=new_split:right`",
-		"Ghostty: skipped cmd+shift+s (focus): conflicts with Ghostty's default keybind = super+shift+s=toggle_secure_input"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("dry run lacks %q:\n%s", want, out)
-		}
-	}
-	if _, _, err := execute(t, "", "init", "--ghostty"); err != nil {
-		t.Fatal(err)
-	}
-	conf, _ := os.ReadFile(filepath.Join(gdir, "config"))
-	owned, _ := os.ReadFile(filepath.Join(gdir, setup.GhosttyConfName))
-	if !strings.HasPrefix(string(conf), string(user)) || !strings.Contains(string(conf), "config-file = ?agent-command.ghostty") ||
-		!strings.Contains(string(owned), "# skipped cmd+shift+b (toggle)") {
-		t.Errorf("config:\n%s\nowned:\n%s", conf, owned)
-	}
-	if got := strings.Join(*s.ghosttyCalls, ","); !strings.Contains(got, "if application") {
-		t.Errorf("Ghostty not reloaded / permission not triggered: %s", got)
-	}
-	rec, _, _ := setup.ReadRecord(s.paths.Setup())
-	if rec.GhosttyDir != gdir {
-		t.Errorf("record: %+v", rec)
+	if out, _, err := execute(t, "", "init"); err != nil || !strings.Contains(out, "Already set up") {
+		t.Errorf("rerun: %v\n%s", err, out)
 	}
 	if _, _, err := execute(t, "", "uninstall", "--yes"); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(gdir, "config")); string(b) != string(user) {
-		t.Errorf("config not restored:\n%s", b)
+	if b, _ := os.ReadFile(s.settings); strings.Contains(string(b), "managed by acmd") {
+		t.Errorf("hooks left: %s", b)
 	}
-	if _, err := os.Stat(filepath.Join(gdir, setup.GhosttyConfName)); !os.IsNotExist(err) {
-		t.Error("agent-command.ghostty left behind")
+	if _, err := os.Stat(s.paths.Setup()); !os.IsNotExist(err) {
+		t.Errorf("setup.json after uninstall: %v", err)
 	}
-}
-
-func firstWords(script string) string {
-	f := strings.Fields(script)
-	if len(f) > 3 {
-		f = f[:3]
-	}
-	return strings.Join(f, " ")
 }
 
 func TestAutoInitHintWithoutTerminal(t *testing.T) {
-	s := newSandbox(t)
-	// list fails (no daemon in the sandbox); what matters is the hint and that nothing changed.
-	spawn := spawnDaemon
-	spawnDaemon = func(paths.Paths) error { return os.ErrNotExist }
-	t.Cleanup(func() { spawnDaemon = spawn })
+	newSandbox(t)
 	_, errOut, _ := execute(t, "", "list")
-	if !strings.Contains(errOut, "acmd isn't set up yet: run `acmd init`") {
-		t.Errorf("stderr: %q", errOut)
-	}
-	if b, _ := os.ReadFile(s.settings); !bytes.Equal(b, s.userJSON) {
-		t.Error("non-interactive first run changed settings")
-	}
-	t.Setenv("ACMD_NO_AUTO_INIT", "1")
-	if _, errOut, _ = execute(t, "", "list"); strings.Contains(errOut, "set up") {
-		t.Errorf("ACMD_NO_AUTO_INIT ignored: %q", errOut)
-	}
-	// Commands outside the list never prompt.
-	t.Setenv("ACMD_NO_AUTO_INIT", "")
-	if _, errOut, _ = execute(t, "", "version"); errOut != "" {
-		t.Errorf("version printed %q", errOut)
-	}
-}
-
-func TestFirstRunAsks(t *testing.T) {
-	s := newSandbox(t)
-	ctx := context.Background()
-	opts := initOptions{ask: true, interactive: true}
-
-	var out bytes.Buffer
-	done, err := runInit(ctx, strings.NewReader("n\n"), &out, opts)
-	if err != nil || done {
-		t.Fatalf("declined: %v %v", done, err)
-	}
-	if !strings.Contains(out.String(), "Set up acmd now? [Y/n]") || !strings.Contains(out.String(), "Skipped; nothing was changed") ||
-		!strings.Contains(out.String(), "you'll be asked which editor") {
-		t.Errorf("output:\n%s", out.String())
-	}
-	if b, _ := os.ReadFile(s.settings); !bytes.Equal(b, s.userJSON) {
-		t.Error("declined setup changed settings")
-	}
-
-	// Enter accepts; then the editor question (default: the first detected, VS Code).
-	out.Reset()
-	done, err = runInit(ctx, strings.NewReader("\n\n"), &out, opts)
-	if err != nil || !done {
-		t.Fatalf("accepted: %v %v\n%s", done, err, out.String())
-	}
-	if !strings.Contains(out.String(), "1) VS Code        code    ✓ detected") || !strings.Contains(out.String(), "3) Zed            zed     ✓ detected (app)") {
-		t.Errorf("picker:\n%s", out.String())
-	}
-	cfg, _ := config.Load(s.paths.Config())
-	if cfg.Editor.Preset != "vscode" || cfg.Editor.Resolved != s.bin+"/code" {
-		t.Errorf("editor: %+v", cfg.Editor)
+	if !strings.Contains(errOut, "acmd init") {
+		t.Errorf("no hint: %q", errOut)
 	}
 }
 
 func TestDoctor(t *testing.T) {
-	s := newSandbox(t)
-	acmd := filepath.Join(s.bin, "acmd")
-	if err := os.WriteFile(acmd, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	origArgv0, origOutput := testArgv0, versionOutput
-	testArgv0 = acmd
-	versionOutput = func(_ context.Context, name string, _ ...string) ([]byte, error) {
-		return map[string][]byte{"claude": []byte("2.1.320 (Claude Code)\n"), "kitty": []byte("kitty 0.49.2 created by Kovid Goyal\n")}[filepath.Base(name)], nil
-	}
-	t.Cleanup(func() { testArgv0, versionOutput = origArgv0, origOutput })
-	t.Setenv("KITTY_WINDOW_ID", "")
-
-	out, _, err := execute(t, "", "doctor")
-	if !errors.Is(err, ErrSilent) || !strings.Contains(out, "✗ setup hasn't run yet") || !strings.Contains(out, "· not running") {
-		t.Errorf("before init: %v\n%s", err, out)
-	}
-	if _, err := os.Stat(s.paths.StateDir); !os.IsNotExist(err) {
-		t.Error("doctor created the state dir")
-	}
-
+	newSandbox(t)
 	if _, _, err := execute(t, "", "init"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := execute(t, "", "editor", "set", "vscode"); err != nil {
-		t.Fatal(err)
+	out, _, _ := execute(t, "", "doctor")
+	if !strings.Contains(out, "Claude Code") || !strings.Contains(out, "Daemon") {
+		t.Errorf("doctor:\n%s", out)
 	}
-	out, _, err = execute(t, "", "doctor")
-	if err != nil || !strings.Contains(out, "Everything looks good.") || !strings.Contains(out, "✓ setup is up to date") ||
-		!strings.Contains(out, "✓ hooks registered for all 15 events") || !strings.Contains(out, "✓ kitty 0.49.2") {
-		t.Errorf("after init: %v\n%s", err, out)
-	}
-
-	// Moving the binary is caught (hooks, shortcuts, and init would rewrite both).
-	if err := os.Remove(acmd); err != nil {
-		t.Fatal(err)
-	}
-	out, _, err = execute(t, "", "doctor")
-	if !errors.Is(err, ErrSilent) || !strings.Contains(out, "hooks run "+setup.Tilde(acmd, s.home)+", which doesn't exist") ||
-		!strings.Contains(out, "shortcuts run") {
-		t.Errorf("binary gone: %v\n%s", err, out)
+	if strings.Contains(out, "Kitty") || strings.Contains(out, "Ghostty") {
+		t.Errorf("doctor mentions a terminal:\n%s", out)
 	}
 }
 
-func TestPickEditor(t *testing.T) {
-	bin := newSandbox(t).bin
-	pick := func(input string) (*config.Editor, string) {
-		var out bytes.Buffer
-		e := pickEditor(bufio.NewReader(strings.NewReader(input)), &out, bin)
-		return e, out.String()
-	}
-	if e, _ := pick("6\n"); e != nil {
-		t.Errorf("skip: %+v", e)
-	}
-	if e, _ := pick(""); e != nil {
-		t.Errorf("EOF: %+v", e)
-	}
-	if e, out := pick("9\nx\n3\n"); e == nil || e.Preset != "zed" || e.Resolved != "" || strings.Count(out, "Please enter a number") != 2 {
-		t.Errorf("retry then zed: %+v\n%s", e, out)
-	}
-	e, out := pick("5\n\"unterminated\nno-such-editor\nnvim -O\ny\n")
-	if e == nil || e.Preset != "custom" || strings.Join(e.Command, " ") != "nvim -O {dir}" || e.RunIn != "tab" || e.Resolved != bin+"/nvim" {
-		t.Errorf("custom: %+v\n%s", e, out)
-	}
-	if e, _ := pick("5\n"); e != nil {
-		t.Errorf("custom then EOF: %+v", e)
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
+func TestDoctorFixReplacesStaleHooks(t *testing.T) {
+	s := newSandbox(t)
+	// doctor checks that the hooks' binary exists, so it can't be the real app's.
+	binary := filepath.Join(s.bin, "acmd")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	invoked := testArgv0
+	testArgv0 = binary
+	t.Cleanup(func() { testArgv0 = invoked })
+	stale := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"[ -x /gone/acmd ] && /gone/acmd hook Stop || true # managed by acmd","timeout":2}]}],` +
+		`"Retired":[{"hooks":[{"type":"command","command":"/gone/acmd hook Retired # managed by acmd","timeout":2}]}]}}`
+	if err := os.WriteFile(s.settings, []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := execute(t, "", "doctor", "--fix"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(s.settings)
+	if strings.Contains(string(b), "/gone/acmd") || strings.Contains(string(b), "Retired") {
+		t.Errorf("stale hooks left: %s", b)
+	}
+	if !setup.HasHooks(b, testArgv0) {
+		t.Errorf("hooks not added: %s", b)
+	}
+}
+
+func TestBrewCommand(t *testing.T) {
+	for args, want := range map[string]string{
+		"501 /opt/homebrew/Library/Homebrew/vendor/ruby --disable=gems /opt/homebrew/Library/Homebrew/brew.rb uninstall --cask x": "uninstall",
+		"501 ruby /opt/homebrew/Library/Homebrew/brew.rb upgrade --cask x":                                                        "upgrade",
+		"501 ruby /opt/homebrew/Library/Homebrew/brew.rb reinstall --cask x":                                                      "reinstall",
+		"501 /bin/zsh": "",
+		"":             "",
+	} {
+		if got := brewCommand(args); got != want {
+			t.Errorf("brewCommand(%q) = %q, want %q", args, got, want)
 		}
 	}
-	return false
 }
 
-// Init asks once about the reply popup (off by default) and auto-play.
-func TestInitAsksAboutPopup(t *testing.T) {
-	s := newSandbox(t)
-	ctx := context.Background()
-	opts := initOptions{ask: true, interactive: true}
-	spawned := 0
-	orig := spawnPopup
-	spawnPopup = func(paths.Paths) error { spawned++; return nil }
-	t.Cleanup(func() { spawnPopup = orig })
-
-	// Set up acmd (Enter), editor (Enter), popup: yes, auto-play: yes,
-	// speech (offered only where uv is installed): no.
-	var out bytes.Buffer
-	done, err := runInit(ctx, strings.NewReader("\n\ny\ny\nn\n"), &out, opts)
-	if err != nil || !done {
-		t.Fatalf("init: %v %v\n%s", done, err, out.String())
-	}
-	if !strings.Contains(out.String(), "Turn on the reply popup? [y/N]") || !strings.Contains(out.String(), "The reply popup is on.") || spawned != 1 {
-		t.Errorf("output (spawned %d):\n%s", spawned, out.String())
-	}
-	cfg, _ := config.Load(s.paths.Config())
-	if !cfg.Popup.Enabled || !cfg.Popup.AutoPlay || cfg.Popup.Hotkey != "cmd+ctrl+o" {
-		t.Errorf("popup config: %+v", cfg.Popup)
-	}
-	if rec, _, _ := setup.ReadRecord(s.paths.Setup()); !rec.PopupAsked {
-		t.Error("not recorded as asked")
-	}
-
-	// Asked once: a later init doesn't ask again.
-	out.Reset()
-	if _, err := runInit(ctx, strings.NewReader("\n"), &out, initOptions{interactive: true}); err != nil {
+// brewUninstall runs the cask's uninstall as a given Homebrew command, and
+// reports which hosts it ended and what it asked.
+func brewUninstall(t *testing.T, s *sandbox, args, answer string) (ended []string, asked bool) {
+	t.Helper()
+	if err := os.MkdirAll(s.paths.RuntimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out.String(), "reply popup") {
-		t.Errorf("asked again:\n%s", out.String())
+	if err := os.WriteFile(s.paths.HostSocket("01ABCDEFGHIJKLMNOPQRSTUVWX"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	origArgs, origAsk, origKill := brewArgs, askTerminal, killHost
+	t.Cleanup(func() { brewArgs, askTerminal, killHost = origArgs, origAsk, origKill })
+	brewArgs = func() string { return args }
+	askTerminal = func(string) (string, bool) {
+		asked = true
+		return answer, true
+	}
+	killHost = func(socket string) error {
+		ended = append(ended, socket)
+		return nil
+	}
+	if _, _, err := execute(t, "", "uninstall", "--brew"); err != nil {
+		t.Fatal(err)
+	}
+	return ended, asked
+}
+
+func TestBrewUpgradeKeepsSessionsAndHooks(t *testing.T) {
+	for _, command := range []string{"upgrade", "reinstall", ""} {
+		s := newSandbox(t)
+		if _, _, err := execute(t, "", "init"); err != nil {
+			t.Fatal(err)
+		}
+		args := ""
+		if command != "" {
+			args = "ruby brew.rb " + command + " --cask x"
+		}
+		ended, asked := brewUninstall(t, s, args, "n")
+		if len(ended) != 0 || asked {
+			t.Errorf("%q: ended %v, asked %v", command, ended, asked)
+		}
+		if b, _ := os.ReadFile(s.settings); !strings.Contains(string(b), "managed by acmd") {
+			t.Errorf("%q removed the hooks", command)
+		}
 	}
 }
 
-// Declining leaves it off (the default).
-func TestInitPopupDeclined(t *testing.T) {
+func TestBrewUninstallEndsSessionsAndAsks(t *testing.T) {
+	for _, c := range []struct {
+		args, answer    string
+		wantAsk, keptDB bool
+	}{
+		{"ruby brew.rb uninstall --cask x", "\n", true, true},
+		{"ruby brew.rb uninstall --cask x", "n\n", true, false},
+		{"ruby brew.rb rm --cask x", "y\n", true, true},
+		{"ruby brew.rb uninstall --zap --cask x", "n\n", false, true},
+	} {
+		s := newSandbox(t)
+		if _, _, err := execute(t, "", "init"); err != nil {
+			t.Fatal(err)
+		}
+		ended, asked := brewUninstall(t, s, c.args, c.answer)
+		if len(ended) != 1 || asked != c.wantAsk {
+			t.Errorf("%q: ended %v, asked %v", c.args, ended, asked)
+		}
+		if b, _ := os.ReadFile(s.settings); strings.Contains(string(b), "managed by acmd") {
+			t.Errorf("%q left the hooks", c.args)
+		}
+		if _, err := os.Stat(s.paths.Config()); (err == nil) != c.keptDB {
+			t.Errorf("%q answer %q: config kept = %v", c.args, c.answer, err == nil)
+		}
+	}
+}
+
+func TestInitHookBinary(t *testing.T) {
 	s := newSandbox(t)
-	orig := spawnPopup
-	spawnPopup = func(paths.Paths) error { t.Error("started the popup"); return nil }
-	t.Cleanup(func() { spawnPopup = orig })
-	var out bytes.Buffer
-	if _, err := runInit(context.Background(), strings.NewReader("\n\n\n"), &out, initOptions{ask: true, interactive: true}); err != nil {
+	final := "/Applications/Agent Command.app/Contents/MacOS/agent-command"
+	invoked := testArgv0
+	testArgv0 = "/opt/homebrew/Caskroom/agent-command/1/Agent Command.app/Contents/MacOS/agent-command"
+	t.Cleanup(func() { testArgv0 = invoked })
+	if _, _, err := execute(t, "", "init", "--hook-binary", final); err != nil {
 		t.Fatal(err)
 	}
-	cfg, _ := config.Load(s.paths.Config())
-	if cfg.Popup.Enabled || !strings.Contains(out.String(), "Left off.") {
-		t.Errorf("declined: %+v\n%s", cfg.Popup, out.String())
+	b, _ := os.ReadFile(s.settings)
+	if !setup.HasHooks(b, final) || strings.Contains(string(b), "Caskroom") {
+		t.Errorf("settings: %s", b)
+	}
+}
+
+func TestUseUserTempDirIgnoresHomebrewTMPDIR(t *testing.T) {
+	want := os.TempDir()
+	t.Setenv("TMPDIR", "/private/tmp")
+	useUserTempDir()
+	if got := os.Getenv("TMPDIR"); got == "/private/tmp" || got == "" {
+		t.Errorf("TMPDIR = %q (test started with %q)", got, want)
 	}
 }

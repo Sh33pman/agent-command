@@ -46,6 +46,8 @@ type Config struct {
 	Hosts Hosts
 	// Remover deletes background sessions on purge (claudecli.CLI).
 	Remover Remover
+	// ClaudeDir is Claude's folder, read for conversations to resume.
+	ClaudeDir string
 	// Notify configures notifications (nil = none).
 	Notify *config.Notify
 	// Fallback shows a notification when no view's sidebar can (SPEC §8.5:
@@ -264,6 +266,21 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 			return nil, err
 		}
 		return d.newSession(ctx, n)
+	case ipc.OpConversations:
+		return d.conversations(ctx)
+	case ipc.OpLayout:
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		value, err := d.store.AppState(ctx, layoutKey)
+		return ipc.Layout{JSON: value}, err
+	case ipc.OpSetLayout:
+		l, err := decode[ipc.Layout](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return nil, d.store.SetAppState(ctx, layoutKey, l.JSON)
 	case ipc.OpResume:
 		m, err := decode[ipc.Mutation](req.Data)
 		if err != nil {
@@ -285,6 +302,9 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	}
 }
 
+// layoutKey is where the app's pane layout is kept.
+const layoutKey = "layout"
+
 // ApplyHook parses a hook event, finds or creates its session, applies the
 // state machine and persists the result.
 func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
@@ -295,16 +315,22 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	sess, err := d.store.SessionByClaudeID(ctx, e.SessionID)
-	isNew := errors.Is(err, store.ErrNotFound)
-	if err != nil && !isNew {
-		return err
-	}
-	moved := false
-	if isNew {
-		sess = sessionFromHook(e, ev.Context, d.cfg.Now())
+	sess, isNew, moved := d.terminalOf(ctx, ev.Context), false, false
+	if sess != nil {
+		if !sess.TakeAgentEvent(e, ev.Context.ClaudePid) {
+			return nil
+		}
 	} else {
-		moved = refreshPane(sess, ev.Context)
+		sess, err = d.store.SessionByClaudeID(ctx, e.SessionID)
+		isNew = errors.Is(err, store.ErrNotFound)
+		if err != nil && !isNew {
+			return err
+		}
+		if isNew {
+			sess = sessionFromHook(e, ev.Context, d.cfg.Now())
+		} else {
+			moved = refreshPane(sess, ev.Context)
+		}
 	}
 	tr := core.Apply(sess, e)
 	shown := d.shown(ctx, sess.ID)
@@ -327,6 +353,18 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
 		Detail: string(sess.Status), ToolName: e.ToolName,
 	})
+}
+
+// terminalOf is the terminal session a hook's agent runs in, if it's in one.
+func (d *Daemon) terminalOf(ctx context.Context, hc ipc.HookContext) *core.Session {
+	if hc.HostSession == "" {
+		return nil
+	}
+	s, err := d.store.Session(ctx, hc.HostSession)
+	if err != nil || !s.IsTerminal() {
+		return nil
+	}
+	return s
 }
 
 // background runs the reconciler and the transcript tail until the daemon

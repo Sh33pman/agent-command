@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -25,25 +24,23 @@ type fake struct {
 	versions map[string]string // binary base name → --version output
 	daemon   DaemonState
 	plan     *setup.Plan
-	kitty    string
 }
 
 func newFake(t *testing.T) *fake {
 	t.Helper()
 	home := t.TempDir()
-	f := &fake{t: t, home: home, env: map[string]string{"KITTY_WINDOW_ID": "1", "KITTY_LISTEN_ON": "unix:/tmp/kitty-acmd-1"},
-		versions: map[string]string{"claude": "2.1.320 (Claude Code)\n", "kitty": "kitty 0.49.2 created by Kovid Goyal\n"},
+	f := &fake{t: t, home: home, env: map[string]string{"X_UNUSED": "unix:/tmp/kitty-acmd-1"},
+		versions: map[string]string{"claude": "2.1.320 (Claude Code)\n"},
 		daemon:   DaemonState{Running: true, Status: ipc.Status{Pid: 42, Sessions: 3, Events: 1}},
 		plan:     &setup.Plan{}}
 	bin := filepath.Join(home, "bin")
 	f.acmd = filepath.Join(bin, "acmd")
-	for _, name := range []string{"acmd", "claude", "kitty", "code"} {
+	for _, name := range []string{"acmd", "claude", "code"} {
 		f.write(filepath.Join(bin, name), "#!/bin/sh\n", 0o755)
 	}
-	f.kitty = filepath.Join(bin, "kitty")
 	p := f.paths()
 	f.write(p.Setup(), `{"version":"0.7.0","at":"2026-10-31T10:00:00Z","acmd_path":"`+f.acmd+`","claude_dir":"`+
-		filepath.Join(home, ".claude")+`","kitty_dir":"`+filepath.Join(home, ".config/kitty")+`"}`, 0o600)
+		filepath.Join(home, ".claude")+`"}`, 0o600)
 	f.write(p.Env(), `{"PATH":"`+bin+`"}`, 0o600)
 	cfg, err := config.Set(config.Template, "editor", "preset", "vscode")
 	must(t, err)
@@ -53,10 +50,6 @@ func newFake(t *testing.T) *fake {
 	settings, _, err := setup.AddHooks([]byte(`{"model":"opus"}`), f.acmd)
 	must(t, err)
 	f.write(filepath.Join(home, ".claude/settings.json"), string(settings), 0o600)
-	kittyConf, _ := setup.EnsureBlock("font_size 13\n", "include "+setup.KittyConfName)
-	f.write(filepath.Join(home, ".config/kitty/kitty.conf"), kittyConf, 0o644)
-	f.write(filepath.Join(home, ".config/kitty", setup.KittyConfName),
-		setup.RenderKittyConf(setup.KittyBinds(f.acmd, setup.DefaultKeys), nil, setup.KittyConfig{}), 0o644)
 	must(t, os.Chmod(p.StateDir, 0o700))
 	return f
 }
@@ -85,10 +78,9 @@ func (f *fake) Env() Env {
 			}
 			return nil, errors.New("exit status 1")
 		},
-		HasBundle:   func(string) bool { return false },
-		Daemon:      func(context.Context) (DaemonState, error) { return f.daemon, nil },
-		InitPlan:    func(context.Context) (*setup.Plan, error) { return f.plan, nil },
-		KittyBinary: f.kitty,
+		HasBundle: func(string) bool { return false },
+		Daemon:    func(context.Context) (DaemonState, error) { return f.daemon, nil },
+		InitPlan:  func(context.Context) (*setup.Plan, error) { return f.plan, nil },
 	}
 }
 
@@ -109,7 +101,6 @@ func TestHealthy(t *testing.T) {
 		"acmd\n  · version 0.8.0 at ~/bin/acmd\n  ✓ set up by acmd 0.7.0 on ",
 		"✓ editor: VS Code (~/bin/code)", "✓ login-shell environment saved", "✓ setup is up to date",
 		"Claude Code\n  ✓ claude 2.1.320 (~/bin/claude)\n  ✓ hooks registered for all 15 events",
-		"Kitty\n  ✓ kitty 0.49.2", "✓ kitty.conf includes agent-command.conf", "✓ this Kitty has a remote-control socket",
 		"Daemon\n  ✓ running (pid 42): 3 sessions, 1 event recorded", "Everything looks good.",
 	} {
 		if !strings.Contains(out, want) {
@@ -126,7 +117,7 @@ func TestNotSetUp(t *testing.T) {
 	must(t, os.Remove(f.paths().Setup()))
 	f.daemon = DaemonState{}
 	r, out := f.run()
-	for _, want := range []string{"✗ setup hasn't run yet\n      fix: acmd init   (preview first: acmd init --dry-run)",
+	for _, want := range []string{"✗ setup hasn't run yet\n      fix: acmd doctor --fix",
 		"· not running (it starts with the first session or command)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
@@ -145,7 +136,7 @@ func TestProblems(t *testing.T) {
 	home, p := f.home, f.paths()
 	must(t, os.Chmod(p.StateDir, 0o755))
 
-	// The binary hooks and shortcuts use is gone; this one lives elsewhere.
+	// The binary hooks use is gone; this one lives elsewhere.
 	must(t, os.Remove(f.acmd))
 	other := filepath.Join(home, ".local/bin/acmd")
 	f.write(other, "#!/bin/sh\n", 0o755)
@@ -168,12 +159,6 @@ func TestProblems(t *testing.T) {
 	ManagedSettings = []string{managed, filepath.Join(home, "missing.json")}
 	t.Cleanup(func() { ManagedSettings = orig })
 
-	// Kitty: old, password remote control, a TCP socket, and not restarted.
-	f.versions["kitty"] = "kitty 0.42.1 created by Kovid Goyal"
-	f.write(filepath.Join(home, ".config/kitty/kitty.conf"),
-		"allow_remote_control password\nlisten_on tcp:localhost:1234\n"+setup.BlockBegin+"\ninclude agent-command.conf\n"+setup.BlockEnd+"\n", 0o644)
-	delete(f.env, "KITTY_LISTEN_ON")
-
 	// acmd: env.json too open, custom editor missing, daemon of another version, init would change things.
 	f.write(p.Env(), `{"PATH":"x"}`, 0o644)
 	cfg, err := config.Set(config.Template, "editor", "preset", "custom")
@@ -189,7 +174,7 @@ func TestProblems(t *testing.T) {
 	r.Write(&b)
 	out := b.String()
 	for _, want := range []string{
-		"✗ hooks and shortcuts use ~/bin/acmd, which no longer exists",
+		"✗ hooks use ~/bin/acmd, which no longer exists",
 		"! several acmd installs on your PATH (the first wins): ~/.local/bin/acmd, ~/brew/acmd",
 		"✗ editor command \"nope\" not found",
 		"! ~/state/env.json is readable by others (-rw-r--r--); it holds your environment\n      fix: chmod 600 ~/state/env.json",
@@ -199,19 +184,14 @@ func TestProblems(t *testing.T) {
 		"✗ hooks run ~/bin/acmd, which doesn't exist",
 		"✗ disableAllHooks is on in your settings",
 		"✗ managed settings allow only managed hooks",
-		"✗ kitty 0.42.1 is older than 0.49.0",
-		"✗ shortcuts run ~/bin/acmd, which doesn't exist",
-		"! your allow_remote_control password asks for a password acmd can't give",
-		"! your listen_on tcp:localhost:1234 isn't a unix socket",
-		"✗ this Kitty has no remote-control socket: it was started before setup\n      fix: restart Kitty",
 		"! ~/state is accessible by others (-rwxr-xr-x)\n      fix: chmod 700 ~/state",
-		"· running acmd 0.7.0 (this is 0.8.0); the next acmd command restarts it",
+		"! running acmd 0.7.0 (this is 0.8.0)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}
 	}
-	if !strings.HasSuffix(out, "10 problems, 6 warnings.\n") {
+	if !strings.HasSuffix(out, "7 problems, 5 warnings.\n") {
 		t.Errorf("summary:\n%s", out)
 	}
 
@@ -230,87 +210,6 @@ func TestProblems(t *testing.T) {
 	must(t, os.Remove(p.Setup()))
 	if _, out = f.run(); !strings.Contains(out, "· CLAUDE_CONFIG_DIR is set: hooks go into ~/other-claude") {
 		t.Errorf("custom CLAUDE_CONFIG_DIR not noted:\n%s", out)
-	}
-}
-
-func TestEditorAndKittyEdgeCases(t *testing.T) {
-	f := newFake(t)
-	p := f.paths()
-	set := func(kv ...any) {
-		text := config.Template
-		for i := 0; i < len(kv); i += 2 {
-			var err error
-			text, err = config.Set(text, "editor", kv[i].(string), kv[i+1])
-			must(t, err)
-		}
-		f.write(p.Config(), text, 0o600)
-	}
-	cases := []struct {
-		name string
-		kv   []any
-		want string
-	}{
-		{"none chosen", nil, "! no editor chosen for opening session folders\n      fix: acmd editor set"},
-		{"unknown preset", []any{"preset", "emacs"}, "✗ unknown editor preset \"emacs\""},
-		{"launcher moved", []any{"preset", "vscode", "resolved", "/gone/code"}, "! editor launcher moved to ~/bin/code"},
-		{"not installed", []any{"preset", "zed"}, "✗ editor Zed isn't installed"},
-		{"custom ok", []any{"preset", "custom", "command", []string{"code", "-n", "{dir}"}}, "✓ editor: code -n {dir}"},
-		{"custom empty", []any{"preset", "custom"}, "✗ custom editor has no command"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			set(c.kv...)
-			if _, out := f.run(); !strings.Contains(out, c.want) {
-				t.Errorf("report lacks %q:\n%s", c.want, out)
-			}
-		})
-	}
-	f.write(p.Config(), "[editor\n", 0o600)
-	if _, out := f.run(); !strings.Contains(out, "✗ ~/config/config.toml: config.toml:") {
-		t.Errorf("malformed config not reported:\n%s", out)
-	}
-
-	// Kitty: set up but the files are gone; outside Kitty the live check is skipped.
-	must(t, os.Remove(filepath.Join(f.home, ".config/kitty", setup.KittyConfName)))
-	f.write(filepath.Join(f.home, ".config/kitty/kitty.conf"), "font_size 13\n", 0o644)
-	delete(f.env, "KITTY_WINDOW_ID")
-	_, out := f.run()
-	for _, want := range []string{"✗ kitty.conf doesn't include agent-command.conf", "✗ ~/.config/kitty/agent-command.conf is missing"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("report lacks %q:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "this Kitty") {
-		t.Errorf("live Kitty check outside Kitty:\n%s", out)
-	}
-
-	// Kitty uninstalled after setup; Claude missing; version unreadable.
-	f.kitty = ""
-	must(t, os.Remove(filepath.Join(f.home, "bin/claude")))
-	_, out = f.run()
-	for _, want := range []string{"✗ Kitty was set up but isn't installed", "✗ claude not found on your login shell's PATH"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("report lacks %q:\n%s", want, out)
-		}
-	}
-	f.kitty = filepath.Join(f.home, "bin/kitty")
-	delete(f.versions, "kitty")
-	if _, out = f.run(); !strings.Contains(out, "! couldn't read the kitty version") {
-		t.Errorf("unreadable version not reported:\n%s", out)
-	}
-}
-
-func TestKittyNotSetUp(t *testing.T) {
-	f := newFake(t)
-	f.write(f.paths().Setup(), `{"version":"0.7.0","at":"`+time.Now().UTC().Format(time.RFC3339)+`","acmd_path":"`+f.acmd+`","claude_dir":"`+
-		filepath.Join(f.home, ".claude")+`"}`, 0o600)
-	_, out := f.run()
-	if !strings.Contains(out, "! Kitty is installed but wasn't set up\n      fix: acmd init --kitty") {
-		t.Errorf("report:\n%s", out)
-	}
-	f.kitty = ""
-	if _, out = f.run(); strings.Contains(out, "Kitty") {
-		t.Errorf("Kitty section without Kitty:\n%s", out)
 	}
 }
 
@@ -341,85 +240,11 @@ func TestVersions(t *testing.T) {
 	if v := ParseClaudeVersion("2.1.314 (Claude Code)\n"); v != "2.1.314" {
 		t.Errorf("claude: %q", v)
 	}
-	if v := ParseKittyVersion("kitty 0.49.2 created by Kovid Goyal"); v != "0.49.2" {
-		t.Errorf("kitty: %q", v)
-	}
-	if v := ParseKittyVersion("garbage"); v != "" {
-		t.Errorf("garbage: %q", v)
-	}
-}
-
-func TestBinaryPaths(t *testing.T) {
-	conf := "allow_remote_control socket-only\nmap cmd+shift+b launch --type=background --allow-remote-control /a/acmd toggle\n" +
-		"map cmd+shift+l launch --type=overlay /a/acmd pick\nmap cmd+1 launch --type=overlay '/b c/acmd' go 1\n# map x launch /c/acmd\n"
-	if got := strings.Join(binaryPaths(conf), ","); got != "/a/acmd" {
-		t.Errorf("binaryPaths = %s", got)
-	}
 }
 
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestGhostty(t *testing.T) {
-	f := newFake(t)
-	denied := errors.New("denied")
-	env := f.Env()
-	env.GhosttyBinary = filepath.Join(f.home, "bin/ghostty")
-	f.write(env.GhosttyBinary, "#!/bin/sh\n", 0o755)
-	f.versions["ghostty"] = "Ghostty 1.4.0\n"
-	env.NotPermitted = denied
-	running := func(ok bool, err error) func(context.Context) (bool, error) {
-		return func(context.Context) (bool, error) { return ok, err }
-	}
-	report := func(env Env) string {
-		var b bytes.Buffer
-		Run(context.Background(), env).Write(&b)
-		return b.String()
-	}
-
-	// Installed, not set up.
-	env.GhosttyRunning = running(false, nil)
-	out := report(env)
-	for _, want := range []string{"Ghostty\n  ✓ ghostty 1.4.0", "! Ghostty is installed but wasn't set up\n      fix: acmd init --ghostty",
-		"· not running (Automation permission is checked when it runs)"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("lacks %q:\n%s", want, out)
-		}
-	}
-
-	// Set up: include and keybinds checked; permission denied; old version.
-	gdir := filepath.Join(f.home, ".config/ghostty")
-	f.write(f.paths().Setup(), `{"version":"0.7.0","at":"2026-10-31T10:00:00Z","acmd_path":"`+f.acmd+`","claude_dir":"`+
-		filepath.Join(f.home, ".claude")+`","kitty_dir":"`+filepath.Join(f.home, ".config/kitty")+`","ghostty_dir":"`+gdir+`"}`, 0o600)
-	f.write(filepath.Join(gdir, "config"), "theme = x\n", 0o644)
-	f.versions["ghostty"] = "Ghostty 1.3.1"
-	env.GhosttyRunning = running(false, denied)
-	out = report(env)
-	for _, want := range []string{"✗ ghostty 1.3.1 is older than 1.4.0", "✗ ~/.config/ghostty/config doesn't include agent-command.ghostty",
-		"✗ ~/.config/ghostty/agent-command.ghostty is missing", "✗ acmd isn't allowed to control Ghostty (Automation)"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("lacks %q:\n%s", want, out)
-		}
-	}
-	text, _ := setup.EnsureBlock("theme = x\n", "config-file = ?agent-command.ghostty")
-	f.write(filepath.Join(gdir, "config.ghostty"), text, 0o644)
-	f.write(filepath.Join(gdir, setup.GhosttyConfName), "keybind = cmd+shift+b=toggle_split_zoom\n", 0o644)
-	f.versions["ghostty"] = "Ghostty 1.4.0"
-	env.GhosttyRunning = running(true, nil)
-	out = report(env)
-	if !strings.Contains(out, "✓ config.ghostty includes agent-command.ghostty") || !strings.Contains(out, "✓ acmd may control Ghostty") {
-		t.Errorf("healthy ghostty:\n%s", out)
-	}
-	env.GhosttyRunning = running(false, errors.New("timeout"))
-	if out = report(env); !strings.Contains(out, "! couldn't talk to Ghostty: timeout") {
-		t.Errorf("other error:\n%s", out)
-	}
-	env.GhosttyBinary = ""
-	if out = report(env); !strings.Contains(out, "✗ Ghostty was set up but isn't installed") {
-		t.Errorf("uninstalled:\n%s", out)
 	}
 }

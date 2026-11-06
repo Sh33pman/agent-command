@@ -22,7 +22,7 @@ func newEditorCmd() *cobra.Command {
 		Short: "Show, detect or set the editor that opens session folders",
 		Args:  cobra.NoArgs,
 	}
-	cmd.AddCommand(newEditorShowCmd(), newEditorDetectCmd(), newEditorSetCmd(), newEditorPickCmd())
+	cmd.AddCommand(newEditorShowCmd(), newEditorDetectCmd(), newEditorSetCmd())
 	return cmd
 }
 
@@ -82,9 +82,8 @@ func newEditorDetectCmd() *cobra.Command {
 }
 
 func newEditorSetCmd() *cobra.Command {
-	var runIn string
 	cmd := &cobra.Command{
-		Use:   "set vscode|cursor|zed|idea | set custom [--run-in background|tab] -- <command…{dir}…>",
+		Use:   "set vscode|cursor|zed|idea | set custom -- <command…{dir}…>",
 		Short: "Choose the editor (custom commands get the folder as {dir}, added at the end if omitted)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -99,15 +98,12 @@ func newEditorSetCmd() *cobra.Command {
 				if len(args) < 2 {
 					return errors.New("usage: acmd editor set custom -- <command> [args…] [{dir}]")
 				}
-				if runIn != "background" && runIn != "tab" {
-					return fmt.Errorf("--run-in must be background or tab, not %q", runIn)
-				}
 				argv := setup.WithDir(append([]string(nil), args[1:]...))
 				resolved, err := setup.LookPathIn(argv[0], pathList)
 				if err != nil {
 					return err
 				}
-				e = config.Editor{Preset: "custom", Command: argv, Resolved: resolved, RunIn: runIn}
+				e = config.Editor{Preset: "custom", Command: argv, Resolved: resolved, RunIn: "background"}
 			default:
 				preset, ok := setup.PresetByName(name)
 				if !ok {
@@ -130,7 +126,6 @@ func newEditorSetCmd() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&runIn, "run-in", "background", "custom only: background (GUI editors) or tab (terminal editors)")
 	return cmd
 }
 

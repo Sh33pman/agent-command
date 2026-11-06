@@ -95,7 +95,7 @@ func TestHostServe(t *testing.T) {
 }
 
 func TestHostServeNeedsSessionAndDir(t *testing.T) {
-	viewEnvFor(t)
+	env(t)
 	if _, err := acmd(t, "host", "serve"); err == nil {
 		t.Error("expected an error without --session/--dir")
 	}

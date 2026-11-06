@@ -51,7 +51,7 @@ func opts(p paths.Paths, stdin string, spawned *int) Options {
 	return Options{
 		Paths: p, Version: v, Stdin: strings.NewReader(stdin), ParentPid: 100, ProcInfo: fakeProcs(),
 		Getenv: func(k string) string {
-			return map[string]string{"KITTY_WINDOW_ID": "7", "TERM_PROGRAM": "kitty"}[k]
+			return map[string]string{"KITTY_WINDOW_ID": "7", "TERM_PROGRAM": "kitty", "ACMD_SESSION_ID": "S1"}[k]
 		},
 		Now:     func() time.Time { return time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC) },
 		Spawn:   func(paths.Paths) error { *spawned++; return nil },
@@ -261,5 +261,34 @@ func TestTTYPathDarwin(t *testing.T) {
 	}
 	if p.TTY != "" && !strings.HasPrefix(p.TTY, "/dev/ttys") {
 		t.Errorf("tty %q", p.TTY)
+	}
+}
+
+func TestContextNamesTheSessionItRunsIn(t *testing.T) {
+	o := Options{ProcInfo: fakeProcs(), ParentPid: 100, Getenv: func(k string) string {
+		if k == "ACMD_SESSION_ID" {
+			return "S1"
+		}
+		return ""
+	}}
+	hc, headless := o.context()
+	if hc.HostSession != "S1" || headless {
+		t.Errorf("context = %+v, headless %v", hc, headless)
+	}
+}
+
+// A Claude outside our sessions, such as one v1 runs, must not reach or start
+// the daemon.
+func TestRunIgnoresClaudeOutsideOurSessions(t *testing.T) {
+	p := testPaths(t)
+	spawned := 0
+	o := opts(p, `{"session_id":"c1","source":"startup"}`, &spawned)
+	o.Getenv = func(string) string { return "" }
+	out, err := Run("SessionStart", o)
+	if out != Ignored || err != nil || spawned != 0 {
+		t.Errorf("Run = %s, %v (spawned %d)", out, err, spawned)
+	}
+	if _, err := os.Stat(p.Spool()); !os.IsNotExist(err) {
+		t.Errorf("spool file: %v", err)
 	}
 }

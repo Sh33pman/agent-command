@@ -1,5 +1,5 @@
 // Package doctor implements `acmd doctor` (SPEC §8.7): read-only checks of
-// acmd's setup, Claude Code, Kitty and the daemon, each with a fix to run.
+// acmd's setup, Claude Code and the daemon, each with a fix to run.
 // Everything that looks at the machine comes in through Env, so the checks
 // are testable without touching the real one.
 package doctor
@@ -13,7 +13,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -117,6 +116,7 @@ type DaemonState struct {
 	Running  bool
 	Status   ipc.Status // when running this version
 	Mismatch string     // version of a daemon of another version
+	Binary   string     // the program it runs ("" = unknown)
 }
 
 // Env is everything the checks read.
@@ -141,15 +141,6 @@ type Env struct {
 	// InitPlan is what `acmd init` would change now (nil when setup can't
 	// be planned).
 	InitPlan func(ctx context.Context) (*setup.Plan, error)
-	// KittyBinary is the Kitty executable ("" = not installed).
-	KittyBinary string
-	// GhosttyBinary is the Ghostty executable ("" = not installed).
-	GhosttyBinary string
-	// GhosttyRunning reports whether Ghostty runs and acmd may control it
-	// (error ghostty.ErrNotPermitted); it never launches Ghostty.
-	GhosttyRunning func(ctx context.Context) (bool, error)
-	// NotPermitted is the error GhosttyRunning returns when Automation is denied.
-	NotPermitted error
 }
 
 // Run performs every check.
@@ -157,8 +148,6 @@ func Run(ctx context.Context, e Env) *Report {
 	r := &Report{}
 	rec, initDone := checkAcmd(r, e)
 	checkClaude(ctx, r, e, rec, initDone)
-	checkKitty(ctx, r, e, rec, initDone)
-	checkGhostty(ctx, r, e, rec, initDone)
 	checkDaemon(ctx, r, e)
 	if initDone {
 		checkPlan(ctx, r, e)
@@ -167,12 +156,10 @@ func Run(ctx context.Context, e Env) *Report {
 }
 
 const (
-	secAcmd    = "acmd"
-	secClaude  = "Claude Code"
-	secKitty   = "Kitty"
-	secGhostty = "Ghostty"
-	secDaemon  = "Daemon"
-	fixInit    = "acmd init"
+	secAcmd   = "acmd"
+	secClaude = "Claude Code"
+	secDaemon = "Daemon"
+	fixInit   = "acmd doctor --fix"
 )
 
 func checkAcmd(r *Report, e Env) (setup.Record, bool) {
@@ -183,15 +170,15 @@ func checkAcmd(r *Report, e Env) (setup.Record, bool) {
 	case err != nil:
 		r.add(secAcmd, Fail, fixInit, "setup record unreadable: %v", err)
 	case !ok:
-		r.add(secAcmd, Fail, fixInit+"   (preview first: acmd init --dry-run)", "setup hasn't run yet")
+		r.add(secAcmd, Fail, fixInit, "setup hasn't run yet")
 	default:
 		r.add(secAcmd, OK, "", "set up by acmd %s on %s", rec.Version, rec.At.Local().Format("2006-01-02 15:04"))
 		switch {
 		case !e.executable(rec.AcmdPath):
-			r.add(secAcmd, Fail, fixInit, "hooks and shortcuts use %s, which no longer exists", setup.Tilde(rec.AcmdPath, e.Home))
+			r.add(secAcmd, Fail, fixInit, "hooks use %s, which no longer exists", setup.Tilde(rec.AcmdPath, e.Home))
 		case rec.AcmdPath != e.AcmdPath:
 			r.add(secAcmd, Warn, "rerun `acmd init` with the acmd you want to keep",
-				"hooks and shortcuts use %s, but this is %s", setup.Tilde(rec.AcmdPath, e.Home), setup.Tilde(e.AcmdPath, e.Home))
+				"hooks use %s, but this is %s", setup.Tilde(rec.AcmdPath, e.Home), setup.Tilde(e.AcmdPath, e.Home))
 		}
 	}
 
@@ -378,140 +365,6 @@ func boolSetting(b []byte, key string) (value, ok bool) {
 	return v, true
 }
 
-func checkKitty(ctx context.Context, r *Report, e Env, rec setup.Record, initDone bool) {
-	dir := rec.KittyDir
-	if !initDone || dir == "" {
-		if e.KittyBinary == "" {
-			return // not a Kitty user
-		}
-		dir = setup.KittyConfigDir(e.Home, e.Getenv)
-		if initDone {
-			r.add(secKitty, Warn, "acmd init --kitty", "Kitty is installed but wasn't set up")
-		}
-	}
-	if e.KittyBinary == "" {
-		r.add(secKitty, Fail, "install Kitty, or rerun `acmd init` (with Kitty gone, uninstall removes acmd's Kitty files)", "Kitty was set up but isn't installed")
-	} else {
-		checkVersion(ctx, r, e, secKitty, e.KittyBinary, "kitty", MinKitty, ParseKittyVersion)
-	}
-	if !initDone || rec.KittyDir == "" {
-		return
-	}
-
-	conf := filepath.Join(dir, "kitty.conf")
-	text, err := e.Read(conf)
-	switch {
-	case err != nil:
-		r.add(secKitty, Fail, fixInit, "kitty.conf unreadable: %v", err)
-	case !strings.Contains(string(text), setup.BlockBegin):
-		r.add(secKitty, Fail, fixInit, "kitty.conf doesn't include %s", setup.KittyConfName)
-	default:
-		r.add(secKitty, OK, "", "kitty.conf includes %s", setup.KittyConfName)
-	}
-
-	owned := filepath.Join(dir, setup.KittyConfName)
-	ownedText, err := e.Read(owned)
-	if err != nil {
-		r.add(secKitty, Fail, fixInit, "%s is missing (no shortcuts or remote control)", setup.Tilde(owned, e.Home))
-	} else {
-		for _, p := range binaryPaths(string(ownedText)) {
-			if !e.executable(p) {
-				r.add(secKitty, Fail, fixInit, "shortcuts run %s, which doesn't exist", setup.Tilde(p, e.Home))
-			}
-		}
-	}
-
-	user, err := setup.ParseKittyConfig(conf, e.Read)
-	if err == nil {
-		checkRemote(r, e, user, string(ownedText))
-	}
-}
-
-func checkGhostty(ctx context.Context, r *Report, e Env, rec setup.Record, initDone bool) {
-	setUp := initDone && rec.GhosttyDir != ""
-	if e.GhosttyBinary == "" && !setUp {
-		return // not a Ghostty user
-	}
-	if e.GhosttyBinary == "" {
-		r.add(secGhostty, Fail, "install Ghostty, or rerun `acmd init`", "Ghostty was set up but isn't installed")
-	} else {
-		checkVersion(ctx, r, e, secGhostty, e.GhosttyBinary, "ghostty", MinGhostty, firstVersion)
-	}
-	if initDone && !setUp {
-		r.add(secGhostty, Warn, "acmd init --ghostty", "Ghostty is installed but wasn't set up")
-	}
-	if setUp {
-		conf := filepath.Join(rec.GhosttyDir, "config")
-		if b, err := e.Read(filepath.Join(rec.GhosttyDir, "config.ghostty")); err == nil && len(b) > 0 {
-			conf = filepath.Join(rec.GhosttyDir, "config.ghostty")
-		}
-		if text, err := e.Read(conf); err != nil || !strings.Contains(string(text), setup.BlockBegin) {
-			r.add(secGhostty, Fail, fixInit, "%s doesn't include %s", setup.Tilde(conf, e.Home), setup.GhosttyConfName)
-		} else {
-			r.add(secGhostty, OK, "", "%s includes %s", filepath.Base(conf), setup.GhosttyConfName)
-		}
-		if _, err := e.Read(filepath.Join(rec.GhosttyDir, setup.GhosttyConfName)); err != nil {
-			r.add(secGhostty, Fail, fixInit, "%s is missing (no keybinds)", setup.Tilde(filepath.Join(rec.GhosttyDir, setup.GhosttyConfName), e.Home))
-		}
-	}
-	if e.GhosttyRunning == nil || e.GhosttyBinary == "" {
-		return
-	}
-	running, err := e.GhosttyRunning(ctx)
-	switch {
-	case err != nil && e.NotPermitted != nil && errors.Is(err, e.NotPermitted):
-		r.add(secGhostty, Fail, "System Settings → Privacy & Security → Automation: allow your terminal (and acmd) to control Ghostty",
-			"acmd isn't allowed to control Ghostty (Automation)")
-	case err != nil:
-		r.add(secGhostty, Warn, "", "couldn't talk to Ghostty: %v", err)
-	case !running:
-		r.add(secGhostty, Info, "", "not running (Automation permission is checked when it runs)")
-	default:
-		r.add(secGhostty, OK, "", "acmd may control Ghostty")
-	}
-}
-
-var launchPath = regexp.MustCompile(`^map \S+ launch (?:--\S+ )*(/\S+)`)
-
-// binaryPaths lists the distinct programs agent-command.conf's maps launch.
-func binaryPaths(conf string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, l := range strings.Split(conf, "\n") {
-		if m := launchPath.FindStringSubmatch(l); m != nil && !seen[m[1]] {
-			seen[m[1]] = true
-			out = append(out, m[1])
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// checkRemote checks the remote-control settings acmd relies on: the
-// user's own (which acmd keeps) and, when doctor runs inside Kitty,
-// whether this Kitty actually has them (they apply only at startup).
-func checkRemote(r *Report, e Env, user setup.KittyConfig, owned string) {
-	arc, listen := user.Settings["allow_remote_control"], user.Settings["listen_on"]
-	if strings.EqualFold(arc, "password") {
-		r.add(secKitty, Warn, "set `allow_remote_control socket-only` in your kitty.conf (acmd only talks to its own socket)",
-			"your allow_remote_control password asks for a password acmd can't give")
-	}
-	if listen != "" && !strings.EqualFold(listen, "none") && !strings.HasPrefix(listen, "unix:") {
-		r.add(secKitty, Warn, "use a unix socket, e.g. listen_on unix:kitty-{kitty_pid}", "your listen_on %s isn't a unix socket", listen)
-	}
-	if owned != "" && !strings.Contains(owned, "allow_remote_control ") && arc == "" {
-		r.add(secKitty, Fail, fixInit, "remote control isn't turned on")
-	}
-	if e.Getenv("KITTY_WINDOW_ID") == "" {
-		return // not running inside Kitty: can't see the live settings
-	}
-	if e.Getenv("KITTY_LISTEN_ON") == "" {
-		r.add(secKitty, Fail, "restart Kitty (cmd+q, then reopen)", "this Kitty has no remote-control socket: it was started before setup")
-	} else {
-		r.add(secKitty, OK, "", "this Kitty has a remote-control socket")
-	}
-}
-
 func checkVersion(ctx context.Context, r *Report, e Env, section, bin, name, minimum string, parse func(string) string) {
 	out, err := e.Output(ctx, bin, "--version")
 	v := parse(string(out))
@@ -529,11 +382,6 @@ var semver = regexp.MustCompile(`\b(\d+\.\d+(?:\.\d+)?)\b`)
 
 // ParseClaudeVersion extracts the version from `claude --version` ("2.1.314 (Claude Code)").
 func ParseClaudeVersion(out string) string {
-	return firstVersion(out)
-}
-
-// ParseKittyVersion extracts the version from `kitty --version` ("kitty 0.49.2 created by Kovid Goyal").
-func ParseKittyVersion(out string) string {
 	return firstVersion(out)
 }
 
@@ -570,8 +418,10 @@ func checkDaemon(ctx context.Context, r *Report, e Env) {
 	switch {
 	case err != nil:
 		r.add(secDaemon, Fail, "see "+setup.Tilde(e.Paths.DaemonLog(), e.Home), "can't talk to the daemon: %v", err)
+	case d.Binary != "" && !e.executable(d.Binary):
+		r.add(secDaemon, Fail, fixInit, "running from %s, which no longer exists", setup.Tilde(d.Binary, e.Home))
 	case d.Mismatch != "":
-		r.add(secDaemon, Info, "", "running acmd %s (this is %s); the next acmd command restarts it", d.Mismatch, e.Version)
+		r.add(secDaemon, Warn, fixInit, "running acmd %s (this is %s)", d.Mismatch, e.Version)
 	case !d.Running:
 		r.add(secDaemon, Info, "", "not running (it starts with the first session or command)")
 	default:
@@ -599,6 +449,6 @@ func checkPlan(ctx context.Context, r *Report, e Env) {
 	for _, c := range pending {
 		files = append(files, setup.Tilde(c.Path, e.Home))
 	}
-	r.add(secAcmd, Warn, "acmd init --dry-run (to see the changes), then acmd init",
+	r.add(secAcmd, Warn, fixInit,
 		"acmd init would update %s", strings.Join(files, ", "))
 }

@@ -20,6 +20,7 @@ import (
 // HostRequest says what a session host runs (SPEC §4.5).
 type HostRequest struct {
 	ID            string // the acmd session
+	Harness       string // "" = claude
 	Dir           string
 	Name, Prompt  string
 	Args          []string
@@ -49,7 +50,13 @@ func newUUID() string {
 // session id is chosen here, so its hooks find the row from the first one.
 func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
 	d.mu.Lock()
-	s := &core.Session{Kind: core.KindHosted, Cwd: req.Cwd, ClaudeSessionID: newUUID(), CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto}
+	s := &core.Session{Kind: core.KindHosted, Cwd: req.Cwd, Harness: req.Harness, CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto}
+	switch {
+	case req.Resume != "":
+		s.ClaudeSessionID = req.Resume
+	case !s.IsTerminal():
+		s.ClaudeSessionID = newUUID()
+	}
 	core.Apply(s, core.Event{Kind: core.EventCreated, Time: d.cfg.Now()})
 	if req.GroupID != "" {
 		s.GroupID = req.GroupID
@@ -65,7 +72,11 @@ func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Ses
 	if err != nil {
 		return nil, err
 	}
-	if err := d.startHost(ctx, HostRequest{ID: s.ID, Dir: req.Cwd, Name: req.Name, Prompt: req.Prompt, Args: req.Args, ClaudeSession: s.ClaudeSessionID}); err != nil {
+	host := HostRequest{ID: s.ID, Harness: req.Harness, Dir: req.Cwd, Name: req.Name, Prompt: req.Prompt, Args: req.Args, ClaudeSession: s.ClaudeSessionID}
+	if req.Resume != "" {
+		host.ClaudeSession, host.Resume = "", req.Resume
+	}
+	if err := d.startHost(ctx, host); err != nil {
 		d.mu.Lock()
 		_ = d.store.DeleteSession(ctx, s.ID) // nothing ran: don't leave a ghost
 		d.mu.Unlock()
@@ -73,6 +84,12 @@ func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Ses
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if s.IsTerminal() {
+		s.Status = core.StatusRunning
+		if err := d.store.UpdateSession(ctx, s); err != nil {
+			return nil, err
+		}
+	}
 	if req.ShowIn != "" {
 		v, err := d.store.View(ctx, req.ShowIn)
 		if err == nil {
@@ -105,10 +122,11 @@ func (d *Daemon) startHost(ctx context.Context, r HostRequest) error {
 	return fmt.Errorf("the session's host didn't start (see %s)", d.cfg.Paths.DaemonLog())
 }
 
-// resumeHosted runs `claude --resume` for a stopped hosted session in a new host.
+// resumeHosted runs `claude --resume` for a stopped hosted session in a new
+// host. A terminal that a reboot ended gets a new shell in its folder.
 func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session) (*core.Session, error) {
 	if !term.Running(d.cfg.Paths.HostSocket(s.ID)) {
-		if err := d.startHost(ctx, HostRequest{ID: s.ID, Dir: s.Cwd, Resume: s.ClaudeSessionID}); err != nil {
+		if err := d.startHost(ctx, HostRequest{ID: s.ID, Harness: s.Harness, Dir: s.Cwd, Resume: s.ClaudeSessionID}); err != nil {
 			return nil, err
 		}
 	}
@@ -123,6 +141,9 @@ func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session) (*core.Sessi
 		core.Apply(s, core.Event{Kind: core.EventAgentStatus, AgentStatus: core.AgentStopped, Time: d.eventTime(s)})
 	}
 	core.Apply(s, core.Event{Kind: core.EventResumed, Time: d.eventTime(s)})
+	if s.IsTerminal() {
+		s.Status = core.StatusRunning
+	}
 	return s, d.store.UpdateSession(ctx, s)
 }
 

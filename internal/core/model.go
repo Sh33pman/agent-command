@@ -17,6 +17,8 @@ const (
 	StatusDone     Status = "done"
 	StatusError    Status = "error"
 	StatusPaused   Status = "paused"
+	// StatusRunning: a terminal whose shell runs; it has no finer status.
+	StatusRunning Status = "running"
 	// StatusFinished: the user finished the session (claude stop); its
 	// conversation is kept and showing it resumes it (SPEC §5.2).
 	StatusFinished Status = "finished"
@@ -41,6 +43,12 @@ const (
 	KindHosted Kind = "hosted"
 	// KindExternal is an interactive `claude` in one of the user's own panes.
 	KindExternal Kind = "external"
+)
+
+// What a session runs (docs/v2/architecture.md §3).
+const (
+	HarnessClaude   = "claude"
+	HarnessTerminal = "terminal"
 )
 
 // NameSource says whether a session's name may still be replaced automatically.
@@ -91,6 +99,7 @@ type Session struct {
 	StatusDetail    string
 	Unseen          bool
 	Kind            Kind
+	Harness         string // HarnessClaude or HarnessTerminal
 	BgID            string
 	Pid             int
 	External        *PaneLoc
@@ -135,6 +144,42 @@ type ViewState struct {
 // Managed reports whether acmd runs s, so a view can show it: a background
 // or a hosted session (not one in the user's own pane).
 func (s *Session) Managed() bool { return s.Kind == KindBackground || s.Kind == KindHosted }
+
+// IsTerminal reports whether s is a terminal session. It may have an agent
+// running in it, typed by the user, whose status it then shows.
+func (s *Session) IsTerminal() bool { return s.Harness == HarnessTerminal }
+
+// TakeAgentEvent reports whether a terminal should apply an event from an
+// agent running in it, and adopts that agent if it has none. The last agent to
+// start wins, so a second one in the same terminal can't confuse the first.
+func (s *Session) TakeAgentEvent(e Event, pid int) bool {
+	if s.Status == StatusArchived || s.Stopped() || (!e.Time.IsZero() && e.Time.Before(s.LastEventAt)) {
+		return false
+	}
+	switch {
+	case s.ClaudeSessionID == "":
+		if e.Kind == HookSessionEnd {
+			return false
+		}
+		s.ClaudeSessionID = e.SessionID
+	case e.SessionID != s.ClaudeSessionID && e.Kind != HookSessionStart:
+		return false
+	}
+	if pid > 0 {
+		s.Pid = pid
+	}
+	return true
+}
+
+// EndAgent returns a terminal to its own status once its agent has gone. The
+// conversation isn't the terminal's, so nothing of it stays.
+func (s *Session) EndAgent() {
+	s.Status, s.StatusDetail = StatusRunning, ""
+	s.ClaudeSessionID, s.ClaudeHistory, s.TranscriptPath, s.Pid = "", nil, "", 0
+	if s.NameSource == NameAuto {
+		s.Name, s.NameSource = "", ""
+	}
+}
 
 // NeedsResume reports whether a view must resume s before it can show it:
 // a stopped hosted session (its host is gone), or a session from before

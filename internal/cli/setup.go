@@ -9,20 +9,23 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/daemon"
-	"github.com/brettmostert/agent-command/internal/ghostty"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
-	"github.com/brettmostert/agent-command/internal/speech"
+	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -33,21 +36,14 @@ var (
 	invokedAs       = os.Args[0]
 	executable      = os.Executable
 	captureLoginEnv = setup.CaptureLoginEnv
-	kittyDefaults   = runKittyDefaults
 	hasBundle       = mdfindBundle
-	kittyAppBinary  = "/Applications/kitty.app/Contents/MacOS/kitty"
-	ghosttyDefaults = runGhosttyDefaults
-	ghosttyAppBin   = "/Applications/Ghostty.app/Contents/MacOS/ghostty"
-	ghosttyApp      = ghostty.New
 )
 
 type initOptions struct {
-	dryRun      bool
-	ask         bool // show the plan and ask before applying (automatic first run)
-	refreshEnv  bool
-	kitty       bool // configure Kitty even if it doesn't look installed
-	ghostty     bool // configure Ghostty even if it doesn't look installed
-	interactive bool // a person is at the terminal (prompts allowed)
+	dryRun     bool
+	ask        bool // show the plan and ask before applying (automatic first run)
+	refreshEnv bool
+	hookBinary string // the path hooks run, when it isn't this binary's yet
 }
 
 // gather collects everything planning needs.
@@ -60,7 +56,7 @@ type gathered struct {
 	init  bool // setup.json exists
 }
 
-func gather(ctx context.Context, captureEnv, forceKitty, forceGhostty bool) (*gathered, error) {
+func gather(ctx context.Context, captureEnv bool) (*gathered, error) {
 	p, err := paths.Default()
 	if err != nil {
 		return nil, err
@@ -103,7 +99,6 @@ func gather(ctx context.Context, captureEnv, forceKitty, forceGhostty bool) (*ga
 		EnvFile:    p.Env(),
 		AcmdPath:   setup.StableBinary(invokedAs, exe, exec.LookPath),
 		ClaudeDir:  setup.ClaudeConfigDir(home, os.Getenv),
-		Keys:       setup.Keys(cfg.Keys),
 		Read:       os.ReadFile,
 	}
 	if captureEnv {
@@ -113,79 +108,7 @@ func gather(ctx context.Context, captureEnv, forceKitty, forceGhostty bool) (*ga
 		g.in.ClaudePath = claude
 	}
 
-	kittyDir := setup.KittyConfigDir(home, os.Getenv)
-	if g.init && g.rec.KittyDir != "" {
-		kittyDir = g.rec.KittyDir
-	}
-	kittyBin := findKitty(g.path)
-	if forceKitty || kittyBin != "" || dirExists(kittyDir) {
-		g.in.KittyDir = kittyDir
-		if kittyBin != "" {
-			if d, err := kittyDefaults(ctx, kittyBin); err == nil {
-				g.in.KittyKeys = d
-			}
-		}
-	}
-
-	ghosttyDir := setup.GhosttyConfigDir(home, os.Getenv)
-	if g.init && g.rec.GhosttyDir != "" {
-		ghosttyDir = g.rec.GhosttyDir
-	}
-	ghosttyBin := findGhostty(g.path)
-	if forceGhostty || ghosttyBin != "" || (g.init && g.rec.GhosttyDir != "") {
-		g.in.GhosttyDir = ghosttyDir
-		if ghosttyBin != "" {
-			if d, err := ghosttyDefaults(ctx, ghosttyBin); err == nil {
-				g.in.GhosttyKeys = d
-			}
-		}
-	}
 	return g, nil
-}
-
-func findGhostty(pathList string) string {
-	if p, err := setup.LookPathIn("ghostty", pathList); err == nil {
-		return p
-	}
-	if p, err := setup.LookPathIn(ghosttyAppBin, ""); err == nil {
-		return p
-	}
-	return ""
-}
-
-func runGhosttyDefaults(ctx context.Context, bin string) (map[string]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "+list-keybinds", "--default").Output() // #nosec G204 G702 -- the ghostty binary found on PATH, fixed args
-	if err != nil {
-		return nil, err
-	}
-	return setup.ParseGhosttyKeybinds(string(out)), nil
-}
-
-func findKitty(pathList string) string {
-	if p, err := setup.LookPathIn("kitty", pathList); err == nil {
-		return p
-	}
-	if p, err := setup.LookPathIn(kittyAppBinary, ""); err == nil {
-		return p
-	}
-	return ""
-}
-
-func dirExists(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && st.IsDir()
-}
-
-func runKittyDefaults(ctx context.Context, kitty string) (map[string]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, kitty, "+runpy", setup.KittyDefaultsScript).Output() // #nosec G204 G702 -- the kitty binary found on PATH, fixed script
-	if err != nil {
-		return nil, err
-	}
-	return setup.ParseKittyDefaults(out), nil
 }
 
 // mdfindBundle reports whether Spotlight knows an app with the bundle id.
@@ -197,34 +120,16 @@ func mdfindBundle(id string) bool {
 	return err == nil && strings.TrimSpace(string(out)) != ""
 }
 
-// runInit plans and (unless dry-run or declined) applies `acmd init`. It
-// reports whether setup is complete afterwards.
+// runInit plans and (unless dry-run or declined) applies `acmd init`. It reports
+// whether setup is in place afterwards.
 func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (bool, error) {
-	g, err := gather(ctx, o.refreshEnv, o.kitty, o.ghostty)
+	g, err := gather(ctx, o.refreshEnv)
 	if err != nil {
 		return false, err
 	}
-	reader := bufio.NewReader(in)
-	// The editor is asked for once, interactively: before planning for an
-	// explicit `acmd init`, after the Y/n for the automatic first run.
-	askEditor := g.cfg.Editor.Preset == "" && o.interactive && !o.dryRun
-	switch {
-	case askEditor && !o.ask:
-		if e := chooseEditor(ctx, reader, in, out, g.path); e != nil {
-			g.in.Editor = e
-		}
-		askEditor = false
-	case g.cfg.Editor.Preset != "" && g.cfg.Editor.Preset != "custom":
-		// Re-resolve the launcher (it may have moved since the last init).
-		if preset, ok := setup.PresetByName(g.cfg.Editor.Preset); ok {
-			if p, err := setup.LookPathIn(preset.Launcher, g.path); err == nil && p != g.cfg.Editor.Resolved {
-				e := g.cfg.Editor
-				e.Resolved = p
-				g.in.Editor = &e
-			}
-		}
+	if o.hookBinary != "" {
+		g.in.AcmdPath = o.hookBinary
 	}
-
 	plan, err := setup.PlanInit(g.in)
 	if err != nil {
 		return false, err
@@ -235,56 +140,30 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 		fmt.Fprintln(out, "acmd init:")
 	}
 	plan.Write(out, g.in.Home)
-	switch {
-	case askEditor:
-		fmt.Fprintln(out, "\nEditor: you'll be asked which editor opens session folders.")
-	case g.cfg.Editor.Preset == "" && g.in.Editor == nil:
-		fmt.Fprintln(out, "\nEditor: not chosen yet (acmd asks when run in a terminal, or: acmd editor set)")
-	}
 	if o.dryRun {
 		return g.init, nil
 	}
 	if o.ask && len(plan.Pending()) > 0 {
 		fmt.Fprint(out, "\nSet up acmd now? [Y/n] ")
-		line, _ := reader.ReadString('\n')
+		line, _ := bufio.NewReader(in).ReadString('\n')
 		if a := strings.ToLower(strings.TrimSpace(line)); a != "" && a != "y" && a != "yes" {
 			fmt.Fprintln(out, "Skipped; nothing was changed. Run `acmd init` any time.")
 			return false, nil
 		}
 	}
-	if askEditor {
-		if e := chooseEditor(ctx, reader, in, out, g.path); e != nil {
-			g.in.Editor = e
-			if plan, err = setup.PlanInit(g.in); err != nil {
-				return false, err
-			}
-		}
-	}
 	if err := g.paths.Ensure(); err != nil {
 		return false, err
 	}
-	prev, _, _ := setup.ReadRecord(g.paths.Setup())
 	backups, err := plan.Apply(g.paths.Backups(), g.in.Home, time.Now())
 	if err != nil {
 		return false, err
 	}
 	rec := setup.Record{
 		Version: version.Get().Version, At: time.Now().UTC(), AcmdPath: g.in.AcmdPath,
-		ClaudeDir: g.in.ClaudeDir, KittyDir: g.in.KittyDir, GhosttyDir: g.in.GhosttyDir, ConfigFile: g.in.ConfigFile,
-		PopupAsked: prev.PopupAsked,
+		ClaudeDir: g.in.ClaudeDir, ConfigFile: g.in.ConfigFile,
 	}
 	if err := setup.WriteRecord(g.paths.Setup(), rec); err != nil {
 		return false, err
-	}
-	if g.in.GhosttyDir != "" {
-		// Reload Ghostty's config, and trigger macOS's Automation prompt
-		// now rather than on the first sidebar action (SPEC §7.3).
-		app := ghosttyApp()
-		if _, err := app.Running(ctx); errors.Is(err, ghostty.ErrNotPermitted) {
-			fmt.Fprintln(out, "\nGhostty: acmd isn't allowed to control Ghostty. Allow it in System Settings → Privacy & Security → Automation.")
-		} else if err == nil {
-			_ = app.ReloadConfig(ctx)
-		}
 	}
 	if len(plan.Pending()) == 0 {
 		fmt.Fprintln(out, "\nAlready set up; nothing changed.")
@@ -297,194 +176,171 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	for _, a := range plan.After {
 		fmt.Fprintln(out, a)
 	}
-	if o.interactive && !rec.PopupAsked {
-		askPopup(ctx, reader, out, g.paths, g.in.ConfigFile)
-		rec.PopupAsked = true
-		if err := setup.WriteRecord(g.paths.Setup(), rec); err != nil {
-			return false, err
-		}
-	}
 	return true, nil
-}
-
-// askPopup asks, once, about the reply popup, auto-play and speech (SPEC
-// §8.8, off by default), and saves the answers in config.toml.
-func askPopup(ctx context.Context, in *bufio.Reader, out io.Writer, p paths.Paths, configFile string) {
-	yes := func(q string) bool {
-		fmt.Fprintf(out, "%s [y/N] ", q)
-		line, _ := in.ReadString('\n')
-		a := strings.ToLower(strings.TrimSpace(line))
-		return a == "y" || a == "yes"
-	}
-	fmt.Fprintln(out, "\nReply popup: when a session finishes, asks a question or wants a permission while you're")
-	fmt.Fprintln(out, "working elsewhere, a popup shows it and takes your reply (cmd+ctrl+o reopens it).")
-	if !yes("Turn on the reply popup?") {
-		fmt.Fprintln(out, "Left off. Turn it on later with `enabled = true` under [popup] in config.toml.")
-		return
-	}
-	autoplay := yes("Read each item aloud as it appears (auto-play)?")
-	for _, kv := range []struct {
-		key string
-		v   bool
-	}{{"enabled", true}, {"autoplay", autoplay}} {
-		if err := setConfigValue(configFile, "popup", kv.key, kv.v); err != nil {
-			fmt.Fprintln(out, "Couldn't save it:", err)
-			return
-		}
-	}
-	if err := spawnPopup(p); err != nil {
-		fmt.Fprintln(out, "Couldn't start the popup:", err)
-	} else {
-		fmt.Fprintln(out, "The reply popup is on.")
-	}
-	e, err := speechEngine()
-	if err != nil || e.Status() == "" {
-		return
-	}
-	if _, err := speech.FindHelper(); err != nil {
-		fmt.Fprintln(out, "Speech (reading items aloud):", err)
-		return
-	}
-	if !yes(installQuestion(e)) {
-		fmt.Fprintln(out, "Skipped. Set it up later with: acmd speech install")
-		return
-	}
-	if err := e.Install(ctx, out); err != nil {
-		fmt.Fprintln(out, "Speech setup failed:", err)
-		return
-	}
-	fmt.Fprintln(out, "Speech is set up.")
-}
-
-// setConfigValue sets section.key in config.toml, keeping everything else.
-func setConfigValue(file, section, key string, v any) error {
-	b, err := os.ReadFile(filepath.Clean(file))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if len(b) == 0 {
-		b = []byte(config.Template)
-	}
-	text, err := config.Set(string(b), section, key, v)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Clean(file), []byte(text), 0o600) // #nosec G703 -- acmd's own config.toml
-}
-
-// pickEditor asks which editor opens session folders (SPEC §9.5); nil
-// means skipped.
-func pickEditor(in *bufio.Reader, out io.Writer, pathList string) *config.Editor {
-	found := setup.DetectEditors(func(n string) (string, error) { return setup.LookPathIn(n, pathList) }, hasBundle)
-	def := len(found) + 2 // skip
-	fmt.Fprintln(out, "\nOpen sessions in which editor?   (change later: acmd editor set)")
-	for i, d := range found {
-		mark := ""
-		switch {
-		case d.Launcher != "":
-			mark = "✓ detected"
-		case d.App:
-			mark = "✓ detected (app)"
-		}
-		if d.Found() && def == len(found)+2 {
-			def = i + 1
-		}
-		fmt.Fprintf(out, "  %d) %-14s %-7s %s\n", i+1, d.Label, d.EditorPreset.Launcher, mark)
-	}
-	fmt.Fprintf(out, "  %d) Custom command…\n  %d) Skip for now\n", len(found)+1, len(found)+2)
-	for range 3 {
-		fmt.Fprintf(out, "Choice [%d]: ", def)
-		line, err := in.ReadString('\n')
-		line = strings.TrimSpace(line)
-		if line == "" {
-			if err != nil { // EOF: no answer
-				return nil
-			}
-			line = strconv.Itoa(def)
-		}
-		n, convErr := strconv.Atoi(line)
-		switch {
-		case convErr != nil || n < 1 || n > len(found)+2:
-			fmt.Fprintln(out, "Please enter a number from the list.")
-		case n == len(found)+2:
-			return nil
-		case n == len(found)+1:
-			return askCustomEditor(in, out, pathList)
-		default:
-			d := found[n-1]
-			return &config.Editor{Preset: d.Name, Resolved: d.Launcher, RunIn: "background"}
-		}
-	}
-	return nil
-}
-
-func askCustomEditor(in *bufio.Reader, out io.Writer, pathList string) *config.Editor {
-	for range 3 {
-		fmt.Fprint(out, "Command ({dir} is the session folder; added at the end if omitted): ")
-		line, err := in.ReadString('\n')
-		if strings.TrimSpace(line) == "" && err != nil {
-			return nil
-		}
-		argv, perr := setup.ParseCommand(line)
-		if perr != nil {
-			fmt.Fprintln(out, perr)
-			continue
-		}
-		resolved, lerr := setup.LookPathIn(argv[0], pathList)
-		if lerr != nil {
-			fmt.Fprintln(out, lerr)
-			continue
-		}
-		fmt.Fprint(out, "Is it a terminal editor (open it in a new tab)? [y/N] ")
-		a, _ := in.ReadString('\n')
-		runIn := "background"
-		if a = strings.ToLower(strings.TrimSpace(a)); a == "y" || a == "yes" {
-			runIn = "tab"
-		}
-		return &config.Editor{Preset: "custom", Command: argv, Resolved: resolved, RunIn: runIn}
-	}
-	return nil
 }
 
 func newInitCmd() *cobra.Command {
 	var o initOptions
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Set up Claude Code hooks, terminal shortcuts and acmd's config (safe to rerun)",
-		Long: "Registers acmd's Claude Code hooks, adds Kitty's remote control and shortcuts, saves your login-shell\n" +
-			"environment and asks which editor opens session folders. Every changed file is backed up first,\n" +
-			"and `acmd uninstall` removes it all again. Use --dry-run to see the changes without making them.",
+		Short: "Set up Claude Code hooks and acmd's config (safe to rerun)",
+		Long: "Registers acmd's Claude Code hooks and saves your login-shell environment. Every changed file is backed\n" +
+			"up first, and `acmd uninstall` removes the hooks again. Use --dry-run to see the changes without making them.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			o.interactive = isInteractive(cmd)
 			_, err := runInit(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), o)
 			return err
 		},
 	}
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show the changes without making them")
 	cmd.Flags().BoolVar(&o.refreshEnv, "refresh-env", false, "capture the login-shell environment again")
-	cmd.Flags().BoolVar(&o.kitty, "kitty", false, "configure Kitty even if it isn't detected")
-	cmd.Flags().BoolVar(&o.ghostty, "ghostty", false, "configure Ghostty even if it isn't detected")
+	cmd.Flags().StringVar(&o.hookBinary, "hook-binary", "", "the path hooks run (the cask's, before it moves the app)")
+	_ = cmd.Flags().MarkHidden("hook-binary")
 	return cmd
 }
 
 func newUninstallCmd() *cobra.Command {
-	var dryRun, yes, keepData bool
+	var dryRun, yes, keepData, fromBrew bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove acmd's hooks and terminal config, and stop the daemon",
-		Long: "Removes exactly what `acmd init` added (hook entries, the Kitty include block and acmd's own Kitty file)\n" +
-			"and nothing else, after backing the files up. Run it before `brew uninstall agent-command`.",
+		Short: "End running sessions, stop the daemon and remove acmd's hooks",
+		Long: "Ends running sessions, stops the daemon and removes acmd's hook entries, after backing the file up.\n" +
+			"`brew uninstall --cask agent-command` does this for you. Claude conversations can still be resumed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if fromBrew {
+				return runBrewUninstall(cmd)
+			}
 			return runUninstall(cmd, dryRun, yes, keepData)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show the changes without making them")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	cmd.Flags().BoolVar(&keepData, "keep-data", true, "keep sessions, groups, settings and logs (--keep-data=false deletes them)")
+	cmd.Flags().BoolVar(&fromBrew, "brew", false, "run for the cask, which also runs this during upgrades")
+	_ = cmd.Flags().MarkHidden("brew")
 	return cmd
 }
+
+// runBrewUninstall is what the cask runs. Homebrew runs it for upgrades and
+// reinstalls too: those only replace the daemon, and leave sessions running. It
+// ends sessions only when it's sure this is a real uninstall.
+func runBrewUninstall(cmd *cobra.Command) error {
+	useUserTempDir()
+	args := brewArgs()
+	switch brewCommand(args) {
+	case "uninstall", "remove", "rm":
+	default:
+		p, err := paths.Default()
+		if err != nil {
+			return err
+		}
+		stopDaemon(cmd.Context(), p)
+		return nil
+	}
+	keep := true
+	// --zap deletes the data anyway, so there's nothing to ask.
+	if !strings.Contains(args, " --zap") {
+		answer, _ := askTerminal("Keep your Agent Command sessions and settings? [Y/n] ")
+		keep = !strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "n")
+	}
+	return runUninstall(cmd, false, true, keep)
+}
+
+// useUserTempDir restores this user's own temp folder, which Homebrew replaces in
+// TMPDIR. The daemon's and hosts' sockets live there, so without this it finds
+// neither of them.
+func useUserTempDir() {
+	out, err := exec.Command("/usr/bin/getconf", "DARWIN_USER_TEMP_DIR").Output()
+	if dir := strings.TrimSpace(string(out)); err == nil && dir != "" {
+		_ = os.Setenv("TMPDIR", dir)
+	}
+}
+
+// brewCommandPattern finds Homebrew's subcommand in a process's arguments.
+var brewCommandPattern = regexp.MustCompile(`brew\.rb\s+(\S+)`)
+
+// brewCommand is the Homebrew subcommand in a process's arguments ("" = none).
+func brewCommand(args string) string {
+	if m := brewCommandPattern.FindStringSubmatch(args); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// brewArgs is the arguments of the Homebrew process that started this one, found
+// by walking up from it. Homebrew doesn't pass its command on any other way.
+var brewArgs = func() string {
+	pid := os.Getppid()
+	for range 6 {
+		out, err := exec.Command("ps", "-o", "ppid=,args=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- fixed program; a pid
+		if err != nil {
+			return ""
+		}
+		line := strings.TrimSpace(string(out))
+		if brewCommand(line) != "" {
+			return line
+		}
+		ppid, _, _ := strings.Cut(line, " ")
+		if pid, err = strconv.Atoi(ppid); err != nil || pid <= 1 {
+			return ""
+		}
+	}
+	return ""
+}
+
+// askTerminal asks on the terminal directly, as Homebrew gives scripts no stdin.
+// ok is false without a terminal.
+var askTerminal = func(question string) (answer string, ok bool) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return "", false
+	}
+	defer tty.Close()
+	defer takeForeground(tty)()
+	if _, err := fmt.Fprint(tty, question); err != nil {
+		return "", false
+	}
+	line, _ := bufio.NewReader(tty).ReadString('\n')
+	return line, true
+}
+
+// takeForeground makes this process group the terminal's foreground group, and
+// returns what restores it. Homebrew runs scripts in a background group, where
+// reading the terminal gets a process stopped by the OS.
+func takeForeground(tty *os.File) (restore func()) {
+	// Changing the foreground group from the background raises this.
+	signal.Ignore(syscall.SIGTTOU)
+	fd := int(tty.Fd()) // #nosec G115 -- a file descriptor
+	previous, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
+	if err != nil {
+		return func() {}
+	}
+	if err := unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, unix.Getpgrp()); err != nil {
+		return func() {}
+	}
+	return func() { _ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, previous) }
+}
+
+// endSessions ends the running hosts and reports how many. The daemon must have
+// stopped first: then a terminal's host can't archive itself, so with the data
+// kept it comes back as a new shell, as it does after a reboot.
+func endSessions(p paths.Paths) int {
+	sockets, err := filepath.Glob(filepath.Join(p.RuntimeDir, "h-*.sock"))
+	if err != nil {
+		return 0
+	}
+	ended := 0
+	for _, socket := range sockets {
+		if killHost(socket) == nil {
+			ended++
+		}
+	}
+	return ended
+}
+
+// killHost is swappable in tests.
+var killHost = term.Kill
 
 func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	out := cmd.OutOrStdout()
@@ -501,22 +357,8 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 		return err
 	}
 	in := setup.Input{Home: home, ClaudeDir: setup.ClaudeConfigDir(home, os.Getenv), Read: os.ReadFile}
-	kittyDir := setup.KittyConfigDir(home, os.Getenv)
 	if ok {
 		in.ClaudeDir = rec.ClaudeDir
-		if rec.KittyDir != "" {
-			kittyDir = rec.KittyDir
-		}
-	}
-	if dirExists(kittyDir) {
-		in.KittyDir = kittyDir
-	}
-	ghosttyDir := setup.GhosttyConfigDir(home, os.Getenv)
-	if ok && rec.GhosttyDir != "" {
-		ghosttyDir = rec.GhosttyDir
-	}
-	if dirExists(ghosttyDir) {
-		in.GhosttyDir = ghosttyDir
 	}
 	plan, err := setup.PlanUninstall(in)
 	if err != nil {
@@ -528,7 +370,7 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 		fmt.Fprintln(out, "acmd uninstall:")
 	}
 	plan.Write(out, home)
-	fmt.Fprintln(out, "  stop      the acmd daemon (your Claude sessions keep running)")
+	fmt.Fprintln(out, "  stop      the acmd daemon, and end running sessions (Claude conversations can be resumed)")
 	if !keepData {
 		fmt.Fprintf(out, "  delete    %s and %s (backups are kept)\n", setup.Tilde(p.StateDir, home), setup.Tilde(p.ConfigDir, home))
 	}
@@ -543,6 +385,13 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 		return err
 	}
 	stopDaemon(cmd.Context(), p)
+	switch ended := endSessions(p); ended {
+	case 0:
+	case 1:
+		fmt.Fprintln(out, "Ended 1 running session.")
+	default:
+		fmt.Fprintf(out, "Ended %d running sessions.\n", ended)
+	}
 	if err := os.Remove(p.Setup()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -562,8 +411,8 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 }
 
 // stopDaemon asks a running daemon (of any version) to exit and waits up
-// to 3s for it to go; it never starts one. It reports whether one was
-// running.
+// to 3s for it to go, then signals it if it hasn't; it never starts one. It
+// reports whether one was running.
 func stopDaemon(ctx context.Context, p paths.Paths) bool {
 	me := ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version}
 	dial := func() (*ipc.Conn, bool) {
@@ -577,9 +426,14 @@ func stopDaemon(ctx context.Context, p paths.Paths) bool {
 	if !up {
 		return false
 	}
+	pid := conn.Daemon.Pid
 	_ = conn.Call(ipc.OpShutdown, nil, nil)
 	_ = conn.Close()
 	waitDaemonGone(ctx, p)
+	if daemon.Running(p) && pid > 0 {
+		_ = syscall.Kill(pid, syscall.SIGTERM)
+		waitDaemonGone(ctx, p)
+	}
 	return true
 }
 
@@ -625,7 +479,7 @@ const needsSetup = "acmd/needs-setup"
 // `acmd init` would change and asks (decision: show the plan, ask Y/n).
 // Without a terminal it only prints a hint.
 func autoInit(cmd *cobra.Command) error {
-	marked := cmd == cmd.Root() // plain `acmd` opens a view
+	marked := false
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Annotations[needsSetup] != "" {
 			marked = true
@@ -646,7 +500,7 @@ func autoInit(cmd *cobra.Command) error {
 		return nil
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "acmd isn't set up yet. This is what setup changes:")
-	_, err = runInit(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), initOptions{ask: true, interactive: true})
+	_, err = runInit(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), initOptions{ask: true})
 	if err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "setup failed:", err)
 	}

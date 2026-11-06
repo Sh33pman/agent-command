@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sync"
 	"testing"
@@ -220,5 +221,249 @@ func TestResumeLegacyBackground(t *testing.T) {
 		if err := c.Call(ipc.OpResume, ipc.Mutation{ID: id}, nil); err == nil {
 			t.Errorf("resumed %s", id)
 		}
+	}
+}
+
+func TestTerminalSessionLifecycle(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) { c.Hosts = fh })
+	c := dial(t, p)
+
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessTerminal})
+	if !s.IsTerminal() || s.Status != core.StatusRunning || s.ClaudeSessionID != "" {
+		t.Fatalf("new terminal: %+v", s)
+	}
+	r := fh.requests()
+	if len(r) != 1 || r[0].Harness != core.HarnessTerminal || r[0].ClaudeSession != "" {
+		t.Fatalf("host request: %+v", r)
+	}
+	if got := sessionByID(t, c, s.ID); got.Harness != core.HarnessTerminal || got.Status != core.StatusRunning {
+		t.Fatalf("stored terminal: %+v", got)
+	}
+
+	// Archiving ends it for good.
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusArchived {
+		t.Fatalf("archived: %+v", got)
+	}
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, ID: s.ID}, nil); err == nil {
+		t.Error("an archived terminal was unarchived")
+	}
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusArchived {
+		t.Errorf("after refused unarchive: %+v", got)
+	}
+}
+
+// Unarchiving an agent only lists it again: nothing starts until it's activated.
+func TestUnarchiveDoesNotStartAnAgent(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) { c.Hosts = fh })
+	c := dial(t, p)
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api"})
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	before := len(fh.requests())
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, ID: s.ID}, nil))
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusPaused {
+		t.Errorf("after unarchive: %+v", got)
+	}
+	if n := len(fh.requests()); n != before {
+		t.Errorf("unarchive started %d hosts", n-before)
+	}
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, nil))
+	r := fh.requests()
+	if len(r) != before+1 || r[before].Resume != s.ClaudeSessionID {
+		t.Errorf("resume after unarchive: %+v", r)
+	}
+}
+
+func sessionByID(t *testing.T, c *ipc.Conn, id string) *core.Session {
+	t.Helper()
+	for _, s := range snapshot(t, c).Sessions {
+		if s.ID == id {
+			return s
+		}
+	}
+	t.Fatalf("session %s not listed", id)
+	return nil
+}
+
+type runningAgent struct{ id string }
+
+func (f runningAgent) Agents(context.Context) ([]claudecli.Agent, error) {
+	pid := 1
+	status := "idle"
+	return []claudecli.Agent{{SessionID: f.id, Kind: "interactive", Pid: &pid, Status: &status}}, nil
+}
+
+func writeConversation(t *testing.T, dir, id, cwd, title string) {
+	t.Helper()
+	folder := filepath.Join(dir, "projects", "p")
+	must(t, os.MkdirAll(folder, 0o700))
+	must(t, os.WriteFile(filepath.Join(folder, id+".jsonl"), []byte(
+		`{"cwd":"`+cwd+`"}`+"\n"+`{"aiTitle":"`+title+`"}`+"\n"), 0o600))
+}
+
+func TestResumeConversation(t *testing.T) {
+	const (
+		idle = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+		live = "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	)
+	p := testPaths(t)
+	claude := t.TempDir()
+	writeConversation(t, claude, idle, "/w/idle", "idle work")
+	writeConversation(t, claude, live, "/w/live", "live work")
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) {
+		c.Hosts, c.ClaudeDir, c.Agents = fh, claude, runningAgent{id: live}
+	})
+	c := dial(t, p)
+
+	var list []ipc.Conversation
+	must(t, c.Call(ipc.OpConversations, nil, &list))
+	if len(list) != 2 {
+		t.Fatalf("conversations: %+v", list)
+	}
+	byID := map[string]ipc.Conversation{}
+	for _, item := range list {
+		byID[item.ID] = item
+	}
+	if !byID[live].Running || byID[idle].Running || byID[idle].Title != "idle work" {
+		t.Errorf("conversations: %+v", list)
+	}
+
+	// By id prefix: its folder and title come from the conversation.
+	s := newSess(t, c, ipc.NewRequest{Resume: "11111111"})
+	if s.ClaudeSessionID != idle || s.Cwd != "/w/idle" || s.Name != "idle work" || s.Kind != core.KindHosted || s.IsTerminal() {
+		t.Fatalf("resumed: %+v", s)
+	}
+	r := fh.requests()
+	if len(r) != 1 || r[0].Resume != idle || r[0].ClaudeSession != "" || r[0].Dir != "/w/idle" {
+		t.Fatalf("host request: %+v", r)
+	}
+
+	// It's listed as already tracked, and resuming it again isn't a second session.
+	must(t, c.Call(ipc.OpConversations, nil, &list))
+	for _, item := range list {
+		if item.ID == idle && item.SessionID != s.ID {
+			t.Errorf("tracked: %+v", item)
+		}
+	}
+	again := newSess(t, c, ipc.NewRequest{Resume: idle})
+	if again.ID != s.ID || len(fh.requests()) != 1 {
+		t.Errorf("resumed twice: %+v, %d hosts", again, len(fh.requests()))
+	}
+
+	// An archived one comes back rather than being duplicated.
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	back := newSess(t, c, ipc.NewRequest{Resume: idle})
+	if back.ID != s.ID || back.Status == core.StatusArchived {
+		t.Errorf("after archive: %+v", back)
+	}
+
+	if err := c.Call(ipc.OpNew, ipc.NewRequest{Resume: "99999999"}, nil); err == nil {
+		t.Error("an unknown conversation was resumed")
+	}
+}
+
+func TestLayoutIsKept(t *testing.T) {
+	p := testPaths(t)
+	r := start(t, p)
+	c := dial(t, p)
+	var got ipc.Layout
+	must(t, c.Call(ipc.OpLayout, nil, &got))
+	if got.JSON != "" {
+		t.Errorf("initial layout = %q", got.JSON)
+	}
+	must(t, c.Call(ipc.OpSetLayout, ipc.Layout{JSON: `{"root":1}`}, nil))
+	r.cancel()
+	<-r.Done
+	start(t, p)
+	c = dial(t, p)
+	must(t, c.Call(ipc.OpLayout, nil, &got))
+	if got.JSON != `{"root":1}` {
+		t.Errorf("layout after a restart = %q", got.JSON)
+	}
+}
+
+// An agent typed into a terminal shows on that terminal's row, and leaves
+// nothing behind when it exits.
+func TestAgentInTerminalShowsOnItsRow(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) { c.Hosts = fh })
+	c := dial(t, p)
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessTerminal})
+
+	t0 := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	in := ipc.HookContext{HostSession: s.ID, ClaudePid: 4242}
+	send := func(name, payload string, offset int) {
+		t.Helper()
+		must(t, c.Call(ipc.OpEvent, hookEvent(name, payload, t0.Add(time.Duration(offset)*time.Second), in), nil))
+	}
+	expect := func(when string, status core.Status, claudeID string) {
+		t.Helper()
+		got := sessionByID(t, c, s.ID)
+		if got.Status != status || got.ClaudeSessionID != claudeID {
+			t.Fatalf("%s: status %s, claude id %q", when, got.Status, got.ClaudeSessionID)
+		}
+	}
+
+	send("SessionStart", `{"session_id":"a1","source":"startup","cwd":"/w/api"}`, 0)
+	expect("started", core.StatusDone, "a1")
+	send("UserPromptSubmit", `{"session_id":"a1","prompt":"fix the test"}`, 1)
+	expect("prompt", core.StatusBusy, "a1")
+	send("PermissionRequest", `{"session_id":"a1","tool_name":"Bash"}`, 2)
+	expect("permission", core.StatusWaiting, "a1")
+	send("Stop", `{"session_id":"a1"}`, 3)
+	expect("stopped", core.StatusDone, "a1")
+
+	// A nested agent's events don't touch the row, unless it starts over it.
+	send("UserPromptSubmit", `{"session_id":"other","prompt":"x"}`, 4)
+	expect("other agent", core.StatusDone, "a1")
+	send("SessionEnd", `{"session_id":"other","reason":"other"}`, 5)
+	expect("other agent ended", core.StatusDone, "a1")
+
+	send("SessionEnd", `{"session_id":"a1","reason":"prompt_input_exit"}`, 6)
+	expect("exited", core.StatusRunning, "")
+	got := sessionByID(t, c, s.ID)
+	if got.Name != "" || got.Pid != 0 || got.TranscriptPath != "" || len(got.ClaudeHistory) != 0 {
+		t.Errorf("left behind: %+v", got)
+	}
+	// A late event from the agent that's gone doesn't bring it back.
+	send("SessionEnd", `{"session_id":"a1","reason":"other"}`, 7)
+	expect("late end", core.StatusRunning, "")
+
+	// No separate session was created, and the conversation isn't the terminal's.
+	var snap ipc.Snapshot
+	must(t, c.Call(ipc.OpSnapshot, nil, &snap))
+	if len(snap.Sessions) != 1 {
+		t.Errorf("sessions = %d, want just the terminal", len(snap.Sessions))
+	}
+
+	// A later agent in the same terminal shows too.
+	send("SessionStart", `{"session_id":"a2","source":"startup"}`, 8)
+	expect("second agent", core.StatusDone, "a2")
+
+	// An archived terminal stays archived.
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	send("SessionStart", `{"session_id":"a3","source":"startup"}`, 60)
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusArchived {
+		t.Errorf("archived terminal changed: %+v", got)
+	}
+}
+
+// A hosted agent also has ACMD_SESSION_ID: it still goes by its Claude id.
+func TestHostedAgentIsNotTreatedAsTerminal(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) { c.Hosts = fh })
+	c := dial(t, p)
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api"})
+	in := ipc.HookContext{HostSession: s.ID}
+	must(t, c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"`+s.ClaudeSessionID+`","prompt":"go"}`, time.Now().Add(time.Hour), in), nil))
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusBusy {
+		t.Errorf("hosted agent: %+v", got)
 	}
 }

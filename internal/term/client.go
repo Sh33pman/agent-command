@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Attach shows the terminal on socket: the kept output, then live output
+// Attach shows the terminal on socket: the current state, then live output
 // to out; input from in (a channel, so one stdin reader serves every
 // attach) and sizes from size go to the shell. It returns nil when ctx
 // ends (detached) and ErrEnded when the shell is gone.
@@ -18,9 +18,10 @@ func Attach(ctx context.Context, socket string, in <-chan []byte, size <-chan [2
 		return ErrEnded // no server: the terminal ended
 	}
 	defer c.Close()
-	if err := writeFrame(c, frameAttach, nil); err != nil {
+	if err := writeFrame(c, frameAttach, attachPayload(rows, cols)); err != nil {
 		return ErrEnded
 	}
+	// For a server that ignores the attach payload.
 	if err := writeFrame(c, frameResize, resizePayload(rows, cols)); err != nil {
 		return ErrEnded
 	}

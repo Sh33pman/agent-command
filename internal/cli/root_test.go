@@ -74,3 +74,40 @@ func TestUnknownCommand(t *testing.T) {
 		t.Error("expected an error for an unknown command")
 	}
 }
+
+func TestPlainCommandOpensTheApp(t *testing.T) {
+	var got []bool
+	orig := openApp
+	openApp = func(newInstance bool) error {
+		got = append(got, newInstance)
+		return nil
+	}
+	t.Cleanup(func() { openApp = orig })
+	if _, err := run(t, "acmd"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, "acmd", "--new-instance"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] || !got[1] {
+		t.Errorf("opened: %v", got)
+	}
+}
+
+func TestOpenArgs(t *testing.T) {
+	app := "/Applications/Agent Command.app"
+	for _, c := range []struct {
+		exe  string
+		new  bool
+		want string
+	}{
+		{app + "/Contents/MacOS/agent-command", false, app},
+		{app + "/Contents/MacOS/agent-command", true, "-n|" + app + "|--args|--new-instance"},
+		{"/usr/local/bin/agent-command", false, "-b|" + bundleID},
+		{"", true, "-n|-b|" + bundleID + "|--args|--new-instance"},
+	} {
+		if got := strings.Join(openArgs(c.exe, c.new), "|"); got != c.want {
+			t.Errorf("openArgs(%q, %v) = %q, want %q", c.exe, c.new, got, c.want)
+		}
+	}
+}

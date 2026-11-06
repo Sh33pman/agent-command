@@ -39,6 +39,11 @@ go.work.sum
 /notes.md
 /tap/
 
+# App build output and the vendored GhosttyKit (scripts/build-ghostty.sh)
+/app/.build/
+/app/.swiftpm/
+/app/vendor/
+
 # Swift speech engine build output
 /helpers/acmd-speech/.build/
 /helpers/acmd-speech/.swiftpm/

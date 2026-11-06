@@ -3,6 +3,7 @@ package term
 import (
 	"context"
 	"encoding/binary"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -11,6 +12,13 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+)
+
+const (
+	initialRows, initialCols = 24, 80
+
+	clientWriteTimeout = 2 * time.Second
+	replayWriteTimeout = 10 * time.Second
 )
 
 // Server runs one session's shell.
@@ -41,7 +49,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	cmd := exec.Command(s.Shell[0], s.Shell[1:]...) // #nosec G204 -- the user's own shell
 	cmd.Dir, cmd.Env = s.Dir, s.Env
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: initialRows, Cols: initialCols})
 	if err != nil {
 		return err
 	}
@@ -57,9 +65,36 @@ func (s *Server) Serve(ctx context.Context) error {
 		s.Ready()
 	}
 
-	var mu sync.Mutex
-	var client net.Conn
-	kept := &ring{n: s.Keep}
+	// Answers to the program's terminal queries go through a goroutine: the
+	// PTY can block while the program waits for us to read its output.
+	answers := make(chan []byte, 64)
+	go func() {
+		for {
+			select {
+			case b := <-answers:
+				_, _ = ptmx.Write(b)
+			case <-exited:
+				return
+			}
+		}
+	}()
+
+	st := &serverState{
+		ptmx:    ptmx,
+		clients: map[net.Conn]struct{}{},
+		size:    pty.Winsize{Rows: initialRows, Cols: initialCols},
+	}
+	st.screen = newScreen(initialRows, initialCols, s.Keep, func(b []byte) {
+		// While attached, the client's terminal answers. Called with mu held.
+		if len(st.clients) > 0 {
+			return
+		}
+		select {
+		case answers <- b:
+		default:
+		}
+	})
+
 	output := make(chan struct{})
 	go func() { // the shell's output: keep it, pass it on
 		defer close(output)
@@ -67,16 +102,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		for {
 			n, err := ptmx.Read(buf)
 			if n > 0 {
-				mu.Lock()
-				kept.Write(buf[:n])
-				if client != nil {
-					_ = client.SetWriteDeadline(time.Now().Add(2 * time.Second))
-					if _, err := client.Write(buf[:n]); err != nil {
-						_ = client.Close() // too slow or gone: it can attach again
-						client = nil
-					}
-				}
-				mu.Unlock()
+				st.output(buf[:n])
 			}
 			if err != nil {
 				return
@@ -84,22 +110,25 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 	}()
 
-	conns := make(chan net.Conn)
+	attaches := make(chan attachRequest)
 	go func() {
 		for {
 			c, err := ln.Accept()
 			if err != nil {
 				return
 			}
-			go func() { // only an attach becomes the client
+			go func() { // only an attach becomes a client
 				_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 				typ, p, err := readFrame(c)
 				_ = c.SetReadDeadline(time.Time{})
 				switch {
 				case err == nil && typ == frameAttach:
-					conns <- c
+					attaches <- attachRequest{conn: c, rows: attachSize(p, 2), cols: attachSize(p, 4)}
 				case err == nil && typ == frameWrite:
 					_, _ = ptmx.Write(p)
+					_ = c.Close()
+				case err == nil && typ == frameText:
+					_, _ = c.Write([]byte(st.text()))
 					_ = c.Close()
 				case err == nil && typ == frameKill:
 					hangup()
@@ -111,43 +140,131 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 	}()
 
-	var size pty.Winsize
 	for {
 		select {
 		case <-ctx.Done():
 			hangup()
 			<-exited
-			return s.end(&mu, &client)
+			return s.end(st)
 		case <-exited:
 			<-output
-			return s.end(&mu, &client)
-		case c := <-conns:
-			mu.Lock()
-			if client != nil {
-				_ = client.Close() // one client at a time: the newest wins
-			}
-			client = c
-			_, _ = c.Write(append([]byte("\x1b[H\x1b[2J"), kept.Bytes()...))
-			mu.Unlock()
-			go s.frames(c, ptmx, &mu, &size, hangup)
+			return s.end(st)
+		case a := <-attaches:
+			st.attach(a)
+			go st.frames(a.conn, hangup)
 		}
 	}
 }
 
-func (s *Server) end(mu *sync.Mutex, client *net.Conn) error {
-	mu.Lock()
-	if *client != nil {
-		_ = (*client).Close()
-	}
-	mu.Unlock()
+func (s *Server) end(st *serverState) error {
+	st.close()
 	if s.Ended != nil {
 		s.Ended()
 	}
 	return nil
 }
 
+// attachRequest is a client asking for the output, with its size when known.
+type attachRequest struct {
+	conn       net.Conn
+	rows, cols uint16
+}
+
+// serverState is what the server's goroutines share.
+type serverState struct {
+	ptmx *os.File
+
+	mu      sync.Mutex
+	screen  screen
+	clients map[net.Conn]struct{}
+	size    pty.Winsize
+	closed  bool
+}
+
+func (st *serverState) output(p []byte) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.closed {
+		return
+	}
+	st.screen.Write(p)
+	for c := range st.clients {
+		_ = c.SetWriteDeadline(time.Now().Add(clientWriteTimeout))
+		if _, err := c.Write(p); err != nil {
+			_ = c.Close() // too slow or gone: it can attach again
+			delete(st.clients, c)
+		}
+	}
+}
+
+// attach sends the client the current state and adds it, under one lock, so it
+// neither misses nor repeats output.
+func (st *serverState) attach(a attachRequest) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.closed {
+		_ = a.conn.Close()
+		return
+	}
+	if a.rows > 0 && a.cols > 0 {
+		st.resize(pty.Winsize{Rows: a.rows, Cols: a.cols})
+	}
+	_ = a.conn.SetWriteDeadline(time.Now().Add(replayWriteTimeout))
+	if _, err := a.conn.Write(st.screen.Replay()); err != nil {
+		_ = a.conn.Close()
+		return
+	}
+	st.clients[a.conn] = struct{}{}
+}
+
+// resize applies the size last asked for: with several clients, the last one
+// to resize decides. Call with mu held.
+func (st *serverState) resize(ws pty.Winsize) {
+	if ws == st.size {
+		if st.screen.Exact() || ws.Rows <= 1 {
+			return
+		}
+		// Same size (another session's pane): nudge so full-screen programs
+		// redraw for a client that can't get the exact state.
+		nudge := ws
+		nudge.Rows--
+		_ = pty.Setsize(st.ptmx, &nudge)
+	}
+	st.screen.Resize(int(ws.Rows), int(ws.Cols))
+	_ = pty.Setsize(st.ptmx, &ws)
+	st.size = ws
+}
+
+func (st *serverState) text() string {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.closed {
+		return ""
+	}
+	return st.screen.Text()
+}
+
+func (st *serverState) close() {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for c := range st.clients {
+		_ = c.Close()
+		delete(st.clients, c)
+	}
+	if !st.closed {
+		st.closed = true
+		st.screen.Close()
+	}
+}
+
 // frames handles one client's input, resizes and kill.
-func (s *Server) frames(c net.Conn, ptmx *os.File, mu *sync.Mutex, size *pty.Winsize, hangup func()) {
+func (st *serverState) frames(c net.Conn, hangup func()) {
+	defer func() {
+		st.mu.Lock()
+		delete(st.clients, c)
+		st.mu.Unlock()
+		_ = c.Close()
+	}()
 	for {
 		typ, p, err := readFrame(c)
 		if err != nil {
@@ -155,23 +272,16 @@ func (s *Server) frames(c net.Conn, ptmx *os.File, mu *sync.Mutex, size *pty.Win
 		}
 		switch typ {
 		case frameInput:
-			_, _ = ptmx.Write(p)
+			_, _ = st.ptmx.Write(p)
 		case frameResize:
 			if len(p) != 4 {
 				continue
 			}
-			ws := pty.Winsize{Rows: binary.BigEndian.Uint16(p), Cols: binary.BigEndian.Uint16(p[2:])}
-			mu.Lock()
-			if ws == *size && ws.Rows > 1 {
-				// Same size (another session's pane): nudge so full-screen
-				// programs redraw.
-				nudge := ws
-				nudge.Rows--
-				_ = pty.Setsize(ptmx, &nudge)
+			st.mu.Lock()
+			if !st.closed {
+				st.resize(pty.Winsize{Rows: binary.BigEndian.Uint16(p), Cols: binary.BigEndian.Uint16(p[2:])})
 			}
-			_ = pty.Setsize(ptmx, &ws)
-			*size = ws
-			mu.Unlock()
+			st.mu.Unlock()
 		case frameKill:
 			hangup()
 			return
@@ -209,4 +319,19 @@ func Send(socket string, data []byte) error {
 	}
 	defer c.Close()
 	return writeFrame(c, frameWrite, data)
+}
+
+// ScreenText returns the terminal's current screen and history as plain text.
+func ScreenText(socket string) (string, error) {
+	c, err := net.DialTimeout("unix", socket, time.Second)
+	if err != nil {
+		return "", ErrEnded
+	}
+	defer c.Close()
+	if err := writeFrame(c, frameText, nil); err != nil {
+		return "", err
+	}
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	b, err := io.ReadAll(c)
+	return string(b), err
 }

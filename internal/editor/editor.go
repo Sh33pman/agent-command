@@ -29,11 +29,10 @@ type Launcher func(ctx context.Context, argv, env []string, dir string) error
 // Opener opens folders.
 type Opener struct {
 	Editor config.Editor
-	Env    []string                              // environment for the editor (login shell's)
-	Look   func(string) (string, error)          // finds an executable on the login PATH
-	Exists func(string) bool                     // an executable file exists
-	Launch Launcher                              // background launch
-	InTab  func(argv []string, dir string) error // run_in = "tab" (a terminal tab next to the view)
+	Env    []string                     // environment for the editor (login shell's)
+	Look   func(string) (string, error) // finds an executable on the login PATH
+	Exists func(string) bool            // an executable file exists
+	Launch Launcher                     // background launch
 }
 
 // Folder is what to open for a session cwd: the cwd, or its git root when
@@ -94,12 +93,6 @@ func (o *Opener) Open(ctx context.Context, dir string) error {
 	argv, err := o.Argv(dir)
 	if err != nil {
 		return err
-	}
-	if o.Editor.Preset == "custom" && o.Editor.RunIn == "tab" {
-		if o.InTab == nil {
-			return errors.New("can't open a terminal editor in a tab here (no view)")
-		}
-		return o.InTab(argv, dir)
 	}
 	err = o.Launch(ctx, argv, o.Env, dir)
 	// `open -b` fails for an IDEA Community install under the Ultimate id.

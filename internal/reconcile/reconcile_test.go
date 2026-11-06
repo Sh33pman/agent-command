@@ -321,3 +321,41 @@ func TestHostedPausedWhenHostGone(t *testing.T) {
 		t.Errorf("new session, status %v", got.Status)
 	}
 }
+
+func TestTerminalAgentThatDiedReturnsToRunning(t *testing.T) {
+	r, st, l, _ := setup(t)
+	r.HostAlive = func(*core.Session) bool { return true }
+	s := create(t, st, &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted,
+		Status: core.StatusBusy, ClaudeSessionID: "a1", Pid: 77})
+	// Claude's own listing doesn't decide a terminal's status.
+	l.agents = []claudecli.Agent{agent("a1", "aaaaaaaa", "interactive", "", 0)}
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status != core.StatusRunning || got.ClaudeSessionID != "" || got.Pid != 0 {
+		t.Errorf("dead agent: %+v", got)
+	}
+}
+
+func TestTerminalWithLiveAgentKeepsItsStatus(t *testing.T) {
+	r, st, _, _ := setup(t)
+	r.HostAlive = func(*core.Session) bool { return true }
+	r.Alive = func(int) bool { return true }
+	s := create(t, st, &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted,
+		Status: core.StatusBusy, ClaudeSessionID: "a1", Pid: 77})
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status != core.StatusBusy || got.ClaudeSessionID != "a1" {
+		t.Errorf("live agent: %+v", got)
+	}
+}
+
+// A dead host, as after a reboot, stops the terminal itself so it can come back.
+func TestTerminalWithDeadHostStops(t *testing.T) {
+	r, st, _, c := setup(t)
+	r.HostAlive = func(*core.Session) bool { return false }
+	r.StartupGrace = time.Minute
+	s := create(t, st, &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted,
+		Status: core.StatusBusy, ClaudeSessionID: "a1", Pid: 77, CreatedAt: c.now().Add(-time.Hour)})
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status != core.StatusPaused || got.ClaudeSessionID != "" {
+		t.Errorf("dead host: %+v", got)
+	}
+}

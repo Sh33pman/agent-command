@@ -1,0 +1,198 @@
+import Foundation
+
+/// The parts of the daemon's state the app shows (internal/ipc, internal/core).
+struct Snapshot: Decodable {
+    let sessions: [Session]?
+}
+
+struct Session: Decodable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let cwd: String
+    let status: String
+    let kind: String
+    let unseen: Bool
+    let harness: String
+    let claudeSessionID: String
+
+    enum CodingKeys: String, CodingKey {
+        case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
+        case harness = "Harness", claudeSessionID = "ClaudeSessionID"
+    }
+
+    var isTerminal: Bool { harness == "terminal" }
+    var isArchived: Bool { status == "archived" }
+
+    /// Stopped by itself or by a reboot: activating it resumes it.
+    var isStopped: Bool { status == "paused" || status == "finished" }
+
+    var displayName: String {
+        name.isEmpty ? (cwd as NSString).lastPathComponent : name
+    }
+}
+
+/// An earlier Claude session that can be resumed (internal/ipc.Conversation).
+struct Conversation: Decodable, Identifiable, Hashable {
+    let id: String
+    let cwd: String
+    let title: String?
+    let branch: String?
+    let updated_at: String
+    let running: Bool?
+    let session_id: String?
+
+    var displayTitle: String { title ?? "Untitled" }
+    var isRunning: Bool { running == true }
+
+    /// The time, as far as RFC 3339 can be parsed.
+    var updated: Date? {
+        let plain = ISO8601DateFormatter()
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return precise.date(from: updated_at) ?? plain.date(from: updated_at)
+    }
+
+    func matches(_ search: String) -> Bool {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return true }
+        return [displayTitle, cwd, branch ?? "", id].contains { $0.lowercased().contains(query) }
+    }
+}
+
+struct DaemonError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+/// Where acmd keeps things, the same way internal/paths resolves them.
+enum DaemonPaths {
+    static var socket: String {
+        let env = ProcessInfo.processInfo.environment
+        if let dir = env["ACMD_RUNTIME_DIR"], !dir.isEmpty {
+            return dir + "/daemon.sock"
+        }
+        let tmp = (env["TMPDIR"] ?? "/tmp") as NSString
+        let dir = tmp.appendingPathComponent("agent-command-\(getuid())")
+        let path = (dir as NSString).appendingPathComponent("daemon.sock")
+        // macOS limits unix socket paths to 104 bytes.
+        return path.utf8.count >= 104 ? "/tmp/agent-command-\(getuid())/daemon.sock" : path
+    }
+
+    /// Claude's settings, where internal/setup adds and marks the hooks.
+    private static var claudeSettings: String {
+        let env = ProcessInfo.processInfo.environment
+        let dir = env["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? NSString(string: "~/.claude").expandingTildeInPath
+        let settings = (dir as NSString).appendingPathComponent("settings.json")
+        return (try? String(contentsOfFile: settings, encoding: .utf8)) ?? ""
+    }
+
+    static var hooksInstalled: Bool { claudeSettings.contains("# managed by acmd") }
+
+    /// The hooks run this binary, rather than one from before the app moved.
+    static var hooksCurrent: Bool { claudeSettings.contains(acmd) }
+
+    /// The binary inside the app, which always matches it.
+    static var acmd: String {
+        if let bin = ProcessInfo.processInfo.environment["ACMD_BIN"] { return bin }
+        if let bundled = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("agent-command").path,
+           FileManager.default.isExecutableFile(atPath: bundled) {
+            return bundled
+        }
+        return "acmd"
+    }
+}
+
+/// One connection to the daemon: newline-delimited JSON over its unix socket.
+/// Calls block, so use it off the main thread.
+///
+/// This must never ask the daemon to shut down. The CLI does that on a version
+/// mismatch, but the app can meet a daemon of another version and only needs
+/// the same protocol.
+final class DaemonConnection {
+    /// internal/ipc.Proto
+    private static let proto = 1
+    private let fd: Int32
+    private var pending = Data()
+
+    init(socket path: String) throws {
+        fd = Foundation.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw DaemonError(message: "socket failed") }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8)
+        guard bytes.count < MemoryLayout.size(ofValue: addr.sun_path) else {
+            close(fd)
+            throw DaemonError(message: "socket path too long")
+        }
+        withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: bytes) }
+        let status = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard status == 0 else {
+            close(fd)
+            throw DaemonError(message: "daemon not reachable")
+        }
+        struct Hello: Codable {
+            let proto: Int
+            let version: String
+        }
+        let theirs: Hello = try call("hello", Hello(proto: Self.proto, version: "app"))
+        guard theirs.proto == Self.proto else {
+            close(fd)
+            throw DaemonError(message: "daemon speaks protocol \(theirs.proto), the app \(Self.proto)")
+        }
+    }
+
+    deinit { close(fd) }
+
+    func call<Out: Decodable>(_ op: String, _ input: some Encodable) throws -> Out {
+        try JSONDecoder().decode(Out.self, from: try exchange(op, JSONEncoder().encode(input)))
+    }
+
+    func call<Out: Decodable>(_ op: String) throws -> Out {
+        try JSONDecoder().decode(Out.self, from: try exchange(op, nil))
+    }
+
+    /// A call whose reply has no data to read.
+    func send(_ op: String, _ input: some Encodable) throws {
+        _ = try exchange(op, JSONEncoder().encode(input))
+    }
+
+    private func exchange(_ op: String, _ data: Data?) throws -> Data {
+        var request: [String: Any] = ["op": op]
+        if let data { request["data"] = try JSONSerialization.jsonObject(with: data) }
+        var line = try JSONSerialization.data(withJSONObject: request)
+        line.append(0x0A)
+        try line.withUnsafeBytes { raw in
+            var offset = 0
+            while offset < raw.count {
+                let n = write(fd, raw.baseAddress! + offset, raw.count - offset)
+                guard n > 0 else { throw DaemonError(message: "daemon connection lost") }
+                offset += n
+            }
+        }
+        let reply = try JSONSerialization.jsonObject(with: try readLine()) as? [String: Any]
+        guard reply?["ok"] as? Bool == true else {
+            throw DaemonError(message: reply?["error"] as? String ?? "daemon error")
+        }
+        return try JSONSerialization.data(
+            withJSONObject: reply?["data"] ?? [String: Any](), options: .fragmentsAllowed)
+    }
+
+    private func readLine() throws -> Data {
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            if let end = pending.firstIndex(of: 0x0A) {
+                let line = pending[pending.startIndex..<end]
+                pending = Data(pending[(end + 1)...])
+                return Data(line)
+            }
+            let n = read(fd, &buffer, buffer.count)
+            guard n > 0 else { throw DaemonError(message: "daemon connection lost") }
+            pending.append(contentsOf: buffer[0..<n])
+        }
+    }
+}

@@ -9,16 +9,20 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/daemon"
 
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/harness"
+	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/procenv"
 	"github.com/brettmostert/agent-command/internal/term"
+	"github.com/brettmostert/agent-command/internal/version"
 )
 
 // Session hosts (SPEC §4.5): an interactive CLI per session, run under a
@@ -39,8 +43,8 @@ func newHostCmd() *cobra.Command {
 
 // hostOptions say what a host runs.
 type hostOptions struct {
-	ID, Dir, Name, Prompt, Resume, ClaudeSession string
-	Args                                         []string
+	ID, Dir, Name, Prompt, Resume, ClaudeSession, Harness string
+	Args                                                  []string
 }
 
 // hostArgv builds the harness argv for a host.
@@ -58,12 +62,50 @@ func hostEnv(base []string) []string {
 	var out []string
 	for _, kv := range procenv.Scrub(base) {
 		switch name, _, _ := splitEnv(kv); name {
-		case "TERM", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON", "ACMD_VIEW_ID", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "PWD", "OLDPWD":
+		case "TERM", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON", "ACMD_VIEW_ID", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "PWD", "OLDPWD", "GHOSTTY_RESOURCES_DIR":
 			continue // belong to whatever started the host, not to the session
 		}
 		out = append(out, kv)
 	}
 	return append(out, "TERM=xterm-256color")
+}
+
+// hostHarness resolves what a host runs and the environment to run it in.
+func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) {
+	switch name {
+	case "", core.HarnessClaude:
+		claude, env, err := claudeCommand(p)
+		if err != nil {
+			return nil, nil, fmt.Errorf("claude not found: %w", err)
+		}
+		return harness.Claude{Path: claude}, env, nil
+	case core.HarnessTerminal:
+		env := loginEnv(p)
+		shell := "/bin/zsh"
+		for _, kv := range env {
+			if name, val, _ := splitEnv(kv); name == "SHELL" && val != "" {
+				shell = val
+			}
+		}
+		return harness.Terminal{Shell: shell}, env, nil
+	}
+	return nil, nil, fmt.Errorf("unknown harness %q", name)
+}
+
+// archiveSelf tells the daemon that this host's terminal is over. If the daemon
+// can't be reached the reconciler pauses the session instead, and activating it
+// starts a new shell.
+func archiveSelf(p paths.Paths, id string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// A long-lived host can be older than the daemon, so a mismatch is fine.
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	var mismatch *ipc.ErrVersionMismatch
+	if err != nil && !errors.As(err, &mismatch) {
+		return
+	}
+	defer conn.Close()
+	_ = conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: id}, nil)
 }
 
 func newHostServeCmd() *cobra.Command {
@@ -81,9 +123,9 @@ func newHostServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			claude, env, err := claudeCommand(p)
+			h, env, err := hostHarness(p, o.Harness)
 			if err != nil {
-				return fmt.Errorf("claude not found: %w", err)
+				return err
 			}
 			if st, err := os.Stat(o.Dir); err != nil || !st.IsDir() {
 				return fmt.Errorf("folder %s is gone", o.Dir)
@@ -94,12 +136,20 @@ func newHostServeCmd() *cobra.Command {
 				return err
 			}
 			defer os.Remove(p.HostIDFile(o.ID))
-			srv := &term.Server{Socket: p.HostSocket(o.ID), Shell: hostArgv(harness.Claude{Path: claude}, o), Dir: o.Dir, Env: hostEnv(env)}
-			return srv.Serve(ctx)
+			env = append(hostEnv(env), "ACMD_SESSION_ID="+o.ID)
+			srv := &term.Server{Socket: p.HostSocket(o.ID), Shell: hostArgv(h, o), Dir: o.Dir, Env: env}
+			err = srv.Serve(ctx)
+			// A terminal whose shell exited by itself is over. One ended by a
+			// signal isn't: after a reboot it comes back as a new shell.
+			if err == nil && o.Harness == core.HarnessTerminal && ctx.Err() == nil {
+				archiveSelf(p, o.ID)
+			}
+			return err
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.ID, "session", "", "the acmd session")
+	f.StringVar(&o.Harness, "harness", "", "what the session runs: claude (default) or terminal")
 	f.StringVar(&o.Dir, "dir", "", "the folder to run in")
 	f.StringVar(&o.Name, "name", "", "the session's name")
 	f.StringVar(&o.Prompt, "prompt", "", "the first prompt")
@@ -123,6 +173,9 @@ func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
 	}
 	defer logf.Close()
 	args := []string{"host", "serve", "--session", r.ID, "--dir", r.Dir}
+	if r.Harness != "" {
+		args = append(args, "--harness", r.Harness)
+	}
 	if r.Name != "" {
 		args = append(args, "--name", r.Name)
 	}
@@ -229,4 +282,13 @@ func attachHost(parent context.Context, socket string) error {
 		return nil // the session's CLI exited
 	}
 	return err
+}
+
+func splitEnv(kv string) (string, string, bool) {
+	for i := 0; i < len(kv); i++ {
+		if kv[i] == '=' {
+			return kv[:i], kv[i+1:], true
+		}
+	}
+	return kv, "", false
 }

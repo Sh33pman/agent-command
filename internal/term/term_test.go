@@ -92,7 +92,7 @@ func TestServerAttachDetachReplay(t *testing.T) {
 	_, detach3, res3 := attach(out3)
 	waitFor(t, "replay", func() bool {
 		o := out3.String()
-		return strings.HasPrefix(o, "\x1b[H\x1b[2J") && strings.Contains(o, "one-2") && strings.Contains(o, "later-4")
+		return (strings.HasPrefix(o, "\x1b[H\x1b[2J") || strings.HasPrefix(o, "\x1bc")) && strings.Contains(o, "one-2") && strings.Contains(o, "later-4")
 	})
 	detach3()
 	if err := <-res3; err != nil {

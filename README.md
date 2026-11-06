@@ -1,53 +1,55 @@
-# agent-command (`acmd`)
+# Agent Command
 
-Track every Claude Code session from a sidebar in **Kitty** and **Ghostty**: live status (busy, waiting on you, done, paused, error), names, groups, notifications, and one-key navigation.
+A native macOS app for running Claude Code sessions and terminals side by side, built on [libghostty](https://github.com/ghostty-org/ghostty). Sessions keep running when you close a pane or quit the app, and show live status: busy, waiting on you, done, paused or error.
 
 ## Features
 
-- **Live session status** in a sidebar: busy, waiting on you, done, paused, error.
-- **Names, groups and notifications** for every Claude Code session.
-- **One-key navigation** between sessions, plus adopting sessions started elsewhere.
-- **Reply popup**: an inbox of finished turns, questions and permission requests you can answer without switching windows. Responses render as rich text.
-- **Read aloud**: have the latest response spoken with local text-to-speech (Kokoro on Core ML, via a Swift helper that ships with acmd; no Python).
-- **Remote control** enabled on every session `acmd` launches.
-- `acmd doctor` and `acmd init` to check and set up your terminal and hooks.
+- **Panes:** split sessions horizontally and vertically to any depth. Sessions created with splits stay together as a set.
+- **Keyboard:** click a session or press ⇧⌘B to move the keyboard to the sidebar. There, the arrow keys or ⌃J and ⌃K move, X marks several sessions, Return or a double click opens one and Esc goes back. ⇧⌘⌫ archives.
+- **Live status** in the sidebar, including an agent you start by typing `claude` in a terminal.
+- **Sessions that last:** closing a pane only detaches. Only archiving ends a session, and agents can be unarchived and resumed.
+- **Resume** an earlier Claude conversation by ID or from a list.
+- **Command popup** and a live **theme picker**, using Ghostty's themes.
+- **Remote control** enabled on every Claude session it starts.
+- `acmd` brings up the app, or its window if it's already running. `acmd --new-instance` starts another copy, and its subcommands list and manage sessions.
 
-> **Status:** early development. See [SPEC.md](SPEC.md) for the design and roadmap.
+> **Status:** early development. [docs/v2/architecture.md](docs/v2/architecture.md) has the design. [SPEC.md](SPEC.md) describes the earlier terminal-based version, kept for reference.
 
-## Install (macOS)
+## Install (macOS, Apple Silicon)
 
 ```sh
-brew install brettmostert/tap/agent-command
-acmd version
+brew install --cask brettmostert/tap/agent-command
 ```
 
-This installs `agent-command` and the short alias `acmd`, plus shell completions. Upgrade with `brew upgrade agent-command`.
+The install adds the app's Claude Code hooks, removing any old ones first. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it. Upgrade with `brew upgrade --cask agent-command`.
 
-Installing by the full name, as above, trusts this formula automatically ([Homebrew Tap Trust](https://docs.brew.sh/Tap-Trust)). If you `brew tap brettmostert/tap` first and install by short name, trust it once with `brew trust --formula brettmostert/tap/agent-command`.
+`acmd doctor` checks the setup, and `acmd doctor --fix` re-adds the hooks and replaces a stale background service.
 
-Before uninstalling, run `acmd uninstall` (once setup exists) to remove the config changes it makes, then `brew uninstall agent-command`.
+`brew uninstall --cask agent-command` ends running sessions, stops the background service, removes the hooks and asks whether to keep your sessions and settings. `brew uninstall --zap --cask agent-command` always deletes them. Upgrades leave sessions running. After an uninstall, Claude conversations can still be resumed, and with your data kept, terminals come back as new shells in the same folders.
 
 <details>
 <summary>Manual download</summary>
 
-Universal (Apple Silicon + Intel) binaries are attached to the releases in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap/releases). Browsers quarantine downloaded binaries, so clear the flag after extracting:
+Download `AgentCommand.zip` from the releases in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap/releases), then:
 
 ```sh
-tar -xzf agent-command_<version>_darwin_all.tar.gz
-xattr -d com.apple.quarantine agent-command
-shasum -a 256 -c checksums.txt --ignore-missing
+shasum -a 256 -c checksums.txt
+unzip AgentCommand.zip
+mv "Agent Command.app" /Applications/
+xattr -dr com.apple.quarantine "/Applications/Agent Command.app"
+"/Applications/Agent Command.app/Contents/MacOS/agent-command" init
 ```
 </details>
 
 ## Development
 
-Requires Go (version from `go.mod`) and Homebrew.
+Requires Go (version from `go.mod`), Xcode, and the Zig version Ghostty's pinned release asks for.
 
 ```sh
-make help      # list targets
-make ci        # lint, test (race + coverage), vuln, build
-make snapshot  # full release dry-run into ./dist
-make install   # dev install to ~/.local/bin
+make help                # list targets
+make ci                  # lint, test (race + coverage), vuln, build
+scripts/build-ghostty.sh # build libghostty once
+make app                 # build "dist/Agent Command.app"
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and release process.

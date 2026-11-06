@@ -1,30 +1,56 @@
-class AgentCommand < Formula
-  desc "Sidebar and status tracker for Claude Code sessions in Kitty and Ghostty"
-  homepage "https://github.com/brettmostert/homebrew-tap"
-  url "{{URL}}"
+cask "agent-command" do
+  version "{{VERSION}}"
   sha256 "{{SHA256}}"
-  license "MIT"
 
-  depends_on :macos
+  url "https://github.com/brettmostert/homebrew-tap/releases/download/agent-command-v#{version}/AgentCommand.zip"
+  name "Agent Command"
+  desc "Native app that runs Claude Code sessions and terminals in panes, with live status"
+  homepage "https://github.com/brettmostert/homebrew-tap"
 
-  def install
-    bin.install "agent-command"
-    bin.install_symlink "agent-command" => "acmd"
-    # the Swift speech engine (acmd finds it in ../libexec)
-    libexec.install "acmd-speech"
-    generate_completions_from_executable(bin/"agent-command", "completion")
-  end
+  depends_on arch: :arm64
+  depends_on macos: :sonoma
 
-  def caveats
-    <<~EOS
-      Run `acmd init` (or any acmd command) to set up Kitty/Ghostty and Claude Code hooks.
-      Before `brew uninstall agent-command`, run `acmd uninstall` to remove those config changes.
-    EOS
-  end
+  app "Agent Command.app"
+  binary "#{appdir}/Agent Command.app/Contents/MacOS/agent-command"
+  binary "#{appdir}/Agent Command.app/Contents/MacOS/agent-command", target: "acmd"
 
-  test do
-    assert_match version.to_s, shell_output("#{bin}/agent-command version")
-    assert_match version.to_s, shell_output("#{bin}/acmd version")
-    assert_match "acmd-speech", shell_output("#{libexec}/acmd-speech --version")
-  end
+  # Runs before Homebrew moves the app, so it clears the quarantine flag on the
+  # staged copy and names the final path for the hooks. Without that flag cleared,
+  # macOS kills the binary and removes the app. A failure here mustn't fail the
+  # install: the app offers its hooks on launch.
+  installer script: {
+    executable: "/bin/sh",
+    args:       [
+      "-c",
+      '/usr/bin/xattr -dr com.apple.quarantine "$0" && "$0/Contents/MacOS/agent-command" init --hook-binary "$1" || true',
+      "#{staged_path}/Agent Command.app",
+      "#{appdir}/Agent Command.app/Contents/MacOS/agent-command",
+    ],
+  }
+
+  # Upgrades run this too. It only ends sessions for a real uninstall.
+  uninstall quit:   "com.brettmostert.agent-command",
+            script: {
+              executable:   "/bin/sh",
+              args:         [
+                "-c",
+                '[ ! -x "$0" ] || "$0" uninstall --brew',
+                "#{appdir}/Agent Command.app/Contents/MacOS/agent-command",
+              ],
+              must_succeed: false,
+            }
+
+  zap trash: [
+    "~/.config/agent-command",
+    "~/.local/state/agent-command",
+  ]
+
+  caveats <<~EOS
+    Agent Command isn't notarized, so this install cleared macOS's quarantine flag
+    for it and added its Claude Code hooks. Run acmd to open it.
+
+    Uninstalling ends running sessions, stops its background service and removes
+    the hooks. Upgrades leave sessions running. Claude conversations can still be
+    resumed after an uninstall.
+  EOS
 end

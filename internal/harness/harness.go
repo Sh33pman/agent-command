@@ -14,6 +14,8 @@ const (
 	// StatusPTY: derived from output activity, idle time, the terminal bell
 	// and process exit. Coarser: "waiting" is a guess.
 	StatusPTY
+	// StatusProcess: only whether the process runs (a plain terminal).
+	StatusProcess
 )
 
 func (s StatusSource) String() string {
@@ -22,6 +24,8 @@ func (s StatusSource) String() string {
 		return "hooks"
 	case StatusPTY:
 		return "pty"
+	case StatusProcess:
+		return "process"
 	}
 	return "unknown"
 }

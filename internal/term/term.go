@@ -5,11 +5,18 @@
 // shell and what runs in it carry on while another session is shown.
 //
 // Protocol on the server's unix socket: the server writes the shell's
-// output as raw bytes (first a screen clear and the kept output); the
-// client sends frames of [type byte][length uint32 BE][payload]:
-// 'a' attach (first frame; a connection without it only probes or ends
-// the terminal), 'i' input, 'r' resize (rows, cols as uint16 BE), 'k' end
-// the terminal, 'w' type the payload into the shell and close (Send).
+// output as raw bytes (first what restores the current state); the client
+// sends frames of [type byte][length uint32 BE][payload]:
+// 'a' attach (first frame; a connection without it only probes or ends the
+// terminal), 'i' input, 'r' resize (rows, cols as uint16 BE), 'k' end the
+// terminal, 'w' type the payload into the shell and close (Send), 't' reply
+// with the screen as plain text and close (ScreenText).
+//
+// Hosts outlive upgrades, so a client can meet a server older or newer than
+// itself. Add to this protocol, don't change it: a server ignores frames it
+// doesn't know, and a client still works if an attach payload is ignored.
+// The attach payload is the protocol version, rows and cols as uint16 BE, and
+// may be empty.
 package term
 
 import (
@@ -25,10 +32,14 @@ const (
 	frameResize = 'r'
 	frameKill   = 'k'
 	frameWrite  = 'w' // input from a connection that doesn't attach (Send)
+	frameText   = 't' // the screen as plain text (ScreenText)
 )
 
-// Keep is how much recent output a server replays to a client that
-// attaches (256 KiB).
+// protocolVersion goes in the attach payload.
+const protocolVersion = 1
+
+// Keep is how much recent output a server without libghostty-vt replays to a
+// client that attaches (256 KiB).
 const Keep = 256 << 10
 
 // ErrEnded means the terminal's shell exited (or it was ended).
@@ -63,6 +74,21 @@ func resizePayload(rows, cols int) []byte {
 	binary.BigEndian.PutUint16(b, uint16(rows))     // #nosec G115 -- terminal sizes fit
 	binary.BigEndian.PutUint16(b[2:], uint16(cols)) // #nosec G115 -- terminal sizes fit
 	return b
+}
+
+func attachPayload(rows, cols int) []byte {
+	b := make([]byte, 6)
+	binary.BigEndian.PutUint16(b, protocolVersion)
+	copy(b[2:], resizePayload(rows, cols))
+	return b
+}
+
+// attachSize reads the uint16 at offset in an attach payload, 0 if absent.
+func attachSize(p []byte, offset int) uint16 {
+	if len(p) < offset+2 {
+		return 0
+	}
+	return binary.BigEndian.Uint16(p[offset:])
 }
 
 // ring keeps the last n bytes written.

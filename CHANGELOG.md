@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.37.1](https://github.com/brettmostert/agent-command/compare/v0.37.0...v0.37.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* clear the unseen dot when you look at a session ([#156](https://github.com/brettmostert/agent-command/issues/156)) ([c5f53de](https://github.com/brettmostert/agent-command/commit/c5f53decf6dc1e36bfff14d5efdb94a77f2b17be))
+* keep status updating after /clear and remove v1's old rows ([#158](https://github.com/brettmostert/agent-command/issues/158)) ([f5f90b4](https://github.com/brettmostert/agent-command/commit/f5f90b47e8fe79bc188ced88e155461cfb100ada))
+
 ## [0.37.0](https://github.com/brettmostert/agent-command/compare/v0.36.0...v0.37.0) (2026-11-06)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.35.0](https://github.com/brettmostert/agent-command/compare/v0.34.0...v0.35.0) (2026-11-06)
+
+
+### Features
+
+* add a status bar with the version ([#146](https://github.com/brettmostert/agent-command/issues/146)) ([5d83928](https://github.com/brettmostert/agent-command/commit/5d8392833386e508990c9013ddaeb61c136e6bb0))
+
+
+### Bug Fixes
+
+* treat the acmd link and the app's binary as the same path ([#145](https://github.com/brettmostert/agent-command/issues/145)) ([6d5fa20](https://github.com/brettmostert/agent-command/commit/6d5fa20cb7a29de5b421658e617d5e1713b23ecc))
+
 ## [0.34.0](https://github.com/brettmostert/agent-command/compare/v0.33.0...v0.34.0) (2026-11-06)
 
 

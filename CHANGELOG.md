@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.34.0](https://github.com/brettmostert/agent-command/compare/v0.33.0...v0.34.0) (2026-11-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* the formula becomes a cask, and acmd no longer integrates with Kitty or Ghostty. Run `acmd uninstall` from the old version first, then `brew uninstall agent-command`.
+
+### Features
+
+* replace v1 with the native app (PAN-30) ([#143](https://github.com/brettmostert/agent-command/issues/143)) ([803eb36](https://github.com/brettmostert/agent-command/commit/803eb36d621457c29890b21b695c124c0cbea09f))
+
 ## [0.33.0](https://github.com/brettmostert/agent-command/compare/v0.32.1...v0.33.0) (2026-11-02)
 
 

@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var popupReturn: (cursor: String?, marks: Set<String>)?
     private let sidebarKeys = SidebarKeyView()
     private let notifier = AppNotifier()
+    private var inbox: InboxModel?
     /// A clicked notification's session, if it arrived before the session list.
     private var pendingOpen: String?
 
@@ -58,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     guard let self else { return }
                     self.showRename(self.store.actionTargets(forRow: session))
                 },
+                openInbox: { [weak self] session in self?.showInbox(.session(session.id)) },
                 moveOut: { [weak self] session in self?.pane?.moveOut(sessionID: session.id) },
                 openSet: { [weak self] session in self?.pane?.showSet(containing: session.id) },
                 clickRow: { [weak self] session in self?.clickSidebarRow(session) },
@@ -84,7 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         split.view.frame = splitFrame
         split.view.autoresizingMask = [.width, .height]
         root.view.addSubview(split.view)
-        let statusBar = NSHostingView(rootView: StatusBarView(notifier: notifier))
+        let statusBar = NSHostingView(rootView: StatusBarView(
+            notifier: notifier, store: store, openInbox: { [weak self] in self?.toggleInbox() }))
         statusBar.frame = NSRect(x: 0, y: 0, width: root.view.bounds.width, height: StatusBarView.height)
         statusBar.autoresizingMask = [.width]
         root.view.addSubview(statusBar)
@@ -452,12 +455,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         (try? String(contentsOfFile: AppFont.configPath, encoding: .utf8)) ?? ""
     }
 
+    @objc private func toggleInbox() {
+        if inbox == nil { showInbox(.queue) } else { closePopup() }
+    }
+
+    /// The Inbox goes over the whole window, and your panes are as you left them after.
+    private func showInbox(_ filter: InboxFilter) {
+        closePopup()
+        let model = InboxModel(store: store, filter: filter)
+        model.close = { [weak self] in self?.closePopup() }
+        model.goToSession = { [weak self] id in self?.openSidebarRow(id) }
+        model.rename = { [weak self] sessions in self?.showRename(sessions) }
+        model.archive = { [weak self] sessions in self?.archive(sessions) }
+        model.moveOut = { [weak self] session in self?.pane?.moveOut(sessionID: session.id) }
+        showPopup(InboxView(model: model), aboveStatusBar: true)
+        window?.makeFirstResponder(nil)
+        store.inboxOpen = true
+        model.start()
+        inbox = model
+    }
+
     /// Popups go over the whole window, so they stay centered across panes.
-    private func showPopup(_ view: some View) {
+    private func showPopup(_ view: some View, aboveStatusBar: Bool = false) {
         guard let content = window?.contentView else { return }
         popupReturn = store.sidebarState
         let hosting = NSHostingView(rootView: view)
         hosting.frame = content.bounds
+        if aboveStatusBar {
+            hosting.frame.origin.y = StatusBarView.height
+            hosting.frame.size.height -= StatusBarView.height
+        }
         hosting.autoresizingMask = [.width, .height]
         content.addSubview(hosting, positioned: .above, relativeTo: nil)
         popup = hosting
@@ -467,6 +494,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let shown = popup else { return }
         shown.removeFromSuperview()
         popup = nil
+        if let inbox {
+            inbox.stop()
+            self.inbox = nil
+            store.inboxOpen = false
+        }
         if let state = popupReturn {
             window?.makeFirstResponder(sidebarKeys)
             store.restoreSidebar(state)
@@ -474,6 +506,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pane?.focusTerminal()
         }
         popupReturn = nil
+        store.markLookedAtSeen()
     }
 
     /// What can be done right now: what the popup lists depends on what's showing.
@@ -564,6 +597,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 })
             }
         }
+        list.append(PopupCommand(section: "App", title: "Inbox", shortcut: "⇧⌘I") { [weak self] in
+            self?.showInbox(.queue)
+        })
+        if let current {
+            list.append(PopupCommand(section: "App", title: "Inbox for \(current.displayName)") { [weak self] in
+                self?.showInbox(.session(current.id))
+            })
+        }
         list.append(PopupCommand(section: "App", title: "Change theme…", shortcut: "⇧⌘T") { [weak self] in
             self?.showThemes()
         })
@@ -627,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ("Commands…", #selector(toggleCommands), "P"),
             ("Change Theme…", #selector(showThemes), "T"),
             ("Focus Sidebar", #selector(toggleSidebarFocus), "B"),
+            ("Inbox", #selector(toggleInbox), "I"),
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
             item.target = self

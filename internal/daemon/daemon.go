@@ -54,6 +54,8 @@ type Config struct {
 	// Fallback shows a notification when no view's sidebar can (SPEC §8.5:
 	// terminal-notifier, else osascript).
 	Fallback func(ipc.Notice)
+	// SendToHost types into a session's terminal (default: through its host).
+	SendToHost func(sessionID string, data []byte) error
 	// LockWait is how long to wait for a daemon that's on its way out. A hook that
 	// replaces an older daemon starts this one straight after asking it to stop.
 	LockWait time.Duration
@@ -74,7 +76,6 @@ type Daemon struct {
 	changes      changes      // bumped on every state change (OpWatch)
 	appWatches   atomic.Int32 // the app's open watches (notify.go)
 	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
-	inbox        inbox        // what the reply popup shows (not persisted)
 
 	notify *notifier // d.mu
 }
@@ -229,7 +230,7 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 // changesState reports whether a successful request may have changed state.
 func changesState(op string) bool {
 	switch op {
-	case ipc.OpEvent, ipc.OpMutate, ipc.OpNew, ipc.OpResume:
+	case ipc.OpEvent, ipc.OpMutate, ipc.OpNew, ipc.OpResume, ipc.OpInboxAnswer:
 		return true
 	}
 	return false
@@ -269,6 +270,18 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		return d.newSession(ctx, n)
 	case ipc.OpConversations:
 		return d.conversations(ctx)
+	case ipc.OpInbox:
+		r, err := decode[ipc.InboxRequest](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.inboxHistory(ctx, r.SessionID)
+	case ipc.OpInboxAnswer:
+		a, err := decode[ipc.InboxAnswer](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return nil, d.answerInbox(ctx, a)
 	case ipc.OpLayout:
 		d.mu.Lock()
 		defer d.mu.Unlock()
@@ -350,7 +363,9 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	}
 	d.transition(sess, tr)
 	if tr.Applied { // not a stale event
-		d.inbox.apply(sess, e)
+		if err := d.applyInbox(ctx, sess, e); err != nil {
+			return err
+		}
 	}
 	return d.store.AppendEvent(ctx, store.LoggedEvent{
 		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
@@ -391,6 +406,11 @@ func (d *Daemon) background(ctx context.Context) {
 		case <-d.stop:
 			return
 		case <-reconcileT.C:
+			if changed, err := d.tidyInbox(ctx); err != nil {
+				d.cfg.Log.Printf("inbox: %v", err)
+			} else if changed {
+				d.changes.bump()
+			}
 			if rec == nil {
 				continue
 			}

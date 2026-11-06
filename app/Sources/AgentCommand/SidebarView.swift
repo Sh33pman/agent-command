@@ -8,6 +8,7 @@ struct SidebarView: View {
     let showCommands: () -> Void
     let archive: (Session) -> Void
     let rename: (Session) -> Void
+    let openInbox: (Session) -> Void
     let moveOut: (Session) -> Void
     let openSet: (Session) -> Void
     /// A click gives the sidebar the keyboard, with its cursor on that row.
@@ -59,7 +60,8 @@ struct SidebarView: View {
                             isVisible: store.visibleIDs.contains(session.id),
                             isClosed: store.closedIDs.contains(session.id),
                             isCursor: store.sidebarFocused && store.cursorID == session.id,
-                            isMarked: store.markedIDs.contains(session.id))
+                            isMarked: store.markedIDs.contains(session.id),
+                            unread: store.unreadCount(session: session.id))
                             .id(session.id)
                             .contentShape(Rectangle())
                             .simultaneousGesture(TapGesture().onEnded { clickRow(session) })
@@ -68,6 +70,7 @@ struct SidebarView: View {
                                 if row.link != .none {
                                     Button("Move Out of Set") { moveOut(session) }
                                 }
+                                Button("Inbox") { openInbox(session) }
                                 Button("Rename…") { rename(session) }
                                 Button("Archive…") { archive(session) }
                             }
@@ -123,7 +126,7 @@ struct SidebarView: View {
             if showArchived {
                 ForEach(store.archived) { session in
                     SessionRow(session: session, link: .none, isSelected: false, isVisible: false, isClosed: false,
-                        isCursor: false, isMarked: false)
+                        isCursor: false, isMarked: false, unread: 0)
                         .contextMenu {
                             if !session.isTerminal {
                                 Button("Unarchive") { store.unarchive(session.id) }
@@ -144,21 +147,38 @@ struct SidebarView: View {
 }
 
 /// Marks where a set starts, so its line doesn't seem to belong to the row above.
-private struct SetLabelRow: View {
+struct SetLabelRow: View {
+    var isSelected = false
+    /// Unread messages across the set, for the Inbox.
+    var unread = 0
+    var isCursor = false
+
     private var theme: AppTheme { .shared }
 
     var body: some View {
         HStack(spacing: 6) {
-            SetLinkMark(link: .first).stroke(theme.fg, lineWidth: 1).frame(width: 8)
-            Text("set").font(AppFont.ui(11)).foregroundStyle(theme.dim)
+            SetLinkMark(link: .first).stroke(isSelected ? theme.bg : theme.fg, lineWidth: 1).frame(width: 8)
+            Text("set").font(AppFont.ui(11)).foregroundStyle(isSelected ? theme.bg : theme.dim)
             Spacer(minLength: 0)
+            if unread > 0 {
+                Label("\(unread)", systemImage: "envelope.badge")
+                    .font(AppFont.ui(11))
+                    .foregroundStyle(isSelected ? theme.bg : theme.blue)
+                    .help(unread == 1 ? "1 unread message in this set" : "\(unread) unread messages in this set")
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 22)
+        .background(isSelected ? theme.yellow : Color.clear)
+        .overlay {
+            if isCursor {
+                Rectangle().strokeBorder(isSelected ? theme.bg : theme.fg, lineWidth: 1)
+            }
+        }
     }
 }
 
-private struct SessionRow: View {
+struct SessionRow: View {
     let session: Session
     let link: SetLink
     let isSelected: Bool
@@ -169,6 +189,8 @@ private struct SessionRow: View {
     /// Where the sidebar's keyboard cursor is, and whether it's marked with x.
     let isCursor: Bool
     let isMarked: Bool
+    /// Unread items in the Inbox's queue.
+    let unread: Int
 
     private var theme: AppTheme { .shared }
 
@@ -188,7 +210,9 @@ private struct SessionRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 4)
-                if session.unseen && !isSelected {
+                if unread > 0 {
+                    Text("\(unread)").fontWeight(.bold).foregroundStyle(isSelected ? theme.bg : theme.blue)
+                } else if session.unseen && !isSelected {
                     Text("•").foregroundStyle(theme.blue)
                 }
                 Text(session.status)
@@ -221,7 +245,7 @@ private struct SessionRow: View {
 
 /// The line joining a set's rows. It's drawn rather than typed, so it meets the
 /// next row whatever the font's line height.
-private struct SetLinkMark: Shape {
+struct SetLinkMark: Shape {
     let link: SetLink
 
     func path(in rect: CGRect) -> Path {

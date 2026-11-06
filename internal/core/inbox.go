@@ -7,9 +7,9 @@ import (
 	"time"
 )
 
-// Inbox items are what the reply popup shows (SPEC §8.8): a session's
-// latest finished turn, question or permission prompt. A session has at
-// most one; newer ones replace it and it goes when the session moves on.
+// Inbox items are what sessions have sent you: finished turns, questions,
+// permission prompts and errors. The queue is the open ones. A session has at most
+// one open, its latest, and it stops being open when the session moves on.
 
 // Inbox item kinds.
 const (
@@ -19,13 +19,26 @@ const (
 	InboxError      = "error"      // the turn stopped with an API error
 )
 
-// InboxItem is one thing waiting for the user.
+// Inbox item states. Only open items are in the queue.
+const (
+	InboxOpen      = "open"
+	InboxResponded = "responded"
+	InboxDismissed = "dismissed"
+	InboxStale     = "stale" // no longer relevant: the session moved on
+)
+
+// InboxItem is one thing a session sent you.
 type InboxItem struct {
+	ID        int64     `json:"id"`
 	SessionID string    `json:"session_id"`
 	Kind      string    `json:"kind"`
 	Text      string    `json:"text"`
-	Options   []string  `json:"options,omitempty"` // question and permission answers
+	Options   []string  `json:"options,omitempty"`   // question and permission answers
+	Multipart bool      `json:"multipart,omitempty"` // several questions: answered in the session
 	At        time.Time `json:"at"`
+	Read      bool      `json:"read"`
+	State     string    `json:"state"`
+	HandledAt time.Time `json:"handled_at"`
 }
 
 // PermissionOptions are the answers to a permission prompt, in Claude's
@@ -65,8 +78,8 @@ func InboxEffect(s *Session, e Event) (item *InboxItem, drop bool) {
 	return nil, false
 }
 
-// questionItem shows AskUserQuestion's first question and its options;
-// later questions are listed in the text (they're answered in the session).
+// questionItem shows AskUserQuestion's questions. One with several parts has no
+// options to pick, because it's answered in the session.
 func questionItem(s *Session, e Event, at time.Time) *InboxItem {
 	var in struct {
 		Questions []struct {
@@ -93,9 +106,13 @@ func questionItem(s *Session, e Event, at time.Time) *InboxItem {
 		}
 	}
 	for _, more := range in.Questions[1:] {
-		b.WriteString("\n\nThen: " + more.Question + " (answer it in the session)")
+		b.WriteString("\n\nThen: " + more.Question)
 	}
-	return &InboxItem{SessionID: s.ID, Kind: InboxQuestion, Text: b.String(), Options: opts, At: at}
+	multipart := len(in.Questions) > 1
+	if multipart {
+		opts = nil
+	}
+	return &InboxItem{SessionID: s.ID, Kind: InboxQuestion, Text: b.String(), Options: opts, Multipart: multipart, At: at}
 }
 
 // permissionText describes what a tool wants to do.

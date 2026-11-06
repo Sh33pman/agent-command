@@ -39,7 +39,11 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Notices: d.notices(), Inbox: d.inbox.all()}, nil
+	queue, err := d.store.InboxQueue(ctx)
+	if err != nil {
+		return ipc.Snapshot{}, err
+	}
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Notices: d.notices(), Inbox: queue}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.
@@ -175,8 +179,14 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.updateViewState(ctx, func(vs *core.ViewState) { vs.ShowArchived = m.Flag })
 	case ipc.MutViewFocus:
 		return nil, d.focus(ctx, m.GroupID)
-	case ipc.MutInboxSkip:
-		d.inbox.drop(m.ID)
+	case ipc.MutInboxRead:
+		return nil, d.store.SetInboxRead(ctx, m.ItemIDs, m.Flag)
+	case ipc.MutInboxDismiss:
+		for _, id := range m.ItemIDs {
+			if err := d.store.HandleInboxItem(ctx, id, core.InboxDismissed); err != nil && !errors.Is(err, store.ErrNotFound) {
+				return nil, err
+			}
+		}
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("unknown mutation %q", m.Kind)
@@ -229,7 +239,9 @@ func (d *Daemon) finish(ctx context.Context, id string) error {
 		}
 	}
 	core.Apply(s, core.Event{Kind: core.EventFinished, Time: d.eventTime(s)})
-	d.inbox.drop(s.ID)
+	if err := d.store.CloseInboxItems(ctx, s.ID); err != nil {
+		return err
+	}
 	if err := d.store.UpdateSession(ctx, s); err != nil {
 		return err
 	}
@@ -258,7 +270,9 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 		}
 	}
 	core.Apply(s, core.Event{Kind: core.EventArchived, Time: d.eventTime(s)})
-	d.inbox.drop(s.ID)
+	if err := d.store.CloseInboxItems(ctx, s.ID); err != nil {
+		return err
+	}
 	if err := d.store.UpdateSession(ctx, s); err != nil {
 		return err
 	}

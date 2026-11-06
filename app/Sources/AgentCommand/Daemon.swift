@@ -4,6 +4,86 @@ import Foundation
 struct Snapshot: Decodable {
     let sessions: [Session]?
     let notices: [Notice]?
+    let inbox: [InboxItem]?
+}
+
+/// Something a session sent you (internal/core.InboxItem).
+struct InboxItem: Decodable, Identifiable, Equatable {
+    let id: Int64
+    let sessionID: String
+    let kind: String
+    let text: String
+    let options: [String]
+    let multipart: Bool
+    let at: String
+    let read: Bool
+    let state: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, text, options, multipart, at, read, state
+        case sessionID = "session_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int64.self, forKey: .id)
+        sessionID = try c.decode(String.self, forKey: .sessionID)
+        kind = try c.decode(String.self, forKey: .kind)
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        options = try c.decodeIfPresent([String].self, forKey: .options) ?? []
+        multipart = try c.decodeIfPresent(Bool.self, forKey: .multipart) ?? false
+        at = try c.decodeIfPresent(String.self, forKey: .at) ?? ""
+        read = try c.decodeIfPresent(Bool.self, forKey: .read) ?? false
+        state = try c.decodeIfPresent(String.self, forKey: .state) ?? "open"
+    }
+
+    var isOpen: Bool { state == "open" }
+    /// Answered by picking an option, not by typing.
+    var needsOption: Bool { (kind == "question" || kind == "permission") && !multipart }
+
+    var kindLabel: String {
+        switch kind {
+        case "question": "Question"
+        case "permission": "Permission"
+        case "error": "Error"
+        default: "Finished"
+        }
+    }
+
+    var stateLabel: String {
+        switch state {
+        case "responded": "Responded"
+        case "dismissed": "Dismissed"
+        case "stale": "No longer relevant"
+        default: "Open"
+        }
+    }
+
+    var preview: String {
+        text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+    }
+
+    /// Links, bold and inline code, with the lines as they are.
+    var rendered: AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+    }
+
+    /// How long ago it arrived, in a few characters.
+    var age: String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        guard let date = formatter.date(from: at) ?? plain.date(from: at) else { return "" }
+        let seconds = max(0, Int(Date().timeIntervalSince(date)))
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3600: return "\(seconds / 60)m"
+        case ..<86400: return "\(seconds / 3600)h"
+        default: return "\(seconds / 86400)d"
+        }
+    }
 }
 
 /// Something the daemon decided to notify about.

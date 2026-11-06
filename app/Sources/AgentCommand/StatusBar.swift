@@ -5,6 +5,10 @@ struct StatusBarView: View {
     static let height: CGFloat = 22
 
     let notifier: AppNotifier
+    let store: SessionStore
+    let openInbox: () -> Void
+
+    @AppStorage(InboxLayout.key) private var inboxLayout = InboxLayout.columns
 
     private var theme: AppTheme { .shared }
 
@@ -30,6 +34,20 @@ struct StatusBarView: View {
                     .help("Open Agent Command's page in System Settings")
                 }
                 Spacer()
+                if store.inboxOpen {
+                    layoutButton(.columns, icon: "rectangle.split.3x1", help: "Message box in a column")
+                    layoutButton(.stacked, icon: "rectangle.split.1x2", help: "Message box at the bottom")
+                }
+                Button(action: openInbox) {
+                    let unread = store.unreadCount()
+                    Text(unread > 0 ? "Inbox \(unread)" : "Inbox")
+                        .fontWeight(unread > 0 ? .bold : .regular)
+                        .foregroundStyle(unread > 0 ? theme.blue : theme.dim)
+                }
+                .buttonStyle(.plain)
+                .font(AppFont.ui(11))
+                .lineLimit(1)
+                .help("Open the Inbox (⇧⌘I)")
                 Text(version)
                     .font(AppFont.ui(11))
                     .foregroundStyle(theme.dim)
@@ -40,5 +58,16 @@ struct StatusBarView: View {
         }
         .frame(height: Self.height)
         .background(theme.bg)
+    }
+
+    private func layoutButton(_ layout: InboxLayout, icon: String, help: String) -> some View {
+        Button {
+            inboxLayout = layout
+        } label: {
+            Image(systemName: icon).foregroundStyle(inboxLayout == layout ? theme.fg : theme.dim)
+        }
+        .buttonStyle(.plain)
+        .font(AppFont.ui(11))
+        .help(help)
     }
 }

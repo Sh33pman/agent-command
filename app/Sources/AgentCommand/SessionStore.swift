@@ -20,6 +20,10 @@ final class SessionStore {
     /// Sessions in a set whose pane is closed.
     private(set) var closedIDs: Set<String> = []
     private(set) var problem: String?
+    /// The Inbox's queue: what's left to deal with, in arrival order.
+    private(set) var queue: [InboxItem] = []
+    /// Covers the panes, so you're not looking at what they show.
+    var inboxOpen = false
 
     /// Whether the sidebar has the keyboard, and its cursor and marks while it does.
     private(set) var sidebarFocused = false
@@ -30,6 +34,8 @@ final class SessionStore {
     @ObservationIgnored var onSelect: ((Session?) -> Void)?
     /// Called with the ids of the listed sessions when they change.
     @ObservationIgnored var onListChanged: ((Set<String>) -> Void)?
+    /// Called when the queue changes, for an open Inbox.
+    @ObservationIgnored var onInboxChanged: (() -> Void)?
     /// Called with the daemon's recent notices, whenever its state is read.
     @ObservationIgnored var onNotices: (([Notice]) -> Void)?
     /// Called once with the saved pane layout, after the first list of sessions.
@@ -145,7 +151,12 @@ final class SessionStore {
     /// Clears the unseen mark on sessions you're looking at: on screen, with the app
     /// in front. Call it when any of that changes.
     func markLookedAtSeen() {
-        guard NSApp.isActive else { return }
+        guard NSApp.isActive, !inboxOpen else { return }
+        for item in queue where !item.read && visibleIDs.contains(item.sessionID) {
+            if readInFlight.insert(item.id).inserted {
+                setInboxRead(item.id, true) { self.readInFlight.remove(item.id) }
+            }
+        }
         let looked = sessions.filter { $0.unseen && visibleIDs.contains($0.id) }.map(\.id)
         for id in looked where seenInFlight.insert(id).inserted {
             run(failure: "Couldn't update the session") { conn in
@@ -157,6 +168,66 @@ final class SessionStore {
     }
 
     @ObservationIgnored private var seenInFlight: Set<String> = []
+    @ObservationIgnored private var readInFlight: Set<Int64> = []
+
+    // MARK: Inbox
+
+    func session(id: String) -> Session? {
+        sessions.first { $0.id == id } ?? archived.first { $0.id == id }
+    }
+
+    /// Unread items in the queue, for one session or for all.
+    func unreadCount(session id: String? = nil) -> Int {
+        queue.filter { !$0.read && (id == nil || $0.sessionID == id) }.count
+    }
+
+    private struct InboxMutation: Encodable {
+        let kind: String
+        let item_ids: [Int64]
+        var flag = false
+    }
+
+    private struct InboxRequest: Encodable {
+        let session_id: String?
+    }
+
+    private struct InboxAnswerRequest: Encodable {
+        let id: Int64
+        let option: Int?
+        let text: String?
+    }
+
+    func loadInbox(session: String?, done: @escaping ([InboxItem]) -> Void) {
+        run(failure: "Couldn't read the inbox") { conn -> [InboxItem] in
+            try conn.call("inbox", InboxRequest(session_id: session))
+        } done: { done($0) }
+    }
+
+    func setInboxRead(_ id: Int64, _ read: Bool, done: @escaping () -> Void = {}) {
+        run(failure: "Couldn't update the item") { conn in
+            try conn.send("mutate", InboxMutation(kind: "inbox.read", item_ids: [id], flag: read))
+        } done: { _ in done() }
+    }
+
+    func dismissInbox(_ id: Int64, done: @escaping () -> Void = {}) {
+        run(failure: "Couldn't dismiss the item") { conn in
+            try conn.send("mutate", InboxMutation(kind: "inbox.dismiss", item_ids: [id]))
+        } done: { _ in done() }
+    }
+
+    /// Types an answer into the item's session, then reports why it failed, if it did.
+    func answerInbox(_ id: Int64, option: Int?, text: String?, done: @escaping (String?) -> Void) {
+        calls.async {
+            var failure: String?
+            do {
+                let conn = try DaemonConnection(socket: DaemonPaths.socket)
+                try conn.send("inbox.answer", InboxAnswerRequest(id: id, option: option, text: text))
+            } catch {
+                failure = error.localizedDescription
+            }
+            DispatchQueue.main.async { done(failure) }
+        }
+    }
 
     private struct Mutation: Encodable {
         let kind: String
@@ -227,6 +298,11 @@ final class SessionStore {
                 self.onListChanged?(Set(visible.map(\.id)))
             }
             if archived != self.archived { self.archived = archived }
+            let queue = snapshot.inbox ?? []
+            if queue != self.queue {
+                self.queue = queue
+                self.onInboxChanged?()
+            }
             self.markLookedAtSeen()
             self.onNotices?(snapshot.notices ?? [])
         }

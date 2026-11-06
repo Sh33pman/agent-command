@@ -33,8 +33,10 @@ const (
 	OpResume   = "resume"   // resume a paused background session (Mutation.ID → *core.Session)
 	// OpConversations lists earlier Claude sessions to resume (→ []Conversation).
 	OpConversations = "conversations"
-	OpLayout        = "layout"     // the app's pane layout (→ Layout)
-	OpSetLayout     = "layout.set" // stores it (Layout)
+	OpLayout        = "layout"       // the app's pane layout (→ Layout)
+	OpSetLayout     = "layout.set"   // stores it (Layout)
+	OpInbox         = "inbox"        // inbox items, newest first (InboxRequest → []core.InboxItem)
+	OpInboxAnswer   = "inbox.answer" // types an answer into the item's session (InboxAnswer)
 )
 
 // Snapshot is everything a client needs to render the list; clients
@@ -45,7 +47,7 @@ type Snapshot struct {
 	ViewState core.ViewState  `json:"view_state"`
 	// Notices are the most recent notifications (SPEC §8.5), oldest first.
 	Notices []Notice `json:"notices,omitempty"`
-	// Inbox is what the reply popup shows, oldest first (SPEC §8.8).
+	// Inbox is the queue: the items still to deal with, in arrival order.
 	Inbox []core.InboxItem `json:"inbox,omitempty"`
 }
 
@@ -89,7 +91,8 @@ const (
 	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)
 	MutViewFilter     = "view.filter"       // Text
 	MutViewArchived   = "view.archived"     // Flag = show archived
-	MutInboxSkip      = "inbox.skip"        // ID = session: drop its popup item
+	MutInboxRead      = "inbox.read"        // ItemIDs, Flag = read (else unread)
+	MutInboxDismiss   = "inbox.dismiss"     // ItemIDs: take them out of the queue
 	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
 )
 
@@ -98,11 +101,25 @@ type Mutation struct {
 	Kind    string        `json:"kind"`
 	ID      string        `json:"id,omitempty"`
 	IDs     []string      `json:"ids,omitempty"`
+	ItemIDs []int64       `json:"item_ids,omitempty"`
 	GroupID string        `json:"group_id,omitempty"`
 	Text    string        `json:"text,omitempty"`
 	Color   string        `json:"color,omitempty"`
 	Flag    bool          `json:"flag,omitempty"`
 	Pane    *core.PaneLoc `json:"pane,omitempty"`
+}
+
+// InboxRequest asks for one session's inbox items, or everyone's with no SessionID.
+type InboxRequest struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// InboxAnswer answers an item: Option (from 1) for a question or permission, Text
+// for anything else.
+type InboxAnswer struct {
+	ID     int64  `json:"id"`
+	Option int    `json:"option,omitempty"`
+	Text   string `json:"text,omitempty"`
 }
 
 // WatchRequest waits until the state revision differs from Rev (or Wait

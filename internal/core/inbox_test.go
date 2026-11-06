@@ -33,9 +33,9 @@ func TestInboxEffect(t *testing.T) {
 		`"options":[{"description":"Pick red","label":"Red"},{"description":"Pick blue","label":"Blue"}],"question":"Do you prefer red or blue?"},` +
 		`{"question":"And shape?","options":[{"label":"Round"}]}]}}`
 	it, _ = InboxEffect(s, hook("PermissionRequest", q))
-	if it.Kind != InboxQuestion || strings.Join(it.Options, ",") != "Red,Blue" ||
+	if it.Kind != InboxQuestion || len(it.Options) != 0 || !it.Multipart ||
 		!strings.HasPrefix(it.Text, "Do you prefer red or blue?\n\n1. Red: Pick red\n\n2. Blue: Pick blue") ||
-		!strings.Contains(it.Text, "Then: And shape? (answer it in the session)") {
+		!strings.Contains(it.Text, "Then: And shape?") {
 		t.Errorf("question: %+v", it)
 	}
 

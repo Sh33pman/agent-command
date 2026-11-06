@@ -527,3 +527,43 @@ func TestUnhostedSessionsAreDeleted(t *testing.T) {
 		t.Errorf("gone id: %v", err)
 	}
 }
+
+// Items are saved in arrival order, and only handled ones are deleted when old.
+func TestInboxItemsArePrunedOnlyOnceHandled(t *testing.T) {
+	st, _ := open(t)
+	ctx := context.Background()
+	a, b := &core.Session{Kind: core.KindHosted}, &core.Session{Kind: core.KindHosted}
+	for _, s := range []*core.Session{a, b} {
+		if err := st.CreateSession(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add := func(s *core.Session, text string) {
+		t.Helper()
+		err := st.AddInboxItem(ctx, core.InboxItem{SessionID: s.ID, Kind: core.InboxDone, Text: text, At: st.now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(a, "old")
+	add(b, "open")
+	add(a, "new")
+	q, err := st.InboxQueue(ctx)
+	if err != nil || len(q) != 2 || q[0].Text != "open" || q[1].Text != "new" {
+		t.Fatalf("queue: %+v, %v", q, err)
+	}
+	if err := st.PruneInbox(ctx, st.now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.InboxHistory(ctx, "", 10)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("after prune: %+v, %v", all, err)
+	}
+	// Deleting a session deletes its items.
+	if err := st.DeleteSession(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ = st.InboxHistory(ctx, "", 10); len(all) != 1 || all[0].Text != "open" {
+		t.Errorf("after delete: %+v", all)
+	}
+}

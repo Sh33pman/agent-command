@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/brettmostert/agent-command/compare/v0.35.0...v0.36.0) (2026-11-06)
+
+
+### Features
+
+* rename sessions from a popup (PAN-31) ([#148](https://github.com/brettmostert/agent-command/issues/148)) ([12011d7](https://github.com/brettmostert/agent-command/commit/12011d7f644bfce55d1a34aabbc7fa1f78b5cd68))
+
+
+### Bug Fixes
+
+* stop an uninstall's ended sessions restarting the daemon ([#150](https://github.com/brettmostert/agent-command/issues/150)) ([f4a4272](https://github.com/brettmostert/agent-command/commit/f4a4272a961f9c0d31630a09dc2d308701c90bb7))
+
 ## [0.35.0](https://github.com/brettmostert/agent-command/compare/v0.34.0...v0.35.0) (2026-11-06)
 
 

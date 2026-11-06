@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.37.0](https://github.com/brettmostert/agent-command/compare/v0.36.0...v0.37.0) (2026-11-06)
+
+
+### Features
+
+* send macOS notifications that open the session (PAN-35) ([#152](https://github.com/brettmostert/agent-command/issues/152)) ([0b5bc15](https://github.com/brettmostert/agent-command/commit/0b5bc1569994237490e865cc1c43cf81bfe63d4f))
+
+
+### Bug Fixes
+
+* stop a new daemon exiting while an old one shuts down ([#154](https://github.com/brettmostert/agent-command/issues/154)) ([46a5ac6](https://github.com/brettmostert/agent-command/commit/46a5ac681aaa81b17d82269b35fb192c6f53dffe))
+
 ## [0.36.0](https://github.com/brettmostert/agent-command/compare/v0.35.0...v0.36.0) (2026-11-06)
 
 

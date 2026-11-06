@@ -277,6 +277,11 @@ func StableBinary(argv0, exe string, lookPath func(string) (string, error)) stri
 			p = abs
 		}
 	}
+	// A link to the binary in an app (the cask's acmd) means the app's own path, so
+	// the app and the command line agree on what the hooks run.
+	if resolved, err := filepath.EvalSymlinks(p); err == nil && strings.Contains(resolved, ".app/Contents/MacOS/") {
+		return resolved
+	}
 	if i := strings.Index(p, "/Cellar/"); i >= 0 {
 		// <prefix>/Cellar/agent-command/<version>/bin/<name> → <prefix>/bin/<name>
 		if link := filepath.Join(p[:i], "bin", filepath.Base(p)); isExecutable(link) {

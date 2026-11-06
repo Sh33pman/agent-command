@@ -357,3 +357,26 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestStableBinaryFollowsLinkIntoApp(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	must(t, err)
+	binary := filepath.Join(dir, "Agent Command.app/Contents/MacOS/agent-command")
+	must(t, os.MkdirAll(filepath.Dir(binary), 0o755))
+	must(t, os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755))
+	link := filepath.Join(dir, "acmd")
+	must(t, os.Symlink(binary, link))
+	if got := StableBinary(link, link, nil); got != binary {
+		t.Errorf("through the link: %s", got)
+	}
+	if got := StableBinary(binary, binary, nil); got != binary {
+		t.Errorf("direct: %s", got)
+	}
+	other := filepath.Join(dir, "elsewhere")
+	must(t, os.WriteFile(other, []byte("#!/bin/sh\n"), 0o755))
+	otherLink := filepath.Join(dir, "acmd2")
+	must(t, os.Symlink(other, otherLink))
+	if got := StableBinary(otherLink, otherLink, nil); got != otherLink {
+		t.Errorf("a link outside an app should stay: %s", got)
+	}
+}

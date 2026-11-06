@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         split.view.frame = splitFrame
         split.view.autoresizingMask = [.width, .height]
         root.view.addSubview(split.view)
-        let statusBar = NSHostingView(rootView: StatusBarView())
+        let statusBar = NSHostingView(rootView: StatusBarView(notifier: notifier))
         statusBar.frame = NSRect(x: 0, y: 0, width: root.view.bounds.width, height: StatusBarView.height)
         statusBar.autoresizingMask = [.width]
         root.view.addSubview(statusBar)
@@ -678,6 +678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        notifier.refreshPermission()
         GhosttyRuntime.shared.setFocus(true)
         store.markLookedAtSeen()
     }

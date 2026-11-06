@@ -391,7 +391,7 @@ func TestAgentInTerminalShowsOnItsRow(t *testing.T) {
 	c := dial(t, p)
 	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessTerminal})
 
-	t0 := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	t0 := time.Now().Add(time.Hour)
 	in := ipc.HookContext{HostSession: s.ID, ClaudePid: 4242}
 	send := func(name, payload string, offset int) {
 		t.Helper()

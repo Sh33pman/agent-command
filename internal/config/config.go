@@ -71,7 +71,7 @@ type Notify struct {
 
 // Durations parses DoneMinDuration and Cooldown (defaults when invalid).
 func (n Notify) Durations() (doneMin, cooldown time.Duration) {
-	doneMin, cooldown = 30*time.Second, 20*time.Second
+	doneMin, cooldown = 10*time.Second, 20*time.Second
 	if d, err := time.ParseDuration(n.DoneMinDuration); err == nil && d >= 0 {
 		doneMin = d
 	}
@@ -111,7 +111,7 @@ func Default() Config {
 		ClaudeCommand: "claude",
 		SidebarWidth:  32,
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
-			DoneMinDuration: "30s", Cooldown: "20s", Sound: "default"},
+			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default"},
 		Editor: Editor{RunIn: "background", Target: "cwd"},
 		Popup: Popup{Hotkey: "cmd+ctrl+o", ReadHotkey: "cmd+ctrl+p", Keys: PopupKeys{Prev: "cmd+ctrl+left", Next: "cmd+ctrl+right",
 			Play: "cmd+ctrl+p", Skip: "cmd+ctrl+k", Close: "escape"}},

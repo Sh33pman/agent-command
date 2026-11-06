@@ -4,6 +4,8 @@ import SwiftUI
 struct StatusBarView: View {
     static let height: CGFloat = 22
 
+    let notifier: AppNotifier
+
     private var theme: AppTheme { .shared }
 
     /// The version from the app's bundle, which a development build doesn't have.
@@ -15,6 +17,18 @@ struct StatusBarView: View {
         VStack(spacing: 0) {
             Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
             HStack {
+                if notifier.isTurnedOff {
+                    Button {
+                        notifier.openSettings()
+                    } label: {
+                        Label("Notifications off", systemImage: "exclamationmark.triangle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .font(AppFont.ui(11))
+                    .foregroundStyle(theme.yellow)
+                    .lineLimit(1)
+                    .help("Open Agent Command's page in System Settings")
+                }
                 Spacer()
                 Text(version)
                     .font(AppFont.ui(11))

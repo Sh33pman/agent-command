@@ -490,3 +490,13 @@ func TestTerminalDoesNotClaimConversation(t *testing.T) {
 		t.Errorf("conv belongs to %+v, %v; want %s", got, err, owner.ID)
 	}
 }
+
+// Views are gone: an upgraded database has no table for them.
+func TestViewsTableDropped(t *testing.T) {
+	st, _ := open(t)
+	var n int
+	err := st.db.QueryRowContext(context.Background(), `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'views'`).Scan(&n)
+	if err != nil || n != 0 {
+		t.Errorf("views tables = %d, %v", n, err)
+	}
+}

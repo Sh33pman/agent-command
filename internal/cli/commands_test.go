@@ -104,17 +104,17 @@ func env(t *testing.T) *stopRecorder {
 			t.Fatal(err)
 		}
 	}
-	bg := ipc.HookContext{ViewID: "v"}
+	bg := ipc.HookContext{}
 	send("SessionStart", `{"session_id":"c-auth","source":"startup","cwd":"/w/api-server"}`, 0, bg)
 	send("UserPromptSubmit", `{"session_id":"c-auth","prompt":"refactor auth middleware"}`, time.Second, bg)
 	send("SessionStart", `{"session_id":"c-flaky","source":"startup","cwd":"/w/web"}`, 2*time.Second, bg)
 	send("UserPromptSubmit", `{"session_id":"c-flaky","prompt":"fix flaky e2e test"}`, 3*time.Second, bg)
 	send("PermissionRequest", `{"session_id":"c-flaky","tool_name":"AskUserQuestion"}`, 4*time.Second, bg)
 	send("SessionStart", `{"session_id":"c-docs","source":"startup","cwd":"/w/cli-tool"}`, 5*time.Second,
-		ipc.HookContext{KittyWindowID: "3", TermProgram: "kitty"})
+		ipc.HookContext{})
 	send("UserPromptSubmit", `{"session_id":"c-docs","prompt":"docs: hooks reference"}`, 6*time.Second,
-		ipc.HookContext{KittyWindowID: "3", TermProgram: "kitty"})
-	send("Stop", `{"session_id":"c-docs"}`, 7*time.Second, ipc.HookContext{KittyWindowID: "3", TermProgram: "kitty"})
+		ipc.HookContext{})
+	send("Stop", `{"session_id":"c-docs"}`, 7*time.Second, ipc.HookContext{})
 	return rec
 }
 
@@ -157,7 +157,7 @@ func names(rows []jsonRow) string {
 func TestListCommand(t *testing.T) {
 	env(t)
 	out := mustRun(t, "list")
-	for _, want := range []string{"#", "STATUS", "WHERE", "refactor auth middleware", "busy", "waiting", "api-server", "kitty ↗", "bg", "Default"} {
+	for _, want := range []string{"#", "STATUS", "WHERE", "refactor auth middleware", "busy", "waiting", "api-server", "bg", "Default"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output missing %q:\n%s", want, out)
 		}
@@ -166,7 +166,7 @@ func TestListCommand(t *testing.T) {
 	if names(rows) != "refactor auth middleware | fix flaky e2e test | docs: hooks reference" || rows[0].Number != 1 {
 		t.Errorf("default order: %s", names(rows))
 	}
-	if rows[2].Where != "kitty ↗" || rows[2].Kind != "external" || rows[1].Status != "waiting" || !rows[1].Unseen {
+	if rows[1].Status != "waiting" || !rows[1].Unseen {
 		t.Errorf("rows: %+v", rows)
 	}
 	if got := names(listJSON(t, "--status", "waiting,busy")); got != "refactor auth middleware | fix flaky e2e test" {

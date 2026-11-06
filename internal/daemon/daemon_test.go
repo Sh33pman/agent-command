@@ -103,7 +103,7 @@ func TestDaemonAppliesHookEvents(t *testing.T) {
 	}
 
 	t0 := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
-	view := ipc.HookContext{ViewID: "v1", ClaudePid: 4242}
+	view := ipc.HookContext{ClaudePid: 4242}
 	for i, e := range []ipc.HookEvent{
 		hookEvent("SessionStart", `{"session_id":"c1","source":"startup","cwd":"/w"}`, t0, view),
 		hookEvent("UserPromptSubmit", `{"session_id":"c1","prompt":"fix the flaky test"}`, t0.Add(time.Second), view),
@@ -138,7 +138,7 @@ func TestDaemonPersistsStateAcrossRestarts(t *testing.T) {
 	d := start(t, p)
 	c := dial(t, p)
 	t0 := time.Now()
-	ext := ipc.HookContext{KittyWindowID: "7", KittyListenOn: "unix:/tmp/kitty-1", TermProgram: "kitty", ClaudePid: 99}
+	ext := ipc.HookContext{ClaudePid: 99}
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"c1","source":"startup","cwd":"/w"}`, t0, ext), nil))
 	must(t, c.Call(ipc.OpEvent, hookEvent("Stop", `{"session_id":"c1"}`, t0.Add(time.Second), ext), nil))
 	c.Close()
@@ -154,11 +154,8 @@ func TestDaemonPersistsStateAcrossRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Status != core.StatusDone || !s.Unseen || s.Kind != core.KindExternal || s.Pid != 99 {
+	if s.Status != core.StatusDone || !s.Unseen || s.Kind != core.KindBackground || s.Pid != 99 {
 		t.Errorf("session = %+v", s)
-	}
-	if s.External == nil || s.External.Terminal != "kitty" || s.External.KittyWindow != 7 || s.External.KittySocket != "unix:/tmp/kitty-1" {
-		t.Errorf("external = %+v", s.External)
 	}
 }
 
@@ -234,20 +231,24 @@ func TestDaemonSingleInstanceAndShutdown(t *testing.T) {
 }
 
 func TestNewSessionClassification(t *testing.T) {
-	e := core.Event{SessionID: "x", Cwd: "/w"}
-	now := time.Now()
-	if s := sessionFromHook(e, ipc.HookContext{ViewID: "v", KittyWindowID: "3"}, now); s.Kind != core.KindBackground || s.External != nil {
-		t.Errorf("acmd-started session: %+v", s)
+	s := sessionFromHook(core.Event{SessionID: "x", Cwd: "/w"}, ipc.HookContext{ClaudePid: 7}, time.Now())
+	if s.Kind != core.KindBackground || s.External != nil || s.Pid != 7 {
+		t.Errorf("session: %+v", s)
 	}
-	if s := sessionFromHook(e, ipc.HookContext{}, now); s.Kind != core.KindBackground {
-		t.Errorf("no terminal context: %+v", s)
-	}
-	if s := sessionFromHook(e, ipc.HookContext{TermProgram: "ghostty"}, now); s.Kind != core.KindExternal || s.External.Terminal != "ghostty" {
-		t.Errorf("ghostty: %+v", s)
-	}
-	if s := sessionFromHook(e, ipc.HookContext{TermProgram: "vscode"}, now); s.External.Terminal != "unknown" {
-		t.Errorf("unknown terminal: %+v", s.External)
-	}
+}
+
+// makeExternal turns a session into one of v1's external rows, which a database
+// can still hold, though nothing creates them now.
+func makeExternal(t *testing.T, p paths.Paths, claudeID string) {
+	t.Helper()
+	st, err := store.Open(context.Background(), p.DB())
+	must(t, err)
+	defer st.Close()
+	s, err := st.SessionByClaudeID(context.Background(), claudeID)
+	must(t, err)
+	s.Kind = core.KindExternal
+	s.External = &core.PaneLoc{Terminal: "kitty", KittyWindow: 2}
+	must(t, st.UpdateSession(context.Background(), s))
 }
 
 func must(t *testing.T, err error) {
@@ -291,7 +292,7 @@ func TestDaemonBackgroundLoops(t *testing.T) {
 	})
 	c := dial(t, p)
 	now := time.Now()
-	view := ipc.HookContext{ViewID: "v"}
+	view := ipc.HookContext{}
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"esc-1","source":"startup","transcript_path":"`+transcript+`"}`, now, view), nil))
 	must(t, c.Call(ipc.OpEvent, hookEvent("PreToolUse", `{"session_id":"esc-1","tool_name":"Bash"}`, now.Add(time.Millisecond), view), nil))
 	agents.add(claudecli.Agent{SessionID: "esc-1", ID: "eeeeeeee", Kind: "background", Status: ptr("busy"), Pid: &pid})

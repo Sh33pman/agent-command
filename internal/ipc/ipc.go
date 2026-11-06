@@ -70,6 +70,7 @@ const EmitterApp = "app"
 // daemon gets ids.
 const (
 	MutRename         = "session.rename"    // ID, Text
+	MutSeen           = "session.seen"      // ID: you've looked at it
 	MutDescribe       = "session.describe"  // ID, Text
 	MutArchive        = "session.archive"   // ID
 	MutFinish         = "session.finish"    // ID: stop it (claude stop) and mark it finished
@@ -105,7 +106,7 @@ type Mutation struct {
 }
 
 // WatchRequest waits until the state revision differs from Rev (or Wait
-// passes). With a ViewID it also counts as that view's heartbeat.
+// passes).
 type WatchRequest struct {
 	Rev    uint64 `json:"rev"`
 	WaitMS int    `json:"wait_ms,omitempty"`
@@ -113,7 +114,7 @@ type WatchRequest struct {
 	App bool `json:"app,omitempty"`
 }
 
-// WatchResponse is the current revision and, for a ViewID, the view (Gone
+// WatchResponse is the current revision.
 // when it was closed or pruned).
 type WatchResponse struct {
 	Rev uint64 `json:"rev"`
@@ -184,15 +185,10 @@ type HookEvent struct {
 	Context HookContext     `json:"context"`
 }
 
-// HookContext is terminal/process context gathered by `acmd hook`.
+// HookContext is process context gathered by `acmd hook`.
 type HookContext struct {
-	ClaudePid     int    `json:"claude_pid,omitempty"`
-	KittyListenOn string `json:"kitty_listen_on,omitempty"`
-	KittyWindowID string `json:"kitty_window_id,omitempty"`
-	TermProgram   string `json:"term_program,omitempty"`
-	TTY           string `json:"tty,omitempty"`          // the Claude process's terminal (/dev/ttysNNN)
-	ViewID        string `json:"view_id,omitempty"`      // ACMD_VIEW_ID: started by acmd
-	HostSession   string `json:"host_session,omitempty"` // ACMD_SESSION_ID: the acmd session it runs in
+	ClaudePid   int    `json:"claude_pid,omitempty"`
+	HostSession string `json:"host_session,omitempty"` // ACMD_SESSION_ID: the acmd session it runs in
 }
 
 // Status is the daemon's summary.

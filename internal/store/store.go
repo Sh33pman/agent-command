@@ -1,5 +1,5 @@
 // Package store persists acmd's state in SQLite (SPEC §4.3): sessions,
-// groups, views, the shared view state and a capped event log.
+// groups, the shared view state and a capped event log.
 //
 // Only the daemon writes; the store is safe for concurrent use but uses a
 // single connection, so statements are serialized.

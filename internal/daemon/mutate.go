@@ -48,6 +48,11 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	defer d.mu.Unlock()
 	st := d.store
 	switch m.Kind {
+	case ipc.MutSeen:
+		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
+			s.Unseen = false
+			return nil
+		})
 	case ipc.MutRename:
 		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
 			name := strings.TrimSpace(m.Text)

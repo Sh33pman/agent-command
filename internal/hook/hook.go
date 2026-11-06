@@ -148,18 +148,12 @@ func Spool(p paths.Paths, ev ipc.HookEvent) error {
 // Claude process is headless (`claude -p` / `--print`), which acmd ignores
 // (SPEC §6.8).
 func (o *Options) context() (ipc.HookContext, bool) {
-	hc := ipc.HookContext{
-		KittyListenOn: o.Getenv("KITTY_LISTEN_ON"),
-		KittyWindowID: o.Getenv("KITTY_WINDOW_ID"),
-		TermProgram:   o.Getenv("TERM_PROGRAM"),
-		ViewID:        o.Getenv("ACMD_VIEW_ID"),
-		HostSession:   o.Getenv("ACMD_SESSION_ID"),
-	}
+	hc := ipc.HookContext{HostSession: o.Getenv("ACMD_SESSION_ID")}
 	p, ok := findClaude(o.ParentPid, o.ProcInfo)
 	if !ok {
 		return hc, false
 	}
-	hc.ClaudePid, hc.TTY = p.Pid, p.TTY
+	hc.ClaudePid = p.Pid
 	return hc, IsHeadless(p.Args)
 }
 

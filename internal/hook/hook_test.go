@@ -58,7 +58,7 @@ func opts(p paths.Paths, stdin string, spawned *int) Options {
 	return Options{
 		Paths: p, Version: v, Stdin: strings.NewReader(stdin), ParentPid: 100, ProcInfo: fakeProcs(),
 		Getenv: func(k string) string {
-			return map[string]string{"KITTY_WINDOW_ID": "7", "TERM_PROGRAM": "kitty", "ACMD_SESSION_ID": "S1"}[k]
+			return map[string]string{"ACMD_SESSION_ID": "S1"}[k]
 		},
 		Now:     func() time.Time { return time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC) },
 		Spawn:   func(paths.Paths) error { *spawned++; return nil },
@@ -96,7 +96,7 @@ func TestRunSpoolsAndSpawnsWithoutDaemon(t *testing.T) {
 		t.Errorf("spawned %d daemons, want 1", spawned)
 	}
 	evs := readSpool(t, p)
-	if len(evs) != 1 || evs[0].Name != "Stop" || evs[0].Context.ClaudePid != 200 || evs[0].Context.KittyWindowID != "7" {
+	if len(evs) != 1 || evs[0].Name != "Stop" || evs[0].Context.ClaudePid != 200 {
 		t.Fatalf("spool = %+v", evs)
 	}
 	st, _ := os.Stat(p.Spool())

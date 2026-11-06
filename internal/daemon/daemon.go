@@ -316,7 +316,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	sess, isNew, moved := d.terminalOf(ctx, ev.Context), false, false
+	sess, isNew := d.terminalOf(ctx, ev.Context), false
 	if sess != nil {
 		if !sess.TakeAgentEvent(e, ev.Context.ClaudePid) {
 			return nil
@@ -329,8 +329,6 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		}
 		if isNew {
 			sess = sessionFromHook(e, ev.Context, d.cfg.Now())
-		} else {
-			moved = refreshPane(sess, ev.Context)
 		}
 	}
 	tr := core.Apply(sess, e)
@@ -339,7 +337,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	}
 	if isNew {
 		err = d.store.CreateSession(ctx, sess)
-	} else if tr.Applied || moved {
+	} else if tr.Applied {
 		err = d.store.UpdateSession(ctx, sess)
 	}
 	if err != nil {
@@ -460,59 +458,7 @@ func sessionFromHook(e core.Event, hc ipc.HookContext, now time.Time) *core.Sess
 		Pid:             hc.ClaudePid,
 		CreatedAt:       now.UTC(),
 	}
-	if loc := paneFromHook(hc); loc != nil {
-		s.Kind = core.KindExternal
-		s.External = loc
-	}
 	return s
-}
-
-// paneFromHook is the user's own pane a hook ran in (nil when it ran in
-// one of acmd's views, or the terminal is unknown).
-func paneFromHook(hc ipc.HookContext) *core.PaneLoc {
-	if hc.ViewID != "" || (hc.KittyWindowID == "" && hc.TermProgram == "") {
-		return nil
-	}
-	loc := &core.PaneLoc{Terminal: terminalName(hc.TermProgram, hc.KittyWindowID), TTY: hc.TTY}
-	if hc.KittyWindowID != "" {
-		loc.KittySocket = hc.KittyListenOn
-		_, _ = fmt.Sscan(hc.KittyWindowID, &loc.KittyWindow)
-	}
-	return loc
-}
-
-// refreshPane keeps an external session's pane current: a conversation
-// continued in another window (or after the terminal restarted) reports
-// its new pane in every hook. It reports whether anything changed.
-func refreshPane(s *core.Session, hc ipc.HookContext) bool {
-	loc := paneFromHook(hc)
-	if s.Kind != core.KindExternal || loc == nil {
-		return false
-	}
-	changed := false
-	if s.External == nil || *s.External != *loc {
-		if s.External != nil && loc.KittySocket == "" && loc.KittyWindow == s.External.KittyWindow {
-			loc.KittySocket = s.External.KittySocket // a hook without the socket
-		}
-		if s.External == nil || *s.External != *loc {
-			s.External, changed = loc, true
-		}
-	}
-	if hc.ClaudePid > 0 && s.Pid != hc.ClaudePid {
-		s.Pid, changed = hc.ClaudePid, true
-	}
-	return changed
-}
-
-func terminalName(termProgram, kittyWindow string) string {
-	switch {
-	case kittyWindow != "":
-		return "kitty"
-	case termProgram == "ghostty":
-		return "ghostty"
-	default:
-		return "unknown"
-	}
 }
 
 // drainSpool applies events that hooks spooled while the daemon was down.

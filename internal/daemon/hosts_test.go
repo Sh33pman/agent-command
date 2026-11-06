@@ -191,7 +191,7 @@ func TestResumeLegacyBackground(t *testing.T) {
 	st := &stops{}
 	start(t, p, func(c *Config) { c.Hosts, c.Stopper = fh, st })
 	c := dial(t, p)
-	hc := ipc.HookContext{ViewID: "v"}
+	hc := ipc.HookContext{}
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"cafe0001-x","source":"startup","cwd":"/w"}`, time.Now(), hc), nil))
 	s := byClaude(snapshot(t, c), "cafe0001-x")
 	if s.Kind != core.KindBackground {

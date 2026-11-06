@@ -679,6 +679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         GhosttyRuntime.shared.setFocus(true)
+        store.markLookedAtSeen()
     }
 
     func applicationDidResignActive(_ notification: Notification) {

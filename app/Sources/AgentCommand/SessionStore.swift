@@ -44,6 +44,7 @@ final class SessionStore {
         reflecting = false
         if visible != visibleIDs { visibleIDs = visible }
         if sets != setMembers { setMembers = sets }
+        markLookedAtSeen()
         if closed != closedIDs { closedIDs = closed }
     }
 
@@ -141,6 +142,27 @@ final class SessionStore {
         targets.forEach { archive($0.id) }
     }
 
+    /// Clears the unseen mark on sessions you're looking at: on screen, with the app
+    /// in front. Call it when any of that changes.
+    func markLookedAtSeen() {
+        guard NSApp.isActive else { return }
+        let looked = sessions.filter { $0.unseen && visibleIDs.contains($0.id) }.map(\.id)
+        for id in looked where seenInFlight.insert(id).inserted {
+            run(failure: "Couldn't update the session") { conn in
+                try conn.send("mutate", Mutation(kind: "session.seen", id: id))
+            } done: { _ in
+                self.seenInFlight.remove(id)
+            }
+        }
+    }
+
+    @ObservationIgnored private var seenInFlight: Set<String> = []
+
+    private struct Mutation: Encodable {
+        let kind: String
+        let id: String
+    }
+
     private let calls = DispatchQueue(label: "acmd.daemon.calls")
 
     /// Follows the daemon's state until the app quits.
@@ -205,6 +227,7 @@ final class SessionStore {
                 self.onListChanged?(Set(visible.map(\.id)))
             }
             if archived != self.archived { self.archived = archived }
+            self.markLookedAtSeen()
             self.onNotices?(snapshot.notices ?? [])
         }
     }
@@ -302,10 +325,6 @@ final class SessionStore {
     func unarchive(_ id: String) { mutate("session.unarchive", id, failure: "Couldn't unarchive the session") }
 
     private func mutate(_ kind: String, _ id: String, failure: String) {
-        struct Mutation: Encodable {
-            let kind: String
-            let id: String
-        }
         run(failure: failure) { conn in
             try conn.send("mutate", Mutation(kind: kind, id: id))
         } done: { _ in }

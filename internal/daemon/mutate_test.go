@@ -54,10 +54,11 @@ func TestMutations(t *testing.T) {
 	start(t, p, func(c *Config) { c.Stopper = st })
 	c := dial(t, p)
 	t0 := time.Now()
-	view := ipc.HookContext{ViewID: "v"}
-	ext := ipc.HookContext{KittyWindowID: "2", TermProgram: "kitty"}
+	view := ipc.HookContext{}
+	ext := ipc.HookContext{}
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg","source":"startup"}`, t0, view), nil))
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ext), nil))
+	makeExternal(t, p, "ext")
 	snap := snapshot(t, c)
 	bg, ex := byClaude(snap, "bg"), byClaude(snap, "ext")
 
@@ -141,11 +142,12 @@ func TestArchiveRules(t *testing.T) {
 	})
 	c := dial(t, p)
 	t0 := time.Now()
-	view := ipc.HookContext{ViewID: "v"}
+	view := ipc.HookContext{}
 	for _, cid := range []string{"run", "grp"} {
 		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+cid+`","source":"startup"}`, t0, view), nil))
 	}
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{TermProgram: "ghostty"}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{}), nil))
+	makeExternal(t, p, "ext")
 	idle := "idle"
 	agents.add(bgAgent("run", "rrrrrrrr", &idle, &pid))
 	agents.add(bgAgent("grp", "gggggggg", &idle, &pid))
@@ -211,7 +213,7 @@ func TestArchiveWithoutClaude(t *testing.T) {
 	p := testPaths(t)
 	start(t, p) // no Stopper
 	c := dial(t, p)
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg","source":"startup"}`, time.Now(), ipc.HookContext{ViewID: "v"}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg","source":"startup"}`, time.Now(), ipc.HookContext{}), nil))
 	// Without a short id there is nothing to stop: archiving works.
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: byClaude(snapshot(t, c), "bg").ID})
 }
@@ -234,8 +236,9 @@ func TestFinish(t *testing.T) {
 	})
 	c := dial(t, p)
 	t0 := time.Now()
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"run00000-x","source":"startup"}`, t0, ipc.HookContext{ViewID: "v"}), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{TermProgram: "ghostty"}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"run00000-x","source":"startup"}`, t0, ipc.HookContext{}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{}), nil))
+	makeExternal(t, p, "ext")
 	idle := "idle"
 	agents.add(bgAgent("run00000-x", "rrrrrrrr", &idle, &pid))
 	deadline := time.Now().Add(5 * time.Second)
@@ -255,7 +258,7 @@ func TestFinish(t *testing.T) {
 	agents.mu.Lock()
 	agents.agents = []claudecli.Agent{bgAgent("run00000-x", "rrrrrrrr", nil, nil)}
 	agents.mu.Unlock()
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"run00000-x","reason":"other"}`, time.Now(), ipc.HookContext{ViewID: "v"}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"run00000-x","reason":"other"}`, time.Now(), ipc.HookContext{}), nil))
 	time.Sleep(150 * time.Millisecond)
 	snap := snapshot(t, c)
 	if s := byClaude(snap, "run00000-x"); s.Status != core.StatusFinished {

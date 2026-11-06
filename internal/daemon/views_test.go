@@ -108,7 +108,7 @@ func TestInbox(t *testing.T) {
 	t0 := time.Now()
 	ev := func(name, payload string, at time.Time) {
 		t.Helper()
-		must(t, c.Call(ipc.OpEvent, hookEvent(name, payload, at, ipc.HookContext{ViewID: "v"}), nil))
+		must(t, c.Call(ipc.OpEvent, hookEvent(name, payload, at, ipc.HookContext{}), nil))
 	}
 	ev("SessionStart", `{"session_id":"aaaa0000-1","source":"startup","cwd":"/w"}`, t0)
 	ev("SessionStart", `{"session_id":"bbbb0000-1","source":"startup","cwd":"/w"}`, t0)
@@ -142,36 +142,6 @@ func TestInbox(t *testing.T) {
 	}
 }
 
-// A session in the user's own pane that continues in another window (or
-// after the terminal restarted) gets its new pane from the next hook, so
-// focusing it and moving it into acmd reach the right window.
-func TestExternalPaneFollowsHooks(t *testing.T) {
-	p := testPaths(t)
-	start(t, p)
-	c := dial(t, p)
-	t0 := time.Now()
-	old := ipc.HookContext{KittyWindowID: "5", ClaudePid: 100}
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext0000-1","source":"startup","cwd":"/w"}`, t0, old), nil))
-	s := byClaude(snapshot(t, c), "ext0000-1")
-	if s.Kind != core.KindExternal || s.External.KittyWindow != 5 || s.External.KittySocket != "" {
-		t.Fatalf("start: %+v %+v", s, s.External)
-	}
-	// Resumed in window 4 of a Kitty with remote control.
-	now := ipc.HookContext{KittyWindowID: "4", KittyListenOn: "unix:/tmp/kitty-1", ClaudePid: 200}
-	must(t, c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"ext0000-1","prompt":"hi"}`, t0.Add(time.Second), now), nil))
-	s = byClaude(snapshot(t, c), "ext0000-1")
-	if s.External.KittyWindow != 4 || s.External.KittySocket != "unix:/tmp/kitty-1" || s.Pid != 200 {
-		t.Errorf("after moving: %+v pid %d", s.External, s.Pid)
-	}
-	// A hook without the socket (same window) keeps the one known; one
-	// from a view (ACMD_VIEW_ID) changes nothing.
-	must(t, c.Call(ipc.OpEvent, hookEvent("Stop", `{"session_id":"ext0000-1"}`, t0.Add(2*time.Second), ipc.HookContext{KittyWindowID: "4"}), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("Notification", `{"session_id":"ext0000-1","notification_type":"idle_prompt"}`, t0.Add(3*time.Second), ipc.HookContext{ViewID: "v"}), nil))
-	if s = byClaude(snapshot(t, c), "ext0000-1"); s.External.KittyWindow != 4 || s.External.KittySocket != "unix:/tmp/kitty-1" {
-		t.Errorf("kept: %+v", s.External)
-	}
-}
-
 // A watch returns when something changes, or when its wait is up.
 func TestWatch(t *testing.T) {
 	p := testPaths(t)
@@ -188,5 +158,23 @@ func TestWatch(t *testing.T) {
 	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{Rev: rev, WaitMS: 1000}, &w))
 	if w.Rev == rev {
 		t.Error("a change should move the revision")
+	}
+}
+
+// Looking at a session clears its unseen mark.
+func TestMarkSeen(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	t0 := time.Now()
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"s1","source":"startup"}`, t0, ipc.HookContext{}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("PermissionRequest", `{"session_id":"s1","tool_name":"Bash"}`, t0.Add(time.Second), ipc.HookContext{}), nil))
+	s := snapshot(t, c).Sessions[0]
+	if !s.Unseen {
+		t.Fatalf("not unseen: %+v", s)
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutSeen, ID: s.ID})
+	if s := snapshot(t, c).Sessions[0]; s.Unseen {
+		t.Errorf("still unseen: %+v", s)
 	}
 }

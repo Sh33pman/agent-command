@@ -110,6 +110,11 @@ func Run(name string, o Options) (Outcome, error) {
 }
 
 func (o *Options) spoolAndSpawn(ev ipc.HookEvent, cause error) (Outcome, error) {
+	// After an uninstall there's nothing to report to. A Claude ended by it fires
+	// a last hook, which mustn't bring the daemon back.
+	if _, err := os.Stat(o.Paths.Setup()); err != nil {
+		return Ignored, nil
+	}
 	if err := Spool(o.Paths, ev); err != nil {
 		return Rejected, errors.Join(cause, err)
 	}

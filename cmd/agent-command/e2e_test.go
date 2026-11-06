@@ -41,6 +41,14 @@ func TestHookSpawnsDaemonEndToEnd(t *testing.T) {
 		"CLAUDECODE=1", "CLAUDE_CODE_CHILD_SESSION=1", "CLAUDE_CODE_SESSION_ID=parent",
 	)
 
+	// A set-up machine: without this, a hook leaves the daemon stopped.
+	if err := os.MkdirAll(p.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.Setup(), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	hook := exec.Command(bin, "hook", "SessionStart")
 	hook.Env = env
 	hook.Stdin = strings.NewReader(`{"session_id":"e2e-1","hook_event_name":"SessionStart","source":"startup","cwd":"/w"}`)

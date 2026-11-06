@@ -384,6 +384,10 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	if err != nil {
 		return err
 	}
+	// Before ending sessions: without this, their last hooks restart the daemon.
+	if err := os.Remove(p.Setup()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	stopDaemon(cmd.Context(), p)
 	switch ended := endSessions(p); ended {
 	case 0:
@@ -391,9 +395,6 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 		fmt.Fprintln(out, "Ended 1 running session.")
 	default:
 		fmt.Fprintf(out, "Ended %d running sessions.\n", ended)
-	}
-	if err := os.Remove(p.Setup()); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
 	}
 	if !keepData {
 		if err := deleteData(p); err != nil {

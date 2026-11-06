@@ -28,7 +28,14 @@ func testPaths(t *testing.T) paths.Paths {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	return paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r")}
+	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r")}
+	if err := os.MkdirAll(p.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.Setup(), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 // fakeProcs builds a process tree: hook shell (100) -> claude (200, args) -> login (300).
@@ -285,6 +292,22 @@ func TestRunIgnoresClaudeOutsideOurSessions(t *testing.T) {
 	o := opts(p, `{"session_id":"c1","source":"startup"}`, &spawned)
 	o.Getenv = func(string) string { return "" }
 	out, err := Run("SessionStart", o)
+	if out != Ignored || err != nil || spawned != 0 {
+		t.Errorf("Run = %s, %v (spawned %d)", out, err, spawned)
+	}
+	if _, err := os.Stat(p.Spool()); !os.IsNotExist(err) {
+		t.Errorf("spool file: %v", err)
+	}
+}
+
+// After an uninstall, a Claude's last hook mustn't start a daemon or leave events.
+func TestRunDoesNotSpawnAfterUninstall(t *testing.T) {
+	p := testPaths(t)
+	if err := os.Remove(p.Setup()); err != nil {
+		t.Fatal(err)
+	}
+	spawned := 0
+	out, err := Run("SessionEnd", opts(p, `{"session_id":"c1","reason":"other"}`, &spawned))
 	if out != Ignored || err != nil || spawned != 0 {
 		t.Errorf("Run = %s, %v (spawned %d)", out, err, spawned)
 	}

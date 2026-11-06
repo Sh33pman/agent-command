@@ -19,6 +19,8 @@ on:
 permissions:
   contents: read
 
+# Release PRs only change the version and changelog, and the release gate runs every
+# check on the same commit, so the jobs below skip them.
 # Label events other than ok-to-test (e.g. release-please's "autorelease:
 # pending") start a run whose jobs all skip; they get their own group so
 # they can't cancel the real run for the same commit.
@@ -30,6 +32,7 @@ jobs:
   lint:
     runs-on: [self-hosted, acmd]
     if: >-
+      !startsWith(github.head_ref, 'release-please--') &&
       (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
       (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
     timeout-minutes: 10
@@ -44,6 +47,7 @@ jobs:
   swift:
     runs-on: [self-hosted, acmd]
     if: >-
+      !startsWith(github.head_ref, 'release-please--') &&
       (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
       (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
     timeout-minutes: 20
@@ -55,6 +59,7 @@ jobs:
   vuln:
     runs-on: [self-hosted, acmd]
     if: >-
+      !startsWith(github.head_ref, 'release-please--') &&
       (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
       (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
     timeout-minutes: 10
@@ -70,6 +75,7 @@ jobs:
   macos:
     runs-on: [self-hosted, acmd]
     if: >-
+      !startsWith(github.head_ref, 'release-please--') &&
       (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
       (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
     timeout-minutes: 60

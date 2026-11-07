@@ -138,7 +138,7 @@ final class PopupController {
     /// Takes new items: opens if one of them should, unless you're in the app.
     func itemsArrived(_ items: [InboxItem]) {
         let settings = PopupSettings.shared
-        guard settings.enabled, !NSApp.isActive,
+        guard settings.enabled, !store.isInMainWindow,
             let first = items.first(where: { settings.opens.opens(forItem: $0.kind) })
         else { return }
         if let panel {
@@ -159,7 +159,7 @@ final class PopupController {
     func replacesBanner(noticeKind: String) -> Bool {
         let settings = PopupSettings.shared
         // Minimized, it wouldn't show you anything.
-        return settings.enabled && !NSApp.isActive && panel?.isMiniaturized != true
+        return settings.enabled && !store.isInMainWindow && panel?.isMiniaturized != true
             && settings.opens.opens(forNotice: noticeKind)
     }
 
@@ -192,8 +192,7 @@ final class PopupController {
         model.handlesKey = { [weak shown] event in event.window === shown }
 
         if focus { bringForward(shown) } else { raise(shown) }
-        model.start()
-        if let cursor { model.click(item: cursor) }
+        model.start(cursor: cursor)
         panel = shown
         self.model = model
     }

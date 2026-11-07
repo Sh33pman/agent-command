@@ -109,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         pane.onChange = { [weak self] sets in self?.panesChanged(sets) }
         store.onListChanged = { [weak pane] ids in pane?.sessionsChanged(listed: ids) }
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }
-        notifier.isLooking = { [weak store] id in NSApp.isActive && store?.visibleIDs.contains(id) == true }
+        notifier.isLooking = { [weak store] id in store?.isInMainWindow == true && store?.visibleIDs.contains(id) == true }
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
         notifier.start()
         store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
@@ -230,8 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pendingOpen = id
             return
         }
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        showMainWindow()
         if store.sessions.contains(where: { $0.id == id }) { openSidebarRow(id) }
     }
 
@@ -467,12 +466,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             model.goToSession = { id in self?.openFromNotification(id) }
             model.rename = { sessions in
                 self?.popupWindow.close()
-                NSApp.activate(ignoringOtherApps: true)
+                self?.showMainWindow()
                 self?.showRename(sessions)
             }
             model.archive = { sessions in
                 self?.popupWindow.close()
-                NSApp.activate(ignoringOtherApps: true)
+                self?.showMainWindow()
                 self?.archive(sessions)
             }
             model.moveOut = { session in self?.pane?.moveOut(sessionID: session.id) }
@@ -482,12 +481,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hotKey = SystemHotKey { [weak self] in self?.popupShortcut() }
     }
 
+    /// Closing the window keeps the app running, for the popup and the Dock badge. The
+    /// Dock icon stays, and a click on it brings the window back.
+    private func hideMainWindow() {
+        window?.orderOut(nil)
+        store.isWindowShown = false
+        // Otherwise the app would count as in front with nothing on screen.
+        NSApp.deactivate()
+    }
+
+    private func showMainWindow() {
+        store.isWindowShown = true
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+        store.markLookedAtSeen()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === window else { return true }
+        hideMainWindow()
+        return false
+    }
+
     /// In the app, the Inbox. Elsewhere, the popup: the first press gives an open one
     /// the keyboard, and the next closes it.
     private func popupShortcut() {
         if popupWindow.hasKeyboard {
             popupWindow.close()
-        } else if NSApp.isActive {
+        } else if store.isInMainWindow {
             toggleInbox()
         } else {
             popupWindow.show(focus: true)
@@ -801,7 +822,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             popupWindow.show(focus: true)
             return false
         }
-        window?.makeKeyAndOrderFront(nil)
+        showMainWindow()
         return true
     }
 
@@ -818,7 +839,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         trace("last window closed")
-        return true
+        return false
     }
 
     func windowWillClose(_ notification: Notification) {

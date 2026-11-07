@@ -43,7 +43,10 @@ func fakeEngine(t *testing.T, sock string, texts *[]string, mu *sync.Mutex, slow
 					_ = os.WriteFile(req["out"].(string), []byte("RIFF"), 0o600)
 					reply["seconds"] = 1.5
 				case "stop":
-					stop <- struct{}{}
+					// A stop for a read that has been replaced does nothing.
+					if id, named := req["id"].(float64); !named || id == 7 {
+						stop <- struct{}{}
+					}
 				case "status":
 					reply["speaking"] = speaking.Load()
 				case "stream":
@@ -59,7 +62,7 @@ func fakeEngine(t *testing.T, sock string, texts *[]string, mu *sync.Mutex, slow
 					_, _ = c.Write([]byte{0, 0, 0, 0})
 					return
 				case "speak":
-					_, _ = c.Write([]byte(`{"ok":true}` + "\n"))
+					_, _ = c.Write([]byte(`{"ok":true,"id":7}` + "\n"))
 					speaking.Store(true)
 					defer speaking.Store(false)
 					for _, l := range strings.Split(req["text"].(string), "\n") {
@@ -161,6 +164,49 @@ func TestStopAndStatusFromAnotherClient(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("say didn't end when another client stopped it")
+	}
+}
+
+func TestEndingSayOnlyStopsItsOwnRead(t *testing.T) {
+	e := testEngine(t)
+	var stops []any
+	var mu sync.Mutex
+	ln, err := net.Listen("unix", e.Socket())
+	must(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				line, _ := bufio.NewReader(c).ReadBytes('\n')
+				var req map[string]any
+				_ = json.Unmarshal(line, &req)
+				switch req["op"] {
+				case "speak":
+					_, _ = c.Write([]byte(`{"ok":true,"id":42}` + "\n"))
+					time.Sleep(5 * time.Second)
+				case "stop":
+					mu.Lock()
+					stops = append(stops, req["id"])
+					mu.Unlock()
+					_, _ = c.Write([]byte(`{"ok":true}` + "\n"))
+				default:
+					_, _ = c.Write([]byte(`{"ok":true}` + "\n"))
+				}
+			}()
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	must(t, e.Say(ctx, "A sentence goes here."))
+	mu.Lock()
+	defer mu.Unlock()
+	if len(stops) != 1 || stops[0] != float64(42) {
+		t.Errorf("stops %v: it should name its own read", stops)
 	}
 }
 

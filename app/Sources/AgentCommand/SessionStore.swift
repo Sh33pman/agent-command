@@ -37,6 +37,10 @@ final class SessionStore {
     @ObservationIgnored var onListChanged: ((Set<String>) -> Void)?
     /// Called with items new since the app started.
     @ObservationIgnored var onNewItems: (([InboxItem]) -> Void)?
+    /// Whether the main window is open: closing it leaves the app running in the background.
+    @ObservationIgnored var isWindowShown = true
+    /// Whether you're in the main window, as against another app or the app in the background.
+    var isInMainWindow: Bool { NSApp.isActive && isWindowShown }
     @ObservationIgnored private var newestItem: Int64?
     /// Called when the queue changes, for an open Inbox.
     @ObservationIgnored var onInboxChanged: (() -> Void)?
@@ -155,7 +159,7 @@ final class SessionStore {
     /// Clears the unseen mark on sessions you're looking at: on screen, with the app
     /// in front. Call it when any of that changes.
     func markLookedAtSeen() {
-        guard NSApp.isActive, !inboxOpen else { return }
+        guard isInMainWindow, !inboxOpen else { return }
         for item in queue where !item.read && visibleIDs.contains(item.sessionID) {
             if readInFlight.insert(item.id).inserted {
                 setInboxRead(item.id, true) { self.readInFlight.remove(item.id) }

@@ -162,7 +162,10 @@ final class InboxModel {
 
     // MARK: Showing
 
-    func start() {
+    /// Starts showing. With a cursor, it opens on that message, so nothing else gets
+    /// shown or read first.
+    func start(cursor: InboxItem? = nil) {
+        if let cursor { messageCursor = cursor.id }
         // Opened for a session or set: as if you'd chosen it on the left.
         showsFirst = filter != .queue
         store.onInboxChanged = { [weak self] in self?.reload() }

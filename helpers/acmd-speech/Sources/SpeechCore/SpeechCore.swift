@@ -95,12 +95,15 @@ public struct Request: Decodable, Equatable {
     public var text: String?
     public var out: String?
     public var speed: Float?
+    /// For stop: the read to stop. Without it, whatever is playing.
+    public var id: Int?
 
-    public init(op: String, text: String? = nil, out: String? = nil, speed: Float? = nil) {
+    public init(op: String, text: String? = nil, out: String? = nil, speed: Float? = nil, id: Int? = nil) {
         self.op = op
         self.text = text
         self.out = out
         self.speed = speed
+        self.id = id
     }
 
     public static func parse(_ line: Data) throws -> Request {

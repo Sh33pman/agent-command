@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -37,20 +38,29 @@ func (e *Engine) Say(ctx context.Context, markdown string) error {
 	defer c.Close()
 	// One line per chunk: the engine speaks each line in turn.
 	req, _ := json.Marshal(map[string]any{"op": "speak", "text": strings.Join(chunks, "\n"), "speed": e.speed()})
+	// Ended while starting up: asking now could replace the read that took over.
+	if ctx.Err() != nil {
+		return nil
+	}
 	if _, err := c.Write(append(req, '\n')); err != nil {
 		return err
 	}
+	// Known once the engine answers. Until then, ending has nothing of its own to stop.
+	var id atomic.Int64
 	stop := context.AfterFunc(ctx, func() {
 		// The context has ended, so stopping gets one of its own.
 		quick, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		_ = e.Stop(quick)
+		if read := id.Load(); read != 0 {
+			_, _ = e.request(quick, map[string]any{"op": "stop", "id": read})
+		}
 		_ = c.Close()
 	})
 	defer stop()
 	r := bufio.NewReader(c)
 	var reply struct {
 		OK    bool   `json:"ok"`
+		ID    int64  `json:"id"`
 		Error string `json:"error"`
 	}
 	line, err := r.ReadBytes('\n')
@@ -59,6 +69,14 @@ func (e *Engine) Say(ctx context.Context, markdown string) error {
 	}
 	if err := json.Unmarshal(line, &reply); err != nil || !reply.OK {
 		return fmt.Errorf("speech engine: %s", reply.Error)
+	}
+	id.Store(reply.ID)
+	if ctx.Err() != nil {
+		// It ended before the id came, so the stop above couldn't name this read.
+		quick, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, _ = e.request(quick, map[string]any{"op": "stop", "id": reply.ID})
+		return nil
 	}
 	line, err = r.ReadBytes('\n')
 	if err != nil {

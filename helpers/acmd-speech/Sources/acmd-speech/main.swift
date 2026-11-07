@@ -11,10 +11,12 @@
 // {"ok": false, "error": ...}:
 //
 //   {"op": "speak", "text": ..., "speed": 1.0}
-//       plays the text, replacing whatever is playing. After the ok, one more line
+//       plays the text, replacing whatever is playing. The ok has the read's "id".
+//       After it, one more line
 //       comes when it ends: {"done": true}, with "error" if it failed. Closing the
 //       connection doesn't stop it.
-//   {"op": "stop"}                  stops playing
+//   {"op": "stop", "id": 7}         stops that read, if it's still the one playing;
+//                                   without an id, whatever is playing
 //   {"op": "status"}                {"ok": true, "speaking": true}
 //   {"op": "ping"}
 //   {"op": "synth", "text": ..., "out": WAV path, "speed": 1.0}
@@ -235,7 +237,7 @@ actor Speaker {
 
     /// Starts reading, replacing whatever is playing. The task's value is what went
     /// wrong, if anything.
-    func speak(_ text: String, speed: Float) throws -> Task<String?, Never> {
+    func speak(_ text: String, speed: Float) throws -> (id: Int, task: Task<String?, Never>) {
         stop()
         let player = try Player()
         nextID += 1
@@ -259,10 +261,13 @@ actor Speaker {
             return failure
         }
         current = (id, task, player)
-        return task
+        return (id, task)
     }
 
-    func stop() {
+    /// A client leaving stops only its own read: one that has been replaced may be
+    /// asking after the new one started.
+    func stop(id: Int? = nil) {
+        if let id, current?.id != id { return }
         current?.task.cancel()
         current?.player.stop()
         current = nil
@@ -321,9 +326,9 @@ func handle(_ c: Int32, _ engine: Engine, _ speaker: Speaker) async {
         _ = writeAll(c, replyLine(["ok": true, "engine": "swift"]))
     case "speak":
         do {
-            let task = try await speaker.speak(req.text ?? "", speed: speed)
-            guard writeAll(c, replyLine(["ok": true])) else { return }
-            if let failure = await task.value {
+            let read = try await speaker.speak(req.text ?? "", speed: speed)
+            guard writeAll(c, replyLine(["ok": true, "id": read.id])) else { return }
+            if let failure = await read.task.value {
                 _ = writeAll(c, replyLine(["done": true, "error": failure]))
             } else {
                 _ = writeAll(c, replyLine(["done": true]))
@@ -332,7 +337,7 @@ func handle(_ c: Int32, _ engine: Engine, _ speaker: Speaker) async {
             _ = writeAll(c, replyLine(["ok": false, "error": "can't play audio: \(error)"]))
         }
     case "stop":
-        await speaker.stop()
+        await speaker.stop(id: req.id)
         _ = writeAll(c, replyLine(["ok": true]))
     case "status":
         _ = writeAll(c, replyLine(["ok": true, "speaking": await speaker.isSpeaking]))

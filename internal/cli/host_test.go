@@ -128,6 +128,17 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
+func TestAttachLeavesQuietlyWithoutAHost(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "none.sock")
+	start := time.Now()
+	if err := attachOrLeave(context.Background(), sock, 150*time.Millisecond); err != nil {
+		t.Errorf("attach with no host: %v", err)
+	}
+	if time.Since(start) < 150*time.Millisecond {
+		t.Error("it didn't wait for a host that may be starting")
+	}
+}
+
 func TestAttachHost(t *testing.T) {
 	dir, err := os.MkdirTemp("", "acmdatt")
 	if err != nil {

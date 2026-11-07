@@ -278,6 +278,38 @@ func TestHostedPausedWhenHostGone(t *testing.T) {
 	}
 }
 
+func TestPauseDeadHostsNeedsNoListing(t *testing.T) {
+	r, st, l, c := setup(t)
+	alive := map[string]bool{"running": true}
+	r.HostAlive = func(s *core.Session) bool { return alive[s.ClaudeSessionID] }
+	l.err = errors.New("claude isn't available yet")
+	old := c.now().Add(-time.Hour)
+	gone := create(t, st, &core.Session{ClaudeSessionID: "gone", Kind: core.KindHosted, Status: core.StatusDone, CreatedAt: old})
+	running := create(t, st, &core.Session{ClaudeSessionID: "running", Kind: core.KindHosted, Status: core.StatusBusy, CreatedAt: old})
+	young := create(t, st, &core.Session{ClaudeSessionID: "young", Kind: core.KindHosted, Status: core.StatusStarting, CreatedAt: c.now()})
+
+	n, err := r.PauseDeadHosts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("changed %d", n)
+	}
+	got := get(t, st, gone.ID)
+	if got.Status != core.StatusPaused {
+		t.Errorf("host gone, status %v", got.Status)
+	}
+	if got.ClaudeSessionID != "gone" {
+		t.Errorf("the conversation to resume went too: %q", got.ClaudeSessionID)
+	}
+	if got := get(t, st, running.ID); got.Status != core.StatusBusy {
+		t.Errorf("host running, status %v", got.Status)
+	}
+	if got := get(t, st, young.ID); got.Status != core.StatusStarting {
+		t.Errorf("new session, status %v", got.Status)
+	}
+}
+
 func TestTerminalAgentThatDiedReturnsToRunning(t *testing.T) {
 	r, st, l, _ := setup(t)
 	r.HostAlive = func(*core.Session) bool { return true }

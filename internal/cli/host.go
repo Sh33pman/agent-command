@@ -215,18 +215,45 @@ func newHostAttachCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return attachHost(cmd.Context(), p.HostSocket(id))
+			return attachOrLeave(cmd.Context(), p.HostSocket(id), hostWait)
 		},
 	}
 	cmd.Flags().StringVar(&id, "session", "", "the acmd session")
 	return cmd
 }
 
+// hostWait is how long an attach waits for a host: one starting takes a moment.
+const hostWait = 2 * time.Second
+
+// errNoHost means no host is listening.
+var errNoHost = errors.New("the session's host isn't running")
+
+// attachOrLeave attaches once a host is listening. With none, it leaves without an
+// error, which closes the pane's terminal, so the pane can offer to resume instead
+// of showing a failure.
+func attachOrLeave(ctx context.Context, socket string, wait time.Duration) error {
+	deadline := time.Now().Add(wait)
+	for !term.Running(socket) {
+		if time.Now().After(deadline) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	if err := attachHost(ctx, socket); !errors.Is(err, errNoHost) {
+		return err
+	}
+	return nil
+}
+
 // attachHost attaches the terminal to socket. A detach (SIGTERM) or the
 // CLI exiting end it without an error; no host listening is an error.
 func attachHost(parent context.Context, socket string) error {
 	if !term.Running(socket) {
-		return errors.New("the session's host isn't running")
+		return errNoHost
 	}
 	ctx, cancel := signal.NotifyContext(parent, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()

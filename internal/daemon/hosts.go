@@ -146,7 +146,7 @@ func (d *Daemon) stopHost(s *core.Session) {
 // sweepHosts removes the id files of hosts that are gone (a reboot or a
 // crash leaves them); hosts still running are left alone, and keep serving
 // their session (they are separate processes, SPEC §4.5). The sessions
-// whose host is gone are paused by the reconciler.
+// whose host is gone were paused when the daemon started.
 func sweepHosts(p paths.Paths) {
 	files, _ := filepath.Glob(filepath.Join(p.RuntimeDir, "h-*.id"))
 	for _, f := range files {

@@ -110,6 +110,16 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	defer st.Close()
 
+	// Before anything can connect: the app restores its panes from the first list
+	// of sessions, and would attach to hosts that an uninstall or a reboot ended.
+	check := &reconcile.Reconciler{Store: st, Now: cfg.Now,
+		HostAlive: func(s *core.Session) bool { return term.Running(cfg.Paths.HostSocket(s.ID)) }}
+	if n, err := check.PauseDeadHosts(ctx); err != nil {
+		cfg.Log.Printf("pausing sessions whose host has gone: %v", err)
+	} else if n > 0 {
+		cfg.Log.Printf("paused %d sessions whose host has gone", n)
+	}
+
 	sock := cfg.Paths.Socket()
 	_ = os.Remove(sock) // stale socket from a crashed daemon; we hold the lock
 	ln, err := net.Listen("unix", sock)

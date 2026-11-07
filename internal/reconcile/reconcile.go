@@ -98,6 +98,36 @@ func (r *Reconciler) Once(ctx context.Context) (Result, error) {
 	return res, nil
 }
 
+// PauseDeadHosts pauses sessions whose host has gone, as an uninstall or a reboot
+// leaves them, without waiting for Claude's listing. It runs before the daemon takes
+// connections: a view that believed such a session was running would attach to
+// nothing. It reports how many it changed.
+func (r *Reconciler) PauseDeadHosts(ctx context.Context) (int, error) {
+	r.defaults()
+	sessions, err := r.Store.Sessions(ctx, false)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, s := range sessions {
+		var gone bool
+		switch {
+		case s.IsTerminal():
+			gone = r.terminal(s)
+		case s.Kind == core.KindHosted:
+			gone = r.unlisted(s)
+		}
+		if !gone {
+			continue
+		}
+		if err := r.Store.UpdateSession(ctx, s); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
+}
+
 // reconcileSession updates s from Claude's listing; it reports whether s changed.
 func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]claudecli.Agent) bool {
 	if s.IsTerminal() {

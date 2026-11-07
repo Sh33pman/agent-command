@@ -188,6 +188,7 @@ enum DaemonPaths {
         let dir = tmp.appendingPathComponent("agent-command-\(getuid())")
         let path = (dir as NSString).appendingPathComponent("daemon.sock")
         // macOS limits unix socket paths to 104 bytes.
+        // swift-scan:allow shared-temp-path only for a TMPDIR too long for a socket, and matches internal/paths (PAN-55)
         return path.utf8.count >= 104 ? "/tmp/agent-command-\(getuid())/daemon.sock" : path
     }
 

@@ -1,0 +1,23 @@
+# Ghostty's security advisories, checked against the commit pinned in scripts/build-ghostty.sh.
+# scripts/check-ghostty.py reports any that aren't listed here.
+#
+# Checked on 2026-11-07 against v1.4.0 (83fb95624b): each is fixed at or before v1.4.0, or
+# the pinned commit already contains its fixing commit.
+GHSA-3r5j-c6rj-xq2v  # low: unbounded memory via Kitty clipboard aliases (has 44c4c8f55d)
+GHSA-qjfx-r533-6vx3  # medium: use-after-free pruning the cursor's page (has 65ff54c67d)
+GHSA-jqr7-69mm-v35h  # medium: crash narrowing a very wide page (has 0af5c9e55)
+GHSA-cw69-wm67-5pv8  # medium: OSC 8 hyperlinks, fixed in 1.4.0
+GHSA-mhff-mv4q-fp63  # medium: Kitty graphics protocol, fixed in 1.4.0
+GHSA-w9q4-5jvv-mcv4  # medium: memory corruption clearing the screen, fixed in 1.4.0 (has e257bb45e6)
+GHSA-v8cw-fg4j-jcc4  # medium: dragged text bypasses paste protection, fixed in 1.4.0
+GHSA-mxqx-236q-wrv7  # medium: control characters in filenames, fixed in 1.4.0
+GHSA-mfw9-xcr3-7gfp  # medium: links in terminal output, fixed in 1.4.0
+GHSA-hp9c-qp4q-cpw3  # medium: tmux zero-sized panes, fixed in 1.4.0
+GHSA-hcr9-7hcr-mjm8  # medium: tmux scroll region, fixed in 1.4.0
+GHSA-4hwh-wx3w-3fqg  # medium: carriage returns bypass paste protection, fixed in 1.4.0
+GHSA-2r63-vmw6-3m3c  # medium: crafted directory names, fixed in 1.4.0
+GHSA-4jxv-xgrp-5m3r  # medium: control characters in paste, fixed in 1.3.0
+GHSA-q9fg-cpmh-c78x  # low: privilege escalation vector, fixed in 1.2.0
+GHSA-98wc-794w-gjx3  # low: file descriptors leaked to shell, fixed in 1.1.0
+GHSA-hfg5-8q2c-crhc  # low: write_*_file permissions, fixed in 1.0.1
+GHSA-5hcq-3j4q-4v6p  # medium: window title sequences, fixed in 1.0.1

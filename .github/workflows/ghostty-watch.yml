@@ -1,0 +1,24 @@
+# Says when Ghostty needs a look: Dependabot can't watch it, as scripts/build-ghostty.sh
+# pins it. Opens an issue for a newer release, or an advisory that hasn't been reviewed.
+# It only reads Ghostty's public data, and runs nothing of Ghostty's.
+name: ghostty-watch
+
+on:
+  schedule:
+    - cron: "17 7 * * 1" # Mondays
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: [self-hosted, acmd]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: check Ghostty
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check-ghostty.py --issue

@@ -53,6 +53,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: scan the Swift code
+        run: make swift-scan
       - name: speech engine unit tests + release build
         run: make speech-test speech-helper
 

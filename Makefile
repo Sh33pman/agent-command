@@ -39,9 +39,11 @@ LDFLAGS   := -s -w \
 
 INSTALL_DIR ?= $(HOME)/.local/bin
 
-# The Swift speech engine (helpers/acmd-speech, SPEC §8.9): arm64 only,
-# built with the Command Line Tools. On the runner its build folder lives
-# in the tool cache, so checkouts don't rebuild FluidAudio from scratch.
+# The Swift speech engine (helpers/acmd-speech, SPEC §8.9): arm64 only, built
+# with Xcode, which is the only way to compile MLX's Metal shaders. They ship
+# next to the helper as mlx.metallib, where MLX looks first. On the runner its
+# build folder lives in the tool cache, so checkouts don't rebuild MLX from
+# scratch.
 SPEECH_PKG := $(CURDIR)/helpers/acmd-speech
 ifdef RUNNER_TOOL_CACHE
 SPEECH_SCRATCH ?= $(RUNNER_TOOL_CACHE)/acmd-swift-build
@@ -49,7 +51,7 @@ else
 SPEECH_SCRATCH ?= $(SPEECH_PKG)/.build
 endif
 SPEECH_OUT ?= $(CURDIR)/build/acmd-speech
-SWIFT_BUILD := swift build --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) -c release --arch arm64
+SPEECH_PRODUCTS := $(SPEECH_SCRATCH)/xcode/Build/Products/Release
 
 ##@ General
 
@@ -126,9 +128,12 @@ ci: lint test speech-test vuln build ## Everything CI checks on a PR (except sna
 
 .PHONY: speech-helper
 speech-helper: ## Build the Swift speech engine into $(SPEECH_OUT)
-	$(SWIFT_BUILD) --product acmd-speech
+	cd $(SPEECH_PKG) && xcodebuild -quiet -scheme acmd-speech -destination 'platform=macOS,arch=arm64' \
+		-derivedDataPath $(SPEECH_SCRATCH)/xcode -configuration Release \
+		-skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
 	mkdir -p $(dir $(SPEECH_OUT))
-	install -m 0755 "$$($(SWIFT_BUILD) --show-bin-path)/acmd-speech" $(SPEECH_OUT)
+	install -m 0755 $(SPEECH_PRODUCTS)/acmd-speech $(SPEECH_OUT)
+	install -m 0644 $(SPEECH_PRODUCTS)/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib $(dir $(SPEECH_OUT))mlx.metallib
 	@if otool -L $(SPEECH_OUT) | grep -qi espeak; then echo "acmd-speech links espeak (GPL)"; exit 1; fi
 	$(SPEECH_OUT) --version
 
@@ -149,6 +154,7 @@ install: build ## Dev install into $(INSTALL_DIR) (agent-command + acmd)
 	mkdir -p $(INSTALL_DIR)
 	install -m 0755 $(DIST)/agent-command $(INSTALL_DIR)/agent-command
 	install -m 0755 $(DIST)/acmd-speech $(INSTALL_DIR)/acmd-speech
+	install -m 0644 $(DIST)/mlx.metallib $(INSTALL_DIR)/mlx.metallib
 	ln -sf agent-command $(INSTALL_DIR)/acmd
 	@echo "installed to $(INSTALL_DIR) (make sure it's on PATH)"
 

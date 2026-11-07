@@ -61,7 +61,8 @@ struct SidebarView: View {
                             isClosed: store.closedIDs.contains(session.id),
                             isCursor: store.sidebarFocused && store.cursorID == session.id,
                             isMarked: store.markedIDs.contains(session.id),
-                            unread: store.unreadCount(session: session.id))
+                            unread: store.unreadCount(session: session.id),
+                            showsFolder: true)
                             .id(session.id)
                             .contentShape(Rectangle())
                             .simultaneousGesture(TapGesture().onEnded { clickRow(session) })
@@ -126,7 +127,7 @@ struct SidebarView: View {
             if showArchived {
                 ForEach(store.archived) { session in
                     SessionRow(session: session, link: .none, isSelected: false, isVisible: false, isClosed: false,
-                        isCursor: false, isMarked: false, unread: 0)
+                        isCursor: false, isMarked: false, unread: 0, showsFolder: true)
                         .contextMenu {
                             if !session.isTerminal {
                                 Button("Unarchive") { store.unarchive(session.id) }
@@ -191,8 +192,14 @@ struct SessionRow: View {
     let isMarked: Bool
     /// Unread items in the Inbox's queue.
     let unread: Int
+    /// Shows the session's working directory under its name.
+    var showsFolder = false
 
     private var theme: AppTheme { .shared }
+
+    private var folder: String? {
+        showsFolder && !session.cwd.isEmpty ? (session.cwd as NSString).abbreviatingWithTildeInPath : nil
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -202,28 +209,40 @@ struct SessionRow: View {
             if isMarked {
                 Text("x").fontWeight(.bold).foregroundStyle(isSelected ? theme.bg : theme.red)
             }
-            HStack(spacing: 6) {
-                Text(session.isTerminal && session.claudeSessionID.isEmpty ? "$" : "●").foregroundStyle(isSelected ? theme.bg : statusColor)
-                Text(session.displayName)
-                    .fontWeight(isSelected ? .bold : .regular)
-                    .foregroundStyle(isSelected ? theme.bg : theme.fg)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 4)
-                if unread > 0 {
-                    Text("\(unread)").fontWeight(.bold).foregroundStyle(isSelected ? theme.bg : theme.blue)
-                } else if session.unseen && !isSelected {
-                    Text("•").foregroundStyle(theme.blue)
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(session.isTerminal && session.claudeSessionID.isEmpty ? "$" : "●").foregroundStyle(isSelected ? theme.bg : statusColor)
+                    Text(session.displayName)
+                        .fontWeight(isSelected ? .bold : .regular)
+                        .foregroundStyle(isSelected ? theme.bg : theme.fg)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    if unread > 0 {
+                        Text("\(unread)").fontWeight(.bold).foregroundStyle(isSelected ? theme.bg : theme.blue)
+                    } else if session.unseen && !isSelected {
+                        Text("•").foregroundStyle(theme.blue)
+                    }
+                    Text(session.status)
+                        .font(AppFont.ui(11))
+                        .foregroundStyle(isSelected ? theme.bg : theme.dim)
+                        .lineLimit(1)
                 }
-                Text(session.status)
-                    .font(AppFont.ui(11))
-                    .foregroundStyle(isSelected ? theme.bg : theme.dim)
-                    .lineLimit(1)
+                if let folder {
+                    // Lined up with the name. The end of a long path matters most.
+                    Text(folder)
+                        .font(AppFont.ui(11))
+                        .foregroundStyle(isSelected ? theme.bg : theme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .padding(.leading, 14)
+                        .help(session.cwd)
+                }
             }
             .opacity(isClosed ? 0.4 : 1)
         }
         .padding(.horizontal, 12)
-        .frame(height: 22)
+        .frame(height: folder == nil ? 22 : 38)
         .background(isSelected ? theme.yellow : (isVisible ? Color(nsColor: theme.line) : Color.clear))
         .overlay {
             if isCursor {

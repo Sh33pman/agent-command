@@ -132,6 +132,8 @@ struct Session: Decodable, Identifiable, Equatable {
     }
 
     var isTerminal: Bool { harness == "terminal" }
+    /// A terminal counts once an agent has started in it.
+    var isAgent: Bool { !isTerminal || !claudeSessionID.isEmpty }
     var isArchived: Bool { status == "archived" }
 
     /// Stopped by itself or by a reboot: activating it resumes it.

@@ -15,8 +15,14 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored var onOpen: ((String) -> Void)?
     /// Whether notifications are turned off for the app in System Settings.
     private(set) var isTurnedOff = false
+    /// Whether the Dock icon can't show its count. Only you can change that, in System
+    /// Settings: macOS doesn't let an app turn it on.
+    private(set) var isBadgeOff = false
+    /// The warnings you've dismissed, which stay listed, greyed out.
+    private(set) var dismissedWarnings = Set(UserDefaults.standard.stringArray(forKey: AppNotifier.dismissedKey) ?? [])
 
     @ObservationIgnored private var lastSeq: UInt64?
+    private static let dismissedKey = "warnings.dismissed"
 
     /// Only an app bundle can post, so a development build shows nothing.
     private var center: UNUserNotificationCenter? {
@@ -36,21 +42,63 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
         guard let center else { return }
         center.getNotificationSettings { [weak self] settings in
             let status = settings.authorizationStatus
-            if status == .notDetermined {
-                center.requestAuthorization(options: [.alert, .sound]) { _, error in
+            // Earlier versions didn't ask for badges, so those installs are asked again.
+            if status == .notDetermined || (status == .authorized && settings.badgeSetting == .notSupported) {
+                center.requestAuthorization(options: [.alert, .sound, .badge]) { _, error in
                     if let error { NSLog("notification permission: %@", error.localizedDescription) }
                     center.getNotificationSettings { settings in
-                        self?.setTurnedOff(settings.authorizationStatus == .denied)
+                        self?.setTurnedOff(settings)
                     }
                 }
             } else {
-                self?.setTurnedOff(status == .denied)
+                self?.setTurnedOff(settings)
             }
         }
     }
 
-    private func setTurnedOff(_ off: Bool) {
-        DispatchQueue.main.async { self.isTurnedOff = off }
+    private func setTurnedOff(_ settings: UNNotificationSettings) {
+        let off = settings.authorizationStatus == .denied
+        let badgeOff = settings.authorizationStatus == .authorized && settings.badgeSetting != .enabled
+        DispatchQueue.main.async {
+            self.isTurnedOff = off
+            self.isBadgeOff = badgeOff
+        }
+    }
+
+    /// What needs your attention, in the app's settings.
+    var warnings: [AppWarning] {
+        var list: [AppWarning] = []
+        if isTurnedOff {
+            list.append(AppWarning(
+                id: "notifications", title: "Notifications are off",
+                detail: "Banners can't appear when a session needs you and the popup is off or closed.",
+                fix: "Open System Settings, then turn on Allow Notifications.",
+                actionTitle: "Open System Settings", action: { [weak self] in self?.openSettings() }))
+        }
+        if isBadgeOff {
+            list.append(AppWarning(
+                id: "dock-badge", title: "Dock badge is off",
+                detail: "The Dock icon can't show how many messages are unread.",
+                fix: "Open System Settings, then turn on Badge application icon.",
+                actionTitle: "Open System Settings", action: { [weak self] in self?.openSettings() }))
+        }
+        if let failure = SpeechController.shared.setupFailure {
+            list.append(AppWarning(
+                id: "speech-setup", title: "Speech couldn't be set up",
+                detail: "Messages can't be read aloud until it's done. \(failure)",
+                fix: "Check your connection, then try again.",
+                actionTitle: "Try again", action: { SpeechController.shared.retrySetup() }))
+        }
+        return list
+    }
+
+    func isDismissed(_ warning: AppWarning) -> Bool {
+        dismissedWarnings.contains(warning.id)
+    }
+
+    func setDismissed(_ warning: AppWarning, _ dismissed: Bool) {
+        if dismissed { dismissedWarnings.insert(warning.id) } else { dismissedWarnings.remove(warning.id) }
+        UserDefaults.standard.set(Array(dismissedWarnings), forKey: Self.dismissedKey)
     }
 
     /// Opens the app's page in System Settings.
@@ -108,4 +156,17 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
         }
         completionHandler()
     }
+}
+
+/// Something in the app's settings that stops a feature working.
+struct AppWarning: Identifiable {
+    let id: String
+    let title: String
+    /// What doesn't work because of it.
+    let detail: String
+    /// What to do about it.
+    let fix: String
+    /// What the warning's button says and does.
+    let actionTitle: String
+    let action: () -> Void
 }

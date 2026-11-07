@@ -9,7 +9,9 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 - **Live status** in the sidebar, including an agent you start by typing `claude` in a terminal.
 - **Sessions that last:** closing a pane only detaches. Only archiving ends a session, and agents can be unarchived and resumed.
 - **Inbox** (⇧⌘I) with what your agents have sent you: finished turns, questions, permissions and errors. Read, reply, answer or go to the session, by session, by set or as one queue.
-- **Reply popup:** when you're in another app, what your agents send opens in a large panel without taking your typing. Click it or press ⌃⌘O to use it, and ⌃⌘O opens it from any app. Move through the queue, then answer, reply or go to the session. Turn it off with ⌥⌘I or the bell in the status bar, which also chooses what opens it. While it's off, or for what it doesn't open, you get notifications instead.
+- **Reply popup:** when you're in another app, what your agents send opens in a window over everything, without taking your typing. Click another app and it drops behind so you can carry on; a new message brings it back. Click it or press ⌃⌘O to use it, and ⌃⌘O opens it from any app. The bell can keep it always on top over a dimmed screen instead. Move through the queue, then answer, reply or go to the session. Turn it off with ⌥⌘I or the bell in the status bar, which also chooses what opens it. While it's off, or for what it doesn't open, you get notifications instead.
+- **Read aloud:** a local voice ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) on MLX) reads messages in the popup, the Inbox and the agent view, with the speaker button or ⇧⌘S. Turn it on from the bell, which downloads the model (about 360 MB). The popup can read each message as it's shown. American English voices only for now.
+- **Dock icon:** shows how many messages are unread, and its right-click menu opens the Inbox. Clicking it brings up the popup if that's open, otherwise the main window.
 - **Notifications** when a session needs you, fails or finishes a long turn. Clicking one opens that session. With the app closed, they still appear, but a click can't open the session.
 - **Resume** an earlier Claude conversation by ID or from a list.
 - **Command popup** and a live **theme picker**, using Ghostty's themes.
@@ -18,7 +20,7 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 
 > **Status:** early development. [docs/v2/architecture.md](docs/v2/architecture.md) has the design. [SPEC.md](SPEC.md) describes the earlier terminal-based version, kept for reference.
 
-## Install (macOS, Apple Silicon)
+## Install (macOS 26 or later, Apple Silicon)
 
 ```sh
 brew install --cask brettmostert/tap/agent-command

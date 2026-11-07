@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import UserNotifications
 
 /// The daemon's sessions, kept current for the UI. Everything here is on the
 /// main thread; daemon calls run on background queues.
@@ -200,6 +201,37 @@ final class SessionStore {
         let text: String?
     }
 
+    /// Puts the number of unread messages on the app's Dock icon.
+    private func showUnreadOnDock() {
+        let unread = unreadCount()
+        let label = unread > 0 ? String(unread) : nil
+        guard NSApp.dockTile.badgeLabel != label else { return }
+        NSApp.dockTile.badgeLabel = label
+        // Only an app bundle has a notification center.
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        UNUserNotificationCenter.current().setBadgeCount(unread) { error in
+            if let error { NSLog("dock badge: %@", error.localizedDescription) }
+        }
+    }
+
+    /// The shortcut in the agent view: stops whatever is being read, or reads the
+    /// latest message from the session on show.
+    func toggleReadingSelected() {
+        let speech = SpeechController.shared
+        if speech.isSpeaking {
+            speech.stop()
+            return
+        }
+        guard let session = selected else { return }
+        loadInbox(session: session.id) { items in
+            if let latest = items.first {
+                speech.speak(latest)
+            } else {
+                speech.fail("\(session.displayName) hasn't sent a message yet.")
+            }
+        }
+    }
+
     func loadInbox(session: String?, done: @escaping ([InboxItem]) -> Void) {
         run(failure: "Couldn't read the inbox") { conn -> [InboxItem] in
             try conn.call("inbox", InboxRequest(session_id: session))
@@ -315,6 +347,7 @@ final class SessionStore {
             self.newestItem = newest
             self.markLookedAtSeen()
             self.onNotices?(snapshot.notices ?? [])
+            self.showUnreadOnDock()
         }
     }
 

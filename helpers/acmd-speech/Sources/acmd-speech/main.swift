@@ -1,28 +1,43 @@
-// acmd-speech: acmd's speech engine (SPEC §8.9). It speaks the protocol
-// acmd's Python engine used before v0.32, so internal/speech talks to it
-// unchanged:
+// acmd-speech: the speech service (SPEC §8.9). It turns text into audio and plays
+// it, on its own: nothing about it depends on acmd's daemon or app, which are
+// clients like any other.
 //
 //   acmd-speech --prefetch --dir DIR --voice SPEC
-//       download the model and voices into DIR, compile them, exit
+//       check that the model in DIR loads and prepare the voice, then exit
 //   acmd-speech --serve SOCKET --dir DIR --voice SPEC [--idle SECONDS]
 //       load once and answer requests on a unix socket until idle
 //
-// A request is one JSON line: {"op": "stream", "text": ..., "speed": 1.0},
-// {"op": "synth", "text": ..., "out": WAV path, "speed": 1.0} or
-// {"op": "ping"}. The reply is one JSON line {"ok": true, ...} or
-// {"ok": false, "error": ...}; after the ok of a stream come frames of
-// 16-bit little-endian mono PCM at "rate" Hz (4-byte big-endian length +
-// data), ended by a 0 length (or 0xFFFFFFFF and an error line). Closing
-// the connection stops the stream.
+// A request is one JSON line, and the reply is one JSON line {"ok": true, ...} or
+// {"ok": false, "error": ...}:
 //
-// The model is Kokoro-82M (https://huggingface.co/hexgrad/Kokoro-82M) on
-// Core ML through FluidAudio's Kokoro ANE v3.
+//   {"op": "speak", "text": ..., "speed": 1.0}
+//       plays the text, replacing whatever is playing. After the ok, one more line
+//       comes when it ends: {"done": true}, with "error" if it failed. Closing the
+//       connection doesn't stop it.
+//   {"op": "stop"}                  stops playing
+//   {"op": "status"}                {"ok": true, "speaking": true}
+//   {"op": "ping"}
+//   {"op": "synth", "text": ..., "out": WAV path, "speed": 1.0}
+//       writes the audio to a file instead of playing it
+//   {"op": "stream", "text": ..., "speed": 1.0}
+//       sends the audio instead of playing it: after the ok come frames of 16-bit
+//       little-endian mono PCM at "rate" Hz (4-byte big-endian length + data), ended
+//       by a 0 length (or 0xFFFFFFFF and an error line). Closing the connection
+//       stops it.
+//
+// The model is Kokoro-82M (https://huggingface.co/hexgrad/Kokoro-82M) on MLX
+// through mlx-audio-swift.
+import AVFoundation
 import Darwin
-import FluidAudio
 import Foundation
+import HuggingFace
+import MLX
+import MLXAudioCore
+import MLXAudioTTS
 import SpeechCore
 
 let sampleRate = 24_000
+let modelRepo = "mlx-community/Kokoro-82M-bf16"
 
 struct Options {
     var prefetch = false
@@ -30,7 +45,6 @@ struct Options {
     var dir: String?
     var voice = "af_heart:0.6,af_bella:0.4"
     var idle: Double = 600
-    var phonemes: String?  // debugging: print the phonemes of each piece
 }
 
 func parseArgs(_ args: [String]) throws -> Options {
@@ -43,7 +57,6 @@ func parseArgs(_ args: [String]) throws -> Options {
     while let a = it.next() {
         switch a {
         case "--prefetch": o.prefetch = true
-        case "--phonemes": o.phonemes = try value(a)
         case "--serve": o.serve = try value(a)
         case "--dir": o.dir = try value(a)
         case "--voice": o.voice = try value(a)
@@ -51,13 +64,13 @@ func parseArgs(_ args: [String]) throws -> Options {
         case "--idle":
             guard let v = Double(try value(a)), v > 0 else { throw SpeechError.badRequest("bad --idle") }
             o.idle = v
-        case "--version": print("acmd-speech (FluidAudio 0.18.2, Kokoro ANE v3)"); exit(0)
+        case "--version": print("acmd-speech (mlx-audio-swift 0.1.8, Kokoro-82M on MLX)"); exit(0)
         default: throw SpeechError.badRequest("unknown argument \(a)")
         }
     }
     if o.dir == nil { throw SpeechError.badRequest("--dir is required") }
-    if !o.prefetch && o.serve == nil && o.phonemes == nil {
-        throw SpeechError.badRequest("--prefetch, --serve or --phonemes")
+    if !o.prefetch && o.serve == nil {
+        throw SpeechError.badRequest("--prefetch or --serve")
     }
     return o
 }
@@ -66,64 +79,63 @@ func log(_ s: String) {
     FileHandle.standardError.write(Data("\(ISO8601DateFormatter().string(from: Date())) \(s)\n".utf8))
 }
 
-/// The model, loaded once, with the voice (or blend) in use.
-final class Engine {
-    let manager: KokoroAneManager
+/// The model, loaded once, with the voice (or blend) in use. An actor, so requests
+/// take turns with it.
+actor Engine {
+    let model: KokoroModel
     let voice: String
-    let dir: URL
 
     init(dir: URL, spec: String) async throws {
         let voices = try parseVoice(spec)
-        self.dir = dir
-        manager = KokoroAneManager(variant: .english, directory: dir, version: .v3)
-        try await manager.initialize(preloadVoices: Set(voices.map(\.name)))
+        try checkAvailable(voices)
+        // acmd installs the model. Without it the library would download its own
+        // copy from wherever it was built to look.
+        let modelFolder = dir.appendingPathComponent("mlx-audio/\(modelRepo.replacingOccurrences(of: "/", with: "_"))")
+        for folder in [modelFolder, dir.appendingPathComponent("mlx-audio/beshkenadze_kitten-tts-g2p")]
+        where !FileManager.default.fileExists(atPath: folder.path) {
+            throw SpeechError.badRequest("the model isn't installed: run `acmd speech install`")
+        }
+        // Without a limit, MLX keeps gigabytes of buffers from each piece of speech
+        // for as long as the engine stays up.
+        Memory.cacheLimit = 128 << 20
+        let loaded = try await TTS.loadModel(modelRepo: modelRepo, cache: HubCache(cacheDirectory: dir))
+        guard let kokoro = loaded as? KokoroModel else { throw SpeechError.badRequest("\(modelRepo) isn't Kokoro") }
+        model = kokoro
         voice = voiceName(for: voices)
-        if voices.count > 1 { try writeBlend(voices) }
+        if voices.count > 1 {
+            try writeBlend(voices, to: modelFolder.appendingPathComponent("voices/\(voice).safetensors"))
+        }
     }
 
-    /// Stores the weighted sum of the voices as a voice of its own, next to
-    /// the downloaded ones, where FluidAudio looks for voices.
-    func writeBlend(_ voices: [VoiceWeight]) throws {
+    /// Stores the weighted sum of the voices as a voice of its own, next to the
+    /// downloaded ones, where the model looks for voices.
+    func writeBlend(_ voices: [VoiceWeight], to file: URL) throws {
         var packs: [[Float]] = []
-        var root: URL?
+        var shape: [Int] = []
         for v in voices {
-            guard let url = findVoice(v.name) else { throw SpeechError.badVoice("voice \(v.name) wasn't downloaded") }
-            if root == nil {
-                let parent = url.deletingLastPathComponent()
-                root = parent.lastPathComponent == "voices" ? parent.deletingLastPathComponent() : parent
-            }
-            packs.append(try KokoroAneVoicePack.load(from: url).storage)
+            let pack = try model.loadVoice(named: v.name)
+            shape = pack.shape
+            packs.append(pack.asArray(Float.self))
         }
-        let out = root!.appendingPathComponent("voices/\(voice).bin")
-        try FileManager.default.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try KokoroAneVoicePack(storage: try blend(packs, voices)).binaryData.write(to: out, options: .atomic)
-    }
-
-    func findVoice(_ name: String) -> URL? {
-        let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil)
-        var found: URL?
-        while let u = e?.nextObject() as? URL {
-            if u.lastPathComponent == "\(name).bin" && u.path.contains("ANE-v3") {
-                found = u
-                if u.deletingLastPathComponent().lastPathComponent != "voices" { break }
-            }
-        }
-        return found
+        try save(arrays: ["voice": MLXArray(try blend(packs, voices), shape)], url: file)
     }
 
     func samples(_ text: String, speed: Float) async throws -> [Float] {
-        try await manager.synthesizeDetailed(text: text, voice: voice, speed: speed).samples
+        model.speed = speed
+        let audio = try await model.generate(
+            text: text, voice: voice, refAudio: nil, refText: nil, language: nil,
+            generationParameters: model.defaultGenerationParameters)
+        return audio.asArray(Float.self)
     }
 
-    /// One piece of a request. On macOS 26.6 Core ML fails some inputs
-    /// for good after their first run ("Tile: Shape deduction failed",
-    /// a BNNS op in the alignment stage, cached per input length), so a
-    /// piece that fails is said in two halves (other lengths) instead; a
-    /// half that still fails is skipped and logged rather than ending the
-    /// whole reply.
+    /// One piece of a request. A piece that fails is said in two halves instead;
+    /// a half that still fails is skipped and logged rather than ending the whole
+    /// reply.
     func speak(_ text: String, speed: Float) async throws -> [Float] {
         do {
             return try await samples(text, speed: speed)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             log("piece failed, saying it in two halves: \(text.debugDescription): \(error)")
         }
@@ -131,11 +143,133 @@ final class Engine {
         for half in halves(text) {
             do {
                 out += try await samples(half, speed: speed)
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 log("half failed, skipped: \(half.debugDescription): \(error)")
             }
         }
         return out
+    }
+}
+
+// MARK: - playing
+
+/// Plays samples through the default output as they're ready.
+final class Player: @unchecked Sendable {
+    private let audio = AVAudioEngine()
+    private let node = AVAudioPlayerNode()
+    private let format: AVAudioFormat
+    private let lock = NSLock()
+    private var stopped = false
+    private var observer: NSObjectProtocol?
+
+    init() throws {
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: Double(sampleRate), channels: 1) else {
+            throw SpeechError.badRequest("no audio format")
+        }
+        self.format = format
+        audio.attach(node)
+        audio.connect(node, to: audio.mainMixerNode, format: format)
+        try audio.start()
+        node.play()
+        // A change of output device stops the audio engine, and with it the callbacks
+        // that say what has played. This read ends there; the next uses the new device.
+        observer = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: audio, queue: nil
+        ) { [weak self] _ in self?.stop() }
+    }
+
+    private func buffer(_ samples: [Float]) -> AVAudioPCMBuffer? {
+        guard let b = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
+            let channel = b.floatChannelData?[0]
+        else { return nil }
+        b.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { channel.update(from: $0.baseAddress!, count: samples.count) }
+        return b
+    }
+
+    func play(_ samples: [Float]) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !stopped, let b = buffer(samples) else { return }
+        node.scheduleBuffer(b, completionHandler: nil)
+    }
+
+    /// Waits until everything has played, or playing stops.
+    func drain() async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            defer { lock.unlock() }
+            guard !stopped, let end = buffer([0]) else {
+                done.resume()
+                return
+            }
+            node.scheduleBuffer(end, completionCallbackType: .dataPlayedBack) { _ in done.resume() }
+        }
+    }
+
+    func stop() {
+        lock.lock()
+        let already = stopped
+        stopped = true
+        lock.unlock()
+        if already { return }
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        node.stop()
+        audio.stop()
+    }
+}
+
+/// What's being read aloud: at most one thing, whoever asked for it.
+actor Speaker {
+    private let engine: Engine
+    private var current: (id: Int, task: Task<String?, Never>, player: Player)?
+    private var nextID = 0
+
+    init(engine: Engine) {
+        self.engine = engine
+    }
+
+    var isSpeaking: Bool { current != nil }
+
+    /// Starts reading, replacing whatever is playing. The task's value is what went
+    /// wrong, if anything.
+    func speak(_ text: String, speed: Float) throws -> Task<String?, Never> {
+        stop()
+        let player = try Player()
+        nextID += 1
+        let id = nextID
+        let engine = self.engine
+        let task = Task { () -> String? in
+            var failure: String?
+            do {
+                for piece in pieces(text) {
+                    try Task.checkCancellation()
+                    let samples = try await engine.speak(piece, speed: speed)
+                    try Task.checkCancellation()
+                    if !samples.isEmpty { player.play(samples) }
+                }
+                await player.drain()
+            } catch is CancellationError {
+            } catch {
+                failure = "\(error)"
+            }
+            await self.finished(id)
+            return failure
+        }
+        current = (id, task, player)
+        return task
+    }
+
+    func stop() {
+        current?.task.cancel()
+        current?.player.stop()
+        current = nil
+    }
+
+    private func finished(_ id: Int) {
+        if current?.id == id { stop() }
     }
 }
 
@@ -174,7 +308,7 @@ func peerClosed(_ fd: Int32) -> Bool {
     return n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
 }
 
-func handle(_ c: Int32, _ engine: Engine) async {
+func handle(_ c: Int32, _ engine: Engine, _ speaker: Speaker) async {
     guard let line = readLine(c) else { return }
     let req: Request
     do { req = try Request.parse(line) } catch {
@@ -185,6 +319,23 @@ func handle(_ c: Int32, _ engine: Engine) async {
     switch req.op {
     case "ping":
         _ = writeAll(c, replyLine(["ok": true, "engine": "swift"]))
+    case "speak":
+        do {
+            let task = try await speaker.speak(req.text ?? "", speed: speed)
+            guard writeAll(c, replyLine(["ok": true])) else { return }
+            if let failure = await task.value {
+                _ = writeAll(c, replyLine(["done": true, "error": failure]))
+            } else {
+                _ = writeAll(c, replyLine(["done": true]))
+            }
+        } catch {
+            _ = writeAll(c, replyLine(["ok": false, "error": "can't play audio: \(error)"]))
+        }
+    case "stop":
+        await speaker.stop()
+        _ = writeAll(c, replyLine(["ok": true]))
+    case "status":
+        _ = writeAll(c, replyLine(["ok": true, "speaking": await speaker.isSpeaking]))
     case "stream":
         guard writeAll(c, replyLine(["ok": true, "rate": sampleRate])) else { return }
         do {
@@ -217,6 +368,7 @@ func handle(_ c: Int32, _ engine: Engine) async {
 }
 
 func serve(_ engine: Engine, path: String, idle: Double) async throws {
+    let speaker = Speaker(engine: engine)
     signal(SIGPIPE, SIG_IGN)
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else { throw SpeechError.badRequest("socket: \(errno)") }
@@ -243,6 +395,7 @@ func serve(_ engine: Engine, path: String, idle: Double) async throws {
         if poll(&p, 1, 5000) <= 0 {
             // acmd stops engines by removing their socket
             if !FileManager.default.fileExists(atPath: path) { return }
+            if await speaker.isSpeaking { last = Date() }
             continue
         }
         let c = accept(fd, nil, nil)
@@ -251,8 +404,11 @@ func serve(_ engine: Engine, path: String, idle: Double) async throws {
         setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
         var tv = timeval(tv_sec: 30, tv_usec: 0)
         setsockopt(c, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        await handle(c, engine)
-        close(c)
+        // One at a time would leave stop waiting for whatever is playing.
+        Task.detached {
+            await handle(c, engine, speaker)
+            close(c)
+        }
         last = Date()
     }
     log("idle, stopping")
@@ -264,20 +420,10 @@ do {
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let t0 = Date()
     let engine = try await Engine(dir: dir, spec: o.voice)
-    // The first prediction is slow (Core ML warms up): pay it before
-    // answering, so the first request plays at once.
+    // Pay for the first prediction before answering, so the first request plays
+    // at once.
     _ = try await engine.samples("Ready.", speed: 1)
     log(String(format: "loaded in %.2f s (voice %@)", Date().timeIntervalSince(t0), engine.voice))
-    if let text = o.phonemes {
-        for p in pieces(text) {
-            print("\(p)\n  \(try await engine.manager.phonemes(for: p))")
-            for _ in 0..<3 {
-                let n = try await engine.speak(p, speed: 1).count
-                print(String(format: "  %.2f s of audio", Double(n) / Double(sampleRate)))
-            }
-        }
-        exit(0)
-    }
     if o.prefetch {
         print(dir.path)
         exit(0)

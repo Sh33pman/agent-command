@@ -51,6 +51,16 @@ public func parseVoice(_ spec: String) throws -> [VoiceWeight] {
     return out.map { VoiceWeight(name: $0.0, weight: $0.1 / total) }
 }
 
+/// Only American English voices can be used: the hosted model has the text
+/// processing for them alone, and for any other language the library would go and
+/// download its own from wherever it was built to look.
+public func checkAvailable(_ voices: [VoiceWeight]) throws {
+    for v in voices where !v.name.hasPrefix("af_") && !v.name.hasPrefix("am_") {
+        throw SpeechError.badVoice(
+            "can't use voice \(v.name): only American English voices (af_, am_) are available")
+    }
+}
+
 /// The voice name the engine uses for a SPEC: the voice itself, or for a
 /// blend a made-up name in the first voice's language ("af_acmd" + a hash
 /// of the blend), so the blended pack can be stored next to real voices.

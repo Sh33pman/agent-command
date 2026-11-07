@@ -45,6 +45,9 @@ check("rejectsBadVoices") {
     expectThrows { try parseVoice("af_heart:x") }
     expectThrows { try parseVoice("../etc:1") }
     expectThrows { try parseVoice("AF_Heart") }
+    try checkAvailable(try parseVoice("af_heart:0.6,am_adam:0.4"))
+    expectThrows { try checkAvailable(try parseVoice("bm_george")) }
+    expectThrows { try checkAvailable(try parseVoice("af_heart:0.5,jf_alpha:0.5")) }
 }
 
 check("blendNames") {

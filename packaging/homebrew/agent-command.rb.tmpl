@@ -8,7 +8,7 @@ cask "agent-command" do
   homepage "https://github.com/brettmostert/homebrew-tap"
 
   depends_on arch: :arm64
-  depends_on macos: :sonoma
+  depends_on macos: ">= :tahoe"
 
   app "Agent Command.app"
   binary "#{appdir}/Agent Command.app/Contents/MacOS/agent-command"

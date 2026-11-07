@@ -85,10 +85,10 @@ func TestInstallAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(args)
-	if got := strings.TrimSpace(string(b)); got != "--prefetch --dir "+filepath.Join(e.Dir, "swift")+" --voice af_heart:0.6,af_bella:0.4" {
+	if got := strings.TrimSpace(string(b)); got != "--prefetch --dir "+filepath.Join(e.Dir, "mlx")+" --voice af_heart:0.6,af_bella:0.4" {
 		t.Errorf("helper args %q", got)
 	}
-	if e.Status() != "" || strings.Contains(out.String(), "Python") {
+	if e.Status() != "" || strings.Contains(out.String(), "old speech engine") {
 		t.Errorf("after install: %q, %s", e.Status(), out.String())
 	}
 	other := *e
@@ -146,7 +146,7 @@ func TestPythonInstallIsSuperseded(t *testing.T) {
 		return "" // gone already: nothing is signaled
 	}
 
-	if !e.HasLegacy() || !strings.Contains(e.Status(), "old Python engine") {
+	if !e.HasLegacy() || !strings.Contains(e.Status(), "older engine") {
 		t.Fatalf("status with only the Python setup: %q", e.Status())
 	}
 	if n := e.LegacySize(); n < 5<<20 {
@@ -156,7 +156,7 @@ func TestPythonInstallIsSuperseded(t *testing.T) {
 	if err := e.Install(context.Background(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Removed the old Python speech engine (5 MB)") {
+	if !strings.Contains(out.String(), "Removed the old speech engine (5 MB)") {
 		t.Errorf("install output: %s", out.String())
 	}
 	if e.HasLegacy() || e.Status() != "" {
@@ -231,7 +231,7 @@ func TestServeCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/x/acmd-speech", "--serve", e.Socket(), "--dir", filepath.Join(e.Dir, "swift"), "--voice", e.Voice, "--idle", "90"}
+	want := []string{"/x/acmd-speech", "--serve", e.Socket(), "--dir", filepath.Join(e.Dir, "mlx"), "--voice", e.Voice, "--idle", "90"}
 	if strings.Join(c.Args, " ") != strings.Join(want, " ") {
 		t.Errorf("args %q", c.Args)
 	}
@@ -240,10 +240,10 @@ func TestServeCommand(t *testing.T) {
 func TestStartRunsHelper(t *testing.T) {
 	e := testEngine(t)
 	e.Helper = fakeHelper(t, t.TempDir(), `echo "boom" >&2; exit 1`)
-	must(t, os.MkdirAll(filepath.Join(e.Dir, "swift"), 0o700))
+	must(t, os.MkdirAll(filepath.Join(e.Dir, "mlx"), 0o700))
 	must(t, os.WriteFile(e.marker(), []byte(`{"voice":"af_heart:0.6,af_bella:0.4"}`), 0o600))
 	err := e.Start(context.Background())
-	if err == nil || !strings.Contains(err.Error(), filepath.Join("swift", "engine.log")) {
+	if err == nil || !strings.Contains(err.Error(), filepath.Join("mlx", "engine.log")) {
 		t.Fatalf("start: %v", err)
 	}
 	if b, _ := os.ReadFile(e.logFile()); !strings.Contains(string(b), "boom") {
@@ -266,5 +266,27 @@ func TestBench(t *testing.T) {
 	}
 	if (BenchResult{}).RTF() != 0 {
 		t.Error("RTF of nothing")
+	}
+}
+
+func TestOnlyAmericanEnglishVoices(t *testing.T) {
+	e := testEngine(t)
+	e.Helper = fakeHelper(t, t.TempDir(), "exit 0")
+	for _, voice := range []string{"bm_george", "af_heart:0.5,jf_alpha:0.5"} {
+		e.Voice = voice
+		if !strings.Contains(e.Status(), "only American English voices") {
+			t.Errorf("%s: status %q", voice, e.Status())
+		}
+		if err := e.Install(context.Background(), &bytes.Buffer{}); err == nil {
+			t.Errorf("%s: installed", voice)
+		}
+		if err := e.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "only American English voices") {
+			t.Errorf("%s: start: %v", voice, err)
+		}
+	}
+	e.Voice = "am_adam"
+	must(t, e.Install(context.Background(), &bytes.Buffer{}))
+	if e.Status() != "" {
+		t.Errorf("am_adam: status %q", e.Status())
 	}
 }

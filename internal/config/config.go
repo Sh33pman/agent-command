@@ -196,8 +196,8 @@ skip = "cmd+ctrl+k"
 close = "escape"
 
 [speech]
-# Kokoro's voice; a blend is "voice:weight,voice:weight". Run
-# "acmd speech install" after changing it.
+# Kokoro's voice; a blend is "voice:weight,voice:weight". American English
+# voices only (af_, am_). Run "acmd speech install" after changing it.
 voice = "af_heart:0.6,af_bella:0.4"
 speed = 1.0
 `

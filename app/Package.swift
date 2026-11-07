@@ -1,11 +1,11 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // The acmd v2 app. GhosttyKit comes from scripts/build-ghostty.sh, which
 // copies it to vendor/ (git-ignored).
 import PackageDescription
 
 let package = Package(
     name: "AgentCommand",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     targets: [
         .binaryTarget(name: "GhosttyKit", path: "vendor/GhosttyKit.xcframework"),
         .executableTarget(

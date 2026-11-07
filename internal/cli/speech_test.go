@@ -30,8 +30,8 @@ func TestSpeechEngineOldConfig(t *testing.T) {
 	if err != nil || e.Voice != "af_sky" {
 		t.Errorf("old config: %+v %v", e, err)
 	}
-	if strings.Contains(installQuestion(e), "Python") {
-		t.Error("asks about removing a Python engine that isn't there")
+	if strings.Contains(installQuestion(e), "old speech engine") {
+		t.Error("asks about removing an old engine that isn't there")
 	}
 }
 
@@ -52,11 +52,11 @@ func TestSpeechStatusShowsOldPythonEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := out.String()
-	if !strings.Contains(s, "Speech: set up for the old Python engine") || !strings.Contains(s, "Old Python speech engine: 3 MB") {
+	if !strings.Contains(s, "Speech: set up for an older engine") || !strings.Contains(s, "Old speech engine: 3 MB") {
 		t.Errorf("%s", s)
 	}
 	e, _ := speechEngine()
-	if !strings.Contains(installQuestion(e), "old Python speech engine there (3 MB) is removed") {
+	if !strings.Contains(installQuestion(e), "old speech engine there (3 MB) is removed") {
 		t.Errorf("install question: %s", installQuestion(e))
 	}
 

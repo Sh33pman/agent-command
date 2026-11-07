@@ -114,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         notifier.start()
         store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
         setUpPopup()
+        SpeechController.shared.checkSetup()
         let args = CommandLine.arguments
         offerSetup()
         store.start()
@@ -484,13 +485,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// In the app, the Inbox. Elsewhere, the popup: the first press gives an open one
     /// the keyboard, and the next closes it.
     private func popupShortcut() {
-        if NSApp.isActive {
-            toggleInbox()
-        } else if popupWindow.hasKeyboard {
+        if popupWindow.hasKeyboard {
             popupWindow.close()
+        } else if NSApp.isActive {
+            toggleInbox()
         } else {
             popupWindow.show(focus: true)
         }
+    }
+
+    @objc private func toggleReading() {
+        store.toggleReadingSelected()
     }
 
     @objc private func togglePopupEnabled() {
@@ -504,6 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The Inbox goes over the whole window, and your panes are as you left them after.
     private func showInbox(_ filter: InboxFilter) {
         closePopup()
+        popupWindow.close()
         let model = InboxModel(store: store, filter: filter)
         model.close = { [weak self] in self?.closePopup() }
         model.goToSession = { [weak self] id in self?.openSidebarRow(id) }
@@ -642,10 +648,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         list.append(PopupCommand(section: "App", title: "Inbox", shortcut: "⇧⌘I") { [weak self] in
             self?.showInbox(.queue)
         })
+        let speech = SpeechController.shared
+        list.append(PopupCommand(section: "App", title: speech.isEnabled ? "Turn speech off" : "Turn speech on") {
+            speech.setEnabled(!speech.isEnabled)
+        })
+        if speech.isEnabled, current?.isAgent == true || speech.isSpeaking {
+            let title = SpeechController.shared.isSpeaking ? "Stop reading" : "Read the latest message aloud"
+            list.append(PopupCommand(section: "App", title: title, shortcut: "⇧⌘S") { [weak self] in
+                self?.store.toggleReadingSelected()
+            })
+        }
         let popup = PopupSettings.shared
+        list.append(PopupCommand(section: "App", title: popup.autoPlay ? "Stop reading aloud in the popup" : "Read aloud in the popup") {
+            popup.autoPlay.toggle()
+        })
         list.append(PopupCommand(section: "App", title: popup.enabled ? "Turn popup off" : "Turn popup on", shortcut: "⌥⌘I") {
             popup.enabled.toggle()
         })
+        for style in ReplyPopupStyle.allCases where style != popup.style {
+            list.append(PopupCommand(section: "App", title: "Popup style: \(style.label)") {
+                popup.style = style
+            })
+        }
         for opens in PopupOpens.allCases where opens != popup.opens {
             list.append(PopupCommand(section: "App", title: "Popup opens for: \(opens.label)") {
                 popup.opens = opens
@@ -720,6 +744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ("Change Theme…", #selector(showThemes), "T"),
             ("Focus Sidebar", #selector(toggleSidebarFocus), "B"),
             ("Inbox", #selector(toggleInbox), "I"),
+            ("Read Aloud", #selector(toggleReading), "S"),
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
             item.target = self
@@ -769,13 +794,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// Opening a running app shows its window.
+    /// A click on the Dock icon: the popup if it's open, even behind other windows,
+    /// otherwise the main window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if popupWindow.isOpen {
+            popupWindow.show(focus: true)
+            return false
+        }
         window?.makeKeyAndOrderFront(nil)
         return true
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        popupWindow.close()
+        popupWindow.appBecameActive()
         notifier.refreshPermission()
         GhosttyRuntime.shared.setFocus(true)
         store.markLookedAtSeen()
@@ -794,8 +825,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         trace("window will close: \(String(describing: notification.object))")
     }
 
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let item = NSMenuItem(title: "Inbox", action: #selector(openPopupFromDock), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func openPopupFromDock() {
+        popupWindow.show(focus: true)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         trace("application will terminate")
+        SpeechController.shared.stop()
     }
 }
 

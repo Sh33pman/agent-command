@@ -45,7 +45,9 @@ final class InboxModel {
 
     private(set) var filter: InboxFilter
     /// The message open below or beside the list.
-    private(set) var selectedID: Int64?
+    private(set) var selectedID: Int64? {
+        didSet { if selectedID != oldValue { messageChanged() } }
+    }
     private(set) var history: [InboxItem] = []
     /// Every session's items, for the counts beside the sessions.
     private(set) var allItems: [InboxItem] = []
@@ -60,16 +62,38 @@ final class InboxModel {
     private(set) var panel = InboxPanel.messages
     /// Where each panel's cursor is, and what's marked with x.
     private(set) var sessionCursor: InboxFilter
-    private(set) var messageCursor: Int64?
+    private(set) var messageCursor: Int64? {
+        didSet {
+            if let session = items.first(where: { $0.id == messageCursor })?.sessionID { cursorSession = session }
+        }
+    }
+    /// Says that a new message has come in, for a few seconds.
+    private(set) var notice: String?
     private(set) var markedSessions: Set<String> = []
     private(set) var markedMessages: Set<Int64> = []
 
     @ObservationIgnored private var lastIndex = 0
     @ObservationIgnored private var hadQueue = false
+    /// Whether the next list to load shows its first message.
+    @ObservationIgnored private var showsFirst = false
+    /// The session of the message under the cursor, known even once that message has gone.
+    @ObservationIgnored private var cursorSession: String?
+    /// A session whose message left while on show: its next one takes over, and is read
+    /// if the one before it was.
+    @ObservationIgnored private var following: (session: String, speak: Bool)?
+    /// Messages you answered or dismissed, as against ones that went by themselves.
+    @ObservationIgnored private var leftByYou: Set<Int64> = []
+    /// What the queue held last time, to tell what's new.
+    @ObservationIgnored private var knownItems: Set<Int64>?
+    /// Stops the popup reading a message it moved to by itself.
+    @ObservationIgnored private var movingQuietly = false
+    @ObservationIgnored private var noticeTimer: Timer?
     /// The popup shows the message under the cursor, without opening it first.
     private let showsCursor: Bool
     /// Whether a message on show counts as read: only once you're using the popup.
     @ObservationIgnored var canMarkRead: () -> Bool = { true }
+    /// Whether a key press is for this Inbox: the popup can sit beside the app's window.
+    @ObservationIgnored var handlesKey: (NSEvent) -> Bool = { _ in true }
     @ObservationIgnored private var shownAt = Date.distantPast
     @ObservationIgnored private var monitor: Any?
 
@@ -139,14 +163,19 @@ final class InboxModel {
     // MARK: Showing
 
     func start() {
+        // Opened for a session or set: as if you'd chosen it on the left.
+        showsFirst = filter != .queue
         store.onInboxChanged = { [weak self] in self?.reload() }
         reload()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handle(event) == true ? nil : event
+            guard let self, self.handlesKey(event) else { return event }
+            return self.handle(event) ? nil : event
         }
     }
 
     func stop() {
+        noticeTimer?.invalidate()
+        SpeechController.shared.stop()
         store.onInboxChanged = nil
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
@@ -156,6 +185,9 @@ final class InboxModel {
     func setFilter(_ next: InboxFilter) {
         filter = next
         sessionCursor = next
+        showsFirst = true
+        following = nil
+        knownItems = nil
         selectedID = nil
         messageCursor = nil
         lastIndex = 0
@@ -185,6 +217,7 @@ final class InboxModel {
 
     /// A click on a message: the cursor moves, and nothing opens.
     func click(item: InboxItem) {
+        following = nil
         setPanel(.messages)
         messageCursor = item.id
         lastIndex = items.firstIndex { $0.id == item.id } ?? 0
@@ -201,6 +234,26 @@ final class InboxModel {
             error = nil
         }
         markShownRead()
+    }
+
+    /// Reading stops when you leave a message. In the popup, the next can start by
+    /// itself, but only the one on show: it doesn't run through the queue.
+    private func messageChanged() {
+        let speech = SpeechController.shared
+        speech.stop()
+        if showsCursor, speech.isEnabled, PopupSettings.shared.autoPlay, !movingQuietly, let selected {
+            speech.speak(selected)
+        }
+    }
+
+    /// The shortcut: stops whatever is being read, or reads the message on show.
+    private func toggleSpeech() {
+        let speech = SpeechController.shared
+        if speech.isSpeaking {
+            speech.stop()
+        } else if let item = selected ?? cursorItem {
+            speech.speak(item)
+        }
     }
 
     /// Marks the message on show as read, if you're using the popup.
@@ -236,6 +289,7 @@ final class InboxModel {
             let index = filters.firstIndex(of: sessionCursor) ?? 0
             sessionCursor = filters[max(0, min(filters.count - 1, index + by))]
         case .messages:
+            following = nil
             let list = items
             guard !list.isEmpty else { return }
             let index = list.firstIndex { $0.id == messageCursor } ?? 0
@@ -315,6 +369,31 @@ final class InboxModel {
     /// the one that took its place. A message that's gone is no longer open.
     private func keepSelection() {
         let list = items
+        let speech = SpeechController.shared
+        let cursorLeft = messageCursor != nil && !list.contains { $0.id == messageCursor }
+        let leftByItself = cursorLeft && !leftByYou.contains(messageCursor ?? -1)
+        // A message that goes by itself shouldn't start the next one reading.
+        if filter == .queue, leftByItself, selectedID == messageCursor, let cursorSession {
+            let wasReading = speech.speakingItem == messageCursor
+            following = (cursorSession, wasReading || (showsCursor && speech.isEnabled && PopupSettings.shared.autoPlay))
+        } else if cursorLeft {
+            following = nil
+        }
+        let newcomers = list.filter { knownItems?.contains($0.id) == false }
+        if filter == .queue { knownItems = Set(list.map(\.id)) }
+
+        let replacement = following.flatMap { follow in list.first { $0.sessionID == follow.session } }
+        if let replacement, let follow = following {
+            following = nil
+            if !typing && choice == nil || cursorLeft {
+                moveToReplacement(replacement, speak: follow.speak)
+                keepRest(list)
+                return
+            }
+        }
+
+        movingQuietly = leftByItself
+        defer { movingQuietly = false }
         if let index = list.firstIndex(where: { $0.id == messageCursor }) {
             lastIndex = index
         } else {
@@ -325,11 +404,51 @@ final class InboxModel {
             typing = false
         }
         showCursor()
+        if let newest = newcomers.last { say("New message from \(sessionName(newest.sessionID)).") }
+        keepRest(list)
+    }
+
+    /// A newer message from the session you were on takes over from the one that left.
+    private func moveToReplacement(_ item: InboxItem, speak: Bool) {
+        movingQuietly = true
+        defer { movingQuietly = false }
+        typing = false
+        messageCursor = item.id
+        lastIndex = items.firstIndex { $0.id == item.id } ?? 0
+        selectedID = item.id
+        shownAt = Date()
+        if speak { SpeechController.shared.speak(item) }
+        if showsCursor { markShownRead() } else if !item.read { setRead(item, true) }
+        say("New message from \(sessionName(item.sessionID)). It replaces the one you were on.")
+    }
+
+    private func say(_ text: String) {
+        notice = text
+        noticeTimer?.invalidate()
+        noticeTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in self?.notice = nil }
+    }
+
+    /// What follows wherever the cursor ended up.
+    private func keepRest(_ list: [InboxItem]) {
+        showFirstIfAsked()
         markedMessages.formIntersection(list.map(\.id))
         if filter == .queue {
             if list.isEmpty && hadQueue { onQueueEmptied() }
             hadQueue = !list.isEmpty
         }
+    }
+
+    /// After opening something on the left, shows its first message, with the keyboard
+    /// still on the list.
+    private func showFirstIfAsked() {
+        guard showsFirst else { return }
+        showsFirst = false
+        guard let first = items.first else { return }
+        messageCursor = first.id
+        lastIndex = 0
+        selectedID = first.id
+        shownAt = Date()
+        if !first.read { setRead(first, true) }
     }
 
     /// Opens a message. As return does on a session, a second open goes to where you
@@ -352,6 +471,7 @@ final class InboxModel {
 
     func dismiss(_ item: InboxItem) {
         guard item.isOpen else { return }
+        leftByYou.insert(item.id)
         store.dismissInbox(item.id) { [weak self] in self?.reload() }
     }
 
@@ -374,6 +494,7 @@ final class InboxModel {
 
     private func send(_ item: InboxItem, option: Int?, text: String?) {
         guard !sending else { return }
+        leftByYou.insert(item.id)
         sending = true
         error = nil
         store.answerInbox(item.id, option: option, text: text) { [weak self] failure in
@@ -417,6 +538,8 @@ final class InboxModel {
                 close()
             case (_, [.command, .shift], "b"):
                 if !showsCursor { setPanel(panel == .sessions ? .messages : .sessions) }
+            case (_, [.command, .shift], "s"):
+                toggleSpeech()
             case (_, [.command], "r"):
                 rename(sessionTargets)
             case (51, [.command, .shift], _):
@@ -612,7 +735,7 @@ struct InboxView: View {
     }
 
     private var footer: some View {
-        Text("↑↓ or ⌃J ⌃K move   ↩ open   x mark   ⇧⌘B sessions   1-9 answer   r reply   d dismiss   u unread   g go   esc back")
+        Text("↑↓ or ⌃J ⌃K move   ↩ open   x mark   ⇧⌘B sessions   1-9 answer   r reply   d dismiss   u unread   g go   ⇧⌘S read aloud   esc back")
             .font(AppFont.ui(11))
             .foregroundStyle(theme.dim)
             .lineLimit(1)
@@ -847,6 +970,7 @@ struct InboxView: View {
                         Text(item.stateLabel).font(AppFont.ui(11)).foregroundStyle(theme.dim).lineLimit(1)
                     }
                     Spacer()
+                    SpeakButton(item: item)
                     actionButton("Dismiss", enabled: item.isOpen) { model.dismiss(item) }
                     actionButton(item.read ? "Mark unread" : "Mark read", enabled: true) {
                         model.setRead(item, !item.read)
@@ -858,6 +982,7 @@ struct InboxView: View {
                 .padding(.horizontal, 16)
                 .frame(height: 30)
                 Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
+                InboxNotice(model: model)
                 ScrollView {
                     Text(item.rendered)
                         .textSelection(.enabled)
@@ -911,6 +1036,7 @@ struct PopupInboxView: View {
                     VStack(spacing: 0) {
                         header
                         Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
+                        InboxNotice(model: model)
                         message.frame(maxWidth: .infinity, maxHeight: .infinity)
                         InboxDivider(
                             vertical: false, value: $replyHeight, inverted: true,
@@ -920,7 +1046,7 @@ struct PopupInboxView: View {
                 }
             }
             Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
-            Text("↑↓ or ⌃J ⌃K next and previous   ↩ reply or choose   1-9 answer   d dismiss   g go to session   esc close")
+            Text("↑↓ or ⌃J ⌃K next and previous   ↩ reply or choose   1-9 answer   d dismiss   g go to session   ⇧⌘S read aloud   esc close")
                 .font(AppFont.ui(11))
                 .foregroundStyle(theme.dim)
                 .lineLimit(1)
@@ -996,6 +1122,7 @@ struct PopupInboxView: View {
                 iconButton("chevron.down", help: "Next (↓)", enabled: position.index < position.count) { model.step(1) }
             }
             if let item = model.selected {
+                SpeakButton(item: item)
                 textButton("Dismiss") { model.dismiss(item) }
                 textButton("Go to session") { model.go(item) }
             }
@@ -1090,6 +1217,46 @@ private struct InboxDivider: View {
     }
 }
 
+/// Says that a new message has come in.
+private struct InboxNotice: View {
+    let model: InboxModel
+
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        if let notice = model.notice {
+            Label(notice, systemImage: "bell.badge")
+                .font(AppFont.ui(11))
+                .foregroundStyle(theme.yellow)
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 22)
+        }
+    }
+}
+
+/// Reads a message aloud, or stops.
+struct SpeakButton: View {
+    let item: InboxItem
+
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        let speech = SpeechController.shared
+        let speaking = speech.speakingItem == item.id
+        if speech.isEnabled {
+            Button {
+                speech.toggle(item)
+            } label: {
+                Image(systemName: speaking ? "stop.fill" : "speaker.wave.2").foregroundStyle(theme.fg)
+            }
+            .buttonStyle(.plain)
+            .help(speaking ? "Stop reading (⇧⌘S)" : "Read aloud (⇧⌘S)")
+        }
+    }
+}
+
 /// How to answer an item: its options, or a reply box.
 private struct InboxAnswerView: View {
     @Bindable var model: InboxModel
@@ -1102,7 +1269,7 @@ private struct InboxAnswerView: View {
     var body: some View {
         let blocked = model.answerable(item)
         VStack(alignment: .leading, spacing: 8) {
-            if let error = model.error {
+            if let error = model.error ?? SpeechController.shared.failure {
                 Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(theme.red)
             }
             if item.isOpen && !item.multipart {

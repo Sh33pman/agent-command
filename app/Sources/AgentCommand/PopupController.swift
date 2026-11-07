@@ -35,6 +35,23 @@ enum PopupOpens: String, CaseIterable, Identifiable {
     }
 }
 
+/// How the popup appears.
+enum ReplyPopupStyle: String, CaseIterable, Identifiable {
+    /// Opens over everything, and drops behind when you click something else.
+    case window
+    /// A panel floating over a dimmed screen, which stays in front of every app.
+    case overlay
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .window: "Window that can go behind"
+        case .overlay: "Always on top, dimmed"
+        }
+    }
+}
+
 /// The popup's settings, which the status bar and the command palette change.
 @Observable
 final class PopupSettings {
@@ -42,6 +59,8 @@ final class PopupSettings {
 
     private static let enabledKey = "popup.enabled"
     private static let opensKey = "popup.opens"
+    private static let autoPlayKey = "popup.autoplay"
+    private static let styleKey = "popup.style"
 
     var enabled: Bool {
         didSet { UserDefaults.standard.set(enabled, forKey: Self.enabledKey) }
@@ -51,7 +70,19 @@ final class PopupSettings {
         didSet { UserDefaults.standard.set(opens.rawValue, forKey: Self.opensKey) }
     }
 
+    /// Whether the popup reads each message as it's shown.
+    var autoPlay: Bool {
+        didSet { UserDefaults.standard.set(autoPlay, forKey: Self.autoPlayKey) }
+    }
+
+    /// Takes effect the next time it opens.
+    var style: ReplyPopupStyle {
+        didSet { UserDefaults.standard.set(style.rawValue, forKey: Self.styleKey) }
+    }
+
     private init() {
+        style = UserDefaults.standard.string(forKey: Self.styleKey).flatMap(ReplyPopupStyle.init) ?? .window
+        autoPlay = UserDefaults.standard.bool(forKey: Self.autoPlayKey)
         enabled = UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true
         opens = UserDefaults.standard.string(forKey: Self.opensKey).flatMap(PopupOpens.init) ?? .everything
     }
@@ -60,6 +91,7 @@ final class PopupSettings {
 /// A panel that can have the keyboard without bringing the app forward.
 private final class PopupPanel: NSPanel {
     var onBecomeKey: () -> Void = {}
+    var onClose: () -> Void = {}
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -68,6 +100,11 @@ private final class PopupPanel: NSPanel {
         super.becomeKey()
         onBecomeKey()
     }
+
+    override func close() {
+        super.close()
+        onClose()
+    }
 }
 
 /// A click on an unfocused panel acts straight away.
@@ -75,13 +112,15 @@ private final class PopupHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// Shows the Inbox over whatever app you're using. It appears without taking the
-/// keyboard, so typing can't answer a prompt by accident. A click or the shortcut
-/// gives it the keyboard.
+/// Shows the queue while you're using another app, in the style set in PopupSettings.
+/// It appears without taking the keyboard, so typing can't answer a prompt by accident.
+/// A click or the shortcut gives it the keyboard.
 final class PopupController {
     private let store: SessionStore
-    private var panel: PopupPanel?
+    private var panel: NSWindow?
     private var dim: NSWindow?
+    /// See a click elsewhere, so the window can drop behind.
+    private var clickMonitors: [Any] = []
     private var model: InboxModel?
 
     /// Called before showing: the window's Inbox can't be open at the same time.
@@ -99,21 +138,34 @@ final class PopupController {
     /// Takes new items: opens if one of them should, unless you're in the app.
     func itemsArrived(_ items: [InboxItem]) {
         let settings = PopupSettings.shared
-        guard settings.enabled, !NSApp.isActive, !isOpen,
+        guard settings.enabled, !NSApp.isActive,
             let first = items.first(where: { settings.opens.opens(forItem: $0.kind) })
         else { return }
-        show(focus: false, cursor: first)
+        if let panel {
+            // It may have gone behind another app.
+            if !panel.isMiniaturized { raise(panel) }
+        } else {
+            show(focus: false, cursor: first)
+        }
+    }
+
+    /// The app came to the front. The overlay is for when you're elsewhere; a window
+    /// is yours to keep open.
+    func appBecameActive() {
+        if dim != nil { close() }
     }
 
     /// Whether the popup shows this notification instead of a banner.
     func replacesBanner(noticeKind: String) -> Bool {
         let settings = PopupSettings.shared
-        return settings.enabled && !NSApp.isActive && settings.opens.opens(forNotice: noticeKind)
+        // Minimized, it wouldn't show you anything.
+        return settings.enabled && !NSApp.isActive && panel?.isMiniaturized != true
+            && settings.opens.opens(forNotice: noticeKind)
     }
 
     func show(focus: Bool, cursor: InboxItem? = nil) {
-        guard panel == nil else {
-            if focus { panel?.makeKeyAndOrderFront(nil) }
+        if let panel {
+            if focus { bringForward(panel) }
             return
         }
         willShow()
@@ -125,6 +177,77 @@ final class PopupController {
         model.close = { [weak self] in self?.close() }
         model.onQueueEmptied = { [weak self] in self?.close() }
 
+        let overlay = PopupSettings.shared.style == .overlay
+        let hosting = PopupHostingView(rootView: PopupInboxView(model: model))
+        // The window's size is its own: SwiftUI would fit it to the content, and stop
+        // it being resized.
+        hosting.sizingOptions = []
+        let area = screen.visibleFrame
+        let size = NSSize(width: (area.width * 2 / 3).rounded(), height: (area.height * 2 / 3).rounded())
+        let frame = NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
+        let shown = overlay
+            ? makeOverlay(frame: frame, screen: screen, content: hosting, model: model)
+            : makeWindow(frame: frame, content: hosting, model: model)
+        model.canMarkRead = { [weak shown] in shown?.isKeyWindow == true }
+        model.handlesKey = { [weak shown] event in event.window === shown }
+
+        if focus { bringForward(shown) } else { raise(shown) }
+        model.start()
+        if let cursor { model.click(item: cursor) }
+        panel = shown
+        self.model = model
+    }
+
+    /// Gives it the keyboard, without bringing the app forward.
+    private func bringForward(_ shown: NSWindow) {
+        if shown.isMiniaturized { shown.deminiaturize(nil) }
+        shown.level = .floating
+        shown.makeKeyAndOrderFront(nil)
+    }
+
+    /// Puts it over everything, without the keyboard.
+    private func raise(_ shown: NSWindow) {
+        shown.level = .floating
+        shown.orderFrontRegardless()
+    }
+
+    private func makeWindow(frame: NSRect, content: NSView, model: InboxModel) -> NSWindow {
+        let window = PopupPanel(
+            contentRect: frame, styleMask: [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = false
+        window.becomesKeyOnlyIfNeeded = false
+        window.title = "Inbox - Agent Command"
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.contentView = content
+        window.contentMinSize = NSSize(width: 560, height: 320)
+        // Two thirds of the screen, title bar included, until you resize it.
+        window.setFrame(frame, display: false)
+        window.setFrameAutosaveName("ReplyPopup")
+        window.onBecomeKey = { [weak model, weak window] in
+            window?.level = .floating
+            model?.markShownRead()
+        }
+        window.onClose = { [weak self] in self?.close() }
+        // A click on anything else lets that go in front. It's on every Space, so it
+        // comes back the moment a new message does.
+        let dropBehind = { [weak window] in
+            window?.level = .normal
+        }
+        if let outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { _ in dropBehind() }) {
+            clickMonitors.append(outside)
+        }
+        if let inside = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak window] event in
+            if event.window !== window { dropBehind() }
+            return event
+        }) {
+            clickMonitors.append(inside)
+        }
+        return window
+    }
+
+    private func makeOverlay(frame: NSRect, screen: NSScreen, content: NSView, model: InboxModel) -> NSWindow {
         // The dimming lets clicks through, so what's behind it keeps working.
         let dim = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
         dim.isReleasedWhenClosed = false
@@ -134,9 +257,6 @@ final class PopupController {
         dim.level = .floating
         dim.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let area = screen.visibleFrame
-        let size = NSSize(width: (area.width * 2 / 3).rounded(), height: (area.height * 2 / 3).rounded())
-        let frame = NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
         let panel = PopupPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
@@ -144,20 +264,16 @@ final class PopupController {
         panel.level = .floating
         panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = PopupHostingView(rootView: PopupInboxView(model: model))
+        panel.contentView = content
         panel.onBecomeKey = { [weak model] in model?.markShownRead() }
-        model.canMarkRead = { [weak panel] in panel?.isKeyWindow == true }
-
         dim.orderFrontRegardless()
-        if focus { panel.makeKeyAndOrderFront(nil) } else { panel.orderFrontRegardless() }
-        model.start()
-        if let cursor { model.click(item: cursor) }
         self.dim = dim
-        self.panel = panel
-        self.model = model
+        return panel
     }
 
     func close() {
+        clickMonitors.forEach(NSEvent.removeMonitor)
+        clickMonitors = []
         model?.stop()
         model = nil
         panel?.orderOut(nil)

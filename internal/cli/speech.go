@@ -33,9 +33,9 @@ func speechEngine() (*speech.Engine, error) {
 
 // installQuestion asks to set up e.
 func installQuestion(e *speech.Engine) string {
-	q := fmt.Sprintf("Set up speech in %s? It downloads Kokoro for Core ML with its voices and compiles it for this Mac (about 400 MB). Nothing else on your Mac changes.", tilde(e.Dir))
+	q := fmt.Sprintf("Set up speech in %s? It downloads Kokoro with its voices (about 360 MB). Nothing else on your Mac changes.", tilde(e.Dir))
 	if e.HasLegacy() {
-		q += fmt.Sprintf(" The old Python speech engine there (%s) is removed.", speech.Size(e.LegacySize()))
+		q += fmt.Sprintf(" The old speech engine there (%s) is removed.", speech.Size(e.LegacySize()))
 	}
 	return q
 }
@@ -43,22 +43,22 @@ func installQuestion(e *speech.Engine) string {
 func newSpeechCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "speech",
-		Short: "Read responses aloud with a local text-to-speech model (Kokoro on Core ML)",
+		Short: "Read responses aloud with a local text-to-speech model (Kokoro on MLX)",
 		Long: `acmd can read sessions' responses aloud with Kokoro, a text-to-speech model
-that runs on this Mac (Apple Silicon, Core ML) in acmd-speech, a helper that
+that runs on this Mac (Apple Silicon, MLX) in acmd-speech, a helper that
 ships with acmd. The voice is [speech] voice in config.toml.
 ` + "`acmd speech install`" + ` downloads the model into acmd's own folder (and removes the
-Python engine older versions used); ` + "`acmd speech bench`" + ` times it.`,
+engines older versions used); ` + "`acmd speech bench`" + ` times it.`,
 	}
-	cmd.AddCommand(newSpeechInstallCmd(), newSpeechUninstallCmd(), newSpeechStatusCmd(), newSpeechSayCmd(), newSpeechBenchCmd())
+	cmd.AddCommand(newSpeechInstallCmd(), newSpeechUninstallCmd(), newSpeechStatusCmd(), newSpeechSayCmd(), newSpeechStopCmd(), newSpeechBenchCmd())
 	return cmd
 }
 
 func newSpeechInstallCmd() *cobra.Command {
-	var yes bool
+	var yes, progress bool
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Set up speech: download and compile the model (about 400 MB); removes the old Python engine",
+		Short: "Set up speech: download the model (about 360 MB); removes older speech engines",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := speechEngine()
@@ -71,6 +71,10 @@ func newSpeechInstallCmd() *cobra.Command {
 			if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, installQuestion(e)); err != nil {
 				return err
 			}
+			if progress {
+				// One line per percent, which the app shows as a progress bar.
+				e.Progress = func(percent int) { fmt.Fprintf(cmd.OutOrStdout(), "progress %d\n", percent) }
+			}
 			if err := e.Install(cmd.Context(), cmd.OutOrStdout()); err != nil {
 				return err
 			}
@@ -79,6 +83,7 @@ func newSpeechInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	cmd.Flags().BoolVar(&progress, "progress", false, "print how much has downloaded, for the app")
 	return cmd
 }
 
@@ -86,7 +91,7 @@ func newSpeechUninstallCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
-		Short: "Remove speech (the model, and the old Python engine if it's still there)",
+		Short: "Remove speech (the model, and older engines if they're still there)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := speechEngine()
@@ -121,9 +126,17 @@ func newSpeechStatusCmd() *cobra.Command {
 			if st == "" {
 				st = "set up"
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Speech: %s\nModel:  Kokoro-82M on Core ML (acmd-speech)\nVoice:  %s\nFolder: %s\n", st, e.Voice, tilde(e.Dir))
+			fmt.Fprintf(cmd.OutOrStdout(), "Speech: %s\nModel:  Kokoro-82M on MLX (acmd-speech)\nVoice:  %s\nFolder: %s\n", st, e.Voice, tilde(e.Dir))
+			switch running, speaking := e.EngineStatus(cmd.Context()); {
+			case speaking:
+				fmt.Fprintln(cmd.OutOrStdout(), "Engine: running, reading aloud")
+			case running:
+				fmt.Fprintln(cmd.OutOrStdout(), "Engine: running")
+			default:
+				fmt.Fprintln(cmd.OutOrStdout(), "Engine: not running (starts when needed)")
+			}
 			if e.HasLegacy() {
-				fmt.Fprintf(cmd.OutOrStdout(), "Old Python speech engine: %s in %s, no longer used (`acmd speech install` or `acmd speech uninstall` removes it)\n",
+				fmt.Fprintf(cmd.OutOrStdout(), "Old speech engine: %s in %s, no longer used (`acmd speech install` or `acmd speech uninstall` removes it)\n",
 					speech.Size(e.LegacySize()), tilde(e.Dir))
 			}
 			return nil
@@ -178,6 +191,21 @@ func newSpeechSayCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&out, "out", "o", "", "write a WAV file instead of playing")
 	return cmd
+}
+
+func newSpeechStopCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "stop",
+		Short: "Stop reading aloud, whatever started it",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			e, err := speechEngine()
+			if err != nil {
+				return err
+			}
+			return e.Stop(cmd.Context())
+		},
+	}
 }
 
 func newSpeechBenchCmd() *cobra.Command {

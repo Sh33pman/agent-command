@@ -28,6 +28,9 @@ cp "$bin/AgentCommand" "$app/Contents/MacOS/Agent Command"
 # Built outside the app: make can't take a path with a space.
 make -C "$root" speech-helper SPEECH_OUT="$dist/acmd-speech"
 cp "$dist/acmd-speech" "$app/Contents/MacOS/acmd-speech"
+# MLX looks next to the helper, but only code can be signed in MacOS.
+cp "$dist/mlx.metallib" "$app/Contents/Resources/mlx.metallib"
+ln -s ../Resources/mlx.metallib "$app/Contents/MacOS/mlx.metallib"
 cp -R "$root/app/Sources/AgentCommand/Resources/Fonts" "$app/Contents/Resources/Fonts"
 cp "$root/packaging/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 mkdir -p "$app/Contents/Resources/ghostty"
@@ -45,7 +48,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>${version#v}</string>
-	<key>LSMinimumSystemVersion</key><string>14.0</string>
+	<key>LSMinimumSystemVersion</key><string>26.0</string>
 	<key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

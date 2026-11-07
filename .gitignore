@@ -50,3 +50,6 @@ go.work.sum
 
 # Built from test/fakeclaude
 /fakeclaude
+
+# From running scripts/scripts_test.py
+__pycache__/

@@ -162,6 +162,8 @@ final class SpeechController {
         }
         process.terminationHandler = { [weak self] ended in
             output.fileHandleForReading.readabilityHandler = nil
+            // It can end before its last words have been read, and those say why.
+            let rest = output.fileHandleForReading.readDataToEndOfFile()
             DispatchQueue.main.async {
                 guard let self, self.setupProcess === ended else { return }
                 self.setupProcess = nil
@@ -169,7 +171,7 @@ final class SpeechController {
                 if ended.terminationStatus == 0 {
                     self.isInstalled = true
                 } else {
-                    self.setupFailure = Self.reason(from: written)
+                    self.setupFailure = Self.reason(from: written + rest)
                 }
             }
         }

@@ -16,7 +16,7 @@
 | `pr-title.yml` | PRs | Conventional Commit title check |
 | `release.yml` | push to `main` | release-please; on a release: gate (`make ci fuzz`), then build and sign the app, publish it to the public tap and update the cask. |
 
-All workflows run on **four self-hosted runners** on the maintainer's Mac (label `acmd`; SPEC §13.6), so CI isn't metered, but it waits while that Mac is asleep. Docs-only PRs skip CI. **Dependabot PRs need the `ok-to-test` label** before CI runs, because CI would execute the updated dependencies on that Mac. The Homebrew formula check never installs on a self-hosted runner (safe mode).
+All workflows run on **four self-hosted runners** on the maintainer's Mac (label `acmd`; SPEC §13.6), so CI isn't metered, but it waits while that Mac is asleep. Docs-only PRs skip CI. **Dependabot PRs need the `ok-to-test` label** before CI runs, because CI would execute the updated dependencies on that Mac. Their titles start with `chore`, so merging one doesn't make a release: it ships with the next `fix` or `feat`. The Homebrew formula check never installs on a self-hosted runner (safe mode).
 
 ## Releases
 

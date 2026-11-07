@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.0](https://github.com/brettmostert/agent-command/compare/v0.40.0...v0.41.0) (2026-11-07)
+
+
+### Features
+
+* keep the app running when its window closes ([#167](https://github.com/brettmostert/agent-command/issues/167)) ([4917472](https://github.com/brettmostert/agent-command/commit/4917472de49c7c236b1f7cc3a457292512ee9578))
+
 ## [0.40.0](https://github.com/brettmostert/agent-command/compare/v0.39.0...v0.40.0) (2026-11-07)
 
 

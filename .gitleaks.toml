@@ -1,0 +1,7 @@
+# gitleaks (make secrets) scans the whole git history. Only fake secrets belong here.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake tokens that test the log's redaction"
+paths = ['''internal/report/report_test\.go''']

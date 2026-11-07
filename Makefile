@@ -20,7 +20,8 @@ DIST    := $(CURDIR)/dist
 # Pinned tool versions (Dependabot doesn't track these; bump deliberately).
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
-BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GOVULNCHECK_VERSION)
+GITLEAKS_VERSION      := v8.30.1
+BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GOVULNCHECK_VERSION)_$(GITLEAKS_VERSION)
 export PATH := $(BIN):$(PATH)
 
 # Coverage gates (SPEC §12 Testing).
@@ -76,8 +77,11 @@ $(BIN)/golangci-lint:
 $(BIN)/govulncheck:
 	$(call go_install,golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION))
 
+$(BIN)/gitleaks:
+	$(call go_install,github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION))
+
 .PHONY: tools
-tools: $(BIN)/golangci-lint $(BIN)/govulncheck ## Install pinned tools into $(TOOLS_DIR)
+tools: $(BIN)/golangci-lint $(BIN)/govulncheck $(BIN)/gitleaks ## Install pinned tools into $(TOOLS_DIR)
 
 ##@ Checks
 
@@ -114,6 +118,10 @@ fuzz: ## Run each fuzz target briefly (FUZZTIME=30s)
 vuln: $(BIN)/govulncheck ## Scan for known vulnerabilities
 	$(BIN)/govulncheck ./...
 
+.PHONY: secrets
+secrets: $(BIN)/gitleaks ## Scan the git history for committed secrets
+	$(BIN)/gitleaks git --redact --no-banner --log-level warn .
+
 .PHONY: speech-test
 speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
 	swift run --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) speech-core-checks
@@ -122,7 +130,7 @@ speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
 test-vt: ## Run the host's tests with libghostty-vt (needs scripts/build-ghostty.sh)
 	go test -race -shuffle=on -tags libghostty ./internal/vt ./internal/term
 
-ci: lint test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
+ci: lint secrets test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
 
 ##@ Build & release
 

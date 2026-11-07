@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs what CI checks on a PR (lint, then tests with -race and coverage
+# Runs what CI checks on a PR (lint, secrets, then tests with -race and coverage
 # gates) before anything is pushed. Enable with `make hooks`.
 #
 # To push work in progress without the checks (to get it onto a branch or
@@ -30,9 +30,13 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 	echo "pre-push: you have uncommitted changes; the checks run on the working tree as it is." >&2
 fi
 
-echo "pre-push: make lint, make test (to push work in progress without them: SKIP_CHECKS=1 git push)" >&2
+echo "pre-push: make lint, make secrets, make test (to push work in progress without them: SKIP_CHECKS=1 git push)" >&2
 if ! make --no-print-directory lint >&2; then
 	echo "pre-push: lint failed (to push work in progress anyway: SKIP_CHECKS=1 git push)." >&2
+	exit 1
+fi
+if ! make --no-print-directory secrets >&2; then
+	echo "pre-push: a secret may be in the history: check it before pushing, and rotate it if it's real." >&2
 	exit 1
 fi
 if ! make --no-print-directory test >&2; then

@@ -47,3 +47,6 @@ go.work.sum
 # Swift speech engine build output
 /helpers/acmd-speech/.build/
 /helpers/acmd-speech/.swiftpm/
+
+# Built from test/fakeclaude
+/fakeclaude

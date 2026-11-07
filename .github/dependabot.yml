@@ -12,6 +12,21 @@ updates:
       prefix: chore
       include: scope # -> "chore(deps): ..."
 
+  # The speech engine's packages, pinned in Package.resolved. A new mlx-audio-swift
+  # needs the offline install test again (SPEC §8.9), as staying offline depends on
+  # how it works inside.
+  - package-ecosystem: swift
+    directory: /helpers/acmd-speech
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      swift-packages:
+        patterns: ["*"]
+    commit-message:
+      prefix: chore
+      include: scope # -> "chore(deps): ..."
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

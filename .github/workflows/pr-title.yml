@@ -30,7 +30,8 @@ jobs:
             chore
             revert
           requireScope: false
-          subjectPattern: ^(?![A-Z]).+$
+          # Dependabot always writes "Bump", and can't be told otherwise.
+          subjectPattern: ^((?![A-Z]).+|Bump .+)$
           subjectPatternError: |
             The subject "{subject}" should start with a lowercase letter,
             e.g. "feat: add group picker".

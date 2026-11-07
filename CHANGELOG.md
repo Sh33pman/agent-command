@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.0](https://github.com/brettmostert/agent-command/compare/v0.41.1...v0.42.0) (2026-11-07)
+
+
+### Features
+
+* report bugs and request features, and keep a clean daemon log ([#171](https://github.com/brettmostert/agent-command/issues/171)) ([ad0bfd3](https://github.com/brettmostert/agent-command/commit/ad0bfd3f9710adf222cea68d9999531a2671a0b7))
+
 ## [0.41.1](https://github.com/brettmostert/agent-command/compare/v0.41.0...v0.41.1) (2026-11-07)
 
 

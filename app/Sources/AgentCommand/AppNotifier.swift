@@ -9,6 +9,8 @@ import UserNotifications
 final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// Whether you're looking at this session right now.
     @ObservationIgnored var isLooking: (String) -> Bool = { _ in false }
+    /// Whether the popup shows this kind of notice, so a banner would repeat it.
+    @ObservationIgnored var popupShows: (String) -> Bool = { _ in false }
     /// Called with the session of a clicked notification.
     @ObservationIgnored var onOpen: ((String) -> Void)?
     /// Whether notifications are turned off for the app in System Settings.
@@ -75,7 +77,7 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
         for notice in fresh {
             if notice.isWithdrawal {
                 center.removeDeliveredNotifications(withIdentifiers: [notice.sessionID])
-            } else if notice.isForApp && !isLooking(notice.sessionID) {
+            } else if notice.isForApp && !isLooking(notice.sessionID) && !popupShows(notice.kind) {
                 let content = UNMutableNotificationContent()
                 content.title = notice.title
                 content.body = notice.body

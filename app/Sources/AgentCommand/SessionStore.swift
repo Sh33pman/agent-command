@@ -34,6 +34,9 @@ final class SessionStore {
     @ObservationIgnored var onSelect: ((Session?) -> Void)?
     /// Called with the ids of the listed sessions when they change.
     @ObservationIgnored var onListChanged: ((Set<String>) -> Void)?
+    /// Called with items new since the app started.
+    @ObservationIgnored var onNewItems: (([InboxItem]) -> Void)?
+    @ObservationIgnored private var newestItem: Int64?
     /// Called when the queue changes, for an open Inbox.
     @ObservationIgnored var onInboxChanged: (() -> Void)?
     /// Called with the daemon's recent notices, whenever its state is read.
@@ -303,6 +306,13 @@ final class SessionStore {
                 self.queue = queue
                 self.onInboxChanged?()
             }
+            // Items from before this launch aren't news.
+            let newest = max(self.newestItem ?? 0, queue.map(\.id).max() ?? 0)
+            if let seen = self.newestItem {
+                let fresh = queue.filter { $0.id > seen }
+                if !fresh.isEmpty { self.onNewItems?(fresh) }
+            }
+            self.newestItem = newest
             self.markLookedAtSeen()
             self.onNotices?(snapshot.notices ?? [])
         }

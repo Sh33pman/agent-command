@@ -40,6 +40,8 @@ final class InboxModel {
     @ObservationIgnored var rename: ([Session]) -> Void = { _ in }
     @ObservationIgnored var archive: ([Session]) -> Void = { _ in }
     @ObservationIgnored var moveOut: (Session) -> Void = { _ in }
+    /// Called when the last item leaves the queue.
+    @ObservationIgnored var onQueueEmptied: () -> Void = {}
 
     private(set) var filter: InboxFilter
     /// The message open below or beside the list.
@@ -53,6 +55,8 @@ final class InboxModel {
     var drafts: [String: String] = [:]
     /// Whether the reply box should have the keyboard.
     var typing = false
+    /// The option picked out with the keyboard, and the message it belongs to.
+    private var choice: (item: Int64, index: Int)?
     private(set) var panel = InboxPanel.messages
     /// Where each panel's cursor is, and what's marked with x.
     private(set) var sessionCursor: InboxFilter
@@ -61,11 +65,18 @@ final class InboxModel {
     private(set) var markedMessages: Set<Int64> = []
 
     @ObservationIgnored private var lastIndex = 0
+    @ObservationIgnored private var hadQueue = false
+    /// The popup shows the message under the cursor, without opening it first.
+    private let showsCursor: Bool
+    /// Whether a message on show counts as read: only once you're using the popup.
+    @ObservationIgnored var canMarkRead: () -> Bool = { true }
+    @ObservationIgnored private var shownAt = Date.distantPast
     @ObservationIgnored private var monitor: Any?
 
-    init(store: SessionStore, filter: InboxFilter) {
+    init(store: SessionStore, filter: InboxFilter, showsCursor: Bool = false) {
         self.store = store
         self.filter = filter
+        self.showsCursor = showsCursor
         sessionCursor = filter
     }
 
@@ -158,6 +169,7 @@ final class InboxModel {
     /// Moves the keyboard to a panel. Marks don't carry over, as in the sidebar.
     func setPanel(_ next: InboxPanel) {
         typing = false
+        choice = nil
         guard next != panel else { return }
         panel = next
         markedSessions = []
@@ -176,6 +188,35 @@ final class InboxModel {
         setPanel(.messages)
         messageCursor = item.id
         lastIndex = items.firstIndex { $0.id == item.id } ?? 0
+        showCursor()
+    }
+
+    /// In the popup, shows the message under the cursor.
+    private func showCursor() {
+        guard showsCursor else { return }
+        if selectedID != messageCursor {
+            selectedID = messageCursor
+            shownAt = Date()
+            typing = false
+            error = nil
+        }
+        markShownRead()
+    }
+
+    /// Marks the message on show as read, if you're using the popup.
+    func markShownRead() {
+        guard showsCursor, canMarkRead(), let selected, !selected.read else { return }
+        setRead(selected, true)
+    }
+
+    /// Where this message is in the list, and how many there are.
+    var position: (index: Int, count: Int)? {
+        items.firstIndex { $0.id == selectedID }.map { ($0 + 1, items.count) }
+    }
+
+    /// Goes to the next or previous message.
+    func step(_ by: Int) {
+        moveCursor(by)
     }
 
     /// What the left panel lists, in order.
@@ -201,6 +242,7 @@ final class InboxModel {
             let next = max(0, min(list.count - 1, index + by))
             messageCursor = list[next].id
             lastIndex = next
+            showCursor()
         }
     }
 
@@ -282,7 +324,12 @@ final class InboxModel {
             selectedID = nil
             typing = false
         }
+        showCursor()
         markedMessages.formIntersection(list.map(\.id))
+        if filter == .queue {
+            if list.isEmpty && hadQueue { onQueueEmptied() }
+            hadQueue = !list.isEmpty
+        }
     }
 
     /// Opens a message. As return does on a session, a second open goes to where you
@@ -294,7 +341,7 @@ final class InboxModel {
         if item.id != selectedID { error = nil }
         selectedID = item.id
         if !item.read { setRead(item, true) }
-        replyIfPossible()
+        startAnswering()
     }
 
     // MARK: Actions
@@ -369,7 +416,7 @@ final class InboxModel {
             case (_, [.command], "w"):
                 close()
             case (_, [.command, .shift], "b"):
-                setPanel(panel == .sessions ? .messages : .sessions)
+                if !showsCursor { setPanel(panel == .sessions ? .messages : .sessions) }
             case (_, [.command], "r"):
                 rename(sessionTargets)
             case (51, [.command, .shift], _):
@@ -386,12 +433,17 @@ final class InboxModel {
             }
             return false
         }
+        if handleChoice(event, flags: flags) { return true }
         if let move = SidebarKey.from(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, flags: flags) {
             switch move {
             case .up: moveCursor(-1)
             case .down: moveCursor(1)
             case .toggleMark: toggleMark()
-            case .open: openCursor()
+            case .open:
+                // Holding return shouldn't run on to whatever comes next.
+                if !event.isARepeat {
+                    if showsCursor { startAnswering() } else { openCursor() }
+                }
             case .leave:
                 if panel == .sessions { setPanel(.messages) } else { close() }
             }
@@ -409,8 +461,61 @@ final class InboxModel {
         case "g": if let cursorItem { go(cursorItem) }
         default:
             // Only the open message, so you've seen what you're answering.
-            if let digit = Int(key), digit >= 1, let selected, selected.needsOption { answer(selected, option: digit) }
+            if let digit = Int(key), digit >= 1, let selected, selected.needsOption, hasSettled {
+                answer(selected, option: digit)
+            }
         }
+        return true
+    }
+
+    /// Not straight after a message appears: a second press meant for the one before
+    /// would answer this one.
+    private var hasSettled: Bool {
+        Date().timeIntervalSince(shownAt) > 0.5
+    }
+
+    /// Goes to where you answer the message on show: its options, or the reply box.
+    private func startAnswering() {
+        guard let selected else { return }
+        if selected.needsOption {
+            guard !selected.options.isEmpty, !selected.multipart, answerable(selected) == nil,
+                choice?.item != selected.id, !showsCursor || hasSettled
+            else { return }
+            choice = (selected.id, 0)
+            shownAt = Date()
+        } else {
+            replyIfPossible()
+        }
+    }
+
+    /// The option picked out with the keyboard, while this message is being answered.
+    func highlightedOption(of item: InboxItem) -> Int? {
+        guard let choice, choice.item == item.id, answerable(item) == nil else { return nil }
+        return choice.index
+    }
+
+    /// While an option is picked out, arrows and vim's keys move between them, return
+    /// chooses and escape leaves. Key codes, as in the sidebar. Reports whether it was used.
+    private func handleChoice(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
+        guard let selected, let index = highlightedOption(of: selected), flags.isEmpty || flags == .control else {
+            return false
+        }
+        var by = 0
+        switch (event.keyCode, flags) {
+        case (126, []), (123, []), (40, _), (4, _): by = -1
+        case (125, []), (124, []), (38, _), (37, _): by = 1
+        case (36, []), (76, []):
+            if !event.isARepeat, hasSettled { answer(selected, option: index + 1) }
+            return true
+        case (53, []):
+            choice = nil
+            return true
+        default:
+            return false
+        }
+        choice = (selected.id, max(0, min(selected.options.count - 1, index + by)))
+        // You've looked at what's on offer, so return can choose straight away.
+        shownAt = .distantPast
         return true
     }
 
@@ -787,6 +892,162 @@ struct InboxView: View {
     }
 }
 
+/// The popup: the queue on the left, and the message on the right with its session,
+/// next and previous, and a place to reply.
+struct PopupInboxView: View {
+    @Bindable var model: InboxModel
+
+    @AppStorage("popup.listWidth") private var listWidth = 260.0
+    @AppStorage("popup.replyHeight") private var replyHeight = 130.0
+
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            GeometryReader { window in
+                HStack(spacing: 0) {
+                    queue.frame(width: min(listWidth, max(160, window.size.width - 320)))
+                    InboxDivider(vertical: true, value: $listWidth, range: 160...max(160, window.size.width - 320))
+                    VStack(spacing: 0) {
+                        header
+                        Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
+                        message.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        InboxDivider(
+                            vertical: false, value: $replyHeight, inverted: true,
+                            range: 60...max(60, window.size.height - 120))
+                        answer.frame(height: min(replyHeight, max(60, window.size.height - 120)))
+                    }
+                }
+            }
+            Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
+            Text("↑↓ or ⌃J ⌃K next and previous   ↩ reply or choose   1-9 answer   d dismiss   g go to session   esc close")
+                .font(AppFont.ui(11))
+                .foregroundStyle(theme.dim)
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 22)
+        }
+        .font(AppFont.ui(13))
+        .foregroundStyle(theme.fg)
+        .background(theme.bg)
+        .overlay { Rectangle().strokeBorder(Color(nsColor: theme.line), lineWidth: 1) }
+    }
+
+    @ViewBuilder private var queue: some View {
+        if model.items.isEmpty {
+            Text("Nothing to deal with.")
+                .foregroundStyle(theme.dim)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollViewReader { scroll in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(model.items) { item in
+                            row(item)
+                                .id(item.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture { model.click(item: item) }
+                        }
+                    }
+                }
+                .onChange(of: model.selectedID) { _, id in
+                    if let id { scroll.scrollTo(id) }
+                }
+            }
+        }
+    }
+
+    private func row(_ item: InboxItem) -> some View {
+        let isSelected = item.id == model.selectedID
+        return HStack(spacing: 8) {
+            Circle()
+                .fill(item.read ? Color.clear : (isSelected ? theme.bg : theme.blue))
+                .frame(width: 6, height: 6)
+                .help(item.read ? "Read" : "Unread")
+            Image(systemName: item.kindIcon)
+                .foregroundStyle(isSelected ? theme.bg : kindColor(item))
+                .frame(width: 16)
+                .help(item.kindLabel)
+            Text(model.sessionName(item.sessionID))
+                .fontWeight(item.read ? .regular : .bold)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            Text(item.age).font(AppFont.ui(11)).foregroundStyle(isSelected ? theme.bg : theme.dim)
+        }
+        .foregroundStyle(isSelected ? theme.bg : theme.fg)
+        .padding(.horizontal, 12)
+        .frame(height: 26)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? theme.yellow : Color.clear)
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            if let item = model.selected {
+                Image(systemName: item.kindIcon).foregroundStyle(kindColor(item)).help(item.kindLabel)
+                Text(model.sessionName(item.sessionID)).fontWeight(.bold).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer()
+            if let position = model.position {
+                iconButton("chevron.up", help: "Previous (↑)", enabled: position.index > 1) { model.step(-1) }
+                Text("\(position.index) of \(position.count)").font(AppFont.ui(11)).foregroundStyle(theme.dim)
+                iconButton("chevron.down", help: "Next (↓)", enabled: position.index < position.count) { model.step(1) }
+            }
+            if let item = model.selected {
+                textButton("Dismiss") { model.dismiss(item) }
+                textButton("Go to session") { model.go(item) }
+            }
+            iconButton("xmark", help: "Close (esc)", enabled: true) { model.close() }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 34)
+    }
+
+    private func textButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action).buttonStyle(.plain).font(AppFont.ui(11))
+    }
+
+    private func iconButton(_ icon: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon).foregroundStyle(enabled ? theme.fg : theme.dim)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(help)
+    }
+
+    @ViewBuilder private var message: some View {
+        if let item = model.selected {
+            ScrollView {
+                Text(item.rendered)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
+        } else {
+            Color.clear
+        }
+    }
+
+    @ViewBuilder private var answer: some View {
+        if let item = model.selected {
+            InboxAnswerView(model: model, item: item)
+        } else {
+            Color.clear
+        }
+    }
+
+    private func kindColor(_ item: InboxItem) -> Color {
+        switch item.kind {
+        case "question", "permission": return theme.yellow
+        case "error": return theme.red
+        default: return theme.green
+        }
+    }
+}
+
 /// A divider you can drag to resize what's beside it.
 private struct InboxDivider: View {
     let vertical: Bool
@@ -863,15 +1124,23 @@ private struct InboxAnswerView: View {
     }
 
     private func options(enabled: Bool) -> some View {
-        HStack(spacing: 12) {
-            ForEach(Array(item.options.enumerated()), id: \.offset) { index, option in
-                Button("\(index + 1). \(option)") { model.answer(item, option: index + 1) }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .frame(height: 24)
-                    .overlay(Rectangle().strokeBorder(Color(nsColor: theme.line), lineWidth: 1))
-                    .foregroundStyle(enabled ? theme.fg : theme.dim)
-                    .disabled(!enabled || model.sending)
+        let highlighted = model.highlightedOption(of: item)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                ForEach(Array(item.options.enumerated()), id: \.offset) { index, option in
+                    Button("\(index + 1). \(option)") { model.answer(item, option: index + 1) }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .overlay(
+                            Rectangle().strokeBorder(
+                                index == highlighted ? theme.yellow : Color(nsColor: theme.line), lineWidth: 1))
+                        .foregroundStyle(enabled ? theme.fg : theme.dim)
+                        .disabled(!enabled || model.sending)
+                }
+            }
+            if highlighted != nil {
+                Text("←→ or h l move   ↩ choose   esc leave").font(AppFont.ui(11)).foregroundStyle(theme.dim)
             }
         }
     }

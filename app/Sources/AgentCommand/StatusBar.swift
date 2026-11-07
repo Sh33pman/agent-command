@@ -34,6 +34,7 @@ struct StatusBarView: View {
                     .help("Open Agent Command's page in System Settings")
                 }
                 Spacer()
+                popupMenu
                 if store.inboxOpen {
                     layoutButton(.columns, icon: "rectangle.split.3x1", help: "Message box in a column")
                     layoutButton(.stacked, icon: "rectangle.split.1x2", help: "Message box at the bottom")
@@ -58,6 +59,26 @@ struct StatusBarView: View {
         }
         .frame(height: Self.height)
         .background(theme.bg)
+    }
+
+    /// Turns the popup on or off, and chooses what opens it.
+    private var popupMenu: some View {
+        @Bindable var settings = PopupSettings.shared
+        return Menu {
+            Toggle("Popup on", isOn: $settings.enabled)
+            Picker("Opens for", selection: $settings.opens) {
+                ForEach(PopupOpens.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: settings.enabled ? "bell" : "bell.slash")
+                .foregroundStyle(settings.enabled ? theme.fg : theme.dim)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .font(AppFont.ui(11))
+        .help(settings.enabled ? "Popup on (⌥⌘I)" : "Popup off (⌥⌘I)")
     }
 
     private func layoutButton(_ layout: InboxLayout, icon: String, help: String) -> some View {

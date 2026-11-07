@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let sidebarKeys = SidebarKeyView()
     private let notifier = AppNotifier()
     private var inbox: InboxModel?
+    private lazy var popupWindow = PopupController(store: store)
+    private var hotKey: SystemHotKey?
     /// A clicked notification's session, if it arrived before the session list.
     private var pendingOpen: String?
 
@@ -111,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
         notifier.start()
         store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
+        setUpPopup()
         let args = CommandLine.arguments
         offerSetup()
         store.start()
@@ -455,6 +458,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         (try? String(contentsOfFile: AppFont.configPath, encoding: .utf8)) ?? ""
     }
 
+    private func setUpPopup() {
+        popupWindow.willShow = { [weak self] in
+            if self?.inbox != nil { self?.closePopup() }
+        }
+        popupWindow.configure = { [weak self] model in
+            model.goToSession = { id in self?.openFromNotification(id) }
+            model.rename = { sessions in
+                self?.popupWindow.close()
+                NSApp.activate(ignoringOtherApps: true)
+                self?.showRename(sessions)
+            }
+            model.archive = { sessions in
+                self?.popupWindow.close()
+                NSApp.activate(ignoringOtherApps: true)
+                self?.archive(sessions)
+            }
+            model.moveOut = { session in self?.pane?.moveOut(sessionID: session.id) }
+        }
+        store.onNewItems = { [weak self] items in self?.popupWindow.itemsArrived(items) }
+        notifier.popupShows = { [weak self] kind in self?.popupWindow.replacesBanner(noticeKind: kind) ?? false }
+        hotKey = SystemHotKey { [weak self] in self?.popupShortcut() }
+    }
+
+    /// In the app, the Inbox. Elsewhere, the popup: the first press gives an open one
+    /// the keyboard, and the next closes it.
+    private func popupShortcut() {
+        if NSApp.isActive {
+            toggleInbox()
+        } else if popupWindow.hasKeyboard {
+            popupWindow.close()
+        } else {
+            popupWindow.show(focus: true)
+        }
+    }
+
+    @objc private func togglePopupEnabled() {
+        PopupSettings.shared.enabled.toggle()
+    }
+
     @objc private func toggleInbox() {
         if inbox == nil { showInbox(.queue) } else { closePopup() }
     }
@@ -600,6 +642,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         list.append(PopupCommand(section: "App", title: "Inbox", shortcut: "⇧⌘I") { [weak self] in
             self?.showInbox(.queue)
         })
+        let popup = PopupSettings.shared
+        list.append(PopupCommand(section: "App", title: popup.enabled ? "Turn popup off" : "Turn popup on", shortcut: "⌥⌘I") {
+            popup.enabled.toggle()
+        })
+        for opens in PopupOpens.allCases where opens != popup.opens {
+            list.append(PopupCommand(section: "App", title: "Popup opens for: \(opens.label)") {
+                popup.opens = opens
+            })
+        }
         if let current {
             list.append(PopupCommand(section: "App", title: "Inbox for \(current.displayName)") { [weak self] in
                 self?.showInbox(.session(current.id))
@@ -677,6 +728,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let renameItem = NSMenuItem(title: "Rename…", action: #selector(renameSelection), keyEquivalent: "r")
         renameItem.target = self
         file.submenu?.addItem(renameItem)
+        let popupItem = NSMenuItem(title: "Turn Popup On or Off", action: #selector(togglePopupEnabled), keyEquivalent: "i")
+        popupItem.keyEquivalentModifierMask = [.command, .option]
+        popupItem.target = self
+        file.submenu?.addItem(popupItem)
         let archiveItem = NSMenuItem(title: "Archive…", action: #selector(archiveSelection), keyEquivalent: "\u{8}")
         archiveItem.keyEquivalentModifierMask = [.command, .shift]
         archiveItem.target = self
@@ -720,6 +775,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        popupWindow.close()
         notifier.refreshPermission()
         GhosttyRuntime.shared.setFocus(true)
         store.markLookedAtSeen()

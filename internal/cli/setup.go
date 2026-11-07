@@ -396,6 +396,11 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	default:
 		fmt.Fprintf(out, "Ended %d running sessions.\n", ended)
 	}
+	// Last: the daemon and hosts are using these, and a lock removed under a
+	// running daemon would let a second one start.
+	if err := p.RemoveRuntime(); err != nil {
+		fmt.Fprintf(out, "Couldn't remove %s: %v\n", setup.Tilde(p.RuntimeDir, home), err)
+	}
 	if !keepData {
 		if err := deleteData(p); err != nil {
 			return err

@@ -271,6 +271,60 @@ func TestBrewUninstallEndsSessionsAndAsks(t *testing.T) {
 	}
 }
 
+func TestUninstallRemovesRuntimeFiles(t *testing.T) {
+	for name, other := range map[string]bool{"only acmd's files": false, "someone else's file too": true} {
+		s := newSandbox(t)
+		if _, _, err := execute(t, "", "init"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.paths.Ensure(); err != nil {
+			t.Fatal(err)
+		}
+		dir := s.paths.RuntimeDir
+		for _, f := range []string{s.paths.Lock(), s.paths.OldPopupLock(), s.paths.Socket(), s.paths.HostIDFile("01ABCDEFGHIJKLMNOP"),
+			s.paths.TermIDFile("01ABCDEFGHIJKLMNOP"), filepath.Join(dir, "tts-12ab.sock")} {
+			if err := os.WriteFile(f, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		keep := filepath.Join(dir, "not-acmds.txt")
+		if other {
+			if err := os.WriteFile(keep, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, _, err := execute(t, "", "uninstall", "--yes"); err != nil {
+			t.Fatal(err)
+		}
+		left, _ := filepath.Glob(filepath.Join(dir, "*"))
+		switch {
+		case other && (len(left) != 1 || left[0] != keep):
+			t.Errorf("%s: left %v", name, left)
+		case !other:
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("%s: the folder is still there, with %v", name, left)
+			}
+		}
+	}
+}
+
+func TestBrewUpgradeLeavesRuntimeFiles(t *testing.T) {
+	s := newSandbox(t)
+	if _, _, err := execute(t, "", "init"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s.paths.Lock(), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	brewUninstall(t, s, "ruby brew.rb upgrade --cask x", "n")
+	if _, err := os.Stat(s.paths.Lock()); err != nil {
+		t.Errorf("an upgrade removed the lock: %v", err)
+	}
+}
+
 func TestInitHookBinary(t *testing.T) {
 	s := newSandbox(t)
 	final := "/Applications/Agent Command.app/Contents/MacOS/agent-command"

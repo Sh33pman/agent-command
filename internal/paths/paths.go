@@ -4,6 +4,7 @@
 package paths
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -54,6 +55,32 @@ func (p Paths) Ensure() error {
 			return err
 		}
 	}
+	return nil
+}
+
+// OldPopupLock is the lock of v1's popup, which no longer exists.
+func (p Paths) OldPopupLock() string { return filepath.Join(p.RuntimeDir, "popup.lock") }
+
+// RemoveRuntime removes acmd's files from the runtime folder, then the folder if
+// that leaves it empty. Only the files acmd makes: ACMD_RUNTIME_DIR can point at a
+// folder with other things in it. Run it once the daemon and hosts have stopped, as
+// they're using these.
+func (p Paths) RemoveRuntime() error {
+	files := []string{p.Lock(), p.OldPopupLock(), p.Socket()}
+	for _, pattern := range []string{"h-*.sock", "h-*.id", "t-*.sock", "t-*.id", "tts-*.sock"} {
+		found, err := filepath.Glob(filepath.Join(p.RuntimeDir, pattern))
+		if err != nil {
+			return err
+		}
+		files = append(files, found...)
+	}
+	for _, f := range files {
+		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	// Fails when other files are there, which is what's wanted.
+	_ = os.Remove(p.RuntimeDir)
 	return nil
 }
 

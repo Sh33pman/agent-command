@@ -132,6 +132,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{})}
 	sweepHosts(cfg.Paths)
+	_ = os.Remove(cfg.Paths.OldPopupLock())
 	if cfg.Notify != nil {
 		d.notify = newNotifier(*cfg.Notify)
 	}

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.2](https://github.com/brettmostert/agent-command/compare/v0.42.1...v0.42.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **deps:** ship the sqlite and x/sys updates ([#180](https://github.com/brettmostert/agent-command/issues/180)) ([0c8fd41](https://github.com/brettmostert/agent-command/commit/0c8fd41542ce9cdf9bd8d1aaff903b6c028b389a))
+
 ## [0.42.1](https://github.com/brettmostert/agent-command/compare/v0.42.0...v0.42.1) (2026-11-07)
 
 

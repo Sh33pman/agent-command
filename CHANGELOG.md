@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/brettmostert/agent-command/compare/v0.39.0...v0.40.0) (2026-11-07)
+
+
+### Features
+
+* read messages aloud, and rework the popup and Dock ([#165](https://github.com/brettmostert/agent-command/issues/165)) ([d55368f](https://github.com/brettmostert/agent-command/commit/d55368fba6a0ed5514522fdb054c7744ae83bbda))
+
 ## [0.39.0](https://github.com/brettmostert/agent-command/compare/v0.38.0...v0.39.0) (2026-11-07)
 
 

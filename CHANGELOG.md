@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.42.1](https://github.com/brettmostert/agent-command/compare/v0.42.0...v0.42.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* keep the reason when speech setup fails ([#179](https://github.com/brettmostert/agent-command/issues/179)) ([21bf97c](https://github.com/brettmostert/agent-command/commit/21bf97cc97897572e2b944641eafbf604dbe6dbe))
+* remove the app's temp folder on uninstall ([#173](https://github.com/brettmostert/agent-command/issues/173)) ([6a2aad7](https://github.com/brettmostert/agent-command/commit/6a2aad70c986604767c186aec12dfa17077f108c))
+* stop the app crashing when the daemon goes away ([#178](https://github.com/brettmostert/agent-command/issues/178)) ([9d72d38](https://github.com/brettmostert/agent-command/commit/9d72d3820590e9d2100c6932cd39eb2b0d42f4ae))
+
 ## [0.42.0](https://github.com/brettmostert/agent-command/compare/v0.41.1...v0.42.0) (2026-11-07)
 
 

@@ -93,10 +93,12 @@ jobs:
         run: make test
       - name: fuzz (short)
         run: make fuzz FUZZTIME=15s
+      - name: build libghostty
+        run: scripts/build-ghostty.sh
+      - name: test with libghostty, and test the app
+        run: make test-vt test-app
       - name: build the app
-        run: |
-          scripts/build-ghostty.sh
-          scripts/build-app.sh
+        run: scripts/build-app.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

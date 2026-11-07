@@ -6,7 +6,7 @@ import UserNotifications
 /// main thread; daemon calls run on background queues.
 @Observable
 final class SessionStore {
-    private(set) var sessions: [Session] = []
+    var sessions: [Session] = []
     private(set) var archived: [Session] = []
     var selectedID: String? {
         didSet {
@@ -22,7 +22,7 @@ final class SessionStore {
     private(set) var closedIDs: Set<String> = []
     private(set) var problem: String?
     /// The Inbox's queue: what's left to deal with, in arrival order.
-    private(set) var queue: [InboxItem] = []
+    var queue: [InboxItem] = []
     /// Covers the panes, so you're not looking at what they show.
     var inboxOpen = false
 

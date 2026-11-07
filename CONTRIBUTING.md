@@ -12,7 +12,7 @@
 
 | Workflow | When | What |
 |---|---|---|
-| `ci.yml` | PRs (not docs-only) | ubuntu: `make lint`, `make vuln`, `make secrets`. macOS: `make test` → `make fuzz` → build the app |
+| `ci.yml` | PRs (not docs-only) | ubuntu: `make lint`, `make vuln`, `make secrets`. macOS: `make test` → `make fuzz` → `make test-vt` → `make test-app` → build the app |
 | `pr-title.yml` | PRs | Conventional Commit title check |
 | `release.yml` | push to `main` | release-please; on a release: gate (`make ci fuzz`), then build and sign the app, publish it to the public tap and update the cask. |
 

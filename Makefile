@@ -130,6 +130,10 @@ speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
 test-vt: ## Run the host's tests with libghostty-vt (needs scripts/build-ghostty.sh)
 	go test -race -shuffle=on -tags libghostty ./internal/vt ./internal/term
 
+.PHONY: test-app
+test-app: ## Run the app's tests (needs scripts/build-ghostty.sh)
+	swift test --package-path app
+
 ci: lint secrets test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
 
 ##@ Build & release

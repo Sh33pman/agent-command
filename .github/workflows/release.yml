@@ -79,6 +79,9 @@ jobs:
       - name: build libghostty
         run: scripts/build-ghostty.sh
 
+      - name: gate - test with libghostty, and test the app
+        run: make test-vt test-app
+
       - name: import the signing certificate
         env:
           SIGNING_P12: ${{ secrets.ACMD_SIGNING_P12 }}

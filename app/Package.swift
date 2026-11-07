@@ -25,5 +25,10 @@ let package = Package(
                 .linkedLibrary("c++"),
             ]
         ),
+        .testTarget(
+            name: "AgentCommandTests",
+            dependencies: ["AgentCommand"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

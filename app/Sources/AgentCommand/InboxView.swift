@@ -530,7 +530,7 @@ final class InboxModel {
     /// Handles a key press, and reports whether it was used. The Inbox has the keyboard,
     /// so nothing reaches the terminal behind it. Moving, marking, opening and leaving
     /// use the sidebar's keys.
-    private func handle(_ event: NSEvent) -> Bool {
+    func handle(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
         let key = event.charactersIgnoringModifiers?.lowercased()
         if flags.contains(.command) {

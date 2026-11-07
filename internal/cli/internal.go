@@ -22,6 +22,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/hook"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/procenv"
+	"github.com/brettmostert/agent-command/internal/report"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/version"
 )
@@ -43,7 +44,10 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			logger := log.New(cmd.ErrOrStderr(), "acmd daemon: ", log.LstdFlags)
+			if err := logDaemonOutput(ctx, p.DaemonLog()); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "acmd daemon: can't write to %s: %v\n", p.DaemonLog(), err)
+			}
+			logger := log.New(report.NewRedactor().Writer(cmd.ErrOrStderr()), "acmd daemon: ", log.LstdFlags)
 			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify}
 			cfg.LockWait = 3 * time.Second
 			if home, err := os.UserHomeDir(); err == nil {

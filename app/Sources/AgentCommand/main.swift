@@ -310,6 +310,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// A popup to rename sessions, which goes back to where the keyboard was.
+    @objc private func reportBug() { showReport(.bug) }
+    @objc private func requestFeature() { showReport(.feature) }
+
+    private func showReport(_ kind: ReportKind) {
+        closePopup()
+        showMainWindow()
+        // A terminal keeps the keyboard otherwise, and the form couldn't take it.
+        window?.makeFirstResponder(nil)
+        showPopup(ReportView(kind: kind, close: { [weak self] in self?.closePopup() }))
+    }
+
     private func showRename(_ sessions: [Session]) {
         guard !sessions.isEmpty else { return }
         closePopup()
@@ -710,6 +721,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         list.append(PopupCommand(section: "App", title: "Toggle sidebar") { [weak self] in
             self?.split?.toggleSidebar(nil)
         })
+        list.append(PopupCommand(section: "App", title: "Report a bug…") { [weak self] in
+            self?.showReport(.bug)
+        })
+        list.append(PopupCommand(section: "App", title: "Request a feature…") { [weak self] in
+            self?.showReport(.feature)
+        })
         list.append(PopupCommand(section: "App", title: "Quit", shortcut: "⌘Q") {
             NSApp.terminate(nil)
         })
@@ -802,6 +819,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             view.submenu?.addItem(item)
         }
         menu.addItem(view)
+        let help = NSMenuItem()
+        help.submenu = NSMenu(title: "Help")
+        for (title, action) in [
+            ("Report a Bug…", #selector(reportBug)),
+            ("Request a Feature…", #selector(requestFeature)),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            help.submenu?.addItem(item)
+        }
+        NSApp.helpMenu = help.submenu
         // Text fields get paste and the rest through these, from the responder
         // chain. A terminal surface answers them too.
         let edit = NSMenuItem()

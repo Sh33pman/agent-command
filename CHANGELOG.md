@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.0](https://github.com/brettmostert/agent-command/compare/v0.38.0...v0.39.0) (2026-11-07)
+
+
+### Features
+
+* add a reply popup for what your agents send you ([#163](https://github.com/brettmostert/agent-command/issues/163)) ([62cf019](https://github.com/brettmostert/agent-command/commit/62cf019c6ebc4bb123064f5b9b17d59aff5f9430))
+
 ## [0.38.0](https://github.com/brettmostert/agent-command/compare/v0.37.2...v0.38.0) (2026-11-06)
 
 

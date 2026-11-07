@@ -39,7 +39,8 @@ private final class Harness {
     deinit { MainActor.assumeIsolated { model.stop() } }
 }
 
-@Suite(.serialized) @MainActor
+extension UsesSharedSpeech {
+@Suite @MainActor
 struct InboxModelTests {
     private func question(_ id: Int64, _ session: String) throws -> InboxItem {
         try makeItem(id, session: session, kind: "question", options: ["Red", "Green", "Blue"])
@@ -225,4 +226,5 @@ struct InboxModelTests {
         #expect(h.model.answerable(try makeItem(1, session: "none")) != nil)
         #expect(h.model.answerable(try makeItem(1, session: "unknown")) != nil)
     }
+}
 }

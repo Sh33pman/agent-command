@@ -4,6 +4,11 @@ import Testing
 
 @testable import AgentCommand
 
+/// Tests that use SpeechController.shared, which the Inbox also stops as it moves. They
+/// take turns, or one suite would stop the other's read.
+@Suite(.serialized)
+enum UsesSharedSpeech {}
+
 /// Nothing here may reach a real daemon, or it would read and change the person's real
 /// Inbox. Every test that uses the store calls this first: the runtime folder is empty,
 /// so calls fail without doing anything, and start() is never called.

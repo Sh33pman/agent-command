@@ -131,8 +131,9 @@ test-vt: ## Run the host's tests with libghostty-vt (needs scripts/build-ghostty
 	go test -race -shuffle=on -tags libghostty ./internal/vt ./internal/term
 
 .PHONY: test-app
-test-app: ## Run the app's tests (needs scripts/build-ghostty.sh)
-	swift test --package-path app
+test-app: ## Run the app's tests and coverage gate (needs scripts/build-ghostty.sh)
+	swift test --package-path app --enable-code-coverage
+	scripts/coverage-gate-app.py "$$(swift test --package-path app --show-codecov-path)"
 
 ci: lint secrets test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
 

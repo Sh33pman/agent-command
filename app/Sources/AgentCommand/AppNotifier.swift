@@ -59,10 +59,12 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     private func setTurnedOff(_ settings: UNNotificationSettings) {
         let off = settings.authorizationStatus == .denied
         let badgeOff = settings.authorizationStatus == .authorized && settings.badgeSetting != .enabled
-        DispatchQueue.main.async {
-            self.isTurnedOff = off
-            self.isBadgeOff = badgeOff
-        }
+        DispatchQueue.main.async { self.setPermission(turnedOff: off, badgeOff: badgeOff) }
+    }
+
+    func setPermission(turnedOff: Bool, badgeOff: Bool) {
+        isTurnedOff = turnedOff
+        isBadgeOff = badgeOff
     }
 
     /// What needs your attention, in the app's settings.
@@ -112,20 +114,12 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// Takes the daemon's recent notices, oldest first. Those from before this
     /// launch aren't news, so they aren't shown.
     func receive(_ notices: [Notice]) {
-        guard var last = lastSeq else {
-            lastSeq = notices.last?.seq ?? 0
-            return
-        }
-        // A restarted daemon counts from 1 again.
-        if let newest = notices.last, newest.seq < last { last = 0 }
-        lastSeq = last
-        let fresh = notices.filter { $0.seq > last }
-        if let newest = fresh.last { lastSeq = newest.seq }
+        let fresh = newNotices(in: notices)
         guard let center else { return }
         for notice in fresh {
             if notice.isWithdrawal {
                 center.removeDeliveredNotifications(withIdentifiers: [notice.sessionID])
-            } else if notice.isForApp && !isLooking(notice.sessionID) && !popupShows(notice.kind) {
+            } else if shouldShow(notice) {
                 let content = UNMutableNotificationContent()
                 content.title = notice.title
                 content.body = notice.body
@@ -137,6 +131,25 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
                 }
             }
         }
+    }
+
+    /// The notices not seen yet. On the first call that's none.
+    func newNotices(in notices: [Notice]) -> [Notice] {
+        guard var last = lastSeq else {
+            lastSeq = notices.last?.seq ?? 0
+            return []
+        }
+        // A restarted daemon counts from 1 again.
+        if let newest = notices.last, newest.seq < last { last = 0 }
+        lastSeq = last
+        let fresh = notices.filter { $0.seq > last }
+        if let newest = fresh.last { lastSeq = newest.seq }
+        return fresh
+    }
+
+    /// Whether a notice becomes a banner: not if you're looking, or the popup shows it.
+    func shouldShow(_ notice: Notice) -> Bool {
+        notice.isForApp && !isLooking(notice.sessionID) && !popupShows(notice.kind)
     }
 
     /// Shows it even with the app in front: you may be looking at another session.

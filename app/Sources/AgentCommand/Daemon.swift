@@ -231,6 +231,10 @@ final class DaemonConnection {
     init(socket path: String) throws {
         fd = Foundation.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw DaemonError(message: "socket failed") }
+        // A daemon that goes away is an error to report. Without this, writing to it
+        // ends the whole app with SIGPIPE.
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)

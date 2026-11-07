@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/brettmostert/agent-command/compare/v0.41.0...v0.41.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* offer to resume a session whose host has gone ([#169](https://github.com/brettmostert/agent-command/issues/169)) ([819458e](https://github.com/brettmostert/agent-command/commit/819458e8e3887bbf61e27fc19d22391e488f9edd))
+
 ## [0.41.0](https://github.com/brettmostert/agent-command/compare/v0.40.0...v0.41.0) (2026-11-07)
 
 

@@ -28,7 +28,11 @@ private func iso(_ secondsAgo: TimeInterval) -> String {
 
 @Test func anItemsPreviewAndTextRender() throws {
     let item = try decode(InboxItem.self, ["id": 1, "session_id": "s", "kind": "done", "text": "First **line**\nsecond"])
-    #expect(item.preview == "First **line**")
+    #expect(item.preview == "First line", "a finished turn's preview drops its Markdown")
+    let heading = try decode(InboxItem.self, ["id": 1, "session_id": "s", "kind": "done", "text": "## Summary\nmore"])
+    #expect(heading.preview == "Summary")
+    let permission = try decode(InboxItem.self, ["id": 1, "session_id": "s", "kind": "permission", "text": "rm *.log"])
+    #expect(permission.preview == "rm *.log" && !permission.isMarkdown, "acmd's own text is shown as it is")
     let plain = String(item.rendered.characters)
     #expect(plain.contains("First line") && plain.contains("second"), "bold goes, and the lines stay")
     #expect(try decode(InboxItem.self, ["id": 1, "session_id": "s", "kind": "done"]).preview.isEmpty)

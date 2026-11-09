@@ -59,8 +59,15 @@ struct InboxItem: Decodable, Identifiable, Equatable {
         }
     }
 
+    /// Claude's own words, which are Markdown: a finished turn or a question. A
+    /// permission or an error is acmd's plain text, often a command, shown as it is.
+    var isMarkdown: Bool { kind == "done" || kind == "question" }
+
+    /// The first line, without its Markdown.
     var preview: String {
-        text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        guard isMarkdown else { return line }
+        return MarkdownBlock.parse(line).first?.plainText ?? line
     }
 
     /// Links, bold and inline code, with the lines as they are.

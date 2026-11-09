@@ -132,10 +132,15 @@ struct PopupInboxView: View {
     @ViewBuilder private var message: some View {
         if let item = model.selected {
             ScrollView {
-                Text(item.rendered)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                Group {
+                    if item.isMarkdown {
+                        MarkdownView(item.text, dim: theme.dim, panel: Color(nsColor: theme.line), code: theme.yellow)
+                    } else {
+                        Text(item.rendered).textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
             }
         } else {
             Color.clear

@@ -316,10 +316,15 @@ struct InboxView: View {
                 Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
                 InboxNotice(model: model)
                 ScrollView {
-                    Text(item.rendered)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
+                    Group {
+                        if item.isMarkdown {
+                            MarkdownView(item.text, dim: theme.dim, panel: Color(nsColor: theme.line), code: theme.yellow)
+                        } else {
+                            Text(item.rendered).textSelection(.enabled)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
                 }
             }
         } else {

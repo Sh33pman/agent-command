@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.4](https://github.com/brettmostert/agent-command/compare/v0.42.3...v0.42.4) (2026-11-09)
+
+
+### Bug Fixes
+
+* **speech:** retry the model download, and resume it where it stopped ([#187](https://github.com/brettmostert/agent-command/issues/187)) ([b89159a](https://github.com/brettmostert/agent-command/commit/b89159a28613e8fae1eb3f2fd0bf64fcc2ad89da))
+
 ## [0.42.3](https://github.com/brettmostert/agent-command/compare/v0.42.2...v0.42.3) (2026-11-09)
 
 

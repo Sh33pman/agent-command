@@ -4,12 +4,9 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 )
@@ -48,39 +45,6 @@ func (e *Engine) downloadModel(ctx context.Context) error {
 		return fmt.Errorf("unpacking the model: %w", err)
 	}
 	return os.Rename(filepath.Join(unpacking, "mlx-audio"), e.modelUnpacked())
-}
-
-// download writes url to file and checks its SHA-256.
-func download(ctx context.Context, url, want, file string, progress func(percent int)) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
-	if err != nil {
-		return err
-	}
-	resp, err := http.DefaultClient.Do(req) // #nosec G107 -- our own URL
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: %s", url, resp.Status)
-	}
-	f, err := os.OpenFile(file, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600) // #nosec G304 -- inside acmd's folder
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	h := sha256.New()
-	to := io.MultiWriter(f, h)
-	if progress != nil && resp.ContentLength > 0 {
-		to = io.MultiWriter(to, &progressWriter{total: resp.ContentLength, report: progress, last: -1})
-	}
-	if _, err := io.Copy(to, resp.Body); err != nil {
-		return err
-	}
-	if got := hex.EncodeToString(h.Sum(nil)); got != want {
-		return fmt.Errorf("the checksum doesn't match: got %s, want %s", got, want)
-	}
-	return nil
 }
 
 // progressWriter reports each new percentage of total as bytes pass through.

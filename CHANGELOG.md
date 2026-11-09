@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.45.0](https://github.com/brettmostert/agent-command/compare/v0.44.1...v0.45.0) (2026-11-09)
+
+
+### Features
+
+* **app:** mark Claude rows, and sum up what needs you in the status bar (PAN-39) ([#199](https://github.com/brettmostert/agent-command/issues/199)) ([de661a3](https://github.com/brettmostert/agent-command/commit/de661a3252bf817722143cf7174794b8e2e8b10f))
+* **app:** show a header over each pane with its session's details (PAN-39) ([#201](https://github.com/brettmostert/agent-command/issues/201)) ([92338ba](https://github.com/brettmostert/agent-command/commit/92338ba2cabf0a072d6c7d37ba397ba15c57f26c))
+
 ## [0.44.1](https://github.com/brettmostert/agent-command/compare/v0.44.0...v0.44.1) (2026-11-09)
 
 

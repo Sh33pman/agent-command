@@ -103,8 +103,9 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 		set(s, &t, StatusError, firstNonEmpty(e.Error, e.Message, "API error"))
 
 	case EventInterrupted:
-		// Esc fires no Stop (M0 A12).
-		if s.Status == StatusBusy {
+		// Esc fires no Stop (M0 A12). Denying a permission, or pressing Esc on a
+		// question, interrupts too, so it ends waiting as well.
+		if s.Status == StatusBusy || s.Status == StatusWaiting {
 			set(s, &t, StatusDone, "")
 		}
 
@@ -186,6 +187,11 @@ func set(s *Session, t *Transition, to Status, detail string) {
 
 func touch(s *Session, e Event, t *Transition) {
 	t.Applied = true
+	// Every hook says where the transcript is, so a missed SessionStart doesn't
+	// stop Esc being noticed (§5.4).
+	if e.TranscriptPath != "" && e.SessionID != "" && e.SessionID == s.ClaudeSessionID {
+		s.TranscriptPath = e.TranscriptPath
+	}
 	if e.Time.After(s.LastEventAt) {
 		s.LastEventAt = e.Time
 	}

@@ -41,7 +41,9 @@ func TestApplyTransitions(t *testing.T) {
 		{"stop failure -> error", StatusBusy, Event{Kind: HookStopFailure, Error: "rate_limit"}, StatusError, "rate_limit", true},
 		{"stop failure fallback detail", StatusBusy, Event{Kind: HookStopFailure}, StatusError, "API error", true},
 		{"esc interrupt -> done", StatusBusy, Event{Kind: EventInterrupted}, StatusDone, "", true},
-		{"interrupt when not busy no change", StatusWaiting, Event{Kind: EventInterrupted}, StatusWaiting, "", true},
+		{"denied permission -> done", StatusWaiting, Event{Kind: EventInterrupted}, StatusDone, "", true},
+		{"interrupt when done no change", StatusDone, Event{Kind: EventInterrupted}, StatusDone, "", true},
+		{"interrupt doesn't hide an error", StatusError, Event{Kind: EventInterrupted}, StatusError, "", true},
 		{"agents busy", StatusDone, Event{Kind: EventAgentStatus, AgentStatus: AgentBusy}, StatusBusy, "", true},
 		{"agents waiting", StatusBusy, Event{Kind: EventAgentStatus, AgentStatus: AgentWaiting}, StatusWaiting, "", true},
 		{"agents idle -> done", StatusBusy, Event{Kind: EventAgentStatus, AgentStatus: AgentIdle}, StatusDone, "", true},
@@ -177,5 +179,17 @@ func TestNeedsAttention(t *testing.T) {
 	}
 	if (Transition{From: StatusBusy, To: StatusDone}).Changed() != true {
 		t.Error("Changed")
+	}
+}
+
+func TestAnyEventGivesTheTranscript(t *testing.T) {
+	s := &Session{Status: StatusBusy, ClaudeSessionID: "c"}
+	Apply(s, Event{Kind: HookPreToolUse, SessionID: "c", TranscriptPath: "/t.jsonl", Time: time.Unix(1, 0)})
+	if s.TranscriptPath != "/t.jsonl" {
+		t.Errorf("transcript %q", s.TranscriptPath)
+	}
+	Apply(s, Event{Kind: HookPreToolUse, SessionID: "other", TranscriptPath: "/other.jsonl", Time: time.Unix(2, 0)})
+	if s.TranscriptPath != "/t.jsonl" {
+		t.Errorf("another conversation's transcript was taken: %q", s.TranscriptPath)
 	}
 }

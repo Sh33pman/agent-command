@@ -507,3 +507,110 @@ func TestStatusFollowsAHostedSessionThroughClear(t *testing.T) {
 		t.Errorf("late event: status %s, id %q", got.Status, got.ClaudeSessionID)
 	}
 }
+
+// A session started with ⌘N shows waiting while Claude asks for permission or
+// asks a question, and error when a turn fails, and leaves each once Claude moves
+// on (PAN-29). The payloads are the shapes Claude Code sends for each hook.
+func TestHostedSessionShowsWaitingAndError(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) { c.Hosts = fh })
+	c := dial(t, p)
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api"})
+	id := s.ClaudeSessionID
+	in := ipc.HookContext{HostSession: s.ID}
+	t0 := time.Now().Add(time.Hour)
+	step := 0
+	send := func(name, fields string) {
+		t.Helper()
+		step++
+		payload := `{"session_id":"` + id + `"` + fields + `}`
+		must(t, c.Call(ipc.OpEvent, hookEvent(name, payload, t0.Add(time.Duration(step)*time.Second), in), nil))
+	}
+	expect := func(when string, status core.Status, detail string) {
+		t.Helper()
+		got := sessionByID(t, c, s.ID)
+		if got.Status != status || got.StatusDetail != detail {
+			t.Errorf("%s: %s %q, want %s %q", when, got.Status, got.StatusDetail, status, detail)
+		}
+	}
+
+	send("SessionStart", `,"source":"startup","cwd":"/w/api"`)
+	send("UserPromptSubmit", `,"prompt":"run the tests"`)
+	expect("prompt", core.StatusBusy, "")
+
+	// Permission: the dialog fires PermissionRequest, then a Notification about it.
+	send("PreToolUse", `,"tool_name":"Bash","tool_input":{"command":"go test ./..."}`)
+	send("PermissionRequest", `,"tool_name":"Bash","tool_input":{"command":"go test ./..."}`)
+	expect("permission asked", core.StatusWaiting, "permission: Bash")
+	send("Notification", `,"notification_type":"permission_prompt","message":"Claude needs your permission to use Bash"`)
+	send("Notification", `,"notification_type":"idle_prompt","message":"Claude is waiting for your input"`)
+	// Claude's own words replace ours, and its idle reminder doesn't end waiting.
+	expect("still waiting after the idle reminder", core.StatusWaiting, "Claude needs your permission to use Bash")
+	send("PostToolUse", `,"tool_name":"Bash"`)
+	expect("permission granted", core.StatusBusy, "")
+
+	// A question.
+	send("PreToolUse", `,"tool_name":"AskUserQuestion"`)
+	send("PermissionRequest", `,"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which?","options":[{"label":"A"},{"label":"B"}]}]}`)
+	expect("question", core.StatusWaiting, "question")
+	send("PostToolUse", `,"tool_name":"AskUserQuestion"`)
+	expect("question answered", core.StatusBusy, "")
+
+	// An MCP server asking for input.
+	send("Notification", `,"notification_type":"elicitation_dialog","message":"GitHub wants a repository name"`)
+	expect("elicitation", core.StatusWaiting, "GitHub wants a repository name")
+	send("PostToolUse", `,"tool_name":"mcp__github__create_issue"`)
+	send("Stop", ``)
+	expect("turn done", core.StatusDone, "")
+
+	// A failed turn.
+	send("UserPromptSubmit", `,"prompt":"and again"`)
+	send("StopFailure", `,"error":"rate_limit","error_details":"429 Too Many Requests"`)
+	expect("failed turn", core.StatusError, "rate_limit")
+	send("Notification", `,"notification_type":"idle_prompt","message":"Claude is waiting for your input"`)
+	expect("still an error after the idle reminder", core.StatusError, "rate_limit")
+	send("UserPromptSubmit", `,"prompt":"try again"`)
+	expect("trying again", core.StatusBusy, "")
+	send("Stop", ``)
+	expect("done after the retry", core.StatusDone, "")
+}
+
+// Denying a permission interrupts the turn, and no hook says so. The transcript
+// does, so the session stops showing waiting, and its Inbox item closes.
+func TestDenyingAPermissionEndsWaiting(t *testing.T) {
+	p := testPaths(t)
+	fh := &fakeHosts{paths: p}
+	start(t, p, func(c *Config) { c.Hosts = fh; c.TailEvery = 20 * time.Millisecond })
+	c := dial(t, p)
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api"})
+	transcript := filepath.Join(t.TempDir(), "t.jsonl")
+	must(t, os.WriteFile(transcript, []byte(`{"type":"user","message":{"content":"run the tests"}}`+"\n"), 0o600))
+	in := ipc.HookContext{HostSession: s.ID}
+	t0 := time.Now()
+	send := func(name, fields string, offset int) {
+		t.Helper()
+		payload := `{"session_id":"` + s.ClaudeSessionID + `","transcript_path":"` + transcript + `"` + fields + `}`
+		must(t, c.Call(ipc.OpEvent, hookEvent(name, payload, t0.Add(time.Duration(offset)*time.Millisecond), in), nil))
+	}
+	send("UserPromptSubmit", `,"prompt":"run the tests"`, 0)
+	send("PreToolUse", `,"tool_name":"Bash"`, 1)
+	send("PermissionRequest", `,"tool_name":"Bash","tool_input":{"command":"rm -rf build"}`, 2)
+	if got := sessionByID(t, c, s.ID); got.Status != core.StatusWaiting {
+		t.Fatalf("status %s, want waiting", got.Status)
+	}
+	time.Sleep(100 * time.Millisecond) // the transcript check notes where the file ends
+
+	f, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0o600)
+	must(t, err)
+	_, err = f.WriteString(`{"type":"user","message":{"content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}` + "\n")
+	must(t, err)
+	must(t, f.Close())
+
+	waitFor(t, "done after the denial", func() bool { return sessionByID(t, c, s.ID).Status == core.StatusDone })
+	var items []core.InboxItem
+	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{SessionID: s.ID}, &items))
+	if len(items) != 1 || items[0].Kind != core.InboxPermission || items[0].State != core.InboxStale {
+		t.Errorf("inbox: %+v, want the permission no longer relevant", items)
+	}
+}

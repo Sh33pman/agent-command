@@ -70,7 +70,7 @@ func InboxEffect(s *Session, e Event) (item *InboxItem, drop bool) {
 		return &InboxItem{SessionID: s.ID, Kind: InboxPermission, Text: permissionText(e),
 			Options: PermissionOptions, At: at}, false
 	case HookUserPromptSubmit, HookPreToolUse, HookPostToolUse, HookPostToolUseFailure, HookSessionEnd,
-		EventArchived, EventFinished, EventResumed:
+		EventArchived, EventFinished, EventResumed, EventInterrupted:
 		// The session moved on (the user answered or worked in it, or it
 		// stopped): what was waiting is stale.
 		return nil, true

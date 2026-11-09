@@ -446,8 +446,9 @@ func (d *Daemon) background(ctx context.Context) {
 	}
 }
 
-// tailOnce checks busy sessions' transcripts for an Esc interrupt (no Stop
-// hook fires for it, M0 A12) and marks them done.
+// tailOnce checks the transcripts of busy and waiting sessions for an interrupt
+// (no Stop hook fires for it, M0 A12) and marks them done: Esc during a turn, or
+// denying a permission or leaving a question.
 func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -457,7 +458,7 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 	}
 	changed := false
 	for _, s := range sessions {
-		if s.Status != core.StatusBusy {
+		if s.Status != core.StatusBusy && s.Status != core.StatusWaiting {
 			tail.Forget(s.TranscriptPath)
 			continue
 		}
@@ -465,11 +466,16 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 		if err != nil || !hit {
 			continue
 		}
-		tr := core.Apply(s, core.Event{Kind: core.EventInterrupted, Time: d.eventTime(s)})
+		e := core.Event{Kind: core.EventInterrupted, Time: d.eventTime(s)}
+		tr := core.Apply(s, e)
 		if !tr.Changed() {
 			continue
 		}
 		d.transition(s, tr)
+		// A permission denied or a question left in the session isn't waiting any more.
+		if err := d.applyInbox(ctx, s, e); err != nil {
+			return changed, err
+		}
 		s.Unseen = true
 		changed = true
 		if err := d.store.UpdateSession(ctx, s); err != nil {

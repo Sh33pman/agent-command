@@ -250,3 +250,24 @@ func TestLoginEnv(t *testing.T) {
 		t.Error("missing shell should fail")
 	}
 }
+
+func TestLoginEnvSkipsWhatChangesEachLogin(t *testing.T) {
+	raw := []byte("PATH=/usr/bin\x00SSH_AUTH_SOCK=/var/run/old/Listeners\x00TMPDIR=/var/t/\x00WINDOWID=7\x00TERMINFO=/k\x00STARSHIP_SESSION_KEY=k\x00COLORTERM=truecolor\x00")
+	env := ParseEnv0(raw)
+	if len(env) != 2 || env["PATH"] != "/usr/bin" || env["COLORTERM"] != "truecolor" {
+		t.Errorf("env = %v, want only PATH and COLORTERM", env)
+	}
+}
+
+func TestWithLive(t *testing.T) {
+	saved := LoginEnv{"PATH": "/usr/bin", "SSH_AUTH_SOCK": "/var/run/old/Listeners", "SECURITYSESSIONID": "1"}
+	live := map[string]string{"SSH_AUTH_SOCK": "/var/run/new/Listeners", "TMPDIR": "/var/t/"}
+	got := saved.WithLive(func(k string) (string, bool) { v, ok := live[k]; return v, ok })
+	want := LoginEnv{"PATH": "/usr/bin", "SSH_AUTH_SOCK": "/var/run/new/Listeners", "TMPDIR": "/var/t/"}
+	if strings.Join(got.Environ(), ";") != strings.Join(want.Environ(), ";") {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if saved["SSH_AUTH_SOCK"] != "/var/run/old/Listeners" {
+		t.Error("WithLive changed the saved env")
+	}
+}

@@ -164,3 +164,26 @@ func TestAttachHost(t *testing.T) {
 		t.Fatal("attach did not return when the CLI exited")
 	}
 }
+
+// An env.json saved before a restart has a dead SSH agent socket. Sessions get
+// this login's one instead.
+func TestLoginEnvUsesThisLoginsSSHAgent(t *testing.T) {
+	p := paths.Paths{StateDir: t.TempDir()}
+	saved := `{"PATH": "/usr/bin", "SSH_AUTH_SOCK": "/var/run/old/Listeners", "SECURITYSESSIONID": "1"}`
+	if err := os.WriteFile(p.Env(), []byte(saved), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSH_AUTH_SOCK", "/var/run/new/Listeners")
+	t.Setenv("SECURITYSESSIONID", "")
+	os.Unsetenv("SECURITYSESSIONID")
+	env := strings.Join(loginEnv(p), "\n")
+	if !strings.Contains(env, "SSH_AUTH_SOCK=/var/run/new/Listeners") || strings.Contains(env, "/var/run/old") {
+		t.Errorf("want this login's SSH agent:\n%s", env)
+	}
+	if strings.Contains(env, "SECURITYSESSIONID") {
+		t.Errorf("a saved login-only variable the process doesn't have should go:\n%s", env)
+	}
+	if !strings.Contains(env, "PATH=/usr/bin") {
+		t.Errorf("the saved PATH should stay:\n%s", env)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -21,7 +22,33 @@ type LoginEnv map[string]string
 var excludedEnv = map[string]bool{
 	"PWD": true, "OLDPWD": true, "SHLVL": true, "_": true, "TERM_SESSION_ID": true,
 	"KITTY_WINDOW_ID": true, "KITTY_PID": true, "KITTY_LISTEN_ON": true, "KITTY_PUBLIC_KEY": true,
-	"GHOSTTY_RESOURCES_DIR": true,
+	"KITTY_INSTALLATION_DIR": true, "WINDOWID": true, "TERMINFO": true,
+	"GHOSTTY_RESOURCES_DIR": true, "STARSHIP_SESSION_KEY": true,
+}
+
+// LiveEnv are variables that change with each login, such as the SSH agent's
+// socket. They aren't saved: a saved one stops working after a restart. Sessions
+// get them from the process starting them instead (WithLive).
+var LiveEnv = []string{
+	"SSH_AUTH_SOCK", "SECURITYSESSIONID", "LaunchInstanceID", "TMPDIR",
+	"XPC_FLAGS", "XPC_SERVICE_NAME", "__CFBundleIdentifier",
+}
+
+// WithLive returns e with LiveEnv taken from getenv: set where it has them, and
+// removed where it doesn't, so an env.json saved before this keeps no stale ones.
+func (e LoginEnv) WithLive(getenv func(string) (string, bool)) LoginEnv {
+	out := make(LoginEnv, len(e))
+	for k, v := range e {
+		out[k] = v
+	}
+	for _, k := range LiveEnv {
+		if v, ok := getenv(k); ok {
+			out[k] = v
+		} else {
+			delete(out, k)
+		}
+	}
+	return out
 }
 
 // ParseEnv0 parses `env -0` output, dropping CLAUDE* (M0 C5) and
@@ -31,7 +58,7 @@ func ParseEnv0(out []byte) LoginEnv {
 	for _, kv := range bytes.Split(out, []byte{0}) {
 		k, v, ok := strings.Cut(string(kv), "=")
 		k = strings.TrimSpace(k)
-		if !ok || k == "" || strings.HasPrefix(k, "CLAUDE") || excludedEnv[k] {
+		if !ok || k == "" || strings.HasPrefix(k, "CLAUDE") || excludedEnv[k] || slices.Contains(LiveEnv, k) {
 			continue
 		}
 		env[k] = v

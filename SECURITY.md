@@ -19,7 +19,7 @@ Everything below is readable only by you: folders are `0700`, and files with you
 
 In `~/.local/state/agent-command`:
 
-- `env.json`: your login shell's environment, so sessions find their tools and credentials when the app starts them. It can include secrets your shell sets, such as API tokens.
+- `env.json`: your login shell's environment, so sessions find their tools and credentials when the app starts them. It can include secrets your shell sets, such as API tokens. Values that change with each login, like the SSH agent's socket, aren't saved.
 - `state.db`: sessions, recent events and Inbox messages. Handled messages are deleted after 30 days. Open ones are kept until you handle them.
 - `state.db.bak-*`: a copy of `state.db` from before each upgrade that changes it, kept for 30 days.
 - `daemon.log`: one file per day, kept for 3 days.

@@ -153,13 +153,14 @@ func debugf(cmd *cobra.Command, format string, a ...any) {
 }
 
 // loginEnv is the environment for what acmd starts: the captured login-shell
-// environment when there is one, without CLAUDE* variables (SPEC §4.4).
+// environment when there is one, with this login's values for what changes each
+// login (setup.LiveEnv), and without CLAUDE* variables (SPEC §4.4).
 func loginEnv(p paths.Paths) []string {
 	env := os.Environ()
 	if b, err := os.ReadFile(p.Env()); err == nil {
 		var saved setup.LoginEnv
 		if err := json.Unmarshal(b, &saved); err == nil && saved["PATH"] != "" {
-			env = saved.Environ()
+			env = saved.WithLive(os.LookupEnv).Environ()
 		}
 	}
 	return procenv.Scrub(env)

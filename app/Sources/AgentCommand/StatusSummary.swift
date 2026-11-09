@@ -82,3 +82,73 @@ struct ClaudeMark: View {
         }
     }
 }
+
+/// A session's mark (Claude, $ or a dot) in its status's color, as on its row.
+struct SessionMark: View {
+    let session: Session
+    /// Drawn on the selection's bar: in the background color.
+    var onBar = false
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        switch RowMark(session) {
+        case .claude(let dimmed, let spinning):
+            ClaudeMark(color: onBar ? theme.bg : (dimmed ? theme.dim : color), spinning: spinning)
+        case .terminal:
+            Text("$").foregroundStyle(onBar ? theme.bg : color)
+        case .dot:
+            Text("●").foregroundStyle(onBar ? theme.bg : color)
+        }
+    }
+
+    private var color: Color {
+        switch session.status {
+        case "busy", "starting": theme.yellow
+        case "waiting": theme.blue
+        case "done", "running": theme.green
+        case "error": theme.red
+        default: theme.dim
+        }
+    }
+}
+
+/// The line over a pane: what runs there and what it's doing.
+struct PaneHeader: View {
+    static let height: CGFloat = 22
+
+    let store: SessionStore
+    let sessionID: String
+    let onTap: () -> Void
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let session = store.sessions.first(where: { $0.id == sessionID }) {
+                HStack(spacing: 6) {
+                    SessionMark(session: session)
+                    Text(session.displayName).fontWeight(.bold).foregroundStyle(theme.fg).lineLimit(1)
+                    Text(session.statusLine).foregroundStyle(theme.dim).lineLimit(1).layoutPriority(1)
+                    if let description = session.description, !description.isEmpty {
+                        Text(description).foregroundStyle(theme.dim).lineLimit(1).truncationMode(.tail)
+                    }
+                    Spacer(minLength: 8)
+                    Text((session.cwd as NSString).abbreviatingWithTildeInPath)
+                        .foregroundStyle(theme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                .font(AppFont.ui(11))
+                .padding(.horizontal, 8)
+                .frame(maxHeight: .infinity)
+                .help(session.details)
+            } else {
+                Spacer()
+            }
+            Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
+        }
+        .frame(height: Self.height)
+        .background(theme.bg)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+    }
+}

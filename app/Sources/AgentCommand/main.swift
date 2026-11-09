@@ -106,6 +106,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.onSelect = { [weak self] session in self?.activate(session) }
         pane.session = { [weak store] id in store?.sessions.first { $0.id == id } }
         pane.onActivate = { [weak self] session in self?.activate(session) }
+        pane.makeHeader = { [weak store] id, onTap in
+            guard let store else { return NSView() }
+            return NSHostingView(rootView: PaneHeader(store: store, sessionID: id, onTap: onTap))
+        }
         pane.onChange = { [weak self] sets in self?.panesChanged(sets) }
         store.onListChanged = { [weak pane] ids in pane?.sessionsChanged(listed: ids) }
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }

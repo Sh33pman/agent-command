@@ -252,26 +252,7 @@ struct SessionRow: View {
         }
     }
 
-    @ViewBuilder private var mark: some View {
-        switch RowMark(session) {
-        case .claude(let dimmed, let spinning):
-            ClaudeMark(color: isSelected ? theme.bg : (dimmed ? theme.dim : statusColor), spinning: spinning)
-        case .terminal:
-            Text("$").foregroundStyle(isSelected ? theme.bg : statusColor)
-        case .dot:
-            Text("●").foregroundStyle(isSelected ? theme.bg : statusColor)
-        }
-    }
-
-    private var statusColor: Color {
-        switch session.status {
-        case "busy", "starting": theme.yellow
-        case "waiting": theme.blue
-        case "done", "running": theme.green
-        case "error": theme.red
-        default: theme.dim
-        }
-    }
+    private var mark: some View { SessionMark(session: session, onBar: isSelected) }
 }
 
 /// The line joining a set's rows. It's drawn rather than typed, so it meets the

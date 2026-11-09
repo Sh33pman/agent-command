@@ -17,6 +17,8 @@ final class PaneView: NSView {
     var onChange: ((PaneSets) -> Void)?
     /// Called to activate a stopped session shown in a pane.
     var onActivate: ((Session) -> Void)?
+    /// Makes the line over a pane for a session; tapping it calls the closure.
+    var makeHeader: ((String, @escaping () -> Void) -> NSView)?
 
     /// The surface in the focused pane.
     var shown: SurfaceView? { slots[tree.focused]?.surface }
@@ -134,6 +136,7 @@ final class PaneView: NSView {
 
     private func show(_ sessionID: String?, in slot: PaneSlot?) {
         guard let slot else { return }
+        slot.setHeader(for: sessionID.flatMap { session($0) == nil ? nil : $0 }, make: makeHeader)
         guard let sessionID, let session = session(sessionID) else {
             slot.setSurface(nil)
             slot.setMessage("Pick a session, or press ⌘N or ⌘T for a new one")
@@ -218,6 +221,8 @@ final class PaneView: NSView {
 /// One pane: a surface, or a message when there's nothing to show.
 private final class PaneSlot: NSView {
     private(set) var surface: SurfaceView?
+    private var header: NSView?
+    private var headerSession: String?
     private let message = NSTextField(labelWithString: "")
     private let dim = PassthroughView()
     var onClick: (() -> Void)?
@@ -255,6 +260,39 @@ private final class PaneSlot: NSView {
         message.stringValue = text
     }
 
+    /// The line over the pane, for the session it shows (nil: none).
+    func setHeader(for sessionID: String?, make: ((String, @escaping () -> Void) -> NSView)?) {
+        guard sessionID != headerSession else { return }
+        header?.removeFromSuperview()
+        header = nil
+        headerSession = sessionID
+        if let sessionID, let make {
+            let view = make(sessionID) { [weak self] in self?.onClick?() }
+            view.autoresizingMask = [.width, .minYMargin]
+            addSubview(view, positioned: .below, relativeTo: dim)
+            header = view
+        }
+        placeContent()
+    }
+
+    /// Below the header, if there is one.
+    private var contentFrame: NSRect {
+        guard header != nil else { return bounds }
+        var rect = bounds
+        rect.size.height = max(0, rect.height - PaneHeader.height)
+        return rect
+    }
+
+    private func placeContent() {
+        header?.frame = NSRect(x: 0, y: bounds.height - PaneHeader.height, width: bounds.width, height: PaneHeader.height)
+        surface?.frame = contentFrame
+    }
+
+    override func layout() {
+        super.layout()
+        placeContent()
+    }
+
     func setSurface(_ next: SurfaceView?) {
         guard next !== surface else { return }
         surface?.setVisible(false)
@@ -262,7 +300,7 @@ private final class PaneSlot: NSView {
         surface = next
         message.isHidden = next != nil
         guard let next else { return }
-        next.frame = bounds
+        next.frame = contentFrame
         next.autoresizingMask = [.width, .height]
         addSubview(next, positioned: .below, relativeTo: dim)
         next.setVisible(true)

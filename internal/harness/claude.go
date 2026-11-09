@@ -2,8 +2,8 @@ package harness
 
 import "strings"
 
-// remoteControlFlag enables Remote Control on every session acmd launches,
-// so they can be driven from a phone.
+// remoteControlFlag turns on Remote Control, so a session can be used from
+// claude.ai and the Claude app.
 const remoteControlFlag = "--remote-control"
 
 // Claude hosts interactive Claude Code. Unlike `--bg`, an interactive
@@ -11,16 +11,19 @@ const remoteControlFlag = "--remote-control"
 // background auto-mode classifier (which blocks `gh pr merge`).
 type Claude struct {
 	Path string // absolute path to claude
+	// RemoteControl starts sessions with --remote-control (the remote_control
+	// setting). --remote-control in the user's args turns it on regardless.
+	RemoteControl bool
 }
 
 // Name implements Harness.
 func (Claude) Name() string { return "claude" }
 
-// Command implements Harness: `claude --remote-control [--name N] [--session-id U] [args] [-- prompt]`.
+// Command implements Harness: `claude [--remote-control] [--name N] [--session-id U] [args] [-- prompt]`.
 func (c Claude) Command(sp Spec) []string {
 	name, prompt, args := sp.Name, sp.Prompt, sp.Args
 	argv := []string{c.Path}
-	if !hasRemoteControl(args) {
+	if c.RemoteControl && !hasRemoteControl(args) {
 		// Before any other flag, so its optional [name] value can't
 		// swallow an argument.
 		argv = append(argv, remoteControlFlag)
@@ -39,10 +42,10 @@ func (c Claude) Command(sp Spec) []string {
 	return argv
 }
 
-// Resume implements Harness: `claude --remote-control [args] --resume <id>`.
+// Resume implements Harness: `claude [--remote-control] [args] --resume <id>`.
 func (c Claude) Resume(sessionID string, args []string) []string {
 	argv := []string{c.Path}
-	if !hasRemoteControl(args) {
+	if c.RemoteControl && !hasRemoteControl(args) {
 		argv = append(argv, remoteControlFlag)
 	}
 	argv = append(argv, args...)

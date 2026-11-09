@@ -2,7 +2,9 @@ package setup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -303,4 +305,24 @@ func SaveEditor(configFile string, e config.Editor) error {
 		return nil
 	}
 	return writeAtomic(configFile, c.New, c.Mode, false)
+}
+
+// SaveSetting sets one value in config.toml, keeping the rest of the file as it
+// is. A missing file starts from the template.
+func SaveSetting(configFile, section, key string, value any) error {
+	b, err := os.ReadFile(configFile) // #nosec G304 -- acmd's own config file
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		b = []byte(config.Template)
+	case err != nil:
+		return err
+	}
+	text, err := config.Set(string(b), section, key, value)
+	if err != nil {
+		return err
+	}
+	if text == string(b) {
+		return nil
+	}
+	return writeAtomic(configFile, []byte(text), 0o600, false)
 }

@@ -8,7 +8,7 @@ import (
 var _ Harness = Claude{}
 
 func TestClaudeCommand(t *testing.T) {
-	c := Claude{Path: "/bin/claude"}
+	c := Claude{Path: "/bin/claude", RemoteControl: true}
 	for _, tc := range []struct {
 		name, prompt string
 		args, want   []string
@@ -26,7 +26,7 @@ func TestClaudeCommand(t *testing.T) {
 }
 
 func TestClaudeCommandSessionID(t *testing.T) {
-	got := Claude{Path: "/c"}.Command(Spec{Name: "n", SessionID: "u-1", Prompt: "p"})
+	got := Claude{Path: "/c", RemoteControl: true}.Command(Spec{Name: "n", SessionID: "u-1", Prompt: "p"})
 	want := []string{"/c", "--remote-control", "--name", "n", "--session-id", "u-1", "--", "p"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
@@ -34,7 +34,7 @@ func TestClaudeCommandSessionID(t *testing.T) {
 }
 
 func TestClaudeResume(t *testing.T) {
-	c := Claude{Path: "/bin/claude"}
+	c := Claude{Path: "/bin/claude", RemoteControl: true}
 	if got, want := c.Resume("abc", nil), []string{"/bin/claude", "--remote-control", "--resume", "abc"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Resume = %v, want %v", got, want)
 	}
@@ -47,5 +47,19 @@ func TestClaudeMeta(t *testing.T) {
 	c := Claude{}
 	if c.Name() != "claude" || c.StatusSource() != StatusHooks || StatusHooks.String() != "hooks" || StatusPTY.String() != "pty" {
 		t.Error("unexpected metadata")
+	}
+}
+
+func TestClaudeWithRemoteControlOff(t *testing.T) {
+	c := Claude{Path: "/c"} // the default
+	if got, want := c.Command(Spec{Name: "n", SessionID: "u", Prompt: "p"}), []string{"/c", "--name", "n", "--session-id", "u", "--", "p"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Command = %v, want %v", got, want)
+	}
+	if got, want := c.Resume("abc", nil), []string{"/c", "--resume", "abc"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Resume = %v, want %v", got, want)
+	}
+	// The user's own flag still counts.
+	if got, want := c.Command(Spec{Args: []string{"--remote-control"}}), []string{"/c", "--remote-control"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Command with the flag = %v, want %v", got, want)
 	}
 }

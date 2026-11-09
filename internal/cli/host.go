@@ -16,6 +16,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/daemon"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -78,7 +79,12 @@ func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) 
 		if err != nil {
 			return nil, nil, fmt.Errorf("claude not found: %w", err)
 		}
-		return harness.Claude{Path: claude}, env, nil
+		// Read when the session starts, so a change applies to the next one.
+		cfg, err := config.Load(p.Config())
+		if err != nil {
+			return nil, nil, err
+		}
+		return harness.Claude{Path: claude, RemoteControl: cfg.RemoteControl}, env, nil
 	case core.HarnessTerminal:
 		env := loginEnv(p)
 		shell := "/bin/zsh"

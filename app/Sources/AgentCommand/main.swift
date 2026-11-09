@@ -534,6 +534,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         PopupSettings.shared.enabled.toggle()
     }
 
+    /// Applies to sessions started or resumed after the change.
+    @objc func toggleRemoteControl() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: DaemonPaths.acmd)
+        process.arguments = RemoteControlSetting.arguments(on: !RemoteControlSetting.isOn)
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 { return }
+        } catch {}
+        let alert = NSAlert()
+        alert.messageText = "Couldn't change Remote Control"
+        alert.informativeText = "Run \(DaemonPaths.acmd) remote-control on (or off) in a terminal to see why."
+        alert.runModal()
+    }
+
     @objc private func toggleInbox() {
         if inbox == nil { showInbox(.queue) } else { closePopup() }
     }
@@ -795,6 +811,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popupItem.keyEquivalentModifierMask = [.command, .option]
         popupItem.target = self
         file.submenu?.addItem(popupItem)
+        let remoteItem = NSMenuItem(title: "Remote Control for New Sessions", action: #selector(toggleRemoteControl), keyEquivalent: "")
+        remoteItem.target = self
+        file.submenu?.addItem(remoteItem)
         let archiveItem = NSMenuItem(title: "Archive…", action: #selector(archiveSelection), keyEquivalent: "\u{8}")
         archiveItem.keyEquivalentModifierMask = [.command, .shift]
         archiveItem.target = self
@@ -919,3 +938,13 @@ app.setActivationPolicy(.regular)
 let delegate = AppDelegate()
 app.delegate = delegate
 app.run()
+
+extension AppDelegate: NSMenuItemValidation {
+    /// Shows the Remote Control setting as a checkmark each time the menu opens.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleRemoteControl) {
+            item.state = RemoteControlSetting.isOn ? .on : .off
+        }
+        return true
+    }
+}

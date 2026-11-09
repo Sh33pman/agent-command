@@ -16,7 +16,7 @@ import (
 )
 
 func TestHostArgv(t *testing.T) {
-	h := harness.Claude{Path: "/c"}
+	h := harness.Claude{Path: "/c", RemoteControl: true}
 	if got, want := hostArgv(h, hostOptions{Dir: "/w", Name: "n", Prompt: "p", ClaudeSession: "u"}), []string{"/c", "--remote-control", "--name", "n", "--session-id", "u", "--", "p"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("new = %v", got)
 	}
@@ -51,7 +51,8 @@ func TestHostServe(t *testing.T) {
 	}
 	script := filepath.Join(dir, "claude")
 	must(t, os.WriteFile(script, []byte("#!/bin/sh\necho \"ARGS:$*\"\necho \"CLAUDECODE:${CLAUDECODE:-unset}\"\nread line\necho \"GOT:$line\"\n"), 0o700))
-	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+script+"\"\n"), 0o600))
+	// remote_control is read by the host, as a session starts.
+	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+script+"\"\nremote_control = true\n"), 0o600))
 
 	id := "01HZZZZZZZZZZZZZZZZZZZZZZZ"
 	served := make(chan error, 1)

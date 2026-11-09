@@ -21,12 +21,15 @@ import (
 type Config struct {
 	ClaudeCommand string   `toml:"claude_command"`
 	ClaudeArgs    []string `toml:"claude_args"`
-	SidebarWidth  int      `toml:"sidebar_width"`
-	Editor        Editor   `toml:"editor"`
-	Keys          Keys     `toml:"keys"`
-	Notify        Notify   `toml:"notify"`
-	Popup         Popup    `toml:"popup"`
-	Speech        Speech   `toml:"speech"`
+	// RemoteControl starts sessions with `claude --remote-control`, so they can be
+	// used from claude.ai and the Claude app. Off by default.
+	RemoteControl bool   `toml:"remote_control"`
+	SidebarWidth  int    `toml:"sidebar_width"`
+	Editor        Editor `toml:"editor"`
+	Keys          Keys   `toml:"keys"`
+	Notify        Notify `toml:"notify"`
+	Popup         Popup  `toml:"popup"`
+	Speech        Speech `toml:"speech"`
 }
 
 // Popup is the [popup] section: the reply popup (SPEC §8.8).
@@ -151,8 +154,12 @@ const Template = `# agent-command (acmd) configuration. See: acmd help, SPEC §1
 
 # Absolute path of the claude binary (resolved by ` + "`acmd init`" + `).
 claude_command = "claude"
-# Extra arguments for new sessions (passed to ` + "`claude --bg`" + `).
+# Extra arguments for new sessions (passed to ` + "`claude`" + `).
 claude_args = []
+# Start sessions with Remote Control, so you can use them from claude.ai and
+# the Claude app. Applies to sessions started or resumed after a change.
+# Change with: acmd remote-control on|off
+remote_control = false
 
 [editor]
 # vscode | cursor | zed | idea | custom; "" asks on first use. Change with: acmd editor set

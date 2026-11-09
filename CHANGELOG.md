@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.43.0](https://github.com/brettmostert/agent-command/compare/v0.42.5...v0.43.0) (2026-11-09)
+
+
+### Features
+
+* **app:** turn Remote Control on or off from the command palette (PAN-59) ([#194](https://github.com/brettmostert/agent-command/issues/194)) ([efcfd02](https://github.com/brettmostert/agent-command/commit/efcfd021018d77451113cb38f53448cf00bb4164))
+* **sessions:** make Remote Control a setting, off by default (PAN-59) ([#193](https://github.com/brettmostert/agent-command/issues/193)) ([3206d97](https://github.com/brettmostert/agent-command/commit/3206d975183e0dfba975566507df9cc67f5f3f44))
+* **status:** show unknown for an agent in a terminal that sends no status (PAN-29) ([#191](https://github.com/brettmostert/agent-command/issues/191)) ([dd910a4](https://github.com/brettmostert/agent-command/commit/dd910a49943e00e3bad9d46b536b4747b2138de7))
+
 ## [0.42.5](https://github.com/brettmostert/agent-command/compare/v0.42.4...v0.42.5) (2026-11-09)
 
 

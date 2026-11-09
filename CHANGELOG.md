@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.1](https://github.com/brettmostert/agent-command/compare/v0.44.0...v0.44.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **app:** open links clicked in a terminal ([#197](https://github.com/brettmostert/agent-command/issues/197)) ([6952e43](https://github.com/brettmostert/agent-command/commit/6952e432406074de3e9be7dcbf5adf25c3ab18a8))
+
 ## [0.44.0](https://github.com/brettmostert/agent-command/compare/v0.43.0...v0.44.0) (2026-11-09)
 
 

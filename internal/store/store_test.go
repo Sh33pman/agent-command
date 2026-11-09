@@ -567,3 +567,26 @@ func TestInboxItemsArePrunedOnlyOnceHandled(t *testing.T) {
 		t.Errorf("after delete: %+v", all)
 	}
 }
+
+func TestOpenDeletesBackupsOlderThan30Days(t *testing.T) {
+	now := time.Unix(2_000_000_000, 0)
+	p := filepath.Join(t.TempDir(), "state.db")
+	old := fmt.Sprintf("%s.bak-v1-%d", p, now.Add(-31*24*time.Hour).Unix())
+	recent := fmt.Sprintf("%s.bak-v2-%d", p, now.Add(-29*24*time.Hour).Unix())
+	other := p + ".bak-vX-notatime"
+	for _, f := range []string{old, recent, other} {
+		if err := os.WriteFile(f, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := Open(ctx, p, WithClock(func() time.Time { return now }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for f, want := range map[string]bool{old: false, recent: true, other: true} {
+		if _, err := os.Stat(f); (err == nil) != want {
+			t.Errorf("%s: kept = %v, want %v", filepath.Base(f), err == nil, want)
+		}
+	}
+}

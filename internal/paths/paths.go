@@ -16,7 +16,7 @@ const maxSunPath = 104
 // Paths are acmd's file locations.
 type Paths struct {
 	StateDir   string // ~/.local/state/agent-command
-	RuntimeDir string // $TMPDIR/agent-command-$UID (0700)
+	RuntimeDir string // $TMPDIR/agent-command-$UID (0700), or StateDir/run
 	ConfigDir  string // ~/.config/agent-command
 }
 
@@ -37,8 +37,11 @@ func Default() (Paths, error) {
 	runtime := os.Getenv("ACMD_RUNTIME_DIR")
 	if runtime == "" {
 		runtime = filepath.Join(os.TempDir(), fmt.Sprintf("agent-command-%d", os.Getuid()))
+		// A TMPDIR too long for a socket falls back to a folder of the user's
+		// own. Not a shared one like /tmp, where another user could make the
+		// folder first and have acmd talk to their socket.
 		if len(filepath.Join(runtime, "daemon.sock")) >= maxSunPath {
-			runtime = fmt.Sprintf("/tmp/agent-command-%d", os.Getuid())
+			runtime = filepath.Join(state, "run")
 		}
 	}
 	return Paths{StateDir: state, RuntimeDir: runtime, ConfigDir: config}, nil

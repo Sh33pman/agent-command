@@ -126,3 +126,10 @@ extension UsesSharedSpeech {
         }
     }
 }
+
+@Test func theSocketPathMatchesTheDaemons() {
+    #expect(DaemonPaths.socket(["ACMD_RUNTIME_DIR": "/x/run"]) == "/x/run/daemon.sock")
+    #expect(DaemonPaths.socket(["TMPDIR": "/var/t/"]) == "/var/t/agent-command-\(getuid())/daemon.sock")
+    let long = ["TMPDIR": "/" + String(repeating: "d", count: 120), "ACMD_STATE_DIR": "/x/state"]
+    #expect(DaemonPaths.socket(long) == "/x/state/run/daemon.sock", "a long TMPDIR falls back to the user's own folder, not /tmp")
+}

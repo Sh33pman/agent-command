@@ -53,7 +53,7 @@ func WithClock(now func() time.Time) Option { return func(s *Store) { s.now = no
 
 // Open opens (creating if needed) the database at path and applies pending
 // migrations. Before migrating an existing database it copies it to
-// "<path>.bak-v<from>-<unix>". A database newer than this binary is refused
+// "<path>.bak-v<from>-<unix>", kept for 30 days. A database newer than this binary is refused
 // (no silent downgrade, SPEC §4.3).
 func Open(ctx context.Context, dbPath string, opts ...Option) (*Store, error) {
 	s := &Store{path: dbPath, now: time.Now}
@@ -79,6 +79,7 @@ func Open(ctx context.Context, dbPath string, opts ...Option) (*Store, error) {
 	if !existed {
 		_ = os.Chmod(dbPath, 0o600)
 	}
+	s.pruneBackups()
 	return s, nil
 }
 
@@ -177,6 +178,23 @@ func (s *Store) backup(ctx context.Context, from int) error {
 	}
 	dst := fmt.Sprintf("%s.bak-v%d-%d", s.path, from, s.now().Unix())
 	return copyFile(s.path, dst)
+}
+
+// backupKeep is how long a migration's backup is kept. It's for going back after
+// a bad upgrade, and holds old Inbox messages, so it shouldn't stay for good.
+const backupKeep = 30 * 24 * time.Hour
+
+// pruneBackups deletes backups made more than backupKeep ago, going by the time
+// in their name. It runs on every open, so they go even without another upgrade.
+func (s *Store) pruneBackups() {
+	old := s.now().Add(-backupKeep).Unix()
+	matches, _ := filepath.Glob(s.path + ".bak-v*-*")
+	for _, m := range matches {
+		stamp := m[strings.LastIndex(m, "-")+1:]
+		if t, err := strconv.ParseInt(stamp, 10, 64); err == nil && t < old {
+			_ = os.Remove(m)
+		}
+	}
 }
 
 func copyFile(src, dst string) error {

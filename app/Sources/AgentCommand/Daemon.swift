@@ -179,17 +179,25 @@ struct DaemonError: LocalizedError {
 
 /// Where acmd keeps things, the same way internal/paths resolves them.
 enum DaemonPaths {
-    static var socket: String {
-        let env = ProcessInfo.processInfo.environment
+    static var socket: String { socket(ProcessInfo.processInfo.environment) }
+
+    static func socket(_ env: [String: String]) -> String {
         if let dir = env["ACMD_RUNTIME_DIR"], !dir.isEmpty {
             return dir + "/daemon.sock"
         }
         let tmp = (env["TMPDIR"] ?? "/tmp") as NSString
         let dir = tmp.appendingPathComponent("agent-command-\(getuid())")
         let path = (dir as NSString).appendingPathComponent("daemon.sock")
-        // macOS limits unix socket paths to 104 bytes.
-        // swift-scan:allow shared-temp-path only for a TMPDIR too long for a socket, and matches internal/paths (PAN-55)
-        return path.utf8.count >= 104 ? "/tmp/agent-command-\(getuid())/daemon.sock" : path
+        // macOS limits unix socket paths to 104 bytes. Like internal/paths, a
+        // TMPDIR too long for one falls back to the user's own state folder,
+        // not a shared one like /tmp, where another user could make it first.
+        return path.utf8.count >= 104 ? stateDir(env) + "/run/daemon.sock" : path
+    }
+
+    /// internal/paths' StateDir.
+    static func stateDir(_ env: [String: String]) -> String {
+        if let dir = env["ACMD_STATE_DIR"], !dir.isEmpty { return dir }
+        return NSString(string: "~/.local/state/agent-command").expandingTildeInPath
     }
 
     /// Claude's settings, where internal/setup adds and marks the hooks.

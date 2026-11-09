@@ -41,8 +41,8 @@ func TestDefaultOverridesAndLongTmpdir(t *testing.T) {
 	}
 	t.Setenv("ACMD_RUNTIME_DIR", "")
 	t.Setenv("TMPDIR", "/"+strings.Repeat("d", 120))
-	if p, _ := Default(); !strings.HasPrefix(p.RuntimeDir, "/tmp/agent-command-") {
-		t.Errorf("long TMPDIR should fall back to /tmp: %s", p.RuntimeDir)
+	if p, _ := Default(); p.RuntimeDir != "/x/state/run" {
+		t.Errorf("long TMPDIR should fall back to the state folder, not /tmp: %s", p.RuntimeDir)
 	}
 }
 

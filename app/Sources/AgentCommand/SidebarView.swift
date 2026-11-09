@@ -211,7 +211,7 @@ struct SessionRow: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(session.isTerminal && session.claudeSessionID.isEmpty && session.status != "unknown" ? "$" : "●").foregroundStyle(isSelected ? theme.bg : statusColor)
+                    mark
                     Text(session.displayName)
                         .fontWeight(isSelected ? .bold : .regular)
                         .foregroundStyle(isSelected ? theme.bg : theme.fg)
@@ -241,6 +241,7 @@ struct SessionRow: View {
             }
             .opacity(isClosed ? 0.4 : 1)
         }
+        .help(session.details)
         .padding(.horizontal, 12)
         .frame(height: folder == nil ? 22 : 38)
         .background(isSelected ? theme.yellow : (isVisible ? Color(nsColor: theme.line) : Color.clear))
@@ -248,6 +249,17 @@ struct SessionRow: View {
             if isCursor {
                 Rectangle().strokeBorder(isSelected ? theme.bg : theme.fg, lineWidth: 1)
             }
+        }
+    }
+
+    @ViewBuilder private var mark: some View {
+        switch RowMark(session) {
+        case .claude(let dimmed, let spinning):
+            ClaudeMark(color: isSelected ? theme.bg : (dimmed ? theme.dim : statusColor), spinning: spinning)
+        case .terminal:
+            Text("$").foregroundStyle(isSelected ? theme.bg : statusColor)
+        case .dot:
+            Text("●").foregroundStyle(isSelected ? theme.bg : statusColor)
         }
     }
 

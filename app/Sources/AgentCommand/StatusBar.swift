@@ -19,12 +19,39 @@ struct StatusBarView: View {
         (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String).map { "v\($0)" } ?? "dev"
     }
 
+    /// "1 needs you · 2 busy": what needs you in color, the rest dim.
+    @ViewBuilder private var summary: some View {
+        let parts = StatusSummary.parts(store.sessions)
+        if !parts.isEmpty {
+            HStack(spacing: 0) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                    if index > 0 { Text(" · ").foregroundStyle(theme.dim) }
+                    Text(part.text)
+                        .fontWeight(part.needsYou ? .bold : .regular)
+                        .foregroundStyle(part.needsYou ? theme.blue : theme.dim)
+                }
+            }
+            .font(AppFont.ui(11))
+            .lineLimit(1)
+            .fixedSize()
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
             HStack {
                 if !notifier.warnings.isEmpty {
                     warningsButton
+                }
+                summary
+                if !store.inboxOpen, let selected = store.selected, selected.statusDetail?.isEmpty == false {
+                    Text(selected.statusLine)
+                        .font(AppFont.ui(11))
+                        .foregroundStyle(theme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help("\(selected.displayName): \(selected.statusLine)")
                 }
                 if speech.isSettingUp {
                     speechSetup

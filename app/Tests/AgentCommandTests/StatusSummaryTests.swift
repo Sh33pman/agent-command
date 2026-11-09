@@ -1,0 +1,53 @@
+import Foundation
+import Testing
+
+@testable import AgentCommand
+
+private func session(_ status: String, harness: String = "claude", claude: String = "c", detail: String? = nil,
+                     description: String? = nil, cwd: String = "/tmp") throws -> Session {
+    var s = try makeSession(id: UUID().uuidString, cwd: cwd, harness: harness, status: status, claude: claude)
+    s.statusDetail = detail
+    s.description = description
+    return s
+}
+
+@Test func theStatusBarSumsUpWhatNeedsYou() throws {
+    #expect(StatusSummary.parts([]).isEmpty)
+    #expect(StatusSummary.parts([try session("done"), try session("paused")]).isEmpty, "nothing to say")
+    let parts = StatusSummary.parts([
+        try session("waiting"), try session("error"), try session("busy"), try session("busy"),
+        try session("archived"), try session("done"),
+    ])
+    #expect(parts == [.init(text: "2 needs you", needsYou: true), .init(text: "2 busy", needsYou: false)])
+    #expect(StatusSummary.parts([try session("busy")]) == [.init(text: "1 busy", needsYou: false)])
+}
+
+@Test func aRowMarksClaude() throws {
+    #expect(RowMark(try session("done")) == .claude(dimmed: false, spinning: false))
+    #expect(RowMark(try session("busy")) == .claude(dimmed: false, spinning: true))
+    #expect(RowMark(try session("paused")) == .claude(dimmed: true, spinning: false), "greyed out while paused")
+    #expect(RowMark(try session("finished")) == .claude(dimmed: true, spinning: false))
+    #expect(RowMark(try session("busy", harness: "terminal")) == .claude(dimmed: false, spinning: true),
+            "Claude typed in a terminal")
+    #expect(RowMark(try session("unknown", harness: "terminal", claude: "", detail: "claude"))
+        == .claude(dimmed: true, spinning: false), "Claude without hooks: its status isn't known")
+    #expect(RowMark(try session("running", harness: "terminal", claude: "")) == .terminal)
+    #expect(RowMark(try session("unknown", harness: "terminal", claude: "", detail: "opencode")) == .dot)
+}
+
+@Test func aSessionDescribesItself() throws {
+    let s = try session("waiting", detail: "permission: Write", description: "the auth fix", cwd: "/w/api")
+    #expect(s.statusLine == "waiting · permission: Write")
+    #expect(s.details == "api\nwaiting · permission: Write\nthe auth fix\n/w/api\nClaude session c")
+    #expect(try session("done").statusLine == "done")
+    #expect(try session("done", detail: "").statusLine == "done")
+}
+
+@Test func aSessionWithoutDetailsDecodes() throws {
+    let s = try session("done")
+    #expect(s.statusDetail == nil && s.description == nil, "older daemons don't send them")
+    let fields: [String: Any] = ["ID": "a", "Name": "a", "Cwd": "/", "Status": "busy", "Kind": "hosted", "Unseen": false,
+                                 "Harness": "claude", "ClaudeSessionID": "c", "StatusDetail": "Bash", "Description": "d"]
+    let decoded = try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
+    #expect(decoded.statusDetail == "Bash" && decoded.description == "d")
+}

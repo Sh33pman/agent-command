@@ -132,10 +132,35 @@ struct Session: Decodable, Identifiable, Equatable {
     let unseen: Bool
     let harness: String
     let claudeSessionID: String
+    /// What it's doing or waiting on, such as "Bash" or "permission: Write".
+    var statusDetail: String?
+    var description: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
         case harness = "Harness", claudeSessionID = "ClaudeSessionID"
+        case statusDetail = "StatusDetail", description = "Description"
+    }
+
+    /// The status with its detail, as "waiting · permission: Write".
+    var statusLine: String {
+        guard let detail = statusDetail, !detail.isEmpty else { return status }
+        return "\(status) · \(detail)"
+    }
+
+    /// Claude runs in it: a Claude session, or Claude typed in a terminal (with
+    /// or without hooks).
+    var runsClaude: Bool {
+        !isTerminal || !claudeSessionID.isEmpty || (status == "unknown" && statusDetail == "claude")
+    }
+
+    /// The row's tooltip: everything about the session on a few lines.
+    var details: String {
+        var lines = [displayName, statusLine]
+        if let description, !description.isEmpty { lines.append(description) }
+        if !cwd.isEmpty { lines.append((cwd as NSString).abbreviatingWithTildeInPath) }
+        if !claudeSessionID.isEmpty { lines.append("Claude session \(claudeSessionID)") }
+        return lines.joined(separator: "\n")
     }
 
     var isTerminal: Bool { harness == "terminal" }

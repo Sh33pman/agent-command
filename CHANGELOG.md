@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/brettmostert/agent-command/compare/v0.43.0...v0.44.0) (2026-11-09)
+
+
+### Features
+
+* **app:** show messages in the popup and the Inbox with their formatting ([#195](https://github.com/brettmostert/agent-command/issues/195)) ([cd2006a](https://github.com/brettmostert/agent-command/commit/cd2006aa8af65141643f02c04d8a432cdb004852))
+
 ## [0.43.0](https://github.com/brettmostert/agent-command/compare/v0.42.5...v0.43.0) (2026-11-09)
 
 

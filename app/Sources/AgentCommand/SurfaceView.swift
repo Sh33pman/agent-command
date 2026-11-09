@@ -18,6 +18,19 @@ final class SurfaceView: NSView, NSTextInputClient {
     /// Called when the surface takes the keyboard.
     var onFocused: (() -> Void)?
 
+    /// The pointer is over a link that ⌘-click opens: show a pointing hand.
+    var overLink = false {
+        didSet {
+            guard overLink != oldValue else { return }
+            window?.invalidateCursorRects(for: self)
+            (overLink ? NSCursor.pointingHand : NSCursor.iBeam).set()
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: overLink ? .pointingHand : .iBeam)
+    }
+
     static func from(_ userdata: UnsafeMutableRawPointer?) -> SurfaceView? {
         guard let userdata else { return nil }
         return Unmanaged<SurfaceView>.fromOpaque(userdata).takeUnretainedValue()
@@ -228,6 +241,11 @@ final class SurfaceView: NSView, NSTextInputClient {
             if sidePressed { action = GHOSTTY_ACTION_PRESS }
         }
         _ = send(action, event: event)
+        // Holding or letting go of ⌘ shows or hides the link under the pointer.
+        if let surface, let window {
+            let pos = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, SurfaceView.mods(event.modifierFlags))
+        }
     }
 
     private func send(

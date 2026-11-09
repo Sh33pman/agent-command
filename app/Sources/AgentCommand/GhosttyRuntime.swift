@@ -24,8 +24,8 @@ final class GhosttyRuntime {
             wakeup_cb: { _ in
                 DispatchQueue.main.async { GhosttyRuntime.shared.tick() }
             },
-            action_cb: { _, _, action in
-                GhosttyRuntime.handle(action)
+            action_cb: { _, target, action in
+                GhosttyRuntime.handle(action, target: target)
             },
             read_clipboard_cb: { userdata, location, state, mimes, mimesLen, _ in
                 GhosttyRuntime.readClipboard(userdata, location, state, mimes, mimesLen)
@@ -103,11 +103,27 @@ final class GhosttyRuntime {
 
     func setFocus(_ focused: Bool) { ghostty_app_set_focus(app, focused) }
 
-    private static func handle(_ action: ghostty_action_s) -> Bool {
+    private static func handle(_ action: ghostty_action_s, target: ghostty_target_s) -> Bool {
         switch action.tag {
         case GHOSTTY_ACTION_QUIT:
             trace("ghostty quit action")
             DispatchQueue.main.async { NSApp.terminate(nil) }
+            return true
+        case GHOSTTY_ACTION_OPEN_URL:
+            let link = action.action.open_url
+            let text = TerminalLinks.string(link.url, Int(link.len))
+            guard let url = TerminalLinks.url(text) else {
+                trace("ghostty link not opened: not a web or mail link")
+                return true
+            }
+            DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            return true
+        case GHOSTTY_ACTION_MOUSE_OVER_LINK:
+            let link = action.action.mouse_over_link
+            let over = !TerminalLinks.string(link.url, Int(link.len)).isEmpty
+            let view = target.tag == GHOSTTY_TARGET_SURFACE
+                ? SurfaceView.from(ghostty_surface_userdata(target.target.surface)) : nil
+            DispatchQueue.main.async { view?.overLink = over }
             return true
         default:
             return false

@@ -26,6 +26,11 @@ enum RemoteControlSetting {
         return false
     }
 
+    /// The command palette's entry: what choosing it does.
+    static func paletteTitle(isOn: Bool) -> String {
+        isOn ? "Turn Remote Control off for new sessions" : "Turn Remote Control on for new sessions"
+    }
+
     /// The arguments for `acmd` that turn it on or off.
     static func arguments(on: Bool) -> [String] { ["remote-control", on ? "on" : "off"] }
 }

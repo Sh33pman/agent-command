@@ -706,6 +706,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.store.toggleReadingSelected()
             })
         }
+        list.append(PopupCommand(section: "Claude", title: RemoteControlSetting.paletteTitle(isOn: RemoteControlSetting.isOn)) {
+            [weak self] in self?.toggleRemoteControl()
+        })
         let popup = PopupSettings.shared
         list.append(PopupCommand(section: "App", title: popup.autoPlay ? "Stop reading aloud in the popup" : "Read aloud in the popup") {
             popup.autoPlay.toggle()

@@ -3,6 +3,7 @@ package term
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"net"
 	"os"
@@ -129,6 +130,12 @@ func (s *Server) Serve(ctx context.Context) error {
 					_ = c.Close()
 				case err == nil && typ == frameText:
 					_, _ = c.Write([]byte(st.text()))
+					_ = c.Close()
+				case err == nil && typ == frameFront:
+					if f, ok := front(ptmx, cmd.Process.Pid); ok {
+						b, _ := json.Marshal(f)
+						_, _ = c.Write(b)
+					}
 					_ = c.Close()
 				case err == nil && typ == frameKill:
 					hangup()
@@ -334,4 +341,23 @@ func ScreenText(socket string) (string, error) {
 	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 	b, err := io.ReadAll(c)
 	return string(b), err
+}
+
+// Foreground returns the program in front of the terminal on socket. ok is
+// false when the server can't tell, or is older than this question.
+func Foreground(socket string) (f Front, ok bool) {
+	c, err := net.DialTimeout("unix", socket, time.Second)
+	if err != nil {
+		return Front{}, false
+	}
+	defer c.Close()
+	if err := writeFrame(c, frameFront, nil); err != nil {
+		return Front{}, false
+	}
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	b, err := io.ReadAll(c)
+	if err != nil || len(b) == 0 || json.Unmarshal(b, &f) != nil {
+		return Front{}, false
+	}
+	return f, f.Shell || f.Name != ""
 }

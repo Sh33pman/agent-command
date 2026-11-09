@@ -155,7 +155,7 @@ func statusRank(s *Session) int {
 			return 3
 		}
 		return 4
-	case StatusStarting:
+	case StatusStarting, StatusUnknown:
 		return 5
 	case StatusPaused, StatusFinished:
 		return 6

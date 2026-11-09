@@ -10,7 +10,8 @@
 // 'a' attach (first frame; a connection without it only probes or ends the
 // terminal), 'i' input, 'r' resize (rows, cols as uint16 BE), 'k' end the
 // terminal, 'w' type the payload into the shell and close (Send), 't' reply
-// with the screen as plain text and close (ScreenText).
+// with the screen as plain text and close (ScreenText), 'f' reply with the
+// program in front as JSON and close (Foreground).
 //
 // Hosts outlive upgrades, so a client can meet a server older or newer than
 // itself. Add to this protocol, don't change it: a server ignores frames it
@@ -33,7 +34,14 @@ const (
 	frameKill   = 'k'
 	frameWrite  = 'w' // input from a connection that doesn't attach (Send)
 	frameText   = 't' // the screen as plain text (ScreenText)
+	frameFront  = 'f' // the program in front (Foreground)
 )
+
+// Front is the program in front of a terminal: the one the keyboard reaches.
+type Front struct {
+	Shell bool   `json:"shell,omitempty"` // the terminal's own shell
+	Name  string `json:"name,omitempty"`  // otherwise, the program's name
+}
 
 // protocolVersion goes in the attach payload.
 const protocolVersion = 1

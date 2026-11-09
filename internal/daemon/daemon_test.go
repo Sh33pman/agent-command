@@ -17,6 +17,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/store"
+	"github.com/brettmostert/agent-command/internal/term"
 )
 
 const testVersion = "9.9.9-test"
@@ -45,7 +46,10 @@ func start(t *testing.T, p paths.Paths, opts ...func(*Config)) *running {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &running{cancel: cancel, Done: make(chan struct{})}
-	cfg := Config{Paths: p, Version: testVersion, Log: log.New(io.Discard, "", 0)}
+	cfg := Config{Paths: p, Version: testVersion, Log: log.New(io.Discard, "", 0),
+		// The fake hosts run `sleep`, which would count as the shell in front and
+		// end every terminal's agent: tests that want this set their own.
+		HostFront: func(string) (term.Front, bool) { return term.Front{}, false }}
 	for _, o := range opts {
 		o(&cfg)
 	}

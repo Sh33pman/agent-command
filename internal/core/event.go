@@ -46,7 +46,21 @@ const (
 	EventResumed    EventKind = "acmd:resumed"
 	// EventFinished: the user finished the session (acmd stopped it).
 	EventFinished EventKind = "acmd:finished"
+	// EventForeground: a terminal's host said what runs in front (Event.Front).
+	EventForeground EventKind = "acmd:foreground"
 )
+
+// FrontShell is Event.Front when the terminal's own shell is in front.
+const FrontShell = "$shell"
+
+// agents are the programs a terminal row shows as an agent, by name.
+var agents = map[string]bool{
+	"claude": true, "opencode": true, "codex": true, "gemini": true, "aider": true,
+	"amp": true, "cursor-agent": true, "goose": true, "crush": true, "qwen": true,
+}
+
+// IsAgent reports whether program, a name from a terminal's host, is a coding agent.
+func IsAgent(program string) bool { return agents[program] }
 
 // AgentStatus values from `claude agents --json` "status" (SPEC §5.3).
 // AgentStopped stands for a listed session with no pid and no status (M0 C3).
@@ -72,6 +86,7 @@ type Event struct {
 	Prompt           string // UserPromptSubmit only; used for the auto-name, never stored
 	Error            string // StopFailure matcher
 	AgentStatus      string // EventAgentStatus only
+	Front            string // EventForeground only: FrontShell or a program's name
 	// LastMessage is Claude's final message of the turn (Stop), lines kept.
 	LastMessage string
 	// ToolInput is the tool's input (PermissionRequest, PreToolUse), as

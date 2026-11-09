@@ -109,6 +109,11 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 			set(s, &t, StatusDone, "")
 		}
 
+	case EventForeground:
+		// Not touched: what's in front is seen now, and mustn't make a hook sent
+		// a moment ago look stale.
+		return applyFront(s, e, t)
+
 	case EventAgentStatus:
 		switch e.AgentStatus {
 		case AgentBusy:
@@ -157,6 +162,30 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 		return t
 	}
 	touch(s, e, &t)
+	return t
+}
+
+// applyFront is the fallback for a terminal's agent (docs/v2/architecture.md §5):
+// the shell back in front means the agent has gone, even if it sent no
+// SessionEnd (it crashed or was killed). An agent in front that has sent no
+// status is unknown, rather than a guess. The daemon waits a few seconds before
+// sending that, so its first hook has time to arrive.
+func applyFront(s *Session, e Event, t Transition) Transition {
+	if !s.IsTerminal() {
+		return t
+	}
+	switch {
+	case e.Front == FrontShell:
+		switch s.Status {
+		case StatusBusy, StatusWaiting, StatusDone, StatusError, StatusUnknown:
+		default: // no agent, or the terminal isn't running
+			return t
+		}
+		set(s, &t, StatusRunning, "")
+		s.EndAgent()
+	case s.Status == StatusRunning && s.ClaudeSessionID == "" && IsAgent(e.Front):
+		set(s, &t, StatusUnknown, e.Front)
+	}
 	return t
 }
 

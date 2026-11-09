@@ -22,6 +22,9 @@ const (
 	StatusPaused   Status = "paused"
 	// StatusRunning: a terminal whose shell runs; it has no finer status.
 	StatusRunning Status = "running"
+	// StatusUnknown: an agent runs in a terminal but sends no status events
+	// (its hooks aren't installed, or acmd doesn't know it). StatusDetail names it.
+	StatusUnknown Status = "unknown"
 	// StatusFinished: the user finished the session (claude stop); its
 	// conversation is kept and showing it resumes it (SPEC §5.2).
 	StatusFinished Status = "finished"

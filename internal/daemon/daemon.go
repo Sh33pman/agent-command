@@ -62,6 +62,10 @@ type Config struct {
 	// ReconcileEvery and TailEvery default to 3 s and 1 s (SPEC §6.7, §5.4).
 	ReconcileEvery time.Duration
 	TailEvery      time.Duration
+	// FrontEvery is how often terminals are asked what runs in front (2 s), and
+	// HostFront asks one (default: through its host).
+	FrontEvery time.Duration
+	HostFront  func(sessionID string) (term.Front, bool)
 }
 
 // Daemon is a running daemon.
@@ -78,6 +82,8 @@ type Daemon struct {
 	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
 
 	notify *notifier // d.mu
+
+	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks
@@ -94,6 +100,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.TailEvery == 0 {
 		cfg.TailEvery = time.Second
+	}
+	if cfg.FrontEvery == 0 {
+		cfg.FrontEvery = 2 * time.Second
+	}
+	if cfg.HostFront == nil {
+		cfg.HostFront = func(id string) (term.Front, bool) { return term.Foreground(cfg.Paths.HostSocket(id)) }
 	}
 	if err := cfg.Paths.Ensure(); err != nil {
 		return err
@@ -408,8 +420,10 @@ func (d *Daemon) background(ctx context.Context) {
 	tail := reconcile.NewTailer()
 	reconcileT := time.NewTicker(d.cfg.ReconcileEvery)
 	tailT := time.NewTicker(d.cfg.TailEvery)
+	frontT := time.NewTicker(d.cfg.FrontEvery)
 	defer reconcileT.Stop()
 	defer tailT.Stop()
+	defer frontT.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -432,6 +446,14 @@ func (d *Daemon) background(ctx context.Context) {
 				d.cfg.Log.Printf("reconcile: %v", err)
 			} else if res.Discovered+res.Updated > 0 {
 				d.cfg.Log.Printf("reconcile: %d discovered, %d updated", res.Discovered, res.Updated)
+				d.changes.bump()
+			}
+		case <-frontT.C:
+			changed, err := d.frontOnce(ctx)
+			if err != nil {
+				d.cfg.Log.Printf("foreground: %v", err)
+			}
+			if changed {
 				d.changes.bump()
 			}
 		case <-tailT.C:

@@ -211,7 +211,7 @@ struct SessionRow: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(session.isTerminal && session.claudeSessionID.isEmpty ? "$" : "●").foregroundStyle(isSelected ? theme.bg : statusColor)
+                    Text(session.isTerminal && session.claudeSessionID.isEmpty && session.status != "unknown" ? "$" : "●").foregroundStyle(isSelected ? theme.bg : statusColor)
                     Text(session.displayName)
                         .fontWeight(isSelected ? .bold : .regular)
                         .foregroundStyle(isSelected ? theme.bg : theme.fg)

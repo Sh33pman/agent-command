@@ -74,6 +74,9 @@ func InboxEffect(s *Session, e Event) (item *InboxItem, drop bool) {
 		// The session moved on (the user answered or worked in it, or it
 		// stopped): what was waiting is stale.
 		return nil, true
+	case EventForeground:
+		// The terminal's agent has gone.
+		return nil, e.Front == FrontShell
 	}
 	return nil, false
 }

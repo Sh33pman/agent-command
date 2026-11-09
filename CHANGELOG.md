@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.5](https://github.com/brettmostert/agent-command/compare/v0.42.4...v0.42.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* **status:** stop showing waiting after a permission is denied (PAN-29) ([#189](https://github.com/brettmostert/agent-command/issues/189)) ([be59164](https://github.com/brettmostert/agent-command/commit/be59164931041ccaa511071205723c5c7ce52a46))
+
 ## [0.42.4](https://github.com/brettmostert/agent-command/compare/v0.42.3...v0.42.4) (2026-11-09)
 
 

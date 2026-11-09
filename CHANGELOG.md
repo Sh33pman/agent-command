@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.3](https://github.com/brettmostert/agent-command/compare/v0.42.2...v0.42.3) (2026-11-09)
+
+
+### Bug Fixes
+
+* **env:** give sessions this login's SSH agent, not the one saved at setup ([#186](https://github.com/brettmostert/agent-command/issues/186)) ([ad57969](https://github.com/brettmostert/agent-command/commit/ad579694d41b28c19820d7641908b0e49aabbf18))
+* **security:** keep the socket fallback out of /tmp, and old backups off disk ([#184](https://github.com/brettmostert/agent-command/issues/184)) ([2155ce3](https://github.com/brettmostert/agent-command/commit/2155ce3f2e6a911db9155302e4dfa88bf5f8f70d))
+
 ## [0.42.2](https://github.com/brettmostert/agent-command/compare/v0.42.1...v0.42.2) (2026-11-07)
 
 

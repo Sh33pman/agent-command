@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.1](https://github.com/brettmostert/agent-command/compare/v0.45.0...v0.45.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **packaging:** use the cask's current form for the macos requirement ([#202](https://github.com/brettmostert/agent-command/issues/202)) ([108069a](https://github.com/brettmostert/agent-command/commit/108069ad6b4c50f8525f712fd3dbfda270f09c67))
+
 ## [0.45.0](https://github.com/brettmostert/agent-command/compare/v0.44.1...v0.45.0) (2026-11-09)
 
 

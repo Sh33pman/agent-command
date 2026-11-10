@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.0](https://github.com/brettmostert/agent-command/compare/v0.45.1...v0.46.0) (2026-11-10)
+
+
+### Features
+
+* **app:** go to a session by number, or to the next that needs you ([#206](https://github.com/brettmostert/agent-command/issues/206)) ([e62a431](https://github.com/brettmostert/agent-command/commit/e62a4316c936b66090f5d562fbbff0c0f4186646))
+
 ## [0.45.1](https://github.com/brettmostert/agent-command/compare/v0.45.0...v0.45.1) (2026-11-09)
 
 

@@ -15,10 +15,18 @@ MINIMUMS = {
     "AppNotifier.swift": 30,
     "Daemon.swift": 85,
     "InboxModel.swift": 90,
+    "Links.swift": 95,
+    "Markdown.swift": 90,
+    "Palette.swift": 95,
     "PaneSets.swift": 95,
     "PaneTree.swift": 95,
+    # The rest reads the person's real config, which tests don't.
+    "RemoteControl.swift": 60,
+    "Report.swift": 95,
     "SessionStore.swift": 70,
     "SpeechController.swift": 90,
+    "StatusSummary.swift": 95,
+    "ThemeConfig.swift": 95,
 }
 
 

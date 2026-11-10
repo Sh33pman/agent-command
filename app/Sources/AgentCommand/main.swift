@@ -611,149 +611,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// What can be done right now: what the popup lists depends on what's showing.
     private func commands(targets: [Session]) -> [PopupCommand] {
-        var list: [PopupCommand] = []
-        let current = targets.count == 1 ? targets[0] : nil
-        if targets.count > 1 {
-            let section = "\(targets.count) sessions"
-            list.append(PopupCommand(section: section, title: "Rename…", shortcut: "⌘R") { [weak self] in
-                self?.showRename(targets)
-            })
-            list.append(PopupCommand(section: section, title: "Archive…", shortcut: "⇧⌘⌫") { [weak self] in
-                self?.archive(targets)
-            })
-        }
-        if let session = current {
-            let section = session.isTerminal ? "Terminal session" : "Claude session"
-            list.append(PopupCommand(section: section, title: "Rename…", shortcut: "⌘R") { [weak self] in
-                self?.showRename([session])
-            })
-            list.append(PopupCommand(section: section, title: "Archive…", shortcut: "⇧⌘⌫") { [weak self] in
-                self?.archive([session])
-            })
-            if store.setMembers.contains(where: { $0.contains(session.id) }) {
-                list.append(PopupCommand(section: section, title: "Move out of set") { [weak self] in
-                    self?.pane?.moveOut(sessionID: session.id)
-                })
-            }
-            list.append(PopupCommand(section: section, title: "Copy folder path") {
-                Self.copyToPasteboard(session.cwd)
-            })
-            if !session.isTerminal {
-                list.append(PopupCommand(section: section, title: "Copy Claude session ID") {
-                    Self.copyToPasteboard(session.claudeSessionID)
-                })
-            }
-        }
-        for session in store.sessions where session.id != current?.id {
-            list.append(PopupCommand(section: "Go to", title: session.displayName, shortcut: session.status, key: session.id) {
-                [weak self] in self?.store.selectedID = session.id
-            })
-        }
-        list.append(PopupCommand(section: "New", title: "Claude session", shortcut: "⌘N") { [weak self] in
-            self?.newSession(harness: "claude")
-        })
-        list.append(PopupCommand(section: "New", title: "Terminal", shortcut: "⌘T") { [weak self] in
-            self?.newSession(harness: "terminal")
-        })
-        list.append(PopupCommand(section: "New", title: "Resume a session…", shortcut: "⇧⌘O") { [weak self] in
-            self?.resumeSession()
-        })
-        let paneCount = pane?.tree.shownLeaves.count ?? 0
-        list.append(PopupCommand(section: "Panes", title: "Split right", shortcut: "⌘↩") { [weak self] in
-            self?.splitPane(.right)
-        })
-        list.append(PopupCommand(section: "Panes", title: "Split down", shortcut: "⇧⌘↩") { [weak self] in
-            self?.splitPane(.down)
-        })
-        list.append(PopupCommand(section: "Panes", title: "Close pane", shortcut: "⌘W") { [weak self] in
-            self?.closePane()
-        })
-        if paneCount > 1 {
-            for (title, shortcut, direction) in [
-                ("Focus left", "⌃⌘H", FocusDirection.left), ("Focus down", "⌃⌘J", .down),
-                ("Focus up", "⌃⌘K", .up), ("Focus right", "⌃⌘L", .right),
-            ] {
-                list.append(PopupCommand(section: "Panes", title: title, shortcut: shortcut) { [weak self] in
-                    self?.pane?.focus(direction)
-                })
-            }
-            list.append(PopupCommand(section: "Panes", title: "Equalize panes", shortcut: "⌃⌘=") { [weak self] in
-                self?.equalizePanes()
-            })
-        }
-        if let surface = pane?.shown {
-            for (title, shortcut, binding) in [
-                ("Clear screen", "⌘K", "clear_screen"),
-                ("Scroll to top", "⌘↖", "scroll_to_top"),
-                ("Scroll to bottom", "⌘↘", "scroll_to_bottom"),
-                ("Select all", "⌘A", "select_all"),
-                ("Paste", "⌘V", "paste_from_clipboard"),
-                ("Increase font size", "⌘=", "increase_font_size:1"),
-                ("Decrease font size", "⌘-", "decrease_font_size:1"),
-                ("Reset font size", "⌘0", "reset_font_size"),
-            ] {
-                list.append(PopupCommand(section: "Screen", title: title, shortcut: shortcut) { [weak surface] in
-                    surface?.perform(binding: binding)
-                })
-            }
-        }
-        list.append(PopupCommand(section: "App", title: "Inbox", shortcut: "⇧⌘I") { [weak self] in
-            self?.showInbox(.queue)
-        })
         let speech = SpeechController.shared
-        list.append(PopupCommand(section: "App", title: speech.isEnabled ? "Turn speech off" : "Turn speech on") {
-            speech.setEnabled(!speech.isEnabled)
-        })
-        if speech.isEnabled, current?.isAgent == true || speech.isSpeaking {
-            let title = SpeechController.shared.isSpeaking ? "Stop reading" : "Read the latest message aloud"
-            list.append(PopupCommand(section: "App", title: title, shortcut: "⇧⌘S") { [weak self] in
-                self?.store.toggleReadingSelected()
-            })
-        }
-        list.append(PopupCommand(section: "Claude", title: RemoteControlSetting.paletteTitle(isOn: RemoteControlSetting.isOn)) {
-            [weak self] in self?.toggleRemoteControl()
-        })
         let popup = PopupSettings.shared
-        list.append(PopupCommand(section: "App", title: popup.autoPlay ? "Stop reading aloud in the popup" : "Read aloud in the popup") {
-            popup.autoPlay.toggle()
-        })
-        list.append(PopupCommand(section: "App", title: popup.enabled ? "Turn popup off" : "Turn popup on", shortcut: "⌥⌘I") {
-            popup.enabled.toggle()
-        })
-        for style in ReplyPopupStyle.allCases where style != popup.style {
-            list.append(PopupCommand(section: "App", title: "Popup style: \(style.label)") {
-                popup.style = style
-            })
+        let state = PaletteState(
+            targets: targets, sessions: store.sessions, setMembers: store.setMembers,
+            paneCount: pane?.tree.shownLeaves.count ?? 0, showsScreen: pane?.shown != nil,
+            speechOn: speech.isEnabled, speaking: speech.isSpeaking, remoteControl: RemoteControlSetting.isOn,
+            popupReads: popup.autoPlay, popupOn: popup.enabled, popupStyle: popup.style, popupOpens: popup.opens)
+        return Palette.entries(state).map { entry in
+            PopupCommand(section: entry.section, title: entry.title, shortcut: entry.shortcut, key: entry.key) {
+                [weak self] in self?.perform(entry.action)
+            }
         }
-        for opens in PopupOpens.allCases where opens != popup.opens {
-            list.append(PopupCommand(section: "App", title: "Popup opens for: \(opens.label)") {
-                popup.opens = opens
-            })
+    }
+
+    /// Carries out a palette entry.
+    private func perform(_ action: PaletteAction) {
+        switch action {
+        case .rename(let sessions): showRename(sessions)
+        case .archive(let sessions): archive(sessions)
+        case .moveOut(let id): pane?.moveOut(sessionID: id)
+        case .copy(let text): Self.copyToPasteboard(text)
+        case .select(let id): store.selectedID = id
+        case .newSession(let harness): newSession(harness: harness)
+        case .resume: resumeSession()
+        case .split(let direction): splitPane(direction)
+        case .closePane: closePane()
+        case .focus(let direction): pane?.focus(direction)
+        case .equalizePanes: equalizePanes()
+        case .screen(let binding): pane?.shown?.perform(binding: binding)
+        case .inbox: showInbox(.queue)
+        case .inboxFor(let session): showInbox(.session(session.id))
+        case .toggleSpeech: SpeechController.shared.setEnabled(!SpeechController.shared.isEnabled)
+        case .toggleReading: store.toggleReadingSelected()
+        case .toggleRemoteControl: toggleRemoteControl()
+        case .togglePopupReading: PopupSettings.shared.autoPlay.toggle()
+        case .togglePopup: PopupSettings.shared.enabled.toggle()
+        case .popupStyle(let style): PopupSettings.shared.style = style
+        case .popupOpens(let opens): PopupSettings.shared.opens = opens
+        case .themes: showThemes()
+        case .focusSidebar: toggleSidebarFocus()
+        case .toggleSidebar: split?.toggleSidebar(nil)
+        case .report(let kind): showReport(kind)
+        case .quit: NSApp.terminate(nil)
         }
-        if let current {
-            list.append(PopupCommand(section: "App", title: "Inbox for \(current.displayName)") { [weak self] in
-                self?.showInbox(.session(current.id))
-            })
-        }
-        list.append(PopupCommand(section: "App", title: "Change theme…", shortcut: "⇧⌘T") { [weak self] in
-            self?.showThemes()
-        })
-        list.append(PopupCommand(section: "App", title: "Focus sidebar", shortcut: "⇧⌘B") { [weak self] in
-            self?.toggleSidebarFocus()
-        })
-        list.append(PopupCommand(section: "App", title: "Toggle sidebar") { [weak self] in
-            self?.split?.toggleSidebar(nil)
-        })
-        list.append(PopupCommand(section: "App", title: "Report a bug…") { [weak self] in
-            self?.showReport(.bug)
-        })
-        list.append(PopupCommand(section: "App", title: "Request a feature…") { [weak self] in
-            self?.showReport(.feature)
-        })
-        list.append(PopupCommand(section: "App", title: "Quit", shortcut: "⌘Q") {
-            NSApp.terminate(nil)
-        })
-        return list
     }
 
     private static func copyToPasteboard(_ text: String) {
@@ -768,19 +669,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func archive(_ sessions: [Session]) {
-        guard let first = sessions.first else { return }
+        guard let prompt = Palette.archivePrompt(sessions) else { return }
         let alert = NSAlert()
-        alert.messageText = sessions.count == 1
-            ? "Archive \(first.displayName)?"
-            : "Archive \(sessions.count) sessions?"
-        var notes: [String] = []
-        if sessions.contains(where: \.isTerminal) {
-            notes.append("Terminals end, along with everything running in them, and can't be brought back.")
-        }
-        if sessions.contains(where: { !$0.isTerminal }) {
-            notes.append("Agents stop. You can unarchive them later and continue the conversation.")
-        }
-        alert.informativeText = notes.joined(separator: " ")
+        alert.messageText = prompt.title
+        alert.informativeText = prompt.note
         alert.addButton(withTitle: "Archive")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {

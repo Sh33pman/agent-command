@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// MaxAutoNameRunes is the length of names derived from prompts (SPEC §5.5).
+// MaxAutoNameRunes is the length of names derived from prompts.
 const MaxAutoNameRunes = 40
 
 // NameFromPrompt derives a session name from the first line of a prompt,
@@ -21,7 +21,7 @@ func NameFromPrompt(prompt string) string {
 	return strings.TrimSpace(string(r[:MaxAutoNameRunes-1])) + "…"
 }
 
-// DefaultName picks a session name in SPEC §5.5 order: Claude's own title,
+// DefaultName picks a session name in this order: Claude's own title,
 // the first prompt, the folder name, then "session N".
 func DefaultName(claudeTitle, firstPrompt, cwd string, n int) string {
 	if t := clean(claudeTitle, MaxAutoNameRunes*2); t != "" {

@@ -1,4 +1,4 @@
--- 0001: initial schema (SPEC §5.1). Times are Unix milliseconds; 0 = unset.
+-- 0001: initial schema. Times are Unix milliseconds; 0 = unset.
 
 CREATE TABLE groups (
     id          TEXT PRIMARY KEY,
@@ -63,7 +63,7 @@ CREATE TABLE view_state (
     state TEXT NOT NULL
 );
 
--- Raw event log for doctor/debugging (SPEC §5.1, §11.1): no prompts,
+-- Raw event log for doctor/debugging: no prompts,
 -- tool inputs or transcript content, only what's needed to explain status.
 CREATE TABLE events (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,

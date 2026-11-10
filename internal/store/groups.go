@@ -10,14 +10,14 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 )
 
-// Errors for group rules (SPEC §8.4).
+// Errors for group rules.
 var (
 	ErrDefaultGroup  = errors.New("the Default group can't be renamed, deleted or archived")
 	ErrDuplicateName = errors.New("a group with that name already exists")
 	ErrEmptyName     = errors.New("group name is empty")
 )
 
-// Palette is the round-robin color order for new groups (SPEC §8.4).
+// Palette is the round-robin color order for new groups.
 var Palette = []string{"blue", "magenta", "cyan", "yellow", "green", "red"}
 
 const groupCols = `id, name, color, sort_key, collapsed, is_default, created_at, archived_at`
@@ -107,7 +107,7 @@ func (s *Store) SetGroupSortKey(ctx context.Context, id string, key int) error {
 }
 
 // DeleteGroup removes a non-default group, moving its sessions to Default
-// first (SPEC §6.5: deleting never archives anything).
+// first (deleting never archives anything).
 func (s *Store) DeleteGroup(ctx context.Context, id string) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		if err := checkNonDefault(ctx, tx, id); err != nil {

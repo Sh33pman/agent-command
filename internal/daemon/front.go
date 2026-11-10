@@ -16,7 +16,7 @@ import (
 var unknownAfter = 5 * time.Second
 
 // frontOnce asks each running terminal what's in front, the fallback for an
-// agent whose hooks are missing (docs/v2/architecture.md §5): an agent with no
+// agent whose hooks are missing: an agent with no
 // hooks shows unknown, and the shell back in front ends whatever agent the row
 // showed. The hosts are asked without d.mu held. It reports whether anything changed.
 func (d *Daemon) frontOnce(ctx context.Context) (bool, error) {

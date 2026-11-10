@@ -1,5 +1,5 @@
 # PR titles become squash-commit messages, which release-please reads, so
-# they must be Conventional Commits (SPEC §13.1). Runs even for docs-only PRs.
+# they must be Conventional Commits. Runs even for docs-only PRs.
 name: pr-title
 
 on:

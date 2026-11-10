@@ -13,7 +13,7 @@ import (
 // event name, or one of the synthetic kinds produced by acmd itself.
 type EventKind string
 
-// Hook events acmd registers (SPEC §9.1).
+// Hook events acmd registers.
 const (
 	HookSessionStart       EventKind = "SessionStart"
 	HookUserPromptSubmit   EventKind = "UserPromptSubmit"
@@ -32,7 +32,7 @@ const (
 	HookSessionEnd         EventKind = "SessionEnd"
 )
 
-// Synthetic events produced by acmd (SPEC §5.3, §5.4).
+// Synthetic events produced by acmd.
 const (
 	// EventCreated: acmd started `claude --bg` for this session.
 	EventCreated EventKind = "acmd:created"
@@ -62,7 +62,7 @@ var agents = map[string]bool{
 // IsAgent reports whether program, a name from a terminal's host, is a coding agent.
 func IsAgent(program string) bool { return agents[program] }
 
-// AgentStatus values from `claude agents --json` "status" (SPEC §5.3).
+// AgentStatus values from `claude agents --json` "status".
 // AgentStopped stands for a listed session with no pid and no status (M0 C3).
 const (
 	AgentBusy    = "busy"
@@ -94,7 +94,7 @@ type Event struct {
 	ToolInput json.RawMessage
 }
 
-// MaxHookPayload caps hook stdin (SPEC §11.1).
+// MaxHookPayload caps hook stdin.
 const MaxHookPayload = 1 << 20
 
 // ErrPayloadTooLarge is returned for hook payloads over MaxHookPayload.
@@ -116,7 +116,7 @@ type hookPayload struct {
 	ToolInput        json.RawMessage `json:"tool_input"`
 }
 
-// Caps for the reply popup's data (SPEC §8.8).
+// Caps for the reply popup's data.
 const (
 	maxLastMessage = 64 << 10
 	maxToolInput   = 16 << 10
@@ -208,7 +208,7 @@ func errorString(raw json.RawMessage) string {
 
 // clean strips control characters (including escape sequences' ESC) and
 // truncates to limit runes, so values are safe for titles, notifications
-// and logs (SPEC §11.1).
+// and logs.
 func clean(s string, limit int) string {
 	var b strings.Builder
 	n := 0

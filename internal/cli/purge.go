@@ -12,7 +12,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
-// `acmd purge` (SPEC §6.5): permanently delete archived sessions and run
+// `acmd purge`: permanently delete archived sessions and run
 // `claude rm` for them. Never automatic.
 
 func newPurgeCmd() *cobra.Command {

@@ -8,7 +8,7 @@ import (
 )
 
 // InterruptMarker is what Claude writes to the transcript when the user
-// presses Esc; no Stop hook fires in that case (M0 A12, SPEC §5.4).
+// presses Esc; no Stop hook fires in that case (M0 A12).
 var InterruptMarker = []byte("[Request interrupted by user")
 
 // maxTailRead bounds how much new transcript is read per check.

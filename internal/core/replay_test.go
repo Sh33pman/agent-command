@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// Replays the real hook sequences recorded in M0 (testdata/hooks, see
-// spikes/FINDINGS.md §2) through the state machine.
+// Replays the real hook sequences recorded in M0 (testdata/hooks)
+// through the state machine.
 
 type fixtureLine struct {
 	Event   string          `json:"event"`

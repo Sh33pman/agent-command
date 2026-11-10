@@ -105,7 +105,7 @@ func (o *Opener) Open(ctx context.Context, dir string) error {
 }
 
 // Start launches argv detached (new session, no terminal) and waits up to
-// 2 s: an exit with an error in that time is reported (SPEC §8.6 errors).
+// 2 s: an exit with an error in that time is reported.
 func Start(ctx context.Context, argv, env []string, dir string) error {
 	cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 -- the user's configured editor, argv without a shell
 	cmd.Dir, cmd.Env = dir, env

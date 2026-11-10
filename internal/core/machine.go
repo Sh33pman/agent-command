@@ -14,7 +14,7 @@ type Transition struct {
 // Changed reports whether the status changed.
 func (t Transition) Changed() bool { return t.From != t.To }
 
-// Apply feeds one event into the session's state machine (SPEC §5.3) and
+// Apply feeds one event into the session's state machine and
 // returns what happened. It never touches I/O. Setting Unseen and deciding
 // on notifications is up to the caller, which knows which views show what.
 func Apply(s *Session, e Event) Transition {
@@ -32,7 +32,7 @@ func Apply(s *Session, e Event) Transition {
 			s.ArchivedAt = time.Time{}
 			set(s, &t, StatusPaused, "")
 		case HookSessionStart, HookUserPromptSubmit:
-			// The user is using an archived session again (SPEC §6.5): bring it back.
+			// The user is using an archived session again: bring it back.
 			s.ArchivedAt = time.Time{}
 			s.Status = StatusPaused
 			return applyLive(s, e, t)
@@ -165,7 +165,7 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 	return t
 }
 
-// applyFront is the fallback for a terminal's agent (docs/v2/architecture.md §5):
+// applyFront is the fallback for a terminal's agent:
 // the shell back in front means the agent has gone, even if it sent no
 // SessionEnd (it crashed or was killed). An agent in front that has sent no
 // status is unknown, rather than a guess. The daemon waits a few seconds before

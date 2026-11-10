@@ -63,7 +63,7 @@ func TestHookSpawnsDaemonEndToEnd(t *testing.T) {
 	}
 	// Hang guard only: under a parallel -race test run this can take
 	// seconds. Real latency (measured): ~330 ms for the cold path (spool +
-	// spawn), ~9 ms median with a daemon running (SPEC §11: p99 < 50 ms).
+	// spawn), ~9 ms median with a daemon running (p99 < 50 ms).
 	if d := time.Since(start); d > 10*time.Second {
 		t.Errorf("hook took %v", d)
 	}

@@ -7,7 +7,7 @@ func ghostty_init_ok() -> Bool {
 
 /// The one libghostty app in this process, and its runtime callbacks. All C
 /// calls to the app live here and in SurfaceView, because the embedding API
-/// is unstable (docs/v2/architecture.md §9).
+/// is unstable.
 final class GhosttyRuntime {
     static let shared = GhosttyRuntime()
 

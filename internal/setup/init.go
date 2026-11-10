@@ -30,7 +30,7 @@ type Input struct {
 // ClaudeSettingsFile is the user settings file hooks go into.
 func (in Input) ClaudeSettingsFile() string { return filepath.Join(in.ClaudeDir, "settings.json") }
 
-// PlanInit plans `acmd init` (SPEC §9).
+// PlanInit plans `acmd init`.
 func PlanInit(in Input) (*Plan, error) {
 	p := &Plan{}
 	if err := planClaude(p, in, true); err != nil {
@@ -59,7 +59,7 @@ func PlanInit(in Input) (*Plan, error) {
 	return p, nil
 }
 
-// PlanUninstall plans `acmd uninstall` (SPEC §9.6): acmd's hook entries go, and
+// PlanUninstall plans `acmd uninstall`: acmd's hook entries go, and
 // nothing else is touched.
 func PlanUninstall(in Input) (*Plan, error) {
 	p := &Plan{}

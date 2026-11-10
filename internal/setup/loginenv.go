@@ -14,7 +14,7 @@ import (
 
 // LoginEnv is the user's login-shell environment, captured at init so the
 // processes acmd starts find `claude`, editors, etc. even when acmd was
-// launched by a terminal keybinding with a minimal PATH (M0 K7, SPEC §9.4).
+// launched by a terminal keybinding with a minimal PATH (M0 K7).
 type LoginEnv map[string]string
 
 // excludedEnv are variables that belong to the moment of capture, not to

@@ -15,7 +15,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/term"
 )
 
-// HostRequest says what a session host runs (SPEC §4.5).
+// HostRequest says what a session host runs.
 type HostRequest struct {
 	ID            string // the acmd session
 	Harness       string // "" = claude
@@ -145,7 +145,7 @@ func (d *Daemon) stopHost(s *core.Session) {
 
 // sweepHosts removes the id files of hosts that are gone (a reboot or a
 // crash leaves them); hosts still running are left alone, and keep serving
-// their session (they are separate processes, SPEC §4.5). The sessions
+// their session (they are separate processes). The sessions
 // whose host is gone were paused when the daemon started.
 func sweepHosts(p paths.Paths) {
 	files, _ := filepath.Glob(filepath.Join(p.RuntimeDir, "h-*.id"))

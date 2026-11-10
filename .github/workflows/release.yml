@@ -1,4 +1,4 @@
-# Release pipeline (SPEC §13.4):
+# Release pipeline:
 #   1. release-please keeps a release PR open; merging it tags vX.Y.Z and
 #      creates the (private) GitHub Release.
 #   2. In the same workflow (tags created by tokens don't trigger workflows):
@@ -41,7 +41,7 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # Gate + publish, on the self-hosted runner (SPEC §13.6).
+  # Gate + publish, on the self-hosted runner.
   publish:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'

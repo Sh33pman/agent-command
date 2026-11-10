@@ -177,7 +177,7 @@ func writeListJSON(w io.Writer, rows []listRow) error {
 	return enc.Encode(out)
 }
 
-// where says where a session runs (SPEC §8.7 WHERE column).
+// where says where a session runs.
 func where(s *core.Session) string {
 	if s.Kind == core.KindExternal {
 		t := "unknown"

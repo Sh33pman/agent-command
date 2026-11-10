@@ -21,7 +21,7 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 - **Report a bug or request a feature** from the Help menu or the command popup. It opens a filled-in GitHub issue in your browser for you to submit. A bug report can include the last 200 lines of the daemon log, with secrets, your account name and your home folder taken out, and you see what will be included first.
 - `acmd` brings up the app, or its window if it's already running. `acmd --new-instance` starts another copy, and its subcommands list and manage sessions.
 
-> **Status:** early development. [docs/v2/architecture.md](docs/v2/architecture.md) has the design. [SPEC.md](SPEC.md) describes the earlier terminal-based version, kept for reference.
+> **Status:** early development.
 
 ## Install (macOS 26 or later, Apple Silicon)
 

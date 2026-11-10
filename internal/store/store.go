@@ -1,4 +1,4 @@
-// Package store persists acmd's state in SQLite (SPEC §4.3): sessions,
+// Package store persists acmd's state in SQLite: sessions,
 // groups, the shared view state and a capped event log.
 //
 // Only the daemon writes; the store is safe for concurrent use but uses a
@@ -54,7 +54,7 @@ func WithClock(now func() time.Time) Option { return func(s *Store) { s.now = no
 // Open opens (creating if needed) the database at path and applies pending
 // migrations. Before migrating an existing database it copies it to
 // "<path>.bak-v<from>-<unix>", kept for 30 days. A database newer than this binary is refused
-// (no silent downgrade, SPEC §4.3).
+// (no silent downgrade).
 func Open(ctx context.Context, dbPath string, opts ...Option) (*Store, error) {
 	s := &Store{path: dbPath, now: time.Now}
 	for _, o := range opts {

@@ -67,7 +67,7 @@ func (d *Daemon) watch(ctx context.Context, req ipc.WatchRequest) (ipc.WatchResp
 	return ipc.WatchResponse{Rev: rev}, nil
 }
 
-// newSession starts a hosted session (SPEC §4.5).
+// newSession starts a hosted session.
 func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
 	if d.cfg.Hosts == nil {
 		return nil, errors.New("claude not available: run `acmd doctor`")
@@ -82,7 +82,7 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 }
 
 // resume starts a stopped session again in a new host with `claude
-// --resume` (SPEC §6.2). A session from before hosting (a `claude --bg`
+// --resume`. A session from before hosting (a `claude --bg`
 // one) is stopped first if it still runs (Claude keeps the conversation)
 // and becomes a hosted session; so does one that ended in the user's own
 // pane (acmd adopt).

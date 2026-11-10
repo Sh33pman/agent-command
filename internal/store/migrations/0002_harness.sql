@@ -1,3 +1,3 @@
--- 0002: what a session runs (docs/v2/architecture.md §3).
+-- 0002: what a session runs.
 
 ALTER TABLE sessions ADD COLUMN harness TEXT NOT NULL DEFAULT 'claude';

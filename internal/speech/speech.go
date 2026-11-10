@@ -1,6 +1,6 @@
 // Package speech reads text aloud with Kokoro-82M
 // (https://huggingface.co/hexgrad/Kokoro-82M), a local text-to-speech
-// model (SPEC §8.9). The model runs in acmd-speech, a Swift helper shipped
+// model. The model runs in acmd-speech, a Swift helper shipped
 // next to acmd that runs Kokoro on MLX through mlx-audio-swift
 // (helpers/acmd-speech) and answers on a unix socket. This package
 // installs it, starts it when needed, prepares text and asks it to speak.

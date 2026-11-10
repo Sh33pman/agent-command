@@ -215,7 +215,7 @@ func (d *Daemon) updateViewState(ctx context.Context, fn func(*core.ViewState)) 
 
 // finish stops a background session (claude stop; Claude keeps the
 // conversation) and marks it finished; views showing it go back to their
-// list. Showing it again resumes it (SPEC §5.2).
+// list. Showing it again resumes it.
 func (d *Daemon) finish(ctx context.Context, id string) error {
 	s, err := d.store.Session(ctx, id)
 	if err != nil {
@@ -251,7 +251,7 @@ func (d *Daemon) finish(ctx context.Context, id string) error {
 
 // archive stops a running background session (Claude keeps the
 // conversation) and marks it archived. External sessions are never
-// killed: acmd doesn't own the user's pane (SPEC §6.5).
+// killed: acmd doesn't own the user's pane.
 func (d *Daemon) archive(ctx context.Context, id string) error {
 	s, err := d.store.Session(ctx, id)
 	if err != nil {

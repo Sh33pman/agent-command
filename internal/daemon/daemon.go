@@ -1,4 +1,4 @@
-// Package daemon is acmd's long-lived state owner (SPEC §4.1): it listens on
+// Package daemon is acmd's long-lived state owner: it listens on
 // a user-only unix socket, applies hook events to the state machine and
 // persists the result. One instance per user, enforced with a lock file.
 package daemon
@@ -42,7 +42,7 @@ type Config struct {
 	Agents reconcile.Lister
 	// Stopper stops background sessions on archive (claudecli.CLI).
 	Stopper Stopper
-	// Hosts runs hosted sessions (SPEC §4.5); when set, new and resumed
+	// Hosts runs hosted sessions; when set, new and resumed
 	// sessions are hosted interactive sessions instead of `claude --bg`.
 	Hosts Hosts
 	// Remover deletes background sessions on purge (claudecli.CLI).
@@ -51,15 +51,15 @@ type Config struct {
 	ClaudeDir string
 	// Notify configures notifications (nil = none).
 	Notify *config.Notify
-	// Fallback shows a notification when no view's sidebar can (SPEC §8.5:
-	// terminal-notifier, else osascript).
+	// Fallback shows a notification when no view's sidebar can (terminal-notifier,
+	// else osascript).
 	Fallback func(ipc.Notice)
 	// SendToHost types into a session's terminal (default: through its host).
 	SendToHost func(sessionID string, data []byte) error
 	// LockWait is how long to wait for a daemon that's on its way out. A hook that
 	// replaces an older daemon starts this one straight after asking it to stop.
 	LockWait time.Duration
-	// ReconcileEvery and TailEvery default to 3 s and 1 s (SPEC §6.7, §5.4).
+	// ReconcileEvery and TailEvery default to 3 s and 1 s.
 	ReconcileEvery time.Duration
 	TailEvery      time.Duration
 	// FrontEvery is how often terminals are asked what runs in front (2 s), and
@@ -513,7 +513,7 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 
 // sessionFromHook creates the row for a Claude session acmd hasn't seen yet.
 // Classification here is provisional: the reconciler (M1d) corrects Kind
-// from `claude agents --json` (SPEC §6.3).
+// from `claude agents --json`.
 func sessionFromHook(e core.Event, hc ipc.HookContext, now time.Time) *core.Session {
 	s := &core.Session{
 		ClaudeSessionID: e.SessionID,

@@ -1,7 +1,7 @@
-# PR checks (SPEC §13.4). Runs on pull requests only: pushes to main are
+# PR checks. Runs on pull requests only: pushes to main are
 # re-verified by the release gate before anything is published.
 # All jobs run on the self-hosted runner on the maintainer's Mac (label
-# `acmd`), which isn't metered (SPEC §13.6). Dependabot PRs only run once
+# `acmd`), which isn't metered. Dependabot PRs only run once
 # the `ok-to-test` label is added: they'd execute updated dependencies on
 # that Mac.
 name: ci

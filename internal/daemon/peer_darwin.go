@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// checkPeer rejects connections from other users (SPEC §11.1). The socket
+// checkPeer rejects connections from other users. The socket
 // is 0600 in a 0700 directory already; this is defense in depth.
 func checkPeer(c net.Conn) error {
 	uc, ok := c.(*net.UnixConn)

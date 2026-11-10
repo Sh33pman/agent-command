@@ -1,5 +1,5 @@
 // swift-tools-version: 6.2
-// acmd-speech: acmd's Swift speech engine (SPEC §8.9). Kokoro-82M
+// acmd-speech: acmd's Swift speech engine. Kokoro-82M
 // (https://huggingface.co/hexgrad/Kokoro-82M) on MLX through mlx-audio-swift,
 // answering acmd on a unix socket (internal/speech). Build it with xcodebuild
 // (make speech-helper): only Xcode compiles MLX's Metal shaders.

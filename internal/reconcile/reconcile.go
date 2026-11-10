@@ -1,5 +1,5 @@
 // Package reconcile cross-checks acmd's view of sessions with Claude's own
-// (`claude agents --json`) and with process liveness (SPEC §5.3, §6.7):
+// (`claude agents --json`) and with process liveness:
 // it discovers background sessions acmd hasn't seen hooks for, fills in
 // ids, pids and names, corrects the provisional Kind, marks stopped and
 // dead sessions paused, and lets Claude's `status` win when hooks and
@@ -155,7 +155,7 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 	if s.Pid != pid {
 		s.Pid, changed = pid, true
 	}
-	// Correct the provisional classification from the hook (SPEC §6.3).
+	// Correct the provisional classification from the hook.
 	// (A hosted session is listed as interactive, which is expected.)
 	switch {
 	case s.Kind == core.KindHosted:

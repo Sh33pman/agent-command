@@ -1,5 +1,5 @@
 // Package setup holds the side-effect-free config editors behind `acmd
-// init` and `acmd uninstall` (SPEC §9): Claude Code hooks in settings.json,
+// init` and `acmd uninstall`: Claude Code hooks in settings.json,
 // Kitty's managed config, keybinding conflict detection and the login-shell
 // environment. Callers do the file I/O, backups and confirmation.
 package setup
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// HookEvents are the Claude Code hook events acmd registers (SPEC §9.1).
+// HookEvents are the Claude Code hook events acmd registers.
 var HookEvents = []string{
 	"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
 	"PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop",
@@ -23,7 +23,7 @@ var HookEvents = []string{
 // marker is a trailing shell comment in the command).
 const HookMarker = "# managed by acmd"
 
-// HookTimeout is the per-hook timeout in seconds (SPEC §9.1).
+// HookTimeout is the per-hook timeout in seconds.
 const HookTimeout = 2
 
 // HookCommand is the command Claude runs for one event. The guard means a
@@ -167,8 +167,8 @@ func HasHooks(settings []byte, acmdPath string) bool {
 		return false
 	}
 	for _, event := range HookEvents {
-		var groups []hookGroup
-		if json.Unmarshal(hooks.vals[event], &groups) != nil {
+		groups, ok := hookGroups(hooks.vals[event])
+		if !ok {
 			return false
 		}
 		found := false
@@ -204,8 +204,8 @@ func HookPaths(settings []byte) (paths []string, events int) {
 	}
 	seen := map[string]bool{}
 	for _, event := range HookEvents {
-		var groups []hookGroup
-		if json.Unmarshal(hooks.vals[event], &groups) != nil {
+		groups, ok := hookGroups(hooks.vals[event])
+		if !ok {
 			continue
 		}
 		found := false
@@ -233,6 +233,23 @@ func HookPaths(settings []byte) (paths []string, events int) {
 }
 
 // isOurs reports whether a hook group contains an acmd entry.
+// hookGroups decodes an event's list of hook groups. A group that isn't valid,
+// such as one someone else wrote by hand, is skipped rather than hiding the
+// rest. ok is false when the list itself isn't a list.
+func hookGroups(raw json.RawMessage) (groups []hookGroup, ok bool) {
+	var list []json.RawMessage
+	if json.Unmarshal(raw, &list) != nil {
+		return nil, false
+	}
+	for _, item := range list {
+		var g hookGroup
+		if json.Unmarshal(item, &g) == nil {
+			groups = append(groups, g)
+		}
+	}
+	return groups, true
+}
+
 func isOurs(group json.RawMessage) bool {
 	var g hookGroup
 	if json.Unmarshal(group, &g) != nil {

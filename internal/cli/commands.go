@@ -237,7 +237,7 @@ func openArgs(exe string, newInstance bool) []string {
 	return args
 }
 
-// fallbackNotify shows a notification (SPEC §8.5): terminal-notifier if it's
+// fallbackNotify shows a notification: terminal-notifier if it's
 // installed, else osascript.
 func fallbackNotify(no ipc.Notice) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

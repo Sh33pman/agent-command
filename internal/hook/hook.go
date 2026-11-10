@@ -1,5 +1,5 @@
 // Package hook implements `acmd hook <Event>`, which Claude Code runs for
-// every hook event (SPEC §4.1, §9.1). It only acts for a Claude running in one
+// every hook event. It only acts for a Claude running in one
 // of acmd's sessions. It must be fast and fail-open: it
 // never writes to stdout, never influences Claude's decisions and always
 // exits 0. If the daemon is unreachable (or a different version) the event
@@ -145,8 +145,7 @@ func Spool(p paths.Paths, ev ipc.HookEvent) error {
 }
 
 // context gathers terminal/process context, and reports whether the
-// Claude process is headless (`claude -p` / `--print`), which acmd ignores
-// (SPEC §6.8).
+// Claude process is headless (`claude -p` / `--print`), which acmd ignores.
 func (o *Options) context() (ipc.HookContext, bool) {
 	hc := ipc.HookContext{HostSession: o.Getenv("ACMD_SESSION_ID")}
 	p, ok := findClaude(o.ParentPid, o.ProcInfo)

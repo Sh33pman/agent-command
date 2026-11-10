@@ -1,5 +1,5 @@
 // Package harness is the seam between acmd and the CLI that runs inside a
-// hosted session (SPEC §4.5). Everything generic (the PTY host, attach,
+// hosted session. Everything generic (the PTY host, attach,
 // switching, the sidebar, typing a reply) works on any CLI; a Harness
 // supplies only what differs: how to start it, how to resume it, and
 // where its status comes from.

@@ -1,5 +1,5 @@
-// Package core holds acmd's session model and the status state machine
-// (SPEC §5). It does no I/O: callers feed it events from hooks, the
+// Package core holds acmd's session model and the status state machine.
+// It does no I/O: callers feed it events from hooks, the
 // `claude agents --json` reconciler and transcript tailing, and persist the
 // result.
 package core
@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// Status is a session's user-visible state (SPEC §5.2).
+// Status is a session's user-visible state.
 type Status string
 
-// Statuses, in SPEC §5.2 order.
+// Statuses.
 const (
 	StatusStarting Status = "starting"
 	StatusBusy     Status = "busy"
@@ -26,32 +26,32 @@ const (
 	// (its hooks aren't installed, or acmd doesn't know it). StatusDetail names it.
 	StatusUnknown Status = "unknown"
 	// StatusFinished: the user finished the session (claude stop); its
-	// conversation is kept and showing it resumes it (SPEC §5.2).
+	// conversation is kept and showing it resumes it.
 	StatusFinished Status = "finished"
 	StatusArchived Status = "archived"
 )
 
 // NeedsAttention reports whether reaching this status should mark a session
-// unseen and may notify (SPEC §5.2, §8.5).
+// unseen and may notify.
 func (s Status) NeedsAttention() bool {
 	return s == StatusWaiting || s == StatusDone || s == StatusError
 }
 
-// Kind says where a session runs (SPEC §5.1).
+// Kind says where a session runs.
 type Kind string
 
 // Session kinds.
 const (
 	// KindBackground is a Claude background session (`claude --bg`), viewable in acmd.
 	KindBackground Kind = "background"
-	// KindHosted is an interactive CLI that acmd hosts under its own PTY
-	// (SPEC §4.5), viewable in acmd. It replaces KindBackground for new sessions.
+	// KindHosted is an interactive CLI that acmd hosts under its own PTY,
+	// viewable in acmd. It replaces KindBackground for new sessions.
 	KindHosted Kind = "hosted"
 	// KindExternal is an interactive `claude` in one of the user's own panes.
 	KindExternal Kind = "external"
 )
 
-// What a session runs (docs/v2/architecture.md §3).
+// What a session runs.
 const (
 	HarnessClaude   = "claude"
 	HarnessTerminal = "terminal"
@@ -66,7 +66,7 @@ const (
 	NameUser NameSource = "user"
 )
 
-// PaneLoc is a pane in the user's terminal (SPEC §5.1).
+// PaneLoc is a pane in the user's terminal.
 type PaneLoc struct {
 	Terminal    string // "kitty" | "ghostty" | "unknown"
 	KittySocket string
@@ -84,12 +84,12 @@ type PaneLoc struct {
 	HeaderWindow int    `json:",omitempty"`
 	HeaderTerm   string `json:",omitempty"`
 	// TermWindow / TermTerm: the terminal pane under a view pane (set on a
-	// view's sidebar; SPEC §8.7). It may have closed by itself since.
+	// view's sidebar). It may have closed by itself since.
 	TermWindow int    `json:",omitempty"`
 	TermTerm   string `json:",omitempty"`
 }
 
-// Session is an acmd session (SPEC §5.1). Its ID is stable while Claude's
+// Session is an acmd session. Its ID is stable while Claude's
 // session id changes on /clear, forks and moves into the background.
 type Session struct {
 	ID              string
@@ -114,7 +114,7 @@ type Session struct {
 	ArchivedAt      time.Time
 }
 
-// Group is a session group (SPEC §8.4).
+// Group is a session group.
 type Group struct {
 	ID         string
 	Name       string
@@ -126,7 +126,7 @@ type Group struct {
 	ArchivedAt time.Time
 }
 
-// ViewState is the list presentation shared by every sidebar (SPEC §8.4).
+// ViewState is the list presentation shared by every sidebar.
 type ViewState struct {
 	Mode         string // "groups" | "list"
 	Sort         string // "created" | "name" | "activity" | "status" | "cwd"

@@ -1,4 +1,4 @@
-// Package config reads acmd's config.toml (SPEC §10) and edits single
+// Package config reads acmd's config.toml and edits single
 // values in it without disturbing the user's comments and layout.
 package config
 
@@ -32,7 +32,7 @@ type Config struct {
 	Speech        Speech `toml:"speech"`
 }
 
-// Popup is the [popup] section: the reply popup (SPEC §8.8).
+// Popup is the [popup] section: the reply popup.
 type Popup struct {
 	Enabled  bool   `toml:"enabled"`  // off by default; init asks
 	AutoPlay bool   `toml:"autoplay"` // read each item aloud when it's shown
@@ -52,7 +52,7 @@ type PopupKeys struct {
 	Close string `toml:"close"`
 }
 
-// Speech is the [speech] section: text to speech (SPEC §8.9).
+// Speech is the [speech] section: text to speech.
 // (Older configs may still have engine and model, from the Python engine;
 // they're ignored.)
 type Speech struct {
@@ -60,7 +60,7 @@ type Speech struct {
 	Speed float64 `toml:"speed"`
 }
 
-// Notify is the [notify] section (SPEC §8.5).
+// Notify is the [notify] section.
 type Notify struct {
 	Enabled         bool   `toml:"enabled"`
 	OnWaiting       bool   `toml:"on_waiting"`
@@ -84,7 +84,7 @@ func (n Notify) Durations() (doneMin, cooldown time.Duration) {
 	return doneMin, cooldown
 }
 
-// Editor is the [editor] section (SPEC §8.6).
+// Editor is the [editor] section.
 type Editor struct {
 	Preset   string   `toml:"preset"`   // vscode | cursor | zed | idea | custom | "" (not chosen)
 	Command  []string `toml:"command"`  // custom only: argv template with {dir}
@@ -93,7 +93,7 @@ type Editor struct {
 	Target   string   `toml:"target"`   // cwd | git_root
 }
 
-// Keys is the [keys] section: global terminal shortcuts (SPEC §8.3).
+// Keys is the [keys] section: global terminal shortcuts.
 // Field order matches setup.Keys so the two convert directly.
 type Keys struct {
 	Toggle     string `toml:"toggle"`
@@ -150,7 +150,7 @@ func Load(path string) (Config, error) {
 // Template is the config.toml written on first setup: the settings acmd
 // reads so far, at their defaults, with comments on their own lines (Set
 // replaces whole lines).
-const Template = `# agent-command (acmd) configuration. See: acmd help, SPEC §10.
+const Template = `# agent-command (acmd) configuration. See: acmd help.
 
 # Absolute path of the claude binary (resolved by ` + "`acmd init`" + `).
 claude_command = "claude"

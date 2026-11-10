@@ -1,5 +1,5 @@
-// Package paths resolves where acmd keeps its state and runtime files
-// (SPEC §4.4). ACMD_STATE_DIR, ACMD_RUNTIME_DIR and ACMD_CONFIG_DIR
+// Package paths resolves where acmd keeps its state and runtime files.
+// ACMD_STATE_DIR, ACMD_RUNTIME_DIR and ACMD_CONFIG_DIR
 // override the defaults (tests, and running several isolated instances).
 package paths
 
@@ -102,10 +102,10 @@ func (p Paths) Spool() string { return filepath.Join(p.StateDir, "events.spool.j
 // DaemonLog is the daemon's log file.
 func (p Paths) DaemonLog() string { return filepath.Join(p.StateDir, "daemon.log") }
 
-// Config is the user's config.toml (SPEC §10).
+// Config is the user's config.toml.
 func (p Paths) Config() string { return filepath.Join(p.ConfigDir, "config.toml") }
 
-// Env is the captured login-shell environment (SPEC §9.4).
+// Env is the captured login-shell environment.
 func (p Paths) Env() string { return filepath.Join(p.StateDir, "env.json") }
 
 // Setup records the last `acmd init` (what it configured, and that it ran).
@@ -126,7 +126,7 @@ func (p Paths) TermIDFile(id string) string {
 	return filepath.Join(p.RuntimeDir, "t-"+termKey(id)+".id")
 }
 
-// HostSocket is the unix socket of session id's PTY host (SPEC §4.5): the
+// HostSocket is the unix socket of session id's PTY host: the
 // process that runs the session's CLI. It sits next to the terminal sockets
 // with an "h-" prefix.
 func (p Paths) HostSocket(id string) string {

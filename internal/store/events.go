@@ -5,11 +5,11 @@ import (
 	"time"
 )
 
-// MaxEvents caps the event log (SPEC §5.1).
+// MaxEvents caps the event log.
 const MaxEvents = 10000
 
 // LoggedEvent is one row of the event log. It deliberately has no prompt,
-// tool input or transcript content (SPEC §11.1).
+// tool input or transcript content.
 type LoggedEvent struct {
 	ID              int64
 	At              time.Time

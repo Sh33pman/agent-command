@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Row is one line of the session list (SPEC §8.1, §8.4): a group header or
+// Row is one line of the session list: a group header or
 // a session. Number is the 1-based shortcut number of visible session rows
 // (0 for headers and sessions in collapsed groups).
 type Row struct {
@@ -29,7 +29,7 @@ func (r Row) IsHeader() bool { return r.Session == nil }
 
 // Layout orders and numbers sessions for display according to the shared
 // view state: list or group view, sort key and direction, filter, collapse
-// and focus (SPEC §8.4). It's used by the sidebar and by `acmd list`/`go N`,
+// and focus. It's used by the sidebar and by `acmd list`/`go N`,
 // so numbers mean the same thing everywhere.
 func Layout(sessions []*Session, groups []*Group, vs ViewState) []Row {
 	byID := map[string]*Group{}
@@ -141,7 +141,7 @@ func containsGroup(gs []*Group, g *Group) bool {
 	return false
 }
 
-// statusRank orders statuses by urgency (SPEC §8.4 `status` sort).
+// statusRank orders statuses by urgency.
 func statusRank(s *Session) int {
 	switch s.Status {
 	case StatusWaiting:
@@ -256,7 +256,7 @@ func cmpInt(a, b int) int {
 
 // filter is a parsed filter string: plain terms match name, description,
 // cwd and group name; g:<text> terms match the group name. All terms must
-// match (SPEC §8.4).
+// match.
 type filter struct{ text, group []string }
 
 func parseFilter(s string) filter {
@@ -292,7 +292,7 @@ func (f filter) match(s *Session, g *Group) bool {
 }
 
 // FocusGroup expands the target group and collapses the others, saving the
-// previous collapse state in vs.PreFocus (SPEC §8.4). It returns the
+// previous collapse state in vs.PreFocus. It returns the
 // desired collapsed state per group id; the caller persists both.
 func FocusGroup(vs *ViewState, groups []*Group, id string) (map[string]bool, error) {
 	found := false
@@ -335,7 +335,7 @@ var (
 	ErrAmbiguous = errors.New("more than one session matches")
 )
 
-// Resolve finds a session by a CLI selector (SPEC §8.7): its number in the
+// Resolve finds a session by a CLI selector: its number in the
 // current layout, its acmd id, its short background id, its Claude session
 // id, or a unique case-insensitive name prefix.
 func Resolve(rows []Row, all []*Session, sel string) (*Session, error) {
@@ -379,7 +379,7 @@ func Resolve(rows []Row, all []*Session, sel string) (*Session, error) {
 
 // NextAttention picks the most urgent session other than shown: waiting,
 // then error, then unseen done, each in sidebar order (filter and focus
-// ignored; sessions in collapsed groups count too) (SPEC §8.2 Tab).
+// ignored; sessions in collapsed groups count too).
 func NextAttention(sessions []*Session, groups []*Group, vs ViewState, shown string) *Session {
 	vs.Filter, vs.FocusedGroup = "", ""
 	order := Layout(sessions, groups, vs)

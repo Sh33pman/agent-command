@@ -17,7 +17,7 @@
 | `ghostty-watch.yml` | Mondays | Opens an issue for a newer Ghostty release, or an advisory not in `.github/ghostty-advisories-reviewed.txt`. Dependabot can't watch Ghostty, as `scripts/build-ghostty.sh` pins it |
 | `release.yml` | push to `main` | release-please; on a release: gate (`make ci fuzz`), then build and sign the app, publish it to the public tap and update the cask. |
 
-All workflows run on **four self-hosted runners** on the maintainer's Mac (label `acmd`; SPEC §13.6), so CI isn't metered, but it waits while that Mac is asleep. Docs-only PRs skip CI. **Dependabot PRs need the `ok-to-test` label** before CI runs, because CI would execute the updated dependencies on that Mac. Their titles start with `chore`, so merging one doesn't make a release: it ships with the next `fix` or `feat`. The Homebrew formula check never installs on a self-hosted runner (safe mode).
+All workflows run on **four self-hosted runners** on the maintainer's Mac (label `acmd`), so CI isn't metered, but it waits while that Mac is asleep. Docs-only PRs skip CI. **Dependabot PRs need the `ok-to-test` label** before CI runs, because CI would execute the updated dependencies on that Mac. Their titles start with `chore`, so merging one doesn't make a release: it ships with the next `fix` or `feat`. The Homebrew formula check never installs on a self-hosted runner (safe mode).
 
 ## Releases
 
@@ -31,7 +31,7 @@ Versioning is SemVer. Before 1.0, `feat` bumps the minor version and `fix` the p
 
 ## One-time repository setup
 
-Recorded in SPEC.md §13.6: the GitHub App (`RELEASE_APP_CLIENT_ID` variable, `RELEASE_APP_PRIVATE_KEY` secret), merge settings, Actions permissions, Dependabot, retention and cost settings.
+The GitHub App (`RELEASE_APP_CLIENT_ID` variable, `RELEASE_APP_PRIVATE_KEY` secret) opens release PRs and publishes to the tap.
 
 Releases are signed with one long-lived self-signed certificate, because the project has no Apple Developer account. Create it once with `scripts/create-signing-cert.sh`, and store the results as the `ACMD_SIGNING_P12` and `ACMD_SIGNING_PASSWORD` secrets. The runners need Xcode, including its Metal toolchain, and Zig. `scripts/build-ghostty.sh` keeps its result in `~/.cache/agent-command/ghostty`. It rebuilds when the release, tools or script change, and deleting that folder forces a rebuild.
 

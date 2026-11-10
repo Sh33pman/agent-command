@@ -1,5 +1,5 @@
-// Package claudecli runs the `claude` management commands acmd still needs
-// (SPEC §4.3): `agents --json` for status cross-checks, and `stop` / `rm`
+// Package claudecli runs the `claude` management commands acmd still needs:
+// `agents --json` for status cross-checks, and `stop` / `rm`
 // for sessions started by `claude --bg` before acmd hosted its own (SPEC
 // §4.5). Sessions themselves are started by internal/harness under a PTY
 // host, not here. Agent view is a research preview, so parsing is lenient

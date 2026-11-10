@@ -28,7 +28,7 @@ import (
 )
 
 // Internal commands, run by acmd itself and by Claude Code hooks; hidden
-// from help (SPEC §8.7).
+// from help.
 
 func newDaemonCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -132,7 +132,7 @@ func newHookCmd() *cobra.Command {
 		Short:  "Handle a Claude Code hook event (called by Claude Code)",
 		Hidden: true,
 		Args:   cobra.ExactArgs(1),
-		// Always succeeds: a hook must never block or break Claude (SPEC §5.3).
+		// Always succeeds: a hook must never block or break Claude.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := paths.Default()
 			if err != nil {
@@ -154,7 +154,7 @@ func debugf(cmd *cobra.Command, format string, a ...any) {
 
 // loginEnv is the environment for what acmd starts: the captured login-shell
 // environment when there is one, with this login's values for what changes each
-// login (setup.LiveEnv), and without CLAUDE* variables (SPEC §4.4).
+// login (setup.LiveEnv), and without CLAUDE* variables.
 func loginEnv(p paths.Paths) []string {
 	env := os.Environ()
 	if b, err := os.ReadFile(p.Env()); err == nil {

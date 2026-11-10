@@ -197,6 +197,8 @@ func FuzzHooksRoundTrip(f *testing.F) {
 	f.Add([]byte(`{}`))
 	f.Add([]byte(`{"a":[1,2],"hooks":{"Stop":[{"hooks":[{"type":"command","command":"x"}]}]}}`))
 	f.Add([]byte(`{"hooks":{}}`))
+	// Someone else's broken group mustn't hide ours.
+	f.Add([]byte(`{"":[0],"hooks":{"Stop":[{"hooks":""}]}}`))
 	f.Fuzz(func(t *testing.T, in []byte) {
 		out, _, err := AddHooks(in, acmdPath)
 		if err != nil {

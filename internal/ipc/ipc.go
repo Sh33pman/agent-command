@@ -1,5 +1,5 @@
 // Package ipc is acmd's local protocol: newline-delimited JSON over the
-// daemon's unix socket (SPEC §4.3). Every connection starts with a hello
+// daemon's unix socket. Every connection starts with a hello
 // that carries the protocol and binary versions, so a CLI or hook can
 // replace a daemon left over from before an upgrade.
 package ipc
@@ -45,7 +45,7 @@ type Snapshot struct {
 	Sessions  []*core.Session `json:"sessions"`
 	Groups    []*core.Group   `json:"groups"`
 	ViewState core.ViewState  `json:"view_state"`
-	// Notices are the most recent notifications (SPEC §8.5), oldest first.
+	// Notices are the most recent notifications, oldest first.
 	Notices []Notice `json:"notices,omitempty"`
 	// Inbox is the queue: the items still to deal with, in arrival order.
 	Inbox []core.InboxItem `json:"inbox,omitempty"`
@@ -137,7 +137,7 @@ type WatchResponse struct {
 	Rev uint64 `json:"rev"`
 }
 
-// NewRequest starts a background session (SPEC §6.1). The client resolves
+// NewRequest starts a background session. The client resolves
 // the group and folder; ShowIn is the view that switches to it ("" = none).
 type NewRequest struct {
 	GroupID string `json:"group_id,omitempty"`

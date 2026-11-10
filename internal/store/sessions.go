@@ -134,7 +134,7 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	return nil
 }
 
-// MoveSessions puts sessions into a group (SPEC §8.4: exactly one group each).
+// MoveSessions puts sessions into a group (exactly one group each).
 func (s *Store) MoveSessions(ctx context.Context, groupID string, ids ...string) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		if err := liveGroupExists(ctx, tx, groupID); err != nil {

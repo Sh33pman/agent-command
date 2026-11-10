@@ -30,7 +30,7 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 		newNewCmd(), newResumeCmd(), newSpeechCmd(), newHostCmd(), newOpenCmd(), newPurgeCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 
-	// Using acmd for the first time offers setup (SPEC §9).
+	// Using acmd for the first time offers setup.
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "list", "rename", "describe", "archive", "unarchive", "move", "group", "view-mode", "sort", "focus-group",

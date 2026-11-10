@@ -1,4 +1,4 @@
-// Package doctor implements `acmd doctor` (SPEC §8.7): read-only checks of
+// Package doctor implements `acmd doctor`: read-only checks of
 // acmd's setup, Claude Code and the daemon, each with a fix to run.
 // Everything that looks at the machine comes in through Env, so the checks
 // are testable without touching the real one.
@@ -22,7 +22,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
-// Minimum versions acmd is tested with (SPEC §2, M0 findings).
+// Minimum versions acmd is tested with (M0 findings).
 const (
 	MinClaude  = "2.1.314"
 	MinKitty   = "0.49.0"

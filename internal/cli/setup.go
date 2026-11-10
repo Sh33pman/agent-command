@@ -29,7 +29,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
-// Setup commands (SPEC §9): init, uninstall, editor, and the automatic
+// Setup commands: init, uninstall, editor, and the automatic
 // first run. Anything that looks outside acmd's own files is behind a
 // variable so tests never touch the real machine.
 var (

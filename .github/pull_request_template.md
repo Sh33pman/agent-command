@@ -8,7 +8,7 @@
 - [ ] `make ci` passes locally
 - [ ] All CI checks are green **before merging** (not enforced by GitHub on this plan; the release gate re-checks)
 - [ ] Tests added/updated for the change
-- [ ] SPEC.md updated if behaviour or design changed
+- [ ] README updated if what the app does changed
 
 <!-- Release PRs (chore(main): release x.y.z) only:
 - [ ] `make it-ghostty` passed locally (can't run in CI)

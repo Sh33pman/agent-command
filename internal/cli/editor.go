@@ -14,7 +14,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
-// `acmd editor …` (SPEC §8.6): which editor opens session folders.
+// `acmd editor …`: which editor opens session folders.
 
 func newEditorCmd() *cobra.Command {
 	cmd := &cobra.Command{

@@ -1,7 +1,7 @@
 //go:build libghostty
 
 // Package vt is the host's copy of a session's terminal state, kept by
-// libghostty-vt (docs/v2/architecture.md §4). All calls to that library live
+// libghostty-vt. All calls to that library live
 // here, because its API is unstable. Build with -tags libghostty after running
 // scripts/build-ghostty.sh; without the tag, Available is false and hosts use
 // their raw replay.

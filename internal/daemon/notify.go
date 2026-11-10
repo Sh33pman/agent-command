@@ -9,7 +9,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
-// Notifications (SPEC §8.5): the daemon decides when to notify, and the app
+// Notifications: the daemon decides when to notify, and the app
 // shows the notification, so a click lands on the session. With the app closed,
 // the daemon shows it itself through Config.Fallback.
 

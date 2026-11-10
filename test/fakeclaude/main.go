@@ -1,4 +1,4 @@
-// Command fakeclaude stands in for `claude` in tests (SPEC §12 Testing).
+// Command fakeclaude stands in for `claude` in tests.
 // It keeps its sessions in $FAKECLAUDE_STATE (a JSON file) and emulates:
 //
 //	claude --bg [--name N] [args…] [-- prompt]   prints "backgrounded · <id> · …"

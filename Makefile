@@ -24,7 +24,7 @@ GITLEAKS_VERSION      := v8.30.1
 BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GOVULNCHECK_VERSION)_$(GITLEAKS_VERSION)
 export PATH := $(BIN):$(PATH)
 
-# Coverage gates (SPEC §12 Testing).
+# Coverage gates.
 COVER_MIN_TOTAL := 60
 COVER_MIN_CORE  := 80
 
@@ -40,7 +40,7 @@ LDFLAGS   := -s -w \
 
 INSTALL_DIR ?= $(HOME)/.local/bin
 
-# The Swift speech engine (helpers/acmd-speech, SPEC §8.9): arm64 only, built
+# The Swift speech engine (helpers/acmd-speech): arm64 only, built
 # with Xcode, which is the only way to compile MLX's Metal shaders. They ship
 # next to the helper as mlx.metallib, where MLX looks first. On the runner its
 # build folder lives in the tool cache, so checkouts don't rebuild MLX from

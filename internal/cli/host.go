@@ -26,7 +26,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
-// Session hosts (SPEC §4.5): an interactive CLI per session, run under a
+// Session hosts: an interactive CLI per session, run under a
 // term.Server in its own detached process (`acmd host serve`), so it
 // outlives the view, the terminal and the daemon. Views attach to the
 // host's socket (HostSocket).
@@ -57,7 +57,7 @@ func hostArgv(h harness.Harness, o hostOptions) []string {
 }
 
 // hostEnv is the environment of a hosted CLI: the captured login-shell
-// environment without CLAUDE* variables (SPEC §4.4), and a terminal type
+// environment without CLAUDE* variables, and a terminal type
 // of its own.
 func hostEnv(base []string) []string {
 	var out []string

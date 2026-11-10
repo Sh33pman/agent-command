@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// EditorPreset is a known editor (SPEC §8.6).
+// EditorPreset is a known editor.
 type EditorPreset struct {
 	Name     string   // config value: vscode, cursor, zed, idea
 	Label    string   // shown in the picker
@@ -92,7 +92,7 @@ func isExecutable(path string) bool {
 
 // ParseCommand splits a custom editor command shell-style (quotes and
 // backslashes, no expansion) into an argv template and appends "{dir}" if
-// the command doesn't mention it (SPEC §8.6).
+// the command doesn't mention it.
 func ParseCommand(s string) ([]string, error) {
 	var (
 		args    []string

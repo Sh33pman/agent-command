@@ -1,4 +1,4 @@
-// acmd-speech: the speech service (SPEC §8.9). It turns text into audio and plays
+// acmd-speech: the speech service. It turns text into audio and plays
 // it, on its own: nothing about it depends on acmd's daemon or app, which are
 // clients like any other.
 //

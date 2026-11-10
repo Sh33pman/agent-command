@@ -1,5 +1,5 @@
 // Package term keeps a shell alive per session for the terminal pane
-// under a view's Claude pane (SPEC §8.7). A server runs the shell in a
+// under a view's Claude pane. A server runs the shell in a
 // pseudo-terminal and keeps its recent output; the pane attaches to the
 // server of the session the view shows, like `claude attach`, so the
 // shell and what runs in it carry on while another session is shown.

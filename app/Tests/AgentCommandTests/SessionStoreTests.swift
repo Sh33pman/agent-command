@@ -59,6 +59,62 @@ extension UsesSharedSpeech {
             #expect(s.closedIDs == ["d"] && s.setMembers == [["a", "d"]])
         }
 
+        // MARK: Going to a session
+
+        @Test func numbersCountDownTheSidebar() throws {
+            let s = try store()
+            s.reflect(selected: nil, visible: [], sets: [["a", "d"]], closed: [])
+            #expect(s.sessionID(number: 1) == "a")
+            #expect(s.sessionID(number: 2) == "d", "a set's sessions are numbered together")
+            #expect(s.sessionID(number: 4) == "c")
+            #expect(s.sessionID(number: 5) == nil)
+            #expect(s.sessionID(number: 0) == nil)
+        }
+
+        @Test func showingASessionMovesTheCursorOnlyWhenTheSidebarHasTheKeyboard() throws {
+            let s = try store()
+            var shown: [String?] = []
+            s.onSelect = { shown.append($0?.id) }
+            s.show("c")
+            #expect(s.selectedID == "c" && shown == ["c"])
+            #expect(s.cursorID == nil)
+            s.setSidebarFocused(true)
+            s.show("b")
+            #expect(s.selectedID == "b" && s.cursorID == "b")
+        }
+
+        @Test func attentionGoesToWaitingThenErrorThenUnseenFinishedTurns() throws {
+            let s = try store([])
+            s.sessions = try [
+                makeSession(id: "done-seen", status: "done"),
+                makeSession(id: "done-new", status: "done", unseen: true),
+                makeSession(id: "error", status: "error"),
+                makeSession(id: "busy", status: "busy", unseen: true),
+                makeSession(id: "wait1", status: "waiting"),
+                makeSession(id: "wait2", status: "waiting"),
+            ]
+            #expect(s.attentionIDs == ["wait1", "wait2", "error", "done-new"])
+            #expect(s.nextAttentionID == "wait1", "with nothing selected, the most urgent")
+            s.reflect(selected: "busy", visible: [], sets: [], closed: [])
+            #expect(s.nextAttentionID == "wait1", "from a session that doesn't need you too")
+            s.reflect(selected: "wait1", visible: [], sets: [], closed: [])
+            #expect(s.nextAttentionID == "wait2")
+            s.reflect(selected: "done-new", visible: [], sets: [], closed: [])
+            #expect(s.nextAttentionID == "wait1", "it goes round")
+        }
+
+        @Test func attentionFollowsTheSidebarAndHasNothingWhenAllIsWell() throws {
+            let s = try store([])
+            s.sessions = try [makeSession(id: "w1", status: "waiting"), makeSession(id: "w2", status: "waiting")]
+            s.reflect(selected: nil, visible: [], sets: [["w2", "w1"]], closed: [])
+            #expect(s.attentionIDs == ["w2", "w1"])
+            s.sessions = try [makeSession(id: "a", status: "busy"), makeSession(id: "b", status: "done")]
+            #expect(s.nextAttentionID == nil)
+            s.sessions = try [makeSession(id: "only", status: "error")]
+            s.reflect(selected: "only", visible: [], sets: [], closed: [])
+            #expect(s.nextAttentionID == "only", "the one that needs you, even when it's showing")
+        }
+
         @Test func actionsApplyToMarksThenTheCursorThenTheSelection() throws {
             let s = try store()
             s.reflect(selected: "c", visible: ["c"], sets: [], closed: [])

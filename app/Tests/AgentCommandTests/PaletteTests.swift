@@ -15,7 +15,7 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     #expect(titles(entries, in: "New") == ["Claude session", "Terminal", "Resume a session…"])
     #expect(titles(entries, in: "Panes") == ["Split right", "Split down", "Close pane"], "no focus commands for one pane")
     #expect(titles(entries, in: "Screen").isEmpty, "no screen commands without a terminal")
-    #expect(titles(entries, in: "Go to").isEmpty)
+    #expect(titles(entries, in: "Go to").isEmpty, "nothing needs you, and no sessions")
     #expect(entry(entries, "App", "Quit")?.action == .quit)
     #expect(entry(entries, "App", "Report a bug…")?.action == .report(.bug))
     #expect(entry(entries, "App", "Request a feature…")?.action == .report(.feature))
@@ -108,4 +108,12 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     let both = try #require(Palette.archivePrompt([claude, terminal]))
     #expect(both.title == "Archive 2 sessions?")
     #expect(both.note.hasPrefix("Terminals end") && both.note.hasSuffix("continue the conversation."))
+}
+
+@Test func paletteOffersTheNextSessionNeedingYouWhenThereIsOne() throws {
+    let waiting = try makeSession(id: "w", status: "waiting")
+    #expect(!Palette.entries(PaletteState(sessions: [waiting])).contains { $0.action == .nextAttention })
+    let entries = Palette.entries(PaletteState(sessions: [waiting], needsYou: true))
+    #expect(entry(entries, "Go to", "Next needing attention")?.shortcut == "⇧⌘A")
+    #expect(entries.first { $0.section == "Go to" }?.action == .nextAttention, "first in its section")
 }

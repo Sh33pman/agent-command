@@ -22,11 +22,11 @@ func isolateFromTheRealDaemon() throws {
 
 func makeSession(
     id: String, name: String = "", cwd: String = "/tmp", harness: String = "claude",
-    status: String = "done", claude: String = ""
+    status: String = "done", claude: String = "", unseen: Bool = false
 ) throws -> Session {
     let fields: [String: Any] = [
         "ID": id, "Name": name.isEmpty && cwd == "/tmp" ? id : name, "Cwd": cwd, "Status": status, "Kind": "hosted",
-        "Unseen": false, "Harness": harness, "ClaudeSessionID": claude,
+        "Unseen": unseen, "Harness": harness, "ClaudeSessionID": claude,
     ]
     return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
 }

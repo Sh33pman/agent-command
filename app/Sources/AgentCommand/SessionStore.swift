@@ -79,6 +79,39 @@ final class SessionStore {
         cursorID = id
     }
 
+    /// The session numbered n, from 1, counting down the sidebar.
+    func sessionID(number n: Int) -> String? {
+        let ids = sidebarIDs
+        return n >= 1 && n <= ids.count ? ids[n - 1] : nil
+    }
+
+    /// Sessions that need you, most urgent first: waiting, then error, then a
+    /// finished turn you haven't seen. In sidebar order within each.
+    var attentionIDs: [String] {
+        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        let ordered = sidebarIDs.compactMap { byID[$0] }.filter { !$0.isArchived }
+        let tiers: [(Session) -> Bool] = [
+            { $0.status == "waiting" },
+            { $0.status == "error" },
+            { $0.status == "done" && $0.unseen },
+        ]
+        return tiers.flatMap { tier in ordered.filter(tier).map(\.id) }
+    }
+
+    /// The next session that needs you after the selected one, going round; nil when
+    /// none does.
+    var nextAttentionID: String? {
+        let ids = attentionIDs
+        guard let selectedID, let index = ids.firstIndex(of: selectedID) else { return ids.first }
+        return ids[(index + 1) % ids.count]
+    }
+
+    /// Shows a session, and moves the sidebar's cursor to it while it has the keyboard.
+    func show(_ id: String) {
+        if sidebarFocused { cursorID = id }
+        selectedID = id
+    }
+
     func moveCursor(by step: Int) {
         let ids = sidebarIDs
         guard !ids.isEmpty else { return }

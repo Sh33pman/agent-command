@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let notifier = AppNotifier()
     private var inbox: InboxModel?
     private lazy var popupWindow = PopupController(store: store)
-    private var hotKey: SystemHotKey?
+    private var hotKeys: [SystemHotKey] = []
     /// A clicked notification's session, if it arrived before the session list.
     private var pendingOpen: String?
 
@@ -289,6 +289,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .leave: pane?.focusTerminal()
         case .open:
             if let id = store.cursorID { openSidebarRow(id) }
+        case .number(let n): showSession(number: n)
+        case .nextAttention: showNextAttention()
+        }
+    }
+
+    /// Shows session n, counting down the sidebar.
+    private func showSession(number n: Int) {
+        guard let id = store.sessionID(number: n) else { return NSSound.beep() }
+        store.show(id)
+    }
+
+    /// Shows the next session that needs you. A beep says none does.
+    @objc private func showNextAttention() {
+        guard let id = store.nextAttentionID else { return NSSound.beep() }
+        store.show(id)
+    }
+
+    @objc private func goToNumber(_ sender: NSMenuItem) {
+        showSession(number: sender.tag)
+    }
+
+    /// Brings the main window forward from any app, or hides the app when you're in it.
+    private func appShortcut() {
+        if store.isInMainWindow {
+            NSApp.hide(nil)
+        } else {
+            showMainWindow()
         }
     }
 
@@ -493,7 +520,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         store.onNewItems = { [weak self] items in self?.popupWindow.itemsArrived(items) }
         notifier.popupShows = { [weak self] kind in self?.popupWindow.replacesBanner(noticeKind: kind) ?? false }
-        hotKey = SystemHotKey { [weak self] in self?.popupShortcut() }
+        hotKeys = [
+            SystemHotKey(.popup) { [weak self] in self?.popupShortcut() },
+            SystemHotKey(.app) { [weak self] in self?.appShortcut() },
+        ]
     }
 
     /// Closing the window keeps the app running, for the popup and the Dock badge. The
@@ -614,7 +644,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let speech = SpeechController.shared
         let popup = PopupSettings.shared
         let state = PaletteState(
-            targets: targets, sessions: store.sessions, setMembers: store.setMembers,
+            targets: targets, sessions: store.sessions, needsYou: store.nextAttentionID != nil, setMembers: store.setMembers,
             paneCount: pane?.tree.shownLeaves.count ?? 0, showsScreen: pane?.shown != nil,
             speechOn: speech.isEnabled, speaking: speech.isSpeaking, remoteControl: RemoteControlSetting.isOn,
             popupReads: popup.autoPlay, popupOn: popup.enabled, popupStyle: popup.style, popupOpens: popup.opens)
@@ -633,6 +663,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .moveOut(let id): pane?.moveOut(sessionID: id)
         case .copy(let text): Self.copyToPasteboard(text)
         case .select(let id): store.selectedID = id
+        case .nextAttention: showNextAttention()
         case .newSession(let harness): newSession(harness: harness)
         case .resume: resumeSession()
         case .split(let direction): splitPane(direction)
@@ -678,6 +709,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if alert.runModal() == .alertFirstButtonReturn {
             store.archive(sessions)
         }
+    }
+
+    /// ⇧⌘A and ⌘1 to ⌘9. Its session items are named when the menu opens.
+    private func makeGoMenu() -> NSMenuItem {
+        let go = NSMenuItem()
+        go.submenu = NSMenu(title: "Go")
+        let next = NSMenuItem(title: "Next Needing Attention", action: #selector(showNextAttention), keyEquivalent: "A")
+        next.target = self
+        go.submenu?.addItem(next)
+        go.submenu?.addItem(.separator())
+        for n in 1...9 {
+            let item = NSMenuItem(title: "Session \(n)", action: #selector(goToNumber(_:)), keyEquivalent: "\(n)")
+            item.tag = n
+            item.target = self
+            go.submenu?.addItem(item)
+        }
+        return go
     }
 
     private func makeMenu() -> NSMenu {
@@ -737,6 +785,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             view.submenu?.addItem(item)
         }
         menu.addItem(view)
+        menu.addItem(makeGoMenu())
         let help = NSMenuItem()
         help.submenu = NSMenu(title: "Help")
         for (title, action) in [
@@ -839,10 +888,18 @@ app.delegate = delegate
 app.run()
 
 extension AppDelegate: NSMenuItemValidation {
-    /// Shows the Remote Control setting as a checkmark each time the menu opens.
+    /// Each time a menu opens: the Remote Control checkmark, and the Go menu's names.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleRemoteControl) {
             item.state = RemoteControlSetting.isOn ? .on : .off
+        }
+        if item.action == #selector(goToNumber(_:)) {
+            let session = store.sessionID(number: item.tag).flatMap { id in store.sessions.first { $0.id == id } }
+            item.title = session?.displayName ?? "Session \(item.tag)"
+            return session != nil
+        }
+        if item.action == #selector(showNextAttention) {
+            return store.nextAttentionID != nil
         }
         return true
     }

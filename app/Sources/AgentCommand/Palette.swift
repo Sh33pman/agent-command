@@ -8,6 +8,7 @@ enum PaletteAction: Equatable {
     case moveOut(sessionID: String)
     case copy(String)
     case select(sessionID: String)
+    case nextAttention
     case newSession(harness: String)
     case resume
     case split(SplitDirection)
@@ -46,6 +47,8 @@ struct PaletteState {
     /// The sessions the commands act on: the selection, or the session showing.
     var targets: [Session] = []
     var sessions: [Session] = []
+    /// Whether a session needs you, for the attention command.
+    var needsYou = false
     var setMembers: [[String]] = []
     var paneCount = 0
     /// Whether a terminal is showing, for the Screen commands.
@@ -92,6 +95,9 @@ enum Palette {
             if !session.isTerminal {
                 list.append(PaletteEntry(section: section, title: "Copy Claude session ID", action: .copy(session.claudeSessionID)))
             }
+        }
+        if state.needsYou {
+            list.append(PaletteEntry(section: "Go to", title: "Next needing attention", shortcut: "⇧⌘A", action: .nextAttention))
         }
         for session in state.sessions where session.id != current?.id {
             list.append(PaletteEntry(

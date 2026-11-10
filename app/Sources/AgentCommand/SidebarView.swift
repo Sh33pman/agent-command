@@ -26,6 +26,11 @@ struct SidebarView: View {
             .compactMap { row in byID[row.id].map { ($0, row.link) } }
     }
 
+    /// The number keys 1 to 9, by session.
+    private var numbers: [String: Int] {
+        Dictionary(uniqueKeysWithValues: rows.prefix(9).enumerated().map { ($1.session.id, $0 + 1) })
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollViewReader { scroll in
@@ -35,7 +40,7 @@ struct SidebarView: View {
                         heading("Sessions")
                         Spacer()
                         if store.sidebarFocused {
-                            Text("x ⏎ esc")
+                            Text("1-9 ⇥ x ⏎ esc")
                                 .font(AppFont.ui(11))
                                 .foregroundStyle(theme.dim)
                                 .padding(.horizontal, 12)
@@ -62,6 +67,7 @@ struct SidebarView: View {
                             isCursor: store.sidebarFocused && store.cursorID == session.id,
                             isMarked: store.markedIDs.contains(session.id),
                             unread: store.unreadCount(session: session.id),
+                            number: store.sidebarFocused ? numbers[session.id] : nil,
                             showsFolder: true)
                             .id(session.id)
                             .contentShape(Rectangle())
@@ -192,6 +198,8 @@ struct SessionRow: View {
     let isMarked: Bool
     /// Unread items in the Inbox's queue.
     let unread: Int
+    /// The number key that shows it, while the sidebar has the keyboard.
+    var number: Int?
     /// Shows the session's working directory under its name.
     var showsFolder = false
 
@@ -227,6 +235,12 @@ struct SessionRow: View {
                         .font(AppFont.ui(11))
                         .foregroundStyle(isSelected ? theme.bg : theme.dim)
                         .lineLimit(1)
+                    if let number {
+                        Text("\(number)")
+                            .font(AppFont.ui(11))
+                            .fontWeight(.bold)
+                            .foregroundStyle(isSelected ? theme.bg : theme.yellow)
+                    }
                 }
                 if let folder {
                     // Lined up with the name. The end of a long path matters most.
@@ -274,13 +288,32 @@ struct SetLinkMark: Shape {
 /// What a key does while the sidebar has the keyboard.
 enum SidebarKey: Equatable {
     case up, down, toggleMark, open, leave
+    /// Shows the session with this number, from 1.
+    case number(Int)
+    /// Shows the next session that needs you.
+    case nextAttention
 
-    /// Arrow keys or control with vim's j and k move, x marks, return opens and
-    /// escape leaves. Key codes, so the keyboard layout's control characters don't
-    /// matter.
+    /// Keys only the session sidebar uses, not the Inbox's lists.
+    var isSidebarOnly: Bool {
+        switch self {
+        case .number, .nextAttention: true
+        default: false
+        }
+    }
+
+    /// The number row's key codes for 1 to 9, which don't depend on the layout.
+    static let numberKeyCodes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+
+    /// Arrow keys or control with vim's j and k move, x marks, return opens,
+    /// 1 to 9 show that session, tab goes to the next that needs you and escape
+    /// leaves. Key codes, so the keyboard layout's control characters don't matter.
     static func from(keyCode: UInt16, characters: String?, flags: NSEvent.ModifierFlags) -> SidebarKey? {
         let mods = flags.intersection([.command, .control, .option, .shift])
+        if mods.isEmpty, let index = numberKeyCodes.firstIndex(of: keyCode) {
+            return .number(index + 1)
+        }
         switch (keyCode, mods) {
+        case (48, []): return .nextAttention
         case (126, []): return .up
         case (125, []): return .down
         case (40, .control): return .up

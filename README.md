@@ -5,7 +5,8 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 ## Features
 
 - **Panes:** split sessions horizontally and vertically to any depth. Sessions created with splits stay together as a set.
-- **Keyboard:** click a session or press ⇧⌘B to move the keyboard to the sidebar. There, the arrow keys or ⌃J and ⌃K move, X marks several sessions, Return or a double click opens one and Esc goes back. ⌘R renames and ⇧⌘⌫ archives, acting on what's marked, the row in the sidebar, or the session you're in. Renaming several numbers them: `name - 1`, `name - 2`.
+- **Keyboard:** click a session or press ⇧⌘B to move the keyboard to the sidebar. There, the arrow keys or ⌃J and ⌃K move, X marks several sessions, Return or a double click opens one, 1 to 9 open that session, Tab goes to the next one that needs you and Esc goes back. ⌘R renames and ⇧⌘⌫ archives, acting on what's marked, the row in the sidebar, or the session you're in. Renaming several numbers them: `name - 1`, `name - 2`.
+- **Going to a session:** ⌘1 to ⌘9 show a session, counting down the sidebar, from anywhere in the app. ⇧⌘A goes to the next one that needs you: waiting, then errors, then finished turns you haven't seen. ⌃⌘A brings the app forward from any app, and hides it again when you're in it.
 - **Live status** in the sidebar, including an agent you start by typing `claude` in a terminal.
 - **Sessions that last:** closing a pane only detaches. Only archiving ends a session, and agents can be unarchived and resumed.
 - **Runs in the background:** closing the main window keeps the app running, so the popup and Dock badge still work. Click the Dock icon to bring the window back, and press ⌘Q to quit.

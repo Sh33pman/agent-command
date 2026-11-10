@@ -559,7 +559,9 @@ final class InboxModel {
             return false
         }
         if handleChoice(event, flags: flags) { return true }
-        if let move = SidebarKey.from(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, flags: flags) {
+        // Numbers and tab are the sidebar's own: here they fall through as before.
+        if let move = SidebarKey.from(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, flags: flags),
+           !move.isSidebarOnly {
             switch move {
             case .up: moveCursor(-1)
             case .down: moveCursor(1)
@@ -571,6 +573,8 @@ final class InboxModel {
                 }
             case .leave:
                 if panel == .sessions { setPanel(.messages) } else { close() }
+            case .number, .nextAttention:
+                break
             }
             return true
         }

@@ -284,20 +284,48 @@ final class PopupController {
 
 /// A shortcut that works from any app. Carbon's hot keys need no permission.
 final class SystemHotKey {
-    private static var action: () -> Void = {}
+    struct Combo: Equatable {
+        let id: UInt32
+        let keyCode: Int
+        let modifiers: Int
+
+        /// ⌃⌘O: the popup, or the Inbox in the app.
+        static let popup = Combo(id: 1, keyCode: kVK_ANSI_O, modifiers: cmdKey | controlKey)
+        /// ⌃⌘A: brings Agent Command forward.
+        static let app = Combo(id: 2, keyCode: kVK_ANSI_A, modifiers: cmdKey | controlKey)
+    }
+
+    private static var actions: [UInt32: () -> Void] = [:]
+    private static var installed = false
     private var ref: EventHotKeyRef?
 
-    /// ⌃⌘O.
-    init(action: @escaping () -> Void) {
-        Self.action = action
+    init(_ combo: Combo, action: @escaping () -> Void) {
+        Self.actions[combo.id] = action
+        Self.installHandler()
+        let id = EventHotKeyID(signature: OSType(0x41434D44), id: combo.id) // "ACMD"
+        let status = RegisterEventHotKey(
+            UInt32(combo.keyCode), UInt32(combo.modifiers), id, GetApplicationEventTarget(), 0, &ref)
+        if status != noErr { NSLog("system shortcut %u: couldn't register (%d)", combo.id, status) }
+    }
+
+    deinit {
+        if let ref { UnregisterEventHotKey(ref) }
+    }
+
+    /// One handler for every hot key: it runs the one pressed.
+    private static func installHandler() {
+        guard !installed else { return }
+        installed = true
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { SystemHotKey.action() }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ in
+            var id = EventHotKeyID()
+            let status = GetEventParameter(
+                event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil,
+                MemoryLayout<EventHotKeyID>.size, nil, &id)
+            guard status == noErr else { return status }
+            let pressed = id.id
+            DispatchQueue.main.async { SystemHotKey.actions[pressed]?() }
             return noErr
         }, 1, &spec, nil, nil)
-        let id = EventHotKeyID(signature: OSType(0x41434D44), id: 1) // "ACMD"
-        let status = RegisterEventHotKey(
-            UInt32(kVK_ANSI_O), UInt32(cmdKey | controlKey), id, GetApplicationEventTarget(), 0, &ref)
-        if status != noErr { NSLog("popup shortcut: couldn't register (%d)", status) }
     }
 }

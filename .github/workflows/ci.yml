@@ -1,4 +1,4 @@
-# PR checks. Every PR runs every check, so the required checks always report.
+# PR checks, also run on main. Every PR runs every check, so the required checks always report.
 # They run on GitHub-hosted runners: the repo is public, so a PR from a fork
 # runs nowhere but there. Release PRs only change the version and changelog,
 # and the release gate runs every check on the same commit, so the jobs skip
@@ -7,6 +7,11 @@ name: ci
 
 on:
   pull_request:
+  # Runs on main too: GitHub only shares caches from the default branch, so
+  # this is what lets PRs reuse the Ghostty build. It also checks main after
+  # each merge.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:

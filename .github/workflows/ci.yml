@@ -1,102 +1,72 @@
-# PR checks. Runs on pull requests only: pushes to main are
-# re-verified by the release gate before anything is published.
-# All jobs run on the self-hosted runner on the maintainer's Mac (label
-# `acmd`), which isn't metered. Dependabot PRs only run once
-# the `ok-to-test` label is added: they'd execute updated dependencies on
-# that Mac.
+# PR checks. Every PR runs every check, so the required checks always report.
+# They run on GitHub-hosted runners: the repo is public, so a PR from a fork
+# runs nowhere but there. Release PRs only change the version and changelog,
+# and the release gate runs every check on the same commit, so the jobs skip
+# them.
 name: ci
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "LICENSE"
   workflow_dispatch:
-
 
 permissions:
   contents: read
 
-# Release PRs only change the version and changelog, and the release gate runs every
-# check on the same commit, so the jobs below skip them.
-# Label events other than ok-to-test (e.g. release-please's "autorelease:
-# pending") start a run whose jobs all skip; they get their own group so
-# they can't cancel the real run for the same commit.
 concurrency:
-  group: ci-${{ github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ok-to-test' && '-label' || '' }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   lint:
-    runs-on: [self-hosted, acmd]
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
-      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
-    timeout-minutes: 10
+    runs-on: macos-26
+    if: "!startsWith(github.head_ref, 'release-please--')"
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false # the self-hosted runner keeps Go's caches between runs
+      - uses: ./.github/actions/macos-tools
       - run: make lint
 
   swift:
-    runs-on: [self-hosted, acmd]
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
-      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
-    timeout-minutes: 20
+    runs-on: macos-26
+    if: "!startsWith(github.head_ref, 'release-please--')"
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/macos-tools
+        with:
+          metal: "true"
       - name: scan the Swift code
         run: make swift-scan
       - name: speech engine unit tests + release build
         run: make speech-test speech-helper
 
   vuln:
-    runs-on: [self-hosted, acmd]
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
-      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
-    timeout-minutes: 10
+    runs-on: macos-26
+    if: "!startsWith(github.head_ref, 'release-please--')"
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # gitleaks scans the whole history
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false # the self-hosted runner keeps Go's caches between runs
+      - uses: ./.github/actions/macos-tools
       - run: make vuln secrets
 
   # The macOS-only steps (snapshot, brew formula check).
   macos:
-    runs-on: [self-hosted, acmd]
-    if: >-
-      !startsWith(github.head_ref, 'release-please--') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'ok-to-test') &&
-      (github.actor != 'dependabot[bot]' || contains(github.event.pull_request.labels.*.name, 'ok-to-test'))
+    runs-on: macos-26
+    if: "!startsWith(github.head_ref, 'release-please--')"
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # goreleaser needs tags/history
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/macos-tools
         with:
-          go-version-file: go.mod
-          cache: false # the self-hosted runner keeps Go's caches between runs
+          ghostty: "true"
       - name: test (race + coverage gate)
         run: make test
       - name: fuzz (short)
         run: make fuzz FUZZTIME=15s
-      - name: build libghostty
-        run: scripts/build-ghostty.sh
       - name: test with libghostty, and test the app
         run: make test-vt test-app
       - name: build the app

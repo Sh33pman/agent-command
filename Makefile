@@ -8,8 +8,7 @@ SHELL := /bin/bash
 MODULE  := github.com/brettmostert/agent-command
 # Tools live in $(TOOLS_DIR)/<versions>: a new pinned version gets a fresh
 # directory instead of a stale binary. In GitHub Actions they go to the
-# runner's tool cache, which on the self-hosted runner persists outside the
-# checkout (so `git clean` doesn't wipe them).
+# runner's tool cache, outside the checkout.
 ifdef RUNNER_TOOL_CACHE
 TOOLS_DIR ?= $(RUNNER_TOOL_CACHE)/acmd-tools
 else

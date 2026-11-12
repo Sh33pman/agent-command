@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.46.1](https://github.com/brettmostert/agent-command/compare/v0.46.0...v0.46.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **app:** draw claude's mark as the claude code crab ([#6](https://github.com/brettmostert/agent-command/issues/6)) ([f9d5401](https://github.com/brettmostert/agent-command/commit/f9d54011509bc8c28d6bc1c098df0c4cf597832c))
+* **deps:** build with go 1.27.4 for GO-2026-6859 in net/http ([#7](https://github.com/brettmostert/agent-command/issues/7)) ([e297044](https://github.com/brettmostert/agent-command/commit/e297044f05fca1e3f1712b66a115f86106870970))
+
 ## [0.46.0](https://github.com/brettmostert/agent-command/compare/v0.45.1...v0.46.0) (2026-11-10)
 
 

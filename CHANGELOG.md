@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/brettmostert/agent-command/compare/v0.48.0...v0.49.0) (2026-11-12)
+
+
+### Features
+
+* **cli:** manage scheduled jobs with acmd schedule ([#16](https://github.com/brettmostert/agent-command/issues/16)) ([c56caed](https://github.com/brettmostert/agent-command/commit/c56caedeee28dd491d87feaa8154a1e2485d3c96))
+
 ## [0.48.0](https://github.com/brettmostert/agent-command/compare/v0.47.1...v0.48.0) (2026-11-12)
 
 

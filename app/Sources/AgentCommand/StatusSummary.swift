@@ -2,8 +2,8 @@ import SwiftUI
 
 /// How a sidebar row marks its session.
 enum RowMark: Equatable {
-    /// Claude: in the status's color, greyed out when stopped, turning while busy.
-    case claude(dimmed: Bool, spinning: Bool)
+    /// Claude: in the status's color, greyed out when stopped, hopping while busy.
+    case claude(dimmed: Bool, busy: Bool)
     /// A plain terminal.
     case terminal
     /// Another agent, or one acmd can't name.
@@ -12,7 +12,7 @@ enum RowMark: Equatable {
     init(_ session: Session) {
         if session.runsClaude {
             self = .claude(dimmed: session.isStopped || session.isArchived || session.status == "unknown",
-                           spinning: session.status == "busy")
+                           busy: session.status == "busy")
         } else if session.isTerminal && session.status != "unknown" {
             self = .terminal
         } else {

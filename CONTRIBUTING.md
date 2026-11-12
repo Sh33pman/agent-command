@@ -6,7 +6,7 @@
 - The **PR title becomes the commit message** and must be a [Conventional Commit](https://www.conventionalcommits.org/): `feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `build:`, `ci:`, `chore:`, `revert:`. Mark breaking changes with `!` (`feat!: …`) or a `BREAKING CHANGE:` footer in the PR description. The `pr-title` check validates this.
 - Run `make ci` before pushing. CI runs the same targets.
 - Run `make hooks` once per clone: a `pre-push` git hook then runs `make lint` and `make test` (about 20 s) before every push, and stops the push if either fails. To push work in progress so it isn't lost (onto a branch or draft PR), `SKIP_CHECKS=1 git push` (or `git push --no-verify`) skips the checks once. Use it sparingly: CI still runs every check on the PR.
-- **All checks must be green before merging.** GitHub can't enforce this on a private repo on the free plan, so it's a rule we follow. The release gate re-runs everything before publishing anything.
+- **All checks must be green before merging.** Branch protection on `main` enforces it, and the release gate re-runs everything before publishing anything.
 
 ## CI (`.github/workflows`)
 
@@ -23,9 +23,8 @@ Workflows run on GitHub-hosted runners: `macos-26` for anything that builds, `ub
 
 1. Merge PRs with Conventional Commit titles.
 2. release-please keeps a PR titled `chore(main): release X.Y.Z` up to date, with the version bump and `CHANGELOG.md`.
-3. Before merging it, run `make it-ghostty` locally (Ghostty integration can't run in CI).
-4. Merge it. The `release` workflow tags `vX.Y.Z`, runs the gate, builds and signs the app, publishes the public tap release `agent-command-vX.Y.Z`, and updates `Casks/agent-command.rb` in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap).
-5. If the gate fails, nothing is published and the release is marked `[FAILED]`. Fix it and ship the next patch version. Never move or reuse tags.
+3. Merge it. The `release` workflow tags `vX.Y.Z`, runs the gate, builds and signs the app, publishes the public tap release `agent-command-vX.Y.Z`, and updates `Casks/agent-command.rb` in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap).
+4. If the gate fails, nothing is published and the release is marked `[FAILED]`. Fix it and ship the next patch version. Never move or reuse tags.
 
 Versioning is SemVer. Before 1.0, `feat` bumps the minor version and `fix` the patch. Breaking changes bump the minor version too.
 

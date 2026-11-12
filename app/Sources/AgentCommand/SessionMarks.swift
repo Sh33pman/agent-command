@@ -1,44 +1,61 @@
 import SwiftUI
 
-/// Claude's mark: a starburst of rounded rays, drawn so it takes any color.
+/// Claude Code's crab, drawn so it takes any color. It's the pixel grid of the
+/// logo Claude Code prints in the terminal: a body with two eyes, arms out to
+/// the sides and four legs.
 struct ClaudeMarkShape: Shape {
+    /// One string per row, "#" for a filled pixel. Pixels are twice as tall as
+    /// they are wide, like the terminal's quarter-block characters.
+    static let pixels = [
+        "  ############  ",
+        "  ## ###### ##  ",
+        "################",
+        "  ############  ",
+        "   # #    # #   ",
+    ]
+    static let columns = CGFloat(pixels[0].count)
+    static let rows = CGFloat(pixels.count)
+    /// Width over height.
+    static let aspect = columns / (rows * 2)
+
     func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = min(rect.width, rect.height) / 2
-        // Rays of slightly different lengths, so it reads as a hand-drawn burst.
-        let lengths: [CGFloat] = [1, 0.82, 0.95, 0.78, 1, 0.86, 0.92, 0.8, 0.98, 0.84, 0.9]
+        // Fit the grid in the rect, centered, keeping its shape.
+        let width = min(rect.width, rect.height * Self.aspect)
+        let pixel = CGSize(width: width / Self.columns, height: width / Self.aspect / Self.rows)
+        let origin = CGPoint(x: rect.midX - width / 2, y: rect.midY - pixel.height * Self.rows / 2)
         var path = Path()
-        for (i, length) in lengths.enumerated() {
-            let angle = CGFloat(i) / CGFloat(lengths.count) * 2 * .pi - .pi / 2
-            let tip = CGPoint(x: center.x + cos(angle) * radius * length, y: center.y + sin(angle) * radius * length)
-            path.move(to: CGPoint(x: center.x + cos(angle) * radius * 0.05, y: center.y + sin(angle) * radius * 0.05))
-            path.addLine(to: tip)
+        for (y, row) in Self.pixels.enumerated() {
+            for (x, cell) in row.enumerated() where cell == "#" {
+                path.addRect(CGRect(x: origin.x + CGFloat(x) * pixel.width,
+                                    y: origin.y + CGFloat(y) * pixel.height,
+                                    width: pixel.width, height: pixel.height))
+            }
         }
-        return path.strokedPath(StrokeStyle(lineWidth: max(1.2, radius * 0.3), lineCap: .round))
+        return path
     }
 }
 
-/// The mark on a Claude row. It turns slowly while Claude is busy.
+/// The mark on a Claude row. It hops while Claude is busy.
 struct ClaudeMark: View {
     let color: Color
-    let spinning: Bool
-    @State private var angle = 0.0
+    let busy: Bool
+    @State private var hop = 0.0
 
     var body: some View {
         ClaudeMarkShape()
             .fill(color)
-            .frame(width: 10, height: 10)
-            .rotationEffect(.degrees(angle))
-            .onAppear(perform: spin)
-            .onChange(of: spinning) { spin() }
+            .frame(width: 13, height: 10)
+            .offset(y: hop)
+            .onAppear(perform: animate)
+            .onChange(of: busy) { animate() }
             .accessibilityLabel("Claude")
     }
 
-    private func spin() {
-        if spinning {
-            withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { angle = 360 }
+    private func animate() {
+        if busy {
+            withAnimation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true)) { hop = -1.5 }
         } else {
-            withAnimation(.default) { angle = 0 }
+            withAnimation(.default) { hop = 0 }
         }
     }
 }
@@ -52,8 +69,8 @@ struct SessionMark: View {
 
     var body: some View {
         switch RowMark(session) {
-        case .claude(let dimmed, let spinning):
-            ClaudeMark(color: onBar ? theme.bg : (dimmed ? theme.dim : color), spinning: spinning)
+        case .claude(let dimmed, let busy):
+            ClaudeMark(color: onBar ? theme.bg : (dimmed ? theme.dim : color), busy: busy)
         case .terminal:
             Text("$").foregroundStyle(onBar ? theme.bg : color)
         case .dot:

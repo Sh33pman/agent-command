@@ -23,14 +23,14 @@ private func session(_ status: String, harness: String = "claude", claude: Strin
 }
 
 @Test func aRowMarksClaude() throws {
-    #expect(RowMark(try session("done")) == .claude(dimmed: false, spinning: false))
-    #expect(RowMark(try session("busy")) == .claude(dimmed: false, spinning: true))
-    #expect(RowMark(try session("paused")) == .claude(dimmed: true, spinning: false), "greyed out while paused")
-    #expect(RowMark(try session("finished")) == .claude(dimmed: true, spinning: false))
-    #expect(RowMark(try session("busy", harness: "terminal")) == .claude(dimmed: false, spinning: true),
+    #expect(RowMark(try session("done")) == .claude(dimmed: false, busy: false))
+    #expect(RowMark(try session("busy")) == .claude(dimmed: false, busy: true))
+    #expect(RowMark(try session("paused")) == .claude(dimmed: true, busy: false), "greyed out while paused")
+    #expect(RowMark(try session("finished")) == .claude(dimmed: true, busy: false))
+    #expect(RowMark(try session("busy", harness: "terminal")) == .claude(dimmed: false, busy: true),
             "Claude typed in a terminal")
     #expect(RowMark(try session("unknown", harness: "terminal", claude: "", detail: "claude"))
-        == .claude(dimmed: true, spinning: false), "Claude without hooks: its status isn't known")
+        == .claude(dimmed: true, busy: false), "Claude without hooks: its status isn't known")
     #expect(RowMark(try session("running", harness: "terminal", claude: "")) == .terminal)
     #expect(RowMark(try session("unknown", harness: "terminal", claude: "", detail: "opencode")) == .dot)
 }
@@ -50,4 +50,19 @@ private func session(_ status: String, harness: String = "claude", claude: Strin
                                  "Harness": "claude", "ClaudeSessionID": "c", "StatusDetail": "Bash", "Description": "d"]
     let decoded = try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
     #expect(decoded.statusDetail == "Bash" && decoded.description == "d")
+}
+
+@Test func theClaudeMarkIsTheCrab() {
+    let rows = ClaudeMarkShape.pixels
+    #expect(Set(rows.map(\.count)) == [16], "every row is the same width")
+    #expect(rows[1] == "  ## ###### ##  ", "two eyes")
+    #expect(rows[2].allSatisfy { $0 == "#" }, "arms out to the sides")
+    #expect(rows[4].filter { $0 == "#" }.count == 4, "four legs")
+
+    // It fits the rect it's given, centered and keeping its shape.
+    let rect = CGRect(x: 0, y: 0, width: 13, height: 10)
+    let bounds = ClaudeMarkShape().path(in: rect).boundingRect
+    #expect(abs(bounds.width / bounds.height - ClaudeMarkShape.aspect) < 0.01)
+    #expect(rect.insetBy(dx: -0.01, dy: -0.01).contains(bounds))
+    #expect(abs(bounds.midX - rect.midX) < 0.01 && abs(bounds.midY - rect.midY) < 0.01)
 }

@@ -1,5 +1,5 @@
 # Ghostty's security advisories, checked against the commit pinned in scripts/build-ghostty.sh.
-# scripts/check-ghostty.py reports any that aren't listed here.
+# scripts/check-ghostty reports any that aren't listed here.
 #
 # Checked on 2026-11-07 against v1.4.0 (83fb95624b): each is fixed at or before v1.4.0, or
 # the pinned commit already contains its fixing commit.

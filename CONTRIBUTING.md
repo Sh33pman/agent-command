@@ -12,8 +12,9 @@
 
 | Workflow | When | What |
 |---|---|---|
-| `ci.yml` | Every PR | `make lint`, `make swift-scan`, the speech engine, `make vuln`, `make secrets`, and `make test` → `make fuzz` → `make test-vt` → `make test-app` → build the app |
+| `ci.yml` | Every PR | `make lint`, the speech engine, `make vuln`, `make secrets`, and `make test` → `make fuzz` → `make test-vt` → `make test-app` → build the app |
 | `pr-title.yml` | PRs | Conventional Commit title check |
+| CodeQL (default setup) | PRs, pushes to `main`, weekly | Scans the Go, Swift and workflow code, in the repo's Security tab. It isn't a required check |
 | `ghostty-watch.yml` | Mondays | Opens an issue for a newer Ghostty release, or an advisory not in `.github/ghostty-advisories-reviewed.txt`. Dependabot can't watch Ghostty, as `scripts/build-ghostty.sh` pins it |
 | `release.yml` | push to `main` | release-please; on a release: gate (`make ci fuzz`), then build and sign the app, publish it to the public tap and update the cask. |
 

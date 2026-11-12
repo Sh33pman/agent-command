@@ -21,4 +21,4 @@ jobs:
       - name: check Ghostty
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/check-ghostty.py --issue
+        run: go run ./scripts/check-ghostty --issue

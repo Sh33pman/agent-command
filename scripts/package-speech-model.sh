@@ -27,7 +27,7 @@ g2p_dir="mlx-audio/${g2p_repo/\//_}"
 fetch "$kokoro_repo" "$kokoro_rev" "${kokoro_repo/\//_}" config.json
 fetch "$kokoro_repo" "$kokoro_rev" "${kokoro_repo/\//_}" kokoro-v1_0.safetensors
 curl -fsSL "https://huggingface.co/api/models/$kokoro_repo/tree/$kokoro_rev/voices" |
-	python3 -c 'import json,sys; [print(f["path"]) for f in json.load(sys.stdin)]' |
+	jq -r ".[].path" |
 	while read -r voice; do
 		fetch "$kokoro_repo" "$kokoro_rev" "${kokoro_repo/\//_}" "$voice"
 	done
@@ -37,13 +37,12 @@ done
 
 # This repo has no config.json, so mlx-audio-swift only treats it as complete,
 # and stays offline, with its record of what a finished download contains.
-python3 - "$work/$g2p_dir" "$g2p_rev" <<'PY'
-import json, os, sys
-folder, revision = sys.argv[1:3]
-files = [{"rfilename": n, "size": os.path.getsize(os.path.join(folder, n))} for n in sorted(os.listdir(folder))]
-with open(os.path.join(folder, ".mlx-audio-snapshot.json"), "w") as f:
-    json.dump({"revision": revision, "files": files}, f)
-PY
+(
+	cd "$work/$g2p_dir"
+	for name in *; do
+		jq -n --arg n "$name" --argjson s "$(stat -f%z "$name")" '{rfilename: $n, size: $s}'
+	done | jq -s -c --arg r "$g2p_rev" '{revision: $r, files: .}' >.mlx-audio-snapshot.json
+)
 
 cat > "$work/NOTICE" <<NOTICE
 Speech model files for Agent Command, unmodified copies of:

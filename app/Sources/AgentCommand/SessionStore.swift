@@ -400,7 +400,7 @@ final class SessionStore {
     /// It runs through a shell so it outlives the app.
     private static func startDaemon() {
         let process = Process()
-        // swift-scan:allow shell-command the only thing passed in is our own binary, as a quoted $0
+        // The only thing passed in is our own binary, as a quoted $0.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", "nohup \"$0\" daemon >/dev/null 2>&1 &", DaemonPaths.acmd]
         try? process.run()

@@ -121,14 +121,9 @@ vuln: $(BIN)/govulncheck ## Scan for known vulnerabilities
 secrets: $(BIN)/gitleaks ## Scan the git history for committed secrets
 	$(BIN)/gitleaks git --redact --no-banner --log-level warn .
 
-.PHONY: swift-scan
-swift-scan: ## Scan the Swift code for security and crash patterns
-	python3 scripts/scripts_test.py
-	python3 scripts/swift-scan.py
-
 .PHONY: check-ghostty
 check-ghostty: ## Report new Ghostty releases and advisories that haven't been reviewed
-	python3 scripts/check-ghostty.py
+	go run ./scripts/check-ghostty
 
 .PHONY: speech-test
 speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
@@ -141,9 +136,9 @@ test-vt: ## Run the host's tests with libghostty-vt (needs scripts/build-ghostty
 .PHONY: test-app
 test-app: ## Run the app's tests and coverage gate (needs scripts/build-ghostty.sh)
 	swift test --package-path app --enable-code-coverage
-	scripts/coverage-gate-app.py "$$(swift test --package-path app --show-codecov-path)"
+	go run ./scripts/app-coverage "$$(swift test --package-path app --show-codecov-path)"
 
-ci: lint secrets swift-scan test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
+ci: lint secrets test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
 
 ##@ Build & release
 

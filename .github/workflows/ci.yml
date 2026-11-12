@@ -40,8 +40,6 @@ jobs:
       - uses: ./.github/actions/macos-tools
         with:
           metal: "true"
-      - name: scan the Swift code
-        run: make swift-scan
       - name: speech engine unit tests + release build
         run: make speech-test speech-helper
 

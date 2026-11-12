@@ -257,6 +257,9 @@ func TestUnarchiveDoesNotStartAnAgent(t *testing.T) {
 	start(t, p, func(c *Config) { c.Hosts = fh })
 	c := dial(t, p)
 	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api"})
+	// Hosts start in the background: wait for the new session's, so it isn't
+	// counted as one the unarchive started.
+	waitFor(t, "the new session's host", func() bool { return len(fh.requests()) == 1 })
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
 	before := len(fh.requests())
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, ID: s.ID}, nil))
@@ -267,6 +270,7 @@ func TestUnarchiveDoesNotStartAnAgent(t *testing.T) {
 		t.Errorf("unarchive started %d hosts", n-before)
 	}
 	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, nil))
+	waitFor(t, "the resumed session's host", func() bool { return len(fh.requests()) > before })
 	r := fh.requests()
 	if len(r) != before+1 || r[before].Resume != s.ClaudeSessionID {
 		t.Errorf("resume after unarchive: %+v", r)

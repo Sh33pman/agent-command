@@ -133,7 +133,8 @@ func TestCheckJob(t *testing.T) {
 	// Cron with no words keeps its cron.
 	cron := folderJob(dir)
 	cron.Schedule = "0,30 9 * * *"
-	if check := d.checkJob(ctx, &cron); len(check.Errors) != 0 || cron.Schedule != "*/30 9 * * *" || check.Words != "" {
+	if check := d.checkJob(ctx, &cron); len(check.Errors) != 0 || cron.Schedule != "*/30 9 * * *" || check.Words != "" ||
+		check.Summary != "at 09:00 and 09:30, every day" {
 		t.Errorf("cron only: %+v %q", check, cron.Schedule)
 	}
 
@@ -218,7 +219,7 @@ func TestScheduledRuns(t *testing.T) {
 	j := folderJob(dir)
 	j.GroupID, j.Description = g.ID, "every morning"
 	job := mustSave(t, d, j)
-	if !job.NextRun.Equal(time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC)) || job.Words != "every day at 08:00" {
+	if !job.NextRun.Equal(time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC)) || job.Words != "every day at 08:00" || job.Summary != job.Words {
 		t.Errorf("saved: next %s, words %q", job.NextRun, job.Words)
 	}
 

@@ -116,7 +116,7 @@ private struct JobRow: View {
             Image(systemName: icon).foregroundStyle(onBar ? theme.bg : color).frame(width: 14).padding(.top, 2)
             VStack(alignment: .leading, spacing: 2) {
                 Text(job.name).fontWeight(.bold).lineLimit(1)
-                Text(job.words.isEmpty ? job.cron : job.words).lineLimit(1)
+                Text(job.summary.isEmpty ? (job.words.isEmpty ? job.cron : job.words) : job.summary).lineLimit(1)
                     .foregroundStyle(onBar ? theme.bg : theme.dim)
                 Text(status).font(AppFont.ui(11)).lineLimit(1)
                     .foregroundStyle(onBar ? theme.bg : (job.state == .failing ? theme.red : theme.dim))
@@ -242,7 +242,6 @@ private struct JobDetail: View {
             fact("When", job.scheduleLine)
             fact("Next run", job.paused ? "Paused" : (job.next.map { JobTime.describe($0) } ?? "None"))
             fact("Where", job.placeLine(sessionName: model.sessionName))
-            if JobPlace(rawValue: job.place) != .session { fact("Group", model.groupName(job.groupID)) }
             fact("Missed runs", job.runMissed ? "Run when the Mac wakes" : "Shown as missed")
         }
     }
@@ -337,7 +336,6 @@ private struct JobForm: View {
                         scheduleField(draft)
                         promptField(draft)
                         placeField(draft)
-                        if draft.wrappedValue.place != .session { groupField(draft) }
                         settingsField(draft)
                         Toggle("Run a run the Mac slept through when it wakes (otherwise it's shown as missed)", isOn: draft.runMissed)
                     }
@@ -368,16 +366,20 @@ private struct JobForm: View {
     }
 
     private func scheduleField(_ draft: Binding<JobDraft>) -> some View {
-        field("When", hint: "In words, like \"weekdays at 09:00\", \"every Monday and Friday at 17:30\", \"on the 1st at 07:00\", \"every 2 hours\" or \"once on 2026-12-01 at 14:00\". Or cron, like 0 9 * * 1-5.",
-              error: model.problem("schedule")) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("", text: draft.schedule, prompt: hint("weekdays at 09:00")).textFieldStyle(.plain)
-                    .font(.system(size: 13, design: .monospaced))
-                    .padding(6).overlay { outline(model.problem("schedule") != nil) }
+        field("When", error: model.problem("schedule")) {
+            VStack(alignment: .leading, spacing: 8) {
+                SchedulePicker(builder: draft.builder)
+                HStack(spacing: 8) {
+                    Text(draft.wrappedValue.builder.kind == .once ? "One-off" : "Cron").foregroundStyle(theme.dim)
+                    TextField("", text: draft.schedule, prompt: hint("minute hour day month weekday, like 0 9 * * 1-5"))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, design: .monospaced))
+                        .padding(6).overlay { outline(model.problem("schedule") != nil) }
+                        .help("Type cron here and the controls above follow it")
+                }
                 if model.problem("schedule") == nil, !model.check.next.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
-                        if !model.check.words.isEmpty { Text("In words: \(model.check.words)") }
-                        if !model.check.cron.isEmpty { Text("As cron: \(model.check.cron)") }
+                        Text(model.check.summary.isEmpty ? "Runs on that cron schedule" : "Runs \(model.check.summary)")
                         Text("Next: " + model.check.next.prefix(3).map { JobTime.describe($0) }.joined(separator: ", "))
                     }
                     .font(AppFont.ui(11))
@@ -461,15 +463,6 @@ private struct JobForm: View {
         }
     }
 
-    private func groupField(_ draft: Binding<JobDraft>) -> some View {
-        field("Group", hint: "Where each run's session goes in the sidebar.", error: model.problem("group")) {
-            Picker("", selection: draft.groupID) {
-                ForEach(model.store.groups) { g in Text(g.name).tag(g.isDefault ? "" : g.id) }
-            }
-            .labelsHidden().fixedSize()
-        }
-    }
-
     private func settingsField(_ draft: Binding<JobDraft>) -> some View {
         field("Claude Code settings", hint: "Empty ones use Claude's own settings.", error: model.problem("settings")) {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
@@ -545,5 +538,109 @@ private struct JobForm: View {
     /// A placeholder, faint so it isn't taken for something typed.
     private func hint(_ text: String) -> Text {
         Text(text).foregroundStyle(theme.dim)
+    }
+}
+
+/// How often a job runs, chosen rather than typed: it writes the cron.
+private struct SchedulePicker: View {
+    @Binding var builder: ScheduleBuilder
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Picker("", selection: Binding(get: { builder.kind }, set: { builder.change(to: $0) })) {
+                    ForEach(ScheduleBuilder.Kind.allCases) { Text($0.label).tag($0) }
+                }
+                .labelsHidden().fixedSize()
+                detail
+            }
+            switch builder.kind {
+            case .weekly: weekDays
+            case .monthly: monthDays
+            default: EmptyView()
+            }
+        }
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch builder.kind {
+        case .minutes:
+            Text("every").foregroundStyle(theme.dim)
+            Picker("", selection: $builder.every) {
+                ForEach(ScheduleBuilder.minuteSteps, id: \.self) { Text($0 == 1 ? "minute" : "\($0) minutes").tag($0) }
+            }
+            .labelsHidden().fixedSize()
+        case .hours:
+            Text("every").foregroundStyle(theme.dim)
+            Picker("", selection: $builder.every) {
+                ForEach(ScheduleBuilder.hourSteps, id: \.self) { Text($0 == 1 ? "hour" : "\($0) hours").tag($0) }
+            }
+            .labelsHidden().fixedSize()
+            Text("at minute").foregroundStyle(theme.dim)
+            Picker("", selection: $builder.minute) {
+                ForEach(0..<60, id: \.self) { Text(String(format: ":%02d", $0)).tag($0) }
+            }
+            .labelsHidden().fixedSize()
+        case .daily, .weekdays, .weekly, .monthly:
+            Text("at").foregroundStyle(theme.dim)
+            DatePicker("", selection: time, displayedComponents: .hourAndMinute).labelsHidden().fixedSize()
+        case .once:
+            Text("on").foregroundStyle(theme.dim)
+            DatePicker("", selection: $builder.once, in: Date()..., displayedComponents: [.date, .hourAndMinute])
+                .labelsHidden().fixedSize()
+        case .custom:
+            Text("Type the cron below.").foregroundStyle(theme.dim)
+        }
+    }
+
+    /// The hour and minute as a time of day, for the time picker.
+    private var time: Binding<Date> {
+        Binding(
+            get: { Calendar.current.date(bySettingHour: builder.hour, minute: builder.minute, second: 0, of: Date()) ?? Date() },
+            set: {
+                builder.hour = Calendar.current.component(.hour, from: $0)
+                builder.minute = Calendar.current.component(.minute, from: $0)
+            })
+    }
+
+    private var weekDays: some View {
+        HStack(spacing: 4) {
+            ForEach(ScheduleBuilder.weekOrder, id: \.self) { day in
+                toggle(ScheduleBuilder.dayNames[day], on: builder.weekDays.contains(day)) {
+                    builder.weekDays.formSymmetricDifference([day])
+                    if builder.weekDays.isEmpty { builder.weekDays = [day] } // at least one
+                }
+            }
+        }
+    }
+
+    private var monthDays: some View {
+        Grid(horizontalSpacing: 4, verticalSpacing: 4) {
+            ForEach(0..<5) { row in
+                GridRow {
+                    ForEach(1...7, id: \.self) { col in
+                        let day = row * 7 + col
+                        if day <= 31 {
+                            toggle("\(day)", on: builder.monthDays.contains(day)) {
+                                builder.monthDays.formSymmetricDifference([day])
+                                if builder.monthDays.isEmpty { builder.monthDays = [day] }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func toggle(_ title: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .frame(width: 38, height: 24)
+                .foregroundStyle(on ? theme.bg : theme.fg)
+                .background(on ? theme.yellow : Color.clear)
+                .overlay { Rectangle().strokeBorder(Color(nsColor: theme.line), lineWidth: 1) }
+        }
+        .buttonStyle(.plain)
     }
 }

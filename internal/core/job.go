@@ -42,9 +42,12 @@ type JobSpec struct {
 type Job struct {
 	ID string `json:"id"`
 	JobSpec
-	Cron      string    `json:"cron,omitempty"` // "" for a one-off
-	Once      time.Time `json:"once,omitzero"`  // a one-off's time
-	Words     string    `json:"words,omitempty"`
+	Cron  string    `json:"cron,omitempty"` // "" for a one-off
+	Once  time.Time `json:"once,omitzero"`  // a one-off's time
+	Words string    `json:"words,omitempty"`
+	// Summary is the schedule in English, for reading: Words, or a plainer
+	// account of cron that has none.
+	Summary   string    `json:"summary,omitempty"`
 	Paused    bool      `json:"paused,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

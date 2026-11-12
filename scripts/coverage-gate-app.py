@@ -27,6 +27,7 @@ MINIMUMS = {
     "Report.swift": 95,
     # The rest opens panels and runs timers.
     "ScheduledModel.swift": 70,
+    "ScheduleBuilder.swift": 95,
     "SessionStore.swift": 70,
     "SpeechController.swift": 90,
     "StatusSummary.swift": 95,

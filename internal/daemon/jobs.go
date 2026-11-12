@@ -372,7 +372,7 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 		if j.Schedule == "" {
 			j.Schedule = j.Cron
 		}
-		check.Cron, check.Words = j.Cron, j.Words
+		check.Cron, check.Words, check.Summary = j.Cron, j.Words, s.Summary(d.cfg.Location)
 		check.Next = s.NextN(d.cfg.Now(), d.cfg.Location, nextRuns)
 		if len(check.Next) == 0 {
 			errs["schedule"] = "It never runs."
@@ -555,6 +555,7 @@ func firstError(errs map[string]string) string {
 func (d *Daemon) withNextRun(j *core.Job) {
 	s := schedule.Schedule{Cron: j.Cron, Once: j.Once}
 	j.Words = s.Words(d.cfg.Location)
+	j.Summary = s.Summary(d.cfg.Location)
 	j.NextRun = time.Time{}
 	if !j.Paused {
 		from := j.LastDue

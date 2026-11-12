@@ -21,13 +21,15 @@ struct Job: Codable, Identifiable, Equatable {
     var cron = ""
     var once = ""
     var words = ""
+    /// The schedule in English, also for cron with no words.
+    var summary = ""
     var paused = false
     var createdAt = ""
     var nextRun = ""
     var lastRun: JobRun?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, description, harness, schedule, prompt, cwd, settings, cron, once, words, paused
+        case id, name, description, harness, schedule, prompt, cwd, settings, cron, once, words, summary, paused
         case groupID = "group_id", promptFile = "prompt_file", place = "where", sessionID = "session_id"
         case runMissed = "run_missed", createdAt = "created_at", nextRun = "next_run", lastRun = "last_run"
     }
@@ -53,6 +55,7 @@ struct Job: Codable, Identifiable, Equatable {
         cron = try text(.cron)
         once = try text(.once)
         words = try text(.words)
+        summary = try text(.summary)
         paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
         createdAt = try text(.createdAt)
         nextRun = try text(.nextRun)
@@ -87,13 +90,14 @@ struct Job: Codable, Identifiable, Equatable {
         return .scheduled
     }
 
-    /// The schedule in words, with the cron beside it when they differ.
+    /// The schedule in English, with the cron beside it.
     var scheduleLine: String {
-        switch (words.isEmpty, cron.isEmpty) {
-        case (false, false): "\(words) · \(cron)"
-        case (false, true): words
-        case (true, false): cron
-        default: schedule
+        let english = summary.isEmpty ? words : summary
+        switch (english.isEmpty, cron.isEmpty) {
+        case (false, false): return "\(english) · \(cron)"
+        case (false, true): return english
+        case (true, false): return cron
+        default: return schedule
         }
     }
 
@@ -164,10 +168,12 @@ struct JobRun: Codable, Identifiable, Equatable {
 struct JobCheck: Decodable, Equatable {
     var cron = ""
     var words = ""
+    /// The schedule in English, also for cron with no words.
+    var summary = ""
     var next: [String] = []
     var errors: [String: String] = [:]
 
-    enum CodingKeys: String, CodingKey { case cron, words, next, errors }
+    enum CodingKeys: String, CodingKey { case cron, words, summary, next, errors }
 
     init() {}
 
@@ -175,6 +181,7 @@ struct JobCheck: Decodable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cron = try c.decodeIfPresent(String.self, forKey: .cron) ?? ""
         words = try c.decodeIfPresent(String.self, forKey: .words) ?? ""
+        summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? words
         next = try c.decodeIfPresent([String].self, forKey: .next) ?? []
         errors = try c.decodeIfPresent([String: String].self, forKey: .errors) ?? [:]
     }
@@ -259,7 +266,10 @@ struct JobDraft: Equatable {
     var name = ""
     var description = ""
     var groupID = ""
-    var schedule = "weekdays at 09:00"
+    /// Cron, or a one-off ("once on 2026-12-01 at 14:00"). ScheduleBuilder edits it.
+    var schedule = "0 9 * * 1-5"
+    /// Custom was chosen: show the cron as typed, even when the controls could show it.
+    var customSchedule = false
     var promptSource = PromptSource.text
     var prompt = ""
     var promptFile = ""
@@ -279,7 +289,16 @@ struct JobDraft: Equatable {
         name = job.name
         description = job.description
         groupID = job.groupID
-        schedule = job.schedule
+        if !job.cron.isEmpty {
+            schedule = job.cron
+        } else if let once = JobTime.parse(job.once) {
+            var b = ScheduleBuilder()
+            b.kind = .once
+            b.once = once
+            schedule = b.schedule()
+        } else {
+            schedule = job.schedule
+        }
         promptSource = job.promptFile.isEmpty ? .text : .file
         prompt = job.prompt
         promptFile = job.promptFile
@@ -291,6 +310,22 @@ struct JobDraft: Equatable {
     }
 
     var isNew: Bool { id.isEmpty }
+
+    /// The schedule as the form's controls show it.
+    var builder: ScheduleBuilder {
+        get {
+            var b = ScheduleBuilder(schedule: schedule)
+            if customSchedule, b.kind != .custom {
+                b.cron = schedule
+                b.kind = .custom
+            }
+            return b
+        }
+        set {
+            customSchedule = newValue.kind == .custom
+            schedule = newValue.schedule()
+        }
+    }
 
     /// The job to check or save.
     var job: Job {

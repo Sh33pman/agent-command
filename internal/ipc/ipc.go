@@ -59,10 +59,12 @@ type JobRef struct {
 // "schedule", "prompt", "where", "cwd", "session", "settings", "group",
 // "harness").
 type JobCheck struct {
-	Cron   string            `json:"cron,omitempty"`
-	Words  string            `json:"words,omitempty"`
-	Next   []time.Time       `json:"next,omitempty"`
-	Errors map[string]string `json:"errors,omitempty"`
+	Cron  string `json:"cron,omitempty"`
+	Words string `json:"words,omitempty"`
+	// Summary is the schedule in English, also for cron with no Words.
+	Summary string            `json:"summary,omitempty"`
+	Next    []time.Time       `json:"next,omitempty"`
+	Errors  map[string]string `json:"errors,omitempty"`
 }
 
 // Snapshot is everything a client needs to render the list; clients

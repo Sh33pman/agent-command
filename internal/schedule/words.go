@@ -62,6 +62,19 @@ func (s Schedule) Words(loc *time.Location) string {
 	return Describe(c)
 }
 
+// Summary says s in English, for reading: its words, or Explain's account of
+// cron that has none. "" for a schedule that doesn't parse.
+func (s Schedule) Summary(loc *time.Location) string {
+	if w := s.Words(loc); w != "" {
+		return w
+	}
+	c, err := ParseCron(s.Cron)
+	if err != nil {
+		return ""
+	}
+	return Explain(c)
+}
+
 // Next is the first run after t, in loc; zero when there's none.
 func (s Schedule) Next(t time.Time, loc *time.Location) time.Time {
 	if !s.Once.IsZero() {
@@ -574,4 +587,67 @@ func joinInts(xs []int) string {
 		parts[i] = strconv.Itoa(x)
 	}
 	return strings.Join(parts, ",")
+}
+
+// Explain says any cron expression in English, for reading only: the words
+// Describe writes when there are any, else a plainer account of each field
+// ("at 09:00 and 09:30, every day", "every 7 minutes past each hour, in June").
+func Explain(c Cron) string {
+	if w := Describe(c); w != "" {
+		return w
+	}
+	minutes := values(c.Minute, 0, 59)
+	hours := values(c.Hour, 0, 23)
+	var when string
+	switch {
+	case c.Minute == fullSet(minuteField) && c.Hour == fullSet(hourField):
+		when = "every minute"
+	case c.Hour == fullSet(hourField):
+		if step := everyStep(c.Minute, 0, 59); step > 1 {
+			when = fmt.Sprintf("every %d minutes past each hour", step)
+		} else {
+			when = "at " + list(mapInts(minutes, func(m int) string { return fmt.Sprintf(":%02d", m) })) + " past each hour"
+		}
+	case len(minutes)*len(hours) <= 6:
+		var times []string
+		for _, h := range hours {
+			for _, m := range minutes {
+				times = append(times, fmt.Sprintf("%02d:%02d", h, m))
+			}
+		}
+		when = "at " + list(times)
+	default:
+		when = "at minute " + list(mapInts(minutes, strconv.Itoa)) + " past hour " + list(mapInts(hours, strconv.Itoa))
+	}
+	var days []string
+	if !c.DomStar {
+		days = append(days, "on the "+list(mapInts(values(c.Dom, 1, 31), ordinal)))
+	}
+	if !c.DowStar {
+		d := values(c.Dow, 0, 6)
+		if d[0] == 0 {
+			d = append(d[1:], 0)
+		}
+		days = append(days, "on "+list(mapInts(d, func(i int) string { return title(dayNames[i]) + "s" })))
+	}
+	day := "every day"
+	switch len(days) {
+	case 1:
+		day = days[0]
+	case 2:
+		day = days[0] + " or " + days[1] // cron runs on either
+	}
+	s := when + ", " + day
+	if c.Month != fullSet(monthField) {
+		s += ", in " + list(mapInts(values(c.Month, 1, 12), func(m int) string { return title(monthNames[m]) }))
+	}
+	return s
+}
+
+func mapInts(xs []int, f func(int) string) []string {
+	out := make([]string, len(xs))
+	for i, x := range xs {
+		out[i] = f(x)
+	}
+	return out
 }

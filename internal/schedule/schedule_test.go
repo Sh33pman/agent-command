@@ -366,3 +366,29 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+func TestExplain(t *testing.T) {
+	for cron, want := range map[string]string{
+		"0 8 * * 1-5":     "weekdays at 08:00",
+		"0,30 9 * * *":    "at 09:00 and 09:30, every day",
+		"*/7 * * * *":     "every 7 minutes past each hour, every day",
+		"5,35 * * * *":    "at :05 and :35 past each hour, every day",
+		"0 9 1 * 1":       "at 09:00, on the 1st or on Mondays",
+		"0 9 * 6 *":       "at 09:00, every day, in June",
+		"0 9 * 6 0,1":     "at 09:00, on Mondays and Sundays, in June",
+		"0-10 9-17 * * *": "at minute 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 and 10 past hour 9, 10, 11, 12, 13, 14, 15, 16 and 17, every day",
+		"0 */5 * * *":     "every day at 00:00, 05:00, 10:00, 15:00 and 20:00",
+	} {
+		c, err := ParseCron(cron)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := Explain(c); got != want {
+			t.Errorf("%s: got %q, want %q", cron, got, want)
+		}
+	}
+	all, _ := ParseCron("* * * 1 *")
+	if got := Explain(all); got != "every minute, every day, in January" {
+		t.Errorf("every minute in January: %q", got)
+	}
+}

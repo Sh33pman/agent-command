@@ -74,8 +74,20 @@ jobs:
         run: make fuzz FUZZTIME=15s
       - name: test with libghostty, and test the app
         run: make test-vt test-app
-      - name: build the app
-        run: scripts/build-app.sh
+      # Signed the way a release signs it, with a throwaway certificate, so a
+      # release is never the first time signing runs on a fresh runner.
+      - name: build the app, signed with a throwaway certificate
+        run: |
+          scripts/create-signing-cert.sh "$RUNNER_TEMP/cert" >/dev/null
+          SIGNING_P12="$(cat "$RUNNER_TEMP/cert/signing.p12.base64")" \
+          SIGNING_PASSWORD="$(cat "$RUNNER_TEMP/cert/signing.password")" \
+            scripts/import-signing-cert.sh "$RUNNER_TEMP/signing.keychain-db" > "$RUNNER_TEMP/signing.env"
+          rm -rf "$RUNNER_TEMP/cert"
+          set -a; . "$RUNNER_TEMP/signing.env"; set +a
+          ACMD_SIGN_KEYCHAIN="$KEYCHAIN" scripts/build-app.sh
+          codesign --verify --strict "dist/Agent Command.app"
+          codesign -dvv "dist/Agent Command.app" 2>&1 | grep -F "Authority=Agent Command Self-Signed"
+          security delete-keychain "$KEYCHAIN"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

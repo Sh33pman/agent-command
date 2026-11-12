@@ -32,7 +32,7 @@ Versioning is SemVer. Before 1.0, `feat` bumps the minor version and `fix` the p
 
 The GitHub App (`RELEASE_APP_CLIENT_ID` variable, `RELEASE_APP_PRIVATE_KEY` secret) opens release PRs and publishes to the tap.
 
-Releases are signed with one long-lived self-signed certificate, because the project has no Apple Developer account. Create it once with `scripts/create-signing-cert.sh`, and store the results as the `ACMD_SIGNING_P12` and `ACMD_SIGNING_PASSWORD` secrets. `scripts/build-ghostty.sh` keeps its result in `~/.cache/agent-command/ghostty`, which CI caches. It rebuilds when the release, tools or script change, and deleting that folder forces a rebuild.
+Releases are signed with one long-lived self-signed certificate, because the project has no Apple Developer account. Create it once with `scripts/create-signing-cert.sh`, and store the results as the `ACMD_SIGNING_P12` and `ACMD_SIGNING_PASSWORD` secrets. `scripts/import-signing-cert.sh` imports it for a release; CI's `macos` job runs the same script with a throwaway certificate on every PR, so a release is never the first time signing runs on a fresh runner. `scripts/build-ghostty.sh` keeps its result in `~/.cache/agent-command/ghostty`, which CI caches. It rebuilds when the release, tools or script change, and deleting that folder forces a rebuild.
 
 ## Tool versions
 

@@ -83,21 +83,11 @@ jobs:
         env:
           SIGNING_P12: ${{ secrets.ACMD_SIGNING_P12 }}
           SIGNING_PASSWORD: ${{ secrets.ACMD_SIGNING_PASSWORD }}
-        run: |
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          key_password="$(openssl rand -base64 24)"
-          security create-keychain -p "$key_password" "$keychain"
-          security set-keychain-settings -lut 3600 "$keychain"
-          security unlock-keychain -p "$key_password" "$keychain"
-          printf '%s' "$SIGNING_P12" | base64 -d > "$RUNNER_TEMP/signing.p12"
-          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$SIGNING_PASSWORD" -T /usr/bin/codesign
-          rm -f "$RUNNER_TEMP/signing.p12"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$key_password" "$keychain"
-          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+        # Sets KEYCHAIN and ACMD_SIGN_IDENTITY (the certificate's SHA-1).
+        run: scripts/import-signing-cert.sh "$RUNNER_TEMP/signing.keychain-db" >> "$GITHUB_ENV"
 
       - name: build and sign the app
         env:
-          ACMD_SIGN_IDENTITY: Agent Command Self-Signed
           ACMD_SIGN_KEYCHAIN: ${{ env.KEYCHAIN }}
           ACMD_VERSION: ${{ needs.release-please.outputs.version }}
         run: scripts/build-app.sh
@@ -105,6 +95,7 @@ jobs:
       - name: check the app
         run: |
           codesign --verify --strict "dist/Agent Command.app"
+          codesign -dvv "dist/Agent Command.app" 2>&1 | grep -F "Authority=Agent Command Self-Signed"
           "dist/Agent Command.app/Contents/MacOS/agent-command" version | grep -F "$VERSION"
           "dist/Agent Command.app/Contents/MacOS/acmd-speech" --version
 

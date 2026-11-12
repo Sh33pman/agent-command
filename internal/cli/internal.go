@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -62,6 +63,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 				cli := claudecli.New(claude, env)
 				cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli
 				cfg.Hosts = execHosts{paths: p}
+				cfg.AgentHelp = agentHelp(claude, env)
 			} else {
 				logger.Printf("claude not found; reconciliation disabled: %v", err)
 			}
@@ -191,4 +193,29 @@ func claudeCommand(p paths.Paths) (string, []string, error) {
 		}
 	}
 	return claude, env, nil
+}
+
+// agentHelp returns claude's --help, read once and kept for an hour, so job
+// settings can be checked against the installed version. "" when it can't run.
+func agentHelp(claude string, env []string) func() string {
+	var mu sync.Mutex
+	var text string
+	var at time.Time
+	return func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		if text != "" && time.Since(at) < time.Hour {
+			return text
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		c := exec.CommandContext(ctx, claude, "--help") // #nosec G204 -- the configured claude
+		c.Env = env
+		out, err := c.Output()
+		if err != nil {
+			return ""
+		}
+		text, at = string(out), time.Now()
+		return text
+	}
 }

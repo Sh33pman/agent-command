@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let sidebarKeys = SidebarKeyView()
     private let notifier = AppNotifier()
     private var inbox: InboxModel?
+    private var scheduled: ScheduledModel?
     private lazy var popupWindow = PopupController(store: store)
     private var hotKeys: [SystemHotKey] = []
     /// A clicked notification's session, if it arrived before the session list.
@@ -89,7 +90,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         split.view.autoresizingMask = [.width, .height]
         root.view.addSubview(split.view)
         let statusBar = NSHostingView(rootView: StatusBarView(
-            notifier: notifier, store: store, openInbox: { [weak self] in self?.toggleInbox() }))
+            notifier: notifier, store: store, openInbox: { [weak self] in self?.toggleInbox() },
+            openScheduled: { [weak self] in self?.toggleScheduled() }))
         statusBar.frame = NSRect(x: 0, y: 0, width: root.view.bounds.width, height: StatusBarView.height)
         statusBar.autoresizingMask = [.width]
         root.view.addSubview(statusBar)
@@ -605,6 +607,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         inbox = model
     }
 
+    @objc private func toggleScheduled() {
+        if scheduled == nil { showScheduled() } else { closePopup() }
+    }
+
+    /// The Scheduled view goes over the whole window, like the Inbox.
+    private func showScheduled() {
+        closePopup()
+        popupWindow.close()
+        showMainWindow()
+        let model = ScheduledModel(store: store)
+        model.close = { [weak self] in self?.closePopup() }
+        model.goToSession = { [weak self] id in
+            self?.closePopup()
+            self?.openSidebarRow(id)
+        }
+        showPopup(ScheduledView(model: model), aboveStatusBar: true)
+        window?.makeFirstResponder(nil)
+        model.start()
+        scheduled = model
+    }
+
     /// Popups go over the whole window, so they stay centered across panes.
     private func showPopup(_ view: some View, aboveStatusBar: Bool = false) {
         guard let content = window?.contentView else { return }
@@ -628,6 +651,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             inbox.stop()
             self.inbox = nil
             store.inboxOpen = false
+        }
+        if let scheduled {
+            scheduled.stop()
+            self.scheduled = nil
         }
         if let state = popupReturn {
             window?.makeFirstResponder(sidebarKeys)
@@ -672,6 +699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .equalizePanes: equalizePanes()
         case .screen(let binding): pane?.shown?.perform(binding: binding)
         case .inbox: showInbox(.queue)
+        case .scheduled: showScheduled()
         case .inboxFor(let session): showInbox(.session(session.id))
         case .toggleSpeech: SpeechController.shared.setEnabled(!SpeechController.shared.isEnabled)
         case .toggleReading: store.toggleReadingSelected()
@@ -745,6 +773,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ("Change Theme…", #selector(showThemes), "T"),
             ("Focus Sidebar", #selector(toggleSidebarFocus), "B"),
             ("Inbox", #selector(toggleInbox), "I"),
+            ("Scheduled Jobs", #selector(toggleScheduled), "J"),
             ("Read Aloud", #selector(toggleReading), "S"),
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)

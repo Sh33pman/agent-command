@@ -66,6 +66,13 @@ type Config struct {
 	// HostFront asks one (default: through its host).
 	FrontEvery time.Duration
 	HostFront  func(sessionID string) (term.Front, bool)
+	// ScheduleEvery is how often scheduled jobs are checked (15 s), and
+	// Location the time zone their schedules are in (the Mac's).
+	ScheduleEvery time.Duration
+	Location      *time.Location
+	// AgentHelp is Claude's --help, to check a job's settings against the
+	// installed version ("" or nil: don't check).
+	AgentHelp func() string
 }
 
 // Daemon is a running daemon.
@@ -103,6 +110,12 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.FrontEvery == 0 {
 		cfg.FrontEvery = 2 * time.Second
+	}
+	if cfg.ScheduleEvery == 0 {
+		cfg.ScheduleEvery = 15 * time.Second
+	}
+	if cfg.Location == nil {
+		cfg.Location = time.Local
 	}
 	if cfg.HostFront == nil {
 		cfg.HostFront = func(id string) (term.Front, bool) { return term.Foreground(cfg.Paths.HostSocket(id)) }
@@ -155,6 +168,7 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	cfg.Log.Printf("listening on %s (version %s, pid %d)", sock, cfg.Version, os.Getpid())
 	go d.background(ctx)
+	go d.scheduler(ctx)
 
 	go func() {
 		select {
@@ -253,13 +267,17 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 // changesState reports whether a successful request may have changed state.
 func changesState(op string) bool {
 	switch op {
-	case ipc.OpEvent, ipc.OpMutate, ipc.OpNew, ipc.OpResume, ipc.OpInboxAnswer:
+	case ipc.OpEvent, ipc.OpMutate, ipc.OpNew, ipc.OpResume, ipc.OpInboxAnswer,
+		ipc.OpJobSave, ipc.OpJobDelete, ipc.OpJobPause, ipc.OpJobRun:
 		return true
 	}
 	return false
 }
 
 func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
+	if isJobOp(req.Op) {
+		return d.handleJob(ctx, req)
+	}
 	switch req.Op {
 	case ipc.OpHello:
 		return ipc.Hello{Proto: ipc.Proto, Version: d.cfg.Version, Pid: os.Getpid()}, nil

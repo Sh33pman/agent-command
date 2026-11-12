@@ -25,6 +25,10 @@ final class SessionStore {
     var queue: [InboxItem] = []
     /// Covers the panes, so you're not looking at what they show.
     var inboxOpen = false
+    /// Scheduled jobs, by name.
+    var jobs: [Job] = []
+    /// The groups sessions can go in, Default last.
+    var groups: [SessionGroup] = []
 
     /// Whether the sidebar has the keyboard, and its cursor and marks while it does.
     private(set) var sidebarFocused = false
@@ -370,6 +374,10 @@ final class SessionStore {
                 self.onListChanged?(Set(visible.map(\.id)))
             }
             if archived != self.archived { self.archived = archived }
+            let jobs = snapshot.jobs ?? []
+            if jobs != self.jobs { self.jobs = jobs }
+            let groups = (snapshot.groups ?? []).filter { !$0.isArchived }
+            if groups != self.groups { self.groups = groups }
             let queue = snapshot.inbox ?? []
             if queue != self.queue {
                 self.queue = queue
@@ -485,6 +493,80 @@ final class SessionStore {
         run(failure: failure) { conn in
             try conn.send("mutate", Mutation(kind: kind, id: id))
         } done: { _ in }
+    }
+
+    // MARK: Scheduled jobs
+
+    private struct JobRef: Encodable {
+        var id = ""
+        var paused = false
+        var harness = ""
+    }
+
+    /// Checks a job without saving it: its schedule read back, its next runs and
+    /// what's wrong. done gets nil when the daemon can't be reached.
+    func checkJob(_ job: Job, done: @escaping (JobCheck?) -> Void) {
+        calls.async {
+            let check: JobCheck? = try? DaemonConnection(socket: DaemonPaths.socket).call("job.check", job)
+            DispatchQueue.main.async { done(check) }
+        }
+    }
+
+    /// Saves a job, new or edited. done gets the saved job, or why it wasn't saved.
+    func saveJob(_ job: Job, done: @escaping (Result<Job, Error>) -> Void) {
+        calls.async {
+            let result = Result { () throws -> Job in
+                try DaemonConnection(socket: DaemonPaths.socket).call("job.save", job)
+            }
+            DispatchQueue.main.async {
+                if case .success(let saved) = result {
+                    if let i = self.jobs.firstIndex(where: { $0.id == saved.id }) {
+                        self.jobs[i] = saved
+                    } else {
+                        self.jobs.append(saved)
+                    }
+                }
+                done(result)
+            }
+        }
+    }
+
+    func deleteJob(_ id: String) {
+        jobs.removeAll { $0.id == id }
+        run(failure: "Couldn't delete the job") { conn in
+            try conn.send("job.delete", JobRef(id: id))
+        } done: { _ in }
+    }
+
+    func setJobPaused(_ id: String, _ paused: Bool) {
+        if let i = jobs.firstIndex(where: { $0.id == id }) { jobs[i].paused = paused }
+        run(failure: paused ? "Couldn't pause the job" : "Couldn't resume the job") { conn in
+            try conn.send("job.pause", JobRef(id: id, paused: paused))
+        } done: { _ in }
+    }
+
+    /// Runs a job now. done gets its run, or why it couldn't start.
+    func runJob(_ id: String, done: @escaping (Result<JobRun, Error>) -> Void) {
+        calls.async {
+            let result = Result { () throws -> JobRun in
+                try DaemonConnection(socket: DaemonPaths.socket).call("job.run", JobRef(id: id))
+            }
+            DispatchQueue.main.async { done(result) }
+        }
+    }
+
+    /// A job's runs, newest first.
+    func loadJobRuns(_ id: String, done: @escaping ([JobRun]) -> Void) {
+        run(failure: "Couldn't read the job's runs") { conn -> [JobRun] in
+            try conn.call("job.runs", JobRef(id: id))
+        } done: { done($0) }
+    }
+
+    /// The settings an agent takes for scheduled runs.
+    func loadAgentSettings(harness: String = "", done: @escaping ([AgentSetting]) -> Void) {
+        run(failure: "Couldn't read the agent's settings") { conn -> [AgentSetting] in
+            try conn.call("agent.settings", JobRef(harness: harness))
+        } done: { done($0) }
     }
 
     private func run<T>(

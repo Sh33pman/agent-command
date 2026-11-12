@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,15 @@ func TestHostArgv(t *testing.T) {
 	}
 	if got, want := hostArgv(h, hostOptions{Resume: "sid", Name: "ignored"}), []string{"/c", "--remote-control", "--resume", "sid"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("resume = %v", got)
+	}
+	// A scheduled run continuing a session sends its prompt and settings.
+	if got, want := hostArgv(h, hostOptions{Resume: "sid", Prompt: "# go", Args: []string{"--model", "opus"}}),
+		[]string{"/c", "--remote-control", "--model", "opus", "--resume", "sid", "--", "# go"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("resume with a prompt = %v", got)
+	}
+	// A shell gets no prompt.
+	if got := hostArgv(harness.Terminal{Shell: "/bin/zsh"}, hostOptions{Resume: "x", Prompt: "p"}); slices.Contains(got, "p") {
+		t.Errorf("terminal = %v", got)
 	}
 }
 

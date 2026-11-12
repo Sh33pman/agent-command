@@ -111,10 +111,12 @@ func (d *Daemon) startHost(ctx context.Context, r HostRequest) error {
 }
 
 // resumeHosted runs `claude --resume` for a stopped hosted session in a new
-// host. A terminal that a reboot ended gets a new shell in its folder.
-func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session) (*core.Session, error) {
+// host, with a prompt to send and extra flags if given (a scheduled run). A
+// terminal that a reboot ended gets a new shell in its folder.
+func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session, prompt string, args []string) (*core.Session, error) {
 	if !term.Running(d.cfg.Paths.HostSocket(s.ID)) {
-		if err := d.startHost(ctx, HostRequest{ID: s.ID, Harness: s.Harness, Dir: s.Cwd, Resume: s.ClaudeSessionID}); err != nil {
+		r := HostRequest{ID: s.ID, Harness: s.Harness, Dir: s.Cwd, Resume: s.ClaudeSessionID, Prompt: prompt, Args: args}
+		if err := d.startHost(ctx, r); err != nil {
 			return nil, err
 		}
 	}

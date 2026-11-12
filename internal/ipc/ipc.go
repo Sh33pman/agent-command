@@ -37,7 +37,33 @@ const (
 	OpSetLayout     = "layout.set"   // stores it (Layout)
 	OpInbox         = "inbox"        // inbox items, newest first (InboxRequest → []core.InboxItem)
 	OpInboxAnswer   = "inbox.answer" // types an answer into the item's session (InboxAnswer)
+	// Scheduled jobs. The snapshot lists them; these change them.
+	OpJobSave       = "job.save"       // adds or edits a job (core.Job: ID "" adds) → *core.Job
+	OpJobCheck      = "job.check"      // checks a job without saving it (core.Job) → JobCheck
+	OpJobDelete     = "job.delete"     // JobRef.ID
+	OpJobPause      = "job.pause"      // JobRef.ID, Paused
+	OpJobRun        = "job.run"        // runs it now (JobRef.ID) → core.JobRun
+	OpJobRuns       = "job.runs"       // its runs, newest first (JobRef.ID) → []core.JobRun
+	OpAgentSettings = "agent.settings" // an agent's settings for jobs (JobRef.Harness) → []harness.Setting
 )
+
+// JobRef names a job, and what to do with it.
+type JobRef struct {
+	ID      string `json:"id,omitempty"`
+	Paused  bool   `json:"paused,omitempty"`
+	Harness string `json:"harness,omitempty"`
+}
+
+// JobCheck is what the daemon makes of a job before it's saved: its schedule
+// read back both ways, the next runs, and what's wrong by field ("name",
+// "schedule", "prompt", "where", "cwd", "session", "settings", "group",
+// "harness").
+type JobCheck struct {
+	Cron   string            `json:"cron,omitempty"`
+	Words  string            `json:"words,omitempty"`
+	Next   []time.Time       `json:"next,omitempty"`
+	Errors map[string]string `json:"errors,omitempty"`
+}
 
 // Snapshot is everything a client needs to render the list; clients
 // compute the layout themselves with core.Layout.
@@ -49,6 +75,8 @@ type Snapshot struct {
 	Notices []Notice `json:"notices,omitempty"`
 	// Inbox is the queue: the items still to deal with, in arrival order.
 	Inbox []core.InboxItem `json:"inbox,omitempty"`
+	// Jobs are the scheduled jobs, by name, with their next and last runs.
+	Jobs []*core.Job `json:"jobs,omitempty"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view

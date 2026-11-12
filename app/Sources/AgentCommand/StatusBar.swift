@@ -7,6 +7,7 @@ struct StatusBarView: View {
     let notifier: AppNotifier
     let store: SessionStore
     let openInbox: () -> Void
+    var openScheduled: () -> Void = {}
 
     @AppStorage(InboxLayout.key) private var inboxLayout = InboxLayout.columns
     @State private var showsWarnings = false
@@ -73,6 +74,16 @@ struct StatusBarView: View {
                     layoutButton(.columns, icon: "rectangle.split.3x1", help: "Message box in a column")
                     layoutButton(.stacked, icon: "rectangle.split.1x2", help: "Message box at the bottom")
                 }
+                Button(action: openScheduled) {
+                    let failing = store.jobs.filter { $0.state == .failing }.count
+                    Text(failing > 0 ? "Scheduled \(failing) failing" : "Scheduled")
+                        .fontWeight(failing > 0 ? .bold : .regular)
+                        .foregroundStyle(failing > 0 ? theme.red : theme.dim)
+                }
+                .buttonStyle(.plain)
+                .font(AppFont.ui(11))
+                .lineLimit(1)
+                .help("Scheduled jobs (⇧⌘J)")
                 Button(action: openInbox) {
                     let unread = store.unreadCount()
                     Text(unread > 0 ? "Inbox \(unread)" : "Inbox")

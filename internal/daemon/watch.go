@@ -110,7 +110,7 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 			return nil, fmt.Errorf("stop %s: %w", s.BgID, err)
 		}
 	}
-	return d.resumeHosted(ctx, s)
+	return d.resumeHosted(ctx, s, "", nil)
 }
 
 // eventTime is the time for an event acmd itself applies to s: now, but

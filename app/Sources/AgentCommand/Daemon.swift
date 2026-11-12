@@ -5,6 +5,35 @@ struct Snapshot: Decodable {
     let sessions: [Session]?
     let notices: [Notice]?
     let inbox: [InboxItem]?
+    let jobs: [Job]?
+    let groups: [SessionGroup]?
+}
+
+/// A group of sessions (internal/core.Group), for choosing a job's group.
+struct SessionGroup: Decodable, Identifiable, Equatable {
+    let id: String
+    let name: String
+    let isDefault: Bool
+    let archivedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id = "ID", name = "Name", isDefault = "IsDefault", archivedAt = "ArchivedAt"
+    }
+
+    init(id: String, name: String, isDefault: Bool = false, archivedAt: String = "") {
+        (self.id, self.name, self.isDefault, self.archivedAt) = (id, name, isDefault, archivedAt)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        isDefault = try c.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+        archivedAt = try c.decodeIfPresent(String.self, forKey: .archivedAt) ?? ""
+    }
+
+    /// Go's zero time is "0001-01-01T00:00:00Z".
+    var isArchived: Bool { !archivedAt.isEmpty && !archivedAt.hasPrefix("0001-") }
 }
 
 /// Something a session sent you (internal/core.InboxItem).

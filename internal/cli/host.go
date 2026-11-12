@@ -51,7 +51,11 @@ type hostOptions struct {
 // hostArgv builds the harness argv for a host.
 func hostArgv(h harness.Harness, o hostOptions) []string {
 	if o.Resume != "" {
-		return h.Resume(o.Resume, o.Args)
+		argv := h.Resume(o.Resume, o.Args)
+		if o.Prompt != "" && h.StatusSource() == harness.StatusHooks { // an agent, not a shell
+			argv = append(argv, "--", o.Prompt)
+		}
+		return argv
 	}
 	return h.Command(harness.Spec{Dir: o.Dir, Name: o.Name, Prompt: o.Prompt, SessionID: o.ClaudeSession, Args: o.Args})
 }

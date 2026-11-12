@@ -19,6 +19,7 @@ enum PaletteAction: Equatable {
     case screen(binding: String)
     case inbox
     case inboxFor(Session)
+    case scheduled
     case toggleSpeech
     case toggleReading
     case toggleRemoteControl
@@ -126,6 +127,7 @@ enum Palette {
             }
         }
         list.append(PaletteEntry(section: "App", title: "Inbox", shortcut: "⇧⌘I", action: .inbox))
+        list.append(PaletteEntry(section: "App", title: "Scheduled jobs", shortcut: "⇧⌘J", action: .scheduled))
         list.append(PaletteEntry(section: "App", title: state.speechOn ? "Turn speech off" : "Turn speech on", action: .toggleSpeech))
         if state.speechOn, current?.isAgent == true || state.speaking {
             let title = state.speaking ? "Stop reading" : "Read the latest message aloud"

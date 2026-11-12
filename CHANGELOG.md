@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.0](https://github.com/brettmostert/agent-command/compare/v0.47.1...v0.48.0) (2026-11-12)
+
+
+### Features
+
+* **app:** choose a job's schedule instead of typing it, and drop the group field ([#14](https://github.com/brettmostert/agent-command/issues/14)) ([68f3772](https://github.com/brettmostert/agent-command/commit/68f3772768eda5e9cbf2e7a9841741bc4582c0bd))
+
 ## [0.47.1](https://github.com/brettmostert/agent-command/compare/v0.47.0...v0.47.1) (2026-11-12)
 
 

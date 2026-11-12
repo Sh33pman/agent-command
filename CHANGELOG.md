@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.47.0](https://github.com/brettmostert/agent-command/compare/v0.46.1...v0.47.0) (2026-11-12)
+
+
+### Features
+
+* scheduled jobs, set up and managed in the app (PAN-60 phase 1) ([#10](https://github.com/brettmostert/agent-command/issues/10)) ([9e4c0d8](https://github.com/brettmostert/agent-command/commit/9e4c0d8a8eec9148740994fcbdfae7f4f50cccc5))
+
+
+### Bug Fixes
+
+* **release:** sign by the certificate's fingerprint, and test signing on every PR ([#9](https://github.com/brettmostert/agent-command/issues/9)) ([5d902fd](https://github.com/brettmostert/agent-command/commit/5d902fd18bca2848ee58b906f35c7cf2e0a223f8))
+
 ## [0.46.1](https://github.com/brettmostert/agent-command/compare/v0.46.0...v0.46.1) (2026-11-12)
 
 

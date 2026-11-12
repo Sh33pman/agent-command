@@ -57,10 +57,27 @@ func (s *Server) Serve(ctx context.Context) error {
 	defer ptmx.Close()
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
+	var hangupOnce sync.Once
 	hangup := func() {
-		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGHUP) // its process group (pty.Start sets setsid)
-		}
+		hangupOnce.Do(func() {
+			if cmd.Process == nil {
+				return
+			}
+			pgid := -cmd.Process.Pid
+			_ = syscall.Kill(pgid, syscall.SIGHUP) // its process group (pty.Start sets setsid)
+			go func() {
+				select {
+				case <-exited:
+				case <-time.After(500 * time.Millisecond):
+					_ = syscall.Kill(pgid, syscall.SIGTERM)
+					select {
+					case <-exited:
+					case <-time.After(500 * time.Millisecond):
+						_ = syscall.Kill(pgid, syscall.SIGKILL)
+					}
+				}
+			}()
+		})
 	}
 	if s.Ready != nil {
 		s.Ready()

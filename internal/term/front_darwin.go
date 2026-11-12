@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
-	"path/filepath"
 
 	"golang.org/x/sys/unix"
 )
@@ -59,19 +58,4 @@ func procArgs(pid int) []string {
 		rest = rest[min(j+1, len(rest)):]
 	}
 	return argv
-}
-
-// interpreters run an agent written as a script; the script names it.
-var interpreters = map[string]bool{"node": true, "bun": true, "deno": true, "python": true, "python3": true}
-
-func programName(argv []string) string {
-	name := filepath.Base(argv[0])
-	if interpreters[name] {
-		for _, a := range argv[1:] {
-			if a != "" && a[0] != '-' {
-				return filepath.Base(a)
-			}
-		}
-	}
-	return name
 }

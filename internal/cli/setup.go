@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -251,6 +252,9 @@ func runBrewUninstall(cmd *cobra.Command) error {
 // TMPDIR. The daemon's and hosts' sockets live there, so without this it finds
 // neither of them.
 func useUserTempDir() {
+	if runtime.GOOS != "darwin" {
+		return
+	}
 	out, err := exec.Command("/usr/bin/getconf", "DARWIN_USER_TEMP_DIR").Output()
 	if dir := strings.TrimSpace(string(out)); err == nil && dir != "" {
 		_ = os.Setenv("TMPDIR", dir)

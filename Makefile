@@ -4,6 +4,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
+UNAME_S := $(shell uname -s)
 
 MODULE  := github.com/brettmostert/agent-command
 # Tools live in $(TOOLS_DIR)/<versions>: a new pinned version gets a fresh
@@ -158,19 +159,23 @@ app: ## Build "dist/Agent Command.app" (needs scripts/build-ghostty.sh first)
 	scripts/build-app.sh
 
 .PHONY: build
-build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech) for this machine
+build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) for this machine
 	mkdir -p $(DIST)
 	CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
 	ln -sf agent-command $(DIST)/acmd
+ifeq ($(UNAME_S),Darwin)
 	$(MAKE) speech-helper SPEECH_OUT=$(DIST)/acmd-speech
+endif
 	$(DIST)/acmd version
 
 .PHONY: install
 install: build ## Dev install into $(INSTALL_DIR) (agent-command + acmd)
 	mkdir -p $(INSTALL_DIR)
 	install -m 0755 $(DIST)/agent-command $(INSTALL_DIR)/agent-command
+ifeq ($(UNAME_S),Darwin)
 	install -m 0755 $(DIST)/acmd-speech $(INSTALL_DIR)/acmd-speech
 	install -m 0644 $(DIST)/mlx.metallib $(INSTALL_DIR)/mlx.metallib
+endif
 	ln -sf agent-command $(INSTALL_DIR)/acmd
 	@echo "installed to $(INSTALL_DIR) (make sure it's on PATH)"
 

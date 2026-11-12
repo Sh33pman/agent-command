@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // maxSunPath is macOS's limit for unix socket paths (sun_path, incl. NUL).
@@ -28,23 +29,35 @@ func Default() (Paths, error) {
 	}
 	state := os.Getenv("ACMD_STATE_DIR")
 	if state == "" {
-		state = filepath.Join(home, ".local", "state", "agent-command")
+		if xdg := os.Getenv("XDG_STATE_HOME"); runtime.GOOS == "linux" && xdg != "" {
+			state = filepath.Join(xdg, "agent-command")
+		} else {
+			state = filepath.Join(home, ".local", "state", "agent-command")
+		}
 	}
 	config := os.Getenv("ACMD_CONFIG_DIR")
 	if config == "" {
-		config = filepath.Join(home, ".config", "agent-command")
-	}
-	runtime := os.Getenv("ACMD_RUNTIME_DIR")
-	if runtime == "" {
-		runtime = filepath.Join(os.TempDir(), fmt.Sprintf("agent-command-%d", os.Getuid()))
-		// A TMPDIR too long for a socket falls back to a folder of the user's
-		// own. Not a shared one like /tmp, where another user could make the
-		// folder first and have acmd talk to their socket.
-		if len(filepath.Join(runtime, "daemon.sock")) >= maxSunPath {
-			runtime = filepath.Join(state, "run")
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); runtime.GOOS == "linux" && xdg != "" {
+			config = filepath.Join(xdg, "agent-command")
+		} else {
+			config = filepath.Join(home, ".config", "agent-command")
 		}
 	}
-	return Paths{StateDir: state, RuntimeDir: runtime, ConfigDir: config}, nil
+	runtimeDir := os.Getenv("ACMD_RUNTIME_DIR")
+	if runtimeDir == "" {
+		if xdg := os.Getenv("XDG_RUNTIME_DIR"); runtime.GOOS == "linux" && xdg != "" {
+			runtimeDir = filepath.Join(xdg, "agent-command")
+		} else {
+			runtimeDir = filepath.Join(os.TempDir(), fmt.Sprintf("agent-command-%d", os.Getuid()))
+		}
+		// A TMPDIR/XDG_RUNTIME_DIR too long for a socket falls back to a folder of the user's
+		// own. Not a shared one like /tmp, where another user could make the
+		// folder first and have acmd talk to their socket.
+		if len(filepath.Join(runtimeDir, "daemon.sock")) >= maxSunPath {
+			runtimeDir = filepath.Join(state, "run")
+		}
+	}
+	return Paths{StateDir: state, RuntimeDir: runtimeDir, ConfigDir: config}, nil
 }
 
 // Ensure creates both directories with mode 0700.

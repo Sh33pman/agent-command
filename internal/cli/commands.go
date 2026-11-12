@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -205,6 +206,10 @@ const bundleID = "com.brettmostert.agent-command"
 
 // openApp brings up the app; swappable in tests.
 var openApp = func(newInstance bool) error {
+	if runtime.GOOS != "darwin" {
+		fmt.Fprintln(os.Stdout, "Agent Command GUI is not available on this platform yet. Run 'acmd --help' for CLI subcommands.")
+		return nil
+	}
 	return exec.Command("/usr/bin/open", openArgs(executablePath(), newInstance)...).Run() // #nosec G204 -- fixed program; argv only
 }
 
@@ -237,11 +242,17 @@ func openArgs(exe string, newInstance bool) []string {
 	return args
 }
 
-// fallbackNotify shows a notification: terminal-notifier if it's
-// installed, else osascript.
+// fallbackNotify shows a notification: notify-send on Linux when installed,
+// terminal-notifier or osascript on macOS.
 func fallbackNotify(no ipc.Notice) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if runtime.GOOS != "darwin" {
+		if ns, err := setup.LookPathIn("notify-send", loginPath()); err == nil {
+			_ = exec.CommandContext(ctx, ns, no.Title, no.Body).Run() // #nosec G204 -- notify-send on the login PATH; argv only
+		}
+		return
+	}
 	if tn, err := setup.LookPathIn("terminal-notifier", loginPath()); err == nil {
 		args := []string{"-title", no.Title, "-message", no.Body, "-group", no.SessionID}
 		if no.Sound != "" {

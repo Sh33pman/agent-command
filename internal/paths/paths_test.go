@@ -11,6 +11,9 @@ func TestDefault(t *testing.T) {
 	t.Setenv("ACMD_STATE_DIR", "")
 	t.Setenv("ACMD_RUNTIME_DIR", "")
 	t.Setenv("ACMD_CONFIG_DIR", "")
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("XDG_RUNTIME_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	p, err := Default()
 	if err != nil {
 		t.Fatal(err)
@@ -40,6 +43,7 @@ func TestDefaultOverridesAndLongTmpdir(t *testing.T) {
 		t.Errorf("overrides ignored: %+v", p)
 	}
 	t.Setenv("ACMD_RUNTIME_DIR", "")
+	t.Setenv("XDG_RUNTIME_DIR", "")
 	t.Setenv("TMPDIR", "/"+strings.Repeat("d", 120))
 	if p, _ := Default(); p.RuntimeDir != "/x/state/run" {
 		t.Errorf("long TMPDIR should fall back to the state folder, not /tmp: %s", p.RuntimeDir)

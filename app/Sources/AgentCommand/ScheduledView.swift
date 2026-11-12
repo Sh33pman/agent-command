@@ -305,7 +305,11 @@ private struct JobForm: View {
     private var theme: AppTheme { .shared }
 
     var body: some View {
-        if let draft = Binding($model.draft) {
+        // Not Binding($model.draft): saving sets the draft to nil, and SwiftUI can
+        // still read the form's fields once more through that binding, which
+        // force-unwraps the nil and ends the app. This one reads a blank draft then.
+        if model.draft != nil {
+            let draft = Binding(get: { model.draft ?? JobDraft() }, set: { if model.draft != nil { model.draft = $0 } })
             VStack(spacing: 0) {
                 HStack {
                     Text(draft.wrappedValue.isNew ? "New job" : "Edit \(model.original?.name ?? "job")").fontWeight(.bold).font(AppFont.ui(15))

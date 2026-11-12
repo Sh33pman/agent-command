@@ -110,7 +110,7 @@ private func job(_ id: String, _ name: String, cwd: String = "/w") -> Job {
     model.draft?.name = "x"
     #expect(model.canSave, "before a check comes back, the daemon has the last word")
     // No daemon here: the check says so instead of hanging.
-    try await Task.sleep(for: .milliseconds(300))
+    try await until("the check to come back") { model.error != nil }
     #expect(model.error?.contains("background service") == true)
     #expect(model.problem("name") == nil)
     try board.press(1, "s", flags: .command)

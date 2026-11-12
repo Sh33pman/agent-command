@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.1](https://github.com/brettmostert/agent-command/compare/v0.47.0...v0.47.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **app:** don't end the app when a job is saved or the form closes ([#12](https://github.com/brettmostert/agent-command/issues/12)) ([e2b5eff](https://github.com/brettmostert/agent-command/commit/e2b5eff36e1286db87d9958a47c4d7fe745ccd2e))
+
 ## [0.47.0](https://github.com/brettmostert/agent-command/compare/v0.46.1...v0.47.0) (2026-11-12)
 
 

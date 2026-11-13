@@ -2,13 +2,16 @@
 # Ghostty and speech builds, Zig and Xcode's Metal toolchain. The Ghostty
 # libraries are cached, keyed like scripts/build-ghostty.sh's own cache.
 name: macos-tools
-description: Go, Zig, the Metal toolchain and the cached Ghostty build
+description: Go, Zig, the Metal toolchain and the cached Ghostty and speech builds
 inputs:
   ghostty:
     description: Build (or restore) libghostty
     default: "false"
   metal:
     description: Install Xcode's Metal toolchain
+    default: "false"
+  speech:
+    description: Restore (or save) the speech helper build
     default: "false"
 runs:
   using: composite
@@ -17,7 +20,7 @@ runs:
       with:
         go-version-file: go.mod
     - name: install the Metal toolchain
-      if: inputs.metal == 'true' || inputs.ghostty == 'true'
+      if: inputs.metal == 'true' || inputs.ghostty == 'true' || inputs.speech == 'true'
       shell: bash
       run: xcrun -f metal >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
     # Ghostty v1.4.0 builds with this Zig (scripts/build-ghostty.sh).
@@ -39,3 +42,19 @@ runs:
       if: inputs.ghostty == 'true'
       shell: bash
       run: scripts/build-ghostty.sh
+    # The speech helper takes about 10 minutes to build (MLX and its Metal
+    # shaders) and rarely changes, so its build is cached, keyed on its sources,
+    # the Makefile that builds it, and Xcode's version. make speech-helper uses
+    # it, or fills it.
+    - name: name the speech helper cache
+      if: inputs.speech == 'true'
+      id: speech
+      shell: bash
+      run: |
+        echo "key=acmd-speech-$(xcodebuild -version | tr -s '\n ' '-')${{ hashFiles('helpers/acmd-speech/Package.swift', 'helpers/acmd-speech/Package.resolved', 'helpers/acmd-speech/Sources/**', 'Makefile') }}" >> "$GITHUB_OUTPUT"
+        echo "SPEECH_CACHE=$HOME/.cache/agent-command/speech" >> "$GITHUB_ENV"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.speech == 'true'
+      with:
+        path: ~/.cache/agent-command/speech
+        key: ${{ steps.speech.outputs.key }}

@@ -18,7 +18,7 @@
 | `ghostty-watch.yml` | Mondays | Opens an issue for a newer Ghostty release, or an advisory not in `.github/ghostty-advisories-reviewed.txt`. Dependabot can't watch Ghostty, as `scripts/build-ghostty.sh` pins it |
 | `release.yml` | push to `main` | release-please; on a release: gate (`make ci fuzz`), then build and sign the app, publish it to the public tap and update the cask. |
 
-Workflows run on GitHub-hosted runners: `macos-26` for anything that builds, `ubuntu-latest` for the rest. The repo is public, so they're free, and a PR from a fork never runs on anyone's own machine. `.github/actions/macos-tools` sets up Go, Zig and Xcode's Metal toolchain, and caches the Ghostty build. `main` needs a PR, and `lint`, `swift`, `vuln`, `macos` and `pr-title` must pass. Dependabot's titles start with `chore` or `ci`, so merging one doesn't make a release: it ships with the next `fix` or `feat`.
+Workflows run on GitHub-hosted runners: `macos-26` for anything that builds, `ubuntu-latest` for the rest. The repo is public, so they're free, and a PR from a fork never runs on anyone's own machine. `.github/actions/macos-tools` sets up Go, Zig and Xcode's Metal toolchain, and caches the Ghostty build and the speech helper (`SPEECH_CACHE`, keyed on its sources, the Makefile and Xcode's version, which saves about 10 minutes of building MLX). CI skips release PRs and release commits, since the release gate runs every check on that commit. `main` needs a PR, and `lint`, `swift`, `vuln`, `macos` and `pr-title` must pass. Dependabot's titles start with `chore` or `ci`, so merging one doesn't make a release: it ships with the next `fix` or `feat`.
 
 ## Releases
 

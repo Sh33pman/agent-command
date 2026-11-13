@@ -1,8 +1,9 @@
 # PR checks, also run on main. Every PR runs every check, so the required checks always report.
 # They run on GitHub-hosted runners: the repo is public, so a PR from a fork
-# runs nowhere but there. Release PRs only change the version and changelog,
-# and the release gate runs every check on the same commit, so the jobs skip
-# them.
+# runs nowhere but there. Release PRs, and the release commits they merge as,
+# only change the version and changelog, and the release gate runs every check
+# on that commit, so the jobs skip them: that also leaves the Mac runners free
+# for the release.
 name: ci
 
 on:
@@ -24,7 +25,7 @@ concurrency:
 jobs:
   lint:
     runs-on: macos-26
-    if: "!startsWith(github.head_ref, 'release-please--')"
+    if: "!startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release')"
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,19 +34,20 @@ jobs:
 
   swift:
     runs-on: macos-26
-    if: "!startsWith(github.head_ref, 'release-please--')"
+    if: "!startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release')"
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/macos-tools
         with:
           metal: "true"
+          speech: "true"
       - name: speech engine unit tests + release build
         run: make speech-test speech-helper
 
   vuln:
     runs-on: macos-26
-    if: "!startsWith(github.head_ref, 'release-please--')"
+    if: "!startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release')"
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,7 +59,7 @@ jobs:
   # The macOS-only steps (snapshot, brew formula check).
   macos:
     runs-on: macos-26
-    if: "!startsWith(github.head_ref, 'release-please--')"
+    if: "!startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release')"
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,6 +68,7 @@ jobs:
       - uses: ./.github/actions/macos-tools
         with:
           ghostty: "true"
+          speech: "true"
       - name: test (race + coverage gate)
         run: make test
       - name: fuzz (short)

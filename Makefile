@@ -143,13 +143,31 @@ ci: lint secrets test speech-test vuln build ## Everything CI checks on a PR (ex
 ##@ Build & release
 
 .PHONY: speech-helper
+# With SPEECH_CACHE set (CI restores it, keyed on the helper's sources and
+# Xcode's version), a helper built there before is used as is, and a new build
+# is kept there for the next run.
 speech-helper: ## Build the Swift speech engine into $(SPEECH_OUT)
-	cd $(SPEECH_PKG) && xcodebuild -quiet -scheme acmd-speech -destination 'platform=macOS,arch=arm64' \
-		-derivedDataPath $(SPEECH_SCRATCH)/xcode -configuration Release \
-		-skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO build
+	@if [ -n "$(SPEECH_CACHE)" ] && [ -x "$(SPEECH_CACHE)/acmd-speech" ] && [ -f "$(SPEECH_CACHE)/mlx.metallib" ]; then \
+		echo "acmd-speech: using the build in $(SPEECH_CACHE)"; \
+	else \
+		set -e; \
+		cd $(SPEECH_PKG) && xcodebuild -quiet -scheme acmd-speech -destination 'platform=macOS,arch=arm64' \
+			-derivedDataPath $(SPEECH_SCRATCH)/xcode -configuration Release \
+			-skipPackagePluginValidation -skipMacroValidation CODE_SIGNING_ALLOWED=NO build; \
+		if [ -n "$(SPEECH_CACHE)" ]; then \
+			mkdir -p $(SPEECH_CACHE); \
+			install -m 0755 $(SPEECH_PRODUCTS)/acmd-speech $(SPEECH_CACHE)/acmd-speech; \
+			install -m 0644 $(SPEECH_PRODUCTS)/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib $(SPEECH_CACHE)/mlx.metallib; \
+		fi; \
+	fi
 	mkdir -p $(dir $(SPEECH_OUT))
-	install -m 0755 $(SPEECH_PRODUCTS)/acmd-speech $(SPEECH_OUT)
-	install -m 0644 $(SPEECH_PRODUCTS)/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib $(dir $(SPEECH_OUT))mlx.metallib
+	@if [ -n "$(SPEECH_CACHE)" ]; then \
+		install -m 0755 $(SPEECH_CACHE)/acmd-speech $(SPEECH_OUT) && \
+		install -m 0644 $(SPEECH_CACHE)/mlx.metallib $(dir $(SPEECH_OUT))mlx.metallib; \
+	else \
+		install -m 0755 $(SPEECH_PRODUCTS)/acmd-speech $(SPEECH_OUT) && \
+		install -m 0644 $(SPEECH_PRODUCTS)/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib $(dir $(SPEECH_OUT))mlx.metallib; \
+	fi
 	@if otool -L $(SPEECH_OUT) | grep -qi espeak; then echo "acmd-speech links espeak (GPL)"; exit 1; fi
 	$(SPEECH_OUT) --version
 

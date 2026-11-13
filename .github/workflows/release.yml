@@ -67,6 +67,7 @@ jobs:
       - uses: ./.github/actions/macos-tools
         with:
           ghostty: "true"
+          speech: "true"
 
       # ---- gate: re-run every check on the exact release commit ----
       - name: gate - lint, test, vuln, build

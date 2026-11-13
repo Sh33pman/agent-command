@@ -139,7 +139,11 @@ test-app: ## Run the app's tests and coverage gate (needs scripts/build-ghostty.
 	swift test --package-path app --enable-code-coverage
 	go run ./scripts/app-coverage "$$(swift test --package-path app --show-codecov-path)"
 
-ci: lint secrets test speech-test vuln build ## Everything CI checks on a PR (except snapshot/formula)
+ifeq ($(UNAME_S),Darwin)
+CI_DARWIN_CHECKS := speech-test
+endif
+
+ci: lint secrets test $(CI_DARWIN_CHECKS) vuln build ## Everything CI checks on a PR (except snapshot/formula)
 
 ##@ Build & release
 

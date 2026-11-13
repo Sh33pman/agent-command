@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,10 @@ func opener(e config.Editor, onPath map[string]string, exists ...string) (*Opene
 
 func TestArgv(t *testing.T) {
 	dir := "/w/my project"
+	appOnlyWant, appOnlyErr := "", `couldn't open editor "zed": not found`
+	if runtime.GOOS == "darwin" {
+		appOnlyWant, appOnlyErr = "/usr/bin/open -b dev.zed.Zed "+dir, ""
+	}
 	cases := []struct {
 		name   string
 		e      config.Editor
@@ -49,7 +54,7 @@ func TestArgv(t *testing.T) {
 	}{
 		{"resolved", config.Editor{Preset: "vscode", Resolved: "/opt/code"}, nil, []string{"/opt/code"}, "/opt/code " + dir, ""},
 		{"moved launcher", config.Editor{Preset: "vscode", Resolved: "/gone/code"}, map[string]string{"code": "/new/code"}, nil, "/new/code " + dir, ""},
-		{"app only", config.Editor{Preset: "zed"}, nil, nil, "/usr/bin/open -b dev.zed.Zed " + dir, ""},
+		{"app only", config.Editor{Preset: "zed"}, nil, nil, appOnlyWant, appOnlyErr},
 		{"custom", config.Editor{Preset: "custom", Command: []string{"nvim", "-c", "cd {dir}", "{dir}"}}, map[string]string{"nvim": "/bin/nvim"}, nil,
 			"/bin/nvim -c cd " + dir + " " + dir, ""},
 		{"custom absolute", config.Editor{Preset: "custom", Command: []string{"/x/ed", "{dir}"}}, nil, []string{"/x/ed"}, "/x/ed " + dir, ""},
@@ -80,14 +85,16 @@ func TestArgv(t *testing.T) {
 
 func TestOpen(t *testing.T) {
 	ctx := context.Background()
-	o, launched := opener(config.Editor{Preset: "idea"}, nil)
-	if err := o.Open(ctx, "/w"); err != nil {
-		t.Fatal(err)
+	if runtime.GOOS == "darwin" {
+		o, launched := opener(config.Editor{Preset: "idea"}, nil)
+		if err := o.Open(ctx, "/w"); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(*launched, ";"); got != "/usr/bin/open -b com.jetbrains.intellij /w;/usr/bin/open -b com.jetbrains.intellij.ce /w" {
+			t.Errorf("idea fallback to Community: %s", got)
+		}
 	}
-	if got := strings.Join(*launched, ";"); got != "/usr/bin/open -b com.jetbrains.intellij /w;/usr/bin/open -b com.jetbrains.intellij.ce /w" {
-		t.Errorf("idea fallback to Community: %s", got)
-	}
-	o, _ = opener(config.Editor{}, nil)
+	o, _ := opener(config.Editor{}, nil)
 	if err := o.Open(ctx, "/w"); !errors.Is(err, ErrNotConfigured) {
 		t.Errorf("unconfigured: %v", err)
 	}

@@ -82,8 +82,8 @@ func (o *Opener) Argv(dir string) ([]string, error) {
 	if p, err := o.Look(preset.Launcher); err == nil {
 		return []string{p, dir}, nil
 	}
-	if len(preset.Bundles) > 0 {
-		return []string{"/usr/bin/open", "-b", preset.Bundles[0], dir}, nil
+	if argv, ok := openBundle(preset, dir); ok {
+		return argv, nil
 	}
 	return nil, fmt.Errorf("couldn't open editor %q: not found. Run: acmd editor set", preset.Launcher)
 }

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	xterm "github.com/charmbracelet/x/term"
+
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/hook"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -143,7 +145,8 @@ func confirm(in io.Reader, out io.Writer, yes bool, question string) error {
 	return errors.New("canceled")
 }
 
+// isTerminal says whether f is a terminal. A character device isn't enough:
+// /dev/null is one, and it's the input of anything the app or launchd runs.
 func isTerminal(f *os.File) bool {
-	st, err := f.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
+	return xterm.IsTerminal(f.Fd())
 }

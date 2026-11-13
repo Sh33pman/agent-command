@@ -25,10 +25,10 @@ const wakeNote = "A MacBook with its lid closed on battery may not wake, or may 
 // never touch the real power schedule.
 var localWaker = func() wake.Waker { return wake.NewMac() }
 
-// asRoot runs a shell script as root: with sudo in a terminal, else through
-// macOS's admin password dialog. Swappable in tests.
+// asRoot runs a shell script as root: with sudo in a terminal it can ask on,
+// else through macOS's admin password dialog. Swappable in tests.
 var asRoot = func(ctx context.Context, in io.Reader, out io.Writer, script, prompt string) error {
-	if f, ok := in.(*os.File); ok && isTerminal(f) {
+	if f, ok := in.(*os.File); ok && isTerminal(f) && hasTTY() {
 		fmt.Fprintln(out, prompt)
 		cmd := exec.CommandContext(ctx, "/usr/bin/sudo", "/bin/sh", "-c", script) //nolint:gosec // G204: a script internal/wake writes, run where the person types their password
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = f, out, os.Stderr
@@ -262,4 +262,15 @@ func offerWake(ctx context.Context, in io.Reader, out io.Writer) error {
 		fmt.Fprintf(out, "Couldn't turn on waking the Mac: %v\n", err)
 	}
 	return nil
+}
+
+// hasTTY says whether this process has a terminal of its own, which sudo
+// asks for the password on.
+func hasTTY() bool {
+	f, err := os.Open("/dev/tty")
+	if err != nil {
+		return false
+	}
+	_ = f.Close()
+	return true
 }

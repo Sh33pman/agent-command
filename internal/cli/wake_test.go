@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -224,5 +225,21 @@ func TestInitOffersToWakeTheMac(t *testing.T) {
 	out.Reset()
 	if err := offerWake(ctx, strings.NewReader("yes\n"), &out); err != nil || !strings.Contains(out.String(), "Couldn't turn on waking the Mac: adding the rule: canceled") {
 		t.Errorf("canceled: %v %q", err, out.String())
+	}
+}
+
+// The app and launchd run acmd with /dev/null as its input: a character
+// device, but no terminal for sudo to ask on, so the password dialog it is.
+func TestDevNullIsNotATerminal(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if isTerminal(f) {
+		t.Error("/dev/null counted as a terminal")
+	}
+	if interactive(f) {
+		t.Error("/dev/null counted as interactive")
 	}
 }

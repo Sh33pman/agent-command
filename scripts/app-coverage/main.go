@@ -33,7 +33,7 @@ var minimums = map[string]float64{
 	"RemoteControl.swift": 60,
 	"Report.swift":        95,
 	// The rest opens panels and runs timers.
-	"ScheduledModel.swift":   70,
+	"ScheduledModel.swift":   80,
 	"ScheduleBuilder.swift":  95,
 	"SessionStore.swift":     70,
 	"SpeechController.swift": 90,

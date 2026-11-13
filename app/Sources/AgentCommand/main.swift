@@ -117,6 +117,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }
         notifier.isLooking = { [weak store] id in store?.isInMainWindow == true && store?.visibleIDs.contains(id) == true }
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
+        notifier.moreWarnings = { [weak store, weak self] in
+            guard let store, let advice = WakeAdvice.check(store.wake, jobs: store.jobs) else { return [] }
+            return [AppWarning(
+                id: "wake", title: advice.title, detail: advice.detail,
+                fix: "Turn on waking the Mac: macOS asks for your password once.",
+                actionTitle: "Turn On…", action: { self?.turnWakeOn(advice.args) })]
+        }
         notifier.start()
         store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
         setUpPopup()
@@ -180,14 +187,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             or done. It backs the file up first, and keeps your other settings. It also saves your login shell's \
             environment for the sessions it starts.
             """
+        // Opt-in: it adds a sudoers rule, so macOS asks for the password too.
+        let wake = NSButton(checkboxWithTitle: "Also let scheduled jobs wake the Mac (asks for your password)", target: nil, action: nil)
+        wake.state = .off
+        alert.accessoryView = wake
         alert.addButton(withTitle: "Set Up")
         alert.addButton(withTitle: "Not Now")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        if runInit() { return }
+        if runInit() {
+            if wake.state == .on { turnWakeOn(["schedule", "wake", "on", "--all"]) }
+            return
+        }
         let failed = NSAlert()
         failed.messageText = "Setup didn't finish"
         failed.informativeText = "Run \(DaemonPaths.acmd) init in a terminal to see why."
         failed.runModal()
+    }
+
+    /// Runs `acmd schedule wake on ...`; macOS asks for the password.
+    private func turnWakeOn(_ args: [String]) {
+        Acmd.run(args) { ok, output in
+            guard !ok, !output.contains("canceled") else { return }
+            let failed = NSAlert()
+            failed.messageText = "Couldn't turn on waking the Mac"
+            failed.informativeText = output.isEmpty ? "Run acmd schedule wake on in a terminal to see why." : output
+            failed.runModal()
+        }
     }
 
     private func runInit() -> Bool {

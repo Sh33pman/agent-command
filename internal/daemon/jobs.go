@@ -41,10 +41,14 @@ const nextRuns = 5
 func (d *Daemon) scheduler(ctx context.Context) {
 	t := time.NewTicker(d.cfg.ScheduleEvery)
 	defer t.Stop()
+	defer d.releaseAwake(context.WithoutCancel(ctx), true)
+	d.syncWake(ctx, true)
 	for {
 		if n := d.runDueJobs(ctx); n > 0 {
 			d.changes.bump()
 		}
+		d.syncWake(ctx, false)
+		d.releaseAwake(ctx, false)
 		select {
 		case <-ctx.Done():
 			return
@@ -59,6 +63,7 @@ func (d *Daemon) scheduler(ctx context.Context) {
 func (d *Daemon) runDueJobs(ctx context.Context) int {
 	d.mu.Lock()
 	jobs, err := d.store.Jobs(ctx)
+	all, _ := d.store.AppState(ctx, keyWakeAll)
 	d.mu.Unlock()
 	if err != nil {
 		d.cfg.Log.Printf("jobs: %v", err)
@@ -82,6 +87,9 @@ func (d *Daemon) runDueJobs(ctx context.Context) int {
 			run = core.JobRun{JobID: j.ID, Due: due, Result: core.RunMissed, Detail: missedDetail(missed)}
 		default:
 			run = d.runJob(ctx, j, due)
+			if run.Result == core.RunStarted && wantsWake(j, all == "1") {
+				d.keepAwake(ctx, run.SessionID)
+			}
 			if late {
 				run.Detail = strings.TrimSpace(fmt.Sprintf("Ran late: it was due at %s. %s", due.In(d.cfg.Location).Format("Mon 2 Jan 15:04"), run.Detail))
 			}
@@ -611,6 +619,12 @@ func (d *Daemon) handleJob(ctx context.Context, req ipc.Request) (any, error) {
 			return nil, err
 		}
 		return d.checkJob(ctx, &j), nil
+	case ipc.OpWakeSet:
+		w, err := decode[ipc.WakeRef](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.setWake(ctx, w)
 	}
 	ref, err := decode[ipc.JobRef](req.Data)
 	if err != nil {
@@ -644,7 +658,7 @@ func (d *Daemon) handleJob(ctx context.Context, req ipc.Request) (any, error) {
 // isJobOp says whether op is one of the job ops.
 func isJobOp(op string) bool {
 	switch op {
-	case ipc.OpJobSave, ipc.OpJobCheck, ipc.OpJobDelete, ipc.OpJobPause, ipc.OpJobRun, ipc.OpJobRuns, ipc.OpAgentSettings:
+	case ipc.OpJobSave, ipc.OpJobCheck, ipc.OpJobDelete, ipc.OpJobPause, ipc.OpJobRun, ipc.OpJobRuns, ipc.OpAgentSettings, ipc.OpWakeSet:
 		return true
 	}
 	return false

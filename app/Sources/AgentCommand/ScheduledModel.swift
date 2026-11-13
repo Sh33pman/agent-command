@@ -320,6 +320,48 @@ final class ScheduledModel {
         }
     }
 
+    // MARK: Waking the Mac
+
+    /// Waking the Mac for jobs; nil when the daemon can't.
+    var wake: WakeState? { store.wake }
+    /// A wake command is running (it may be waiting on the password dialog).
+    private(set) var wakeBusy = false
+
+    /// Runs the app's acmd with args, then done(succeeded, output). Tests swap
+    /// it, so they never ask for a password or touch the Mac's wakes.
+    @ObservationIgnored var runAcmd: (_ args: [String], _ done: @escaping @MainActor (Bool, String) -> Void) -> Void = Acmd.run
+
+    /// Lets acmd wake the Mac: macOS asks for an admin password once.
+    func turnWakeOn() {
+        wakeCommand(["schedule", "wake", "on"], done: "Waking the Mac is on.")
+    }
+
+    /// Clears acmd's wakes and removes its rule (asks for the password again).
+    func turnWakeOff() {
+        wakeCommand(["schedule", "wake", "off"], done: "Waking the Mac is off.")
+    }
+
+    /// Wakes for every job, or only those set to.
+    func setWakeAll(_ all: Bool) {
+        wakeCommand(["schedule", "wake", "on", "--all=\(all)"],
+                    done: all ? "Every job wakes the Mac." : "Only jobs set to wake the Mac do.")
+    }
+
+    private func wakeCommand(_ args: [String], done message: String) {
+        guard !wakeBusy else { return }
+        wakeBusy = true
+        error = nil
+        runAcmd(args) { [weak self] ok, output in
+            guard let self else { return }
+            self.wakeBusy = false
+            if ok {
+                self.show(message)
+            } else if !output.contains("canceled") {
+                self.error = output.isEmpty ? "Couldn't change waking the Mac." : output
+            }
+        }
+    }
+
     // MARK: Keys
 
     /// The view's keys. While the form is open only Esc and ⌘↩ are its own; the

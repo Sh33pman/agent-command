@@ -26,6 +26,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/report"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/version"
+	"github.com/brettmostert/agent-command/internal/wake"
 )
 
 // Internal commands, run by acmd itself and by Claude Code hooks; hidden
@@ -49,7 +50,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 				fmt.Fprintf(cmd.ErrOrStderr(), "acmd daemon: can't write to %s: %v\n", p.DaemonLog(), err)
 			}
 			logger := log.New(report.NewRedactor().Writer(cmd.ErrOrStderr()), "acmd daemon: ", log.LstdFlags)
-			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify}
+			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify, Waker: wake.NewMac()}
 			cfg.LockWait = 3 * time.Second
 			if home, err := os.UserHomeDir(); err == nil {
 				cfg.ClaudeDir = claudecli.ConfigDir(os.Getenv, home)

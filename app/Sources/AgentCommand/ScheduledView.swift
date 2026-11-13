@@ -88,6 +88,10 @@ struct ScheduledView: View {
             }
             .opacity(model.isEditing ? 0.5 : 1)
             .disabled(model.isEditing)
+            if let wake = model.wake {
+                Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
+                WakePanel(model: model, wake: wake)
+            }
         }
     }
 
@@ -243,6 +247,7 @@ private struct JobDetail: View {
             fact("Next run", job.paused ? "Paused" : (job.next.map { JobTime.describe($0) } ?? "None"))
             fact("Where", job.placeLine(sessionName: model.sessionName))
             fact("Missed runs", job.runMissed ? "Run when the Mac wakes" : "Shown as missed")
+            if model.wake != nil { fact("Wakes the Mac", job.wakeLine(model.wake)) }
         }
     }
 
@@ -338,6 +343,7 @@ private struct JobForm: View {
                         placeField(draft)
                         settingsField(draft)
                         Toggle("Run a run the Mac slept through when it wakes (otherwise it's shown as missed)", isOn: draft.runMissed)
+                        if model.wake != nil { wakeField(draft) }
                     }
                     .padding(16)
                     .frame(maxWidth: 760, alignment: .leading)
@@ -362,6 +368,17 @@ private struct JobForm: View {
         if let error = model.error {
             Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(theme.red)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func wakeField(_ draft: Binding<JobDraft>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle("Wake the Mac shortly before each run", isOn: draft.wake)
+            if model.wake?.allowed != true {
+                hint("Waking the Mac is off: turn it on under Wake the Mac, below the job list.").font(AppFont.ui(11))
+            } else if model.wake?.all == true {
+                hint("Every job wakes the Mac already.").font(AppFont.ui(11))
+            }
         }
     }
 
@@ -642,5 +659,47 @@ private struct SchedulePicker: View {
                 .overlay { Rectangle().strokeBorder(Color(nsColor: theme.line), lineWidth: 1) }
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Below the job list: whether acmd may wake the Mac for runs, for which jobs,
+/// and when next.
+private struct WakePanel: View {
+    let model: ScheduledModel
+    let wake: WakeState
+
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Wake the Mac", systemImage: "alarm").fontWeight(.bold)
+                Spacer()
+                if model.wakeBusy { ProgressView().controlSize(.small) }
+                Button(wake.allowed ? "Turn Off…" : "Turn On…") {
+                    if wake.allowed { model.turnWakeOff() } else { model.turnWakeOn() }
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.wakeBusy || model.isEditing)
+                .help(wake.allowed
+                    ? "Clear acmd's wakes and remove its sudoers rule (asks for your password)"
+                    : "Let acmd wake the Mac before runs (asks for your password once)")
+            }
+            if wake.allowed {
+                Toggle("For every job", isOn: Binding(get: { wake.all }, set: { model.setWakeAll($0) }))
+                    .disabled(model.wakeBusy || model.isEditing)
+                Text(wake.nextLine).foregroundStyle(theme.dim)
+            } else {
+                Text("Wakes the Mac shortly before a run, so it runs on time. macOS asks for your password once.")
+                    .foregroundStyle(theme.dim)
+            }
+            Text("A MacBook with its lid closed on battery may not wake.").foregroundStyle(theme.dim)
+            if !wake.error.isEmpty {
+                Label(wake.error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(theme.red)
+            }
+        }
+        .font(AppFont.ui(12))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(12)
     }
 }

@@ -27,6 +27,8 @@ final class SessionStore {
     var inboxOpen = false
     /// Scheduled jobs, by name.
     var jobs: [Job] = []
+    /// Waking the Mac for jobs; nil when the daemon can't.
+    var wake: WakeState?
     /// The groups sessions can go in, Default last.
     var groups: [SessionGroup] = []
 
@@ -376,6 +378,7 @@ final class SessionStore {
             if archived != self.archived { self.archived = archived }
             let jobs = snapshot.jobs ?? []
             if jobs != self.jobs { self.jobs = jobs }
+            if snapshot.wake != self.wake { self.wake = snapshot.wake }
             let groups = (snapshot.groups ?? []).filter { !$0.isArchived }
             if groups != self.groups { self.groups = groups }
             let queue = snapshot.inbox ?? []

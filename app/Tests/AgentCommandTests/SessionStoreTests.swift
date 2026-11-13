@@ -413,6 +413,16 @@ extension UsesSharedSpeech {
             #expect(n.newNotices(in: [try notice(3)]).isEmpty, "only once")
         }
 
+        @Test func otherPartsOfTheAppAddWarnings() {
+            let n = AppNotifier()
+            let before = n.warnings.count
+            var fixed = false
+            n.moreWarnings = { [AppWarning(id: "wake", title: "t", detail: "d", fix: "f", actionTitle: "Turn On…", action: { fixed = true })] }
+            #expect(n.warnings.count == before + 1)
+            n.warnings.last?.action()
+            #expect(fixed && n.warnings.last?.id == "wake")
+        }
+
         @Test func noNoticesAtLaunchStillCountsFromTheStart() throws {
             let n = AppNotifier()
             #expect(n.newNotices(in: []).isEmpty)

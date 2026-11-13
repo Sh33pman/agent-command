@@ -76,7 +76,8 @@ func env(t *testing.T) *stopRecorder {
 	done := make(chan error, 1)
 	go func() {
 		done <- daemon.Run(ctx, daemon.Config{Paths: p, Version: version.Get().Version,
-			Log: log.New(io.Discard, "", 0), Stopper: rec, Agents: agents{}, TailEvery: time.Hour, ReconcileEvery: 50 * time.Millisecond})
+			Log: log.New(io.Discard, "", 0), Stopper: rec, Agents: agents{}, TailEvery: time.Hour, ReconcileEvery: 50 * time.Millisecond,
+			Waker: envWaker})
 	}()
 	t.Cleanup(func() {
 		cancel()

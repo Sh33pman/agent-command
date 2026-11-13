@@ -27,6 +27,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
+	"github.com/brettmostert/agent-command/internal/wake"
 )
 
 // Setup commands: init, uninstall, editor, and the automatic
@@ -175,6 +176,12 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	}
 	for _, a := range plan.After {
 		fmt.Fprintln(out, a)
+	}
+	// Homebrew's install has no terminal to ask in (it passes --hook-binary).
+	if o.hookBinary == "" {
+		if err := offerWake(ctx, in, out); err != nil {
+			return true, err
+		}
 	}
 	return true, nil
 }
@@ -371,6 +378,10 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	}
 	plan.Write(out, home)
 	fmt.Fprintln(out, "  stop      the acmd daemon, and end running sessions (Claude conversations can be resumed)")
+	wakeRule := ruleInstalled()
+	if wakeRule {
+		fmt.Fprintf(out, "  remove    %s, and acmd's Mac wakes (asks for your password)\n", wake.RulePath)
+	}
 	if !keepData {
 		fmt.Fprintf(out, "  delete    %s and %s (backups are kept)\n", setup.Tilde(p.StateDir, home), setup.Tilde(p.ConfigDir, home))
 	}
@@ -395,6 +406,11 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 		fmt.Fprintln(out, "Ended 1 running session.")
 	default:
 		fmt.Fprintf(out, "Ended %d running sessions.\n", ended)
+	}
+	if wakeRule {
+		if err := removeWakeRule(cmd.Context(), cmd.InOrStdin(), out); err != nil {
+			fmt.Fprintf(out, "Couldn't remove %s (%v). Remove it with: sudo rm %s\n", wake.RulePath, err, wake.RulePath)
+		}
 	}
 	// Last: the daemon and hosts are using these, and a lock removed under a
 	// running daemon would let a second one start.

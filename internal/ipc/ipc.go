@@ -45,6 +45,7 @@ const (
 	OpJobRun        = "job.run"        // runs it now (JobRef.ID) → core.JobRun
 	OpJobRuns       = "job.runs"       // its runs, newest first (JobRef.ID) → []core.JobRun
 	OpAgentSettings = "agent.settings" // an agent's settings for jobs (JobRef.Harness) → []harness.Setting
+	OpWakeSet       = "wake.set"       // wakes the Mac for every job or not (WakeRef), checking the sudoers rule again → WakeState
 )
 
 // JobRef names a job, and what to do with it.
@@ -52,6 +53,20 @@ type JobRef struct {
 	ID      string `json:"id,omitempty"`
 	Paused  bool   `json:"paused,omitempty"`
 	Harness string `json:"harness,omitempty"`
+}
+
+// WakeRef turns waking the Mac for every job on or off.
+type WakeRef struct {
+	All bool `json:"all"`
+}
+
+// WakeState is waking the Mac for jobs: whether acmd may (its sudoers rule is
+// in place), whether every job wakes it, and the wake it set.
+type WakeState struct {
+	Allowed bool      `json:"allowed"`
+	All     bool      `json:"all"`
+	Next    time.Time `json:"next,omitzero"`
+	Error   string    `json:"error,omitempty"`
 }
 
 // JobCheck is what the daemon makes of a job before it's saved: its schedule
@@ -79,6 +94,8 @@ type Snapshot struct {
 	Inbox []core.InboxItem `json:"inbox,omitempty"`
 	// Jobs are the scheduled jobs, by name, with their next and last runs.
 	Jobs []*core.Job `json:"jobs,omitempty"`
+	// Wake is waking the Mac for jobs (nil: this daemon can't).
+	Wake *WakeState `json:"wake,omitempty"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view

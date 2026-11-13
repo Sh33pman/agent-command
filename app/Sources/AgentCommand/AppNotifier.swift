@@ -13,6 +13,8 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored var popupShows: (String) -> Bool = { _ in false }
     /// Called with the session of a clicked notification.
     @ObservationIgnored var onOpen: ((String) -> Void)?
+    /// Warnings from elsewhere in the app (scheduled jobs that can't wake the Mac).
+    @ObservationIgnored var moreWarnings: () -> [AppWarning] = { [] }
     /// Whether notifications are turned off for the app in System Settings.
     private(set) var isTurnedOff = false
     /// Whether the Dock icon can't show its count. Only you can change that, in System
@@ -91,7 +93,7 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
                 fix: "Check your connection, then try again.",
                 actionTitle: "Try again", action: { SpeechController.shared.retrySetup() }))
         }
-        return list
+        return list + moreWarnings()
     }
 
     func isDismissed(_ warning: AppWarning) -> Bool {

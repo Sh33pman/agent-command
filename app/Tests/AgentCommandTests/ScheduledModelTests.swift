@@ -20,6 +20,7 @@ private final class Board {
         store.sessions = sessions
         model = ScheduledModel(store: store)
         model.checkDelay = 0
+        model.runAcmd = { _, done in done(false, "tests don't run acmd") }
         model.choosePath = { [unowned self] _, _ in self.picked.isEmpty ? nil : self.picked.removeFirst() }
         model.close = { [unowned self] in self.closed = true }
         model.goToSession = { [unowned self] in self.shown = $0 }
@@ -213,4 +214,74 @@ private func job(_ id: String, _ name: String, cwd: String = "/w") -> Job {
     j.cwd = ""
     #expect(j.placeName { _ in nil } == "no folder")
     #expect(MarkdownCommand.heading2.label == "H2" && MarkdownCommand.bold.label == nil)
+}
+
+@MainActor @Test func wakingTheMacRunsAcmd() throws {
+    let board = try Board(jobs: [job("A", "alpha")])
+    let model = board.model
+    #expect(model.wake == nil)
+    board.store.wake = WakeState()
+    #expect(model.wake == WakeState())
+
+    var ran: [[String]] = []
+    var finish: ((Bool, String) -> Void)?
+    model.runAcmd = { args, done in
+        ran.append(args)
+        finish = done
+    }
+    model.turnWakeOn()
+    #expect(model.wakeBusy)
+    model.turnWakeOff() // ignored while one runs
+    #expect(ran == [["schedule", "wake", "on"]])
+    finish?(true, "")
+    #expect(!model.wakeBusy && model.notice == "Waking the Mac is on." && model.error == nil)
+
+    model.setWakeAll(true)
+    finish?(true, "")
+    model.setWakeAll(false)
+    finish?(true, "")
+    #expect(model.notice == "Only jobs set to wake the Mac do.")
+    model.turnWakeOff()
+    finish?(false, "acmd: removing the rule: canceled")
+    #expect(model.error == nil, "a canceled password dialog isn't an error")
+    model.turnWakeOff()
+    finish?(false, "acmd: removing the rule: exit status 1")
+    #expect(model.error == "acmd: removing the rule: exit status 1")
+    model.turnWakeOn()
+    finish?(false, "")
+    #expect(model.error == "Couldn't change waking the Mac.")
+    #expect(ran == [["schedule", "wake", "on"], ["schedule", "wake", "on", "--all=true"], ["schedule", "wake", "on", "--all=false"],
+                    ["schedule", "wake", "off"], ["schedule", "wake", "off"], ["schedule", "wake", "on"]])
+}
+
+/// The real runner, with a fake acmd in ACMD_BIN (shared with the speech
+/// tests, so in their serialized suite): nothing asks for a password.
+extension UsesSharedSpeech {
+@Suite @MainActor
+struct ScheduledAcmdTests {
+    @Test func theRunnerRunsTheAppsAcmd() async throws {
+        let dir = NSTemporaryDirectory() + "acmd-wake-tests-\(getpid())"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let path = dir + "/fake-acmd"
+        try "#!/bin/sh\necho \"ran $*\"\n[ \"$3\" = on ]\n".write(toFile: path, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+        setenv("ACMD_BIN", path, 1)
+        defer { unsetenv("ACMD_BIN") }
+        let run = ScheduledModel(store: SessionStore()).runAcmd
+
+        func result(_ args: [String]) async -> (Bool, String) {
+            await withCheckedContinuation { done in run(args) { ok, out in done.resume(returning: (ok, out)) } }
+        }
+        var (ok, out) = await result(["schedule", "wake", "on"])
+        #expect(ok && out == "ran schedule wake on")
+        (ok, out) = await result(["schedule", "wake", "off"])
+        #expect(!ok && out == "ran schedule wake off")
+        setenv("ACMD_BIN", dir + "/missing", 1)
+        (ok, out) = await result(["x"])
+        #expect(!ok && !out.isEmpty)
+        setenv("ACMD_BIN", "no-such-acmd-on-path", 1)
+        (ok, _) = await result(["x"])
+        #expect(!ok)
+    }
+}
 }

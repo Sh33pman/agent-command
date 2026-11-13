@@ -35,6 +35,9 @@ type JobSpec struct {
 	// RunMissed runs a run the Mac slept through when it wakes, instead of only
 	// showing it as missed.
 	RunMissed bool `json:"run_missed,omitempty"`
+	// Wake wakes the Mac shortly before each run, once acmd may (acmd schedule
+	// wake on). Waking for every job is a setting of its own.
+	Wake bool `json:"wake,omitempty"`
 }
 
 // Job is a scheduled job: its spec, its schedule as the daemon reads it, and

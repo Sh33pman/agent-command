@@ -26,6 +26,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/reconcile"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
+	"github.com/brettmostert/agent-command/internal/wake"
 )
 
 // ErrAlreadyRunning means another daemon holds the lock.
@@ -73,6 +74,8 @@ type Config struct {
 	// AgentHelp is Claude's --help, to check a job's settings against the
 	// installed version ("" or nil: don't check).
 	AgentHelp func() string
+	// Waker sets the Mac's wakes for jobs (wake.Mac); nil: jobs don't wake it.
+	Waker wake.Waker
 }
 
 // Daemon is a running daemon.
@@ -91,6 +94,8 @@ type Daemon struct {
 	notify *notifier // d.mu
 
 	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
+
+	wake waking // wake.go
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks

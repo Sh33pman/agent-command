@@ -40,14 +40,20 @@ cask "agent-command" do
               must_succeed: false,
             }
 
-  zap trash: [
-    "~/.config/agent-command",
-    "~/.local/state/agent-command",
-  ]
+  # Only zap removes the wake rule: uninstall runs on upgrades too, and
+  # `acmd uninstall` removes it itself.
+  zap delete: "/etc/sudoers.d/agent-command",
+      trash:  [
+        "~/.config/agent-command",
+        "~/.local/state/agent-command",
+      ]
 
   caveats <<~EOS
     Agent Command isn't notarized, so this install cleared macOS's quarantine flag
     for it and added its Claude Code hooks. Run acmd to open it.
+
+    To let scheduled jobs wake the Mac shortly before they run, run
+    acmd schedule wake on (it asks for your password once).
 
     Uninstalling ends running sessions, stops its background service and removes
     the hooks. Upgrades leave sessions running. Claude conversations can still be

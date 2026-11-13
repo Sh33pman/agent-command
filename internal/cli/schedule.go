@@ -36,7 +36,7 @@ single run instead. A job runs only while the Mac is awake.`,
 	cmd.AddCommand(newScheduleListCmd(), newScheduleShowCmd(), newScheduleAddCmd(), newScheduleEditCmd(),
 		newSchedulePauseCmd("pause", true), newSchedulePauseCmd("resume", false),
 		newScheduleRunCmd(), newScheduleRunsCmd(), newScheduleDeleteCmd(),
-		newScheduleExplainCmd(), newScheduleSettingsCmd())
+		newScheduleExplainCmd(), newScheduleSettingsCmd(), newScheduleWakeCmd())
 	return cmd
 }
 
@@ -90,7 +90,7 @@ type jobFlags struct {
 	cron, once, prompt, promptFile, description string
 	folder, worktree, session                   string
 	set, unset                                  []string
-	runMissed                                   bool
+	runMissed, wake                             bool
 }
 
 func (f *jobFlags) bind(cmd *cobra.Command) {
@@ -106,6 +106,7 @@ func (f *jobFlags) bind(cmd *cobra.Command) {
 	fl.StringArrayVar(&f.set, "set", nil, "an agent setting, key=value (repeat for lists); see `acmd schedule settings`")
 	fl.StringArrayVar(&f.unset, "unset", nil, "clear an agent setting, by key")
 	fl.BoolVar(&f.runMissed, "run-missed", false, "run a run the Mac slept through when it wakes")
+	fl.BoolVar(&f.wake, "wake", false, "wake the Mac shortly before each run (see `acmd schedule wake`)")
 	cmd.MarkFlagsMutuallyExclusive("cron", "once")
 	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")
 	cmd.MarkFlagsMutuallyExclusive("folder", "worktree", "session")
@@ -150,6 +151,7 @@ func (f *jobFlags) apply(cmd *cobra.Command, snap ipc.Snapshot, j *core.Job) err
 	if changed("run-missed") {
 		j.RunMissed = f.runMissed
 	}
+	wakeFlag(cmd, f.wake, &j.Wake)
 	switch {
 	case changed("folder"), changed("worktree"):
 		j.Where, j.SessionID = core.WhereFolder, ""
@@ -231,7 +233,7 @@ func newScheduleAddCmd() *cobra.Command {
 					}
 					j.Cwd = wd
 				}
-				return saveJob(cmd.OutOrStdout(), c, j, "Added")
+				return saveJob(cmd.OutOrStdout(), c, snap, j, "Added")
 			})
 		},
 	}
@@ -265,7 +267,7 @@ func newScheduleEditCmd() *cobra.Command {
 				if err := f.apply(cmd, snap, &j); err != nil {
 					return err
 				}
-				return saveJob(cmd.OutOrStdout(), c, j, "Saved")
+				return saveJob(cmd.OutOrStdout(), c, snap, j, "Saved")
 			})
 		},
 	}
@@ -283,7 +285,7 @@ func maps(in map[string][]string) map[string][]string {
 }
 
 // saveJob checks and saves j, and says when it runs next.
-func saveJob(out io.Writer, c *client, j core.Job, verb string) error {
+func saveJob(out io.Writer, c *client, snap ipc.Snapshot, j core.Job, verb string) error {
 	var saved core.Job
 	if err := c.conn.Call(ipc.OpJobSave, j, &saved); err != nil {
 		return err
@@ -293,6 +295,7 @@ func saveJob(out io.Writer, c *client, j core.Job, verb string) error {
 		fmt.Fprintf(out, " Next run %s.", whenText(saved.NextRun))
 	}
 	fmt.Fprintln(out)
+	wakeHint(out, snap, saved.Wake)
 	return nil
 }
 
@@ -572,6 +575,9 @@ func showJob(out io.Writer, j *core.Job, snap ipc.Snapshot, runs []core.JobRun) 
 	}
 	if j.RunMissed {
 		row("Missed runs", "run when the Mac wakes")
+	}
+	if j.Wake {
+		row("Wakes the Mac", "yes, before each run")
 	}
 	keys := make([]string, 0, len(j.Settings))
 	for k := range j.Settings {

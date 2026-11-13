@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.1](https://github.com/brettmostert/agent-command/compare/v0.50.0...v0.50.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **schedule:** ask for the wake password in a dialog when there's no terminal ([#22](https://github.com/brettmostert/agent-command/issues/22)) ([92ba7e9](https://github.com/brettmostert/agent-command/commit/92ba7e9fb64c394c6be11e317172e8eb52f1262b))
+
 ## [0.50.0](https://github.com/brettmostert/agent-command/compare/v0.49.0...v0.50.0) (2026-11-13)
 
 

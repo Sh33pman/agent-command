@@ -43,9 +43,11 @@ install_from() {
 		cp -R "$from/GhosttyKit.xcframework" "$root/app/vendor/GhosttyKit.xcframework"
 	fi
 	cp -R "$from/vt" "$out/vt"
-	# The themes, which the app needs without Ghostty.app installed.
+	# The themes, which the macOS app needs without Ghostty.app installed.
 	rm -rf "$root/app/vendor/ghostty-resources"
-	cp -R "$from/ghostty-resources" "$root/app/vendor/ghostty-resources"
+	if [[ -d "$from/ghostty-resources" ]]; then
+		cp -R "$from/ghostty-resources" "$root/app/vendor/ghostty-resources"
+	fi
 }
 
 if [[ -f "$cache/complete" ]]; then
@@ -77,10 +79,10 @@ mkdir -p "$cache_root"
 partial="$(mktemp -d "$cache_root/partial.XXXXXX")"
 if [[ "$OS" == "Darwin" ]]; then
 	cp -R macos/GhosttyKit.xcframework "$partial/GhosttyKit.xcframework"
+	mkdir -p "$partial/ghostty-resources"
+	cp -R zig-out/share/ghostty/themes "$partial/ghostty-resources/themes"
 fi
 cp -R "$out/vt" "$partial/vt"
-mkdir -p "$partial/ghostty-resources"
-cp -R zig-out/share/ghostty/themes "$partial/ghostty-resources/themes"
 touch "$partial/complete"
 if [[ -e "$cache" ]]; then
 	rm -rf "$partial"

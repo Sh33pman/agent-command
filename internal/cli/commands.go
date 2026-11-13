@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -205,9 +206,9 @@ func openSession(ctx context.Context, s *core.Session, preset, target string) er
 const bundleID = "com.brettmostert.agent-command"
 
 // openApp brings up the app; swappable in tests.
-var openApp = func(newInstance bool) error {
+var openApp = func(w io.Writer, newInstance bool) error {
 	if runtime.GOOS != "darwin" {
-		fmt.Fprintln(os.Stdout, "Agent Command GUI is not available on this platform yet. Run 'acmd --help' for CLI subcommands.")
+		fmt.Fprintln(w, "Agent Command GUI is not available on this platform yet. Run 'acmd --help' for CLI subcommands.")
 		return nil
 	}
 	return exec.Command("/usr/bin/open", openArgs(executablePath(), newInstance)...).Run() // #nosec G204 -- fixed program; argv only
@@ -249,7 +250,7 @@ func fallbackNotify(no ipc.Notice) {
 	defer cancel()
 	if runtime.GOOS != "darwin" {
 		if ns, err := setup.LookPathIn("notify-send", loginPath()); err == nil {
-			_ = exec.CommandContext(ctx, ns, no.Title, no.Body).Run() // #nosec G204 -- notify-send on the login PATH; argv only
+			_ = exec.CommandContext(ctx, ns, "--", no.Title, no.Body).Run() // #nosec G204 -- notify-send on the login PATH; argv only
 		}
 		return
 	}

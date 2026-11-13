@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"sync"
 	"syscall"
 	"time"
@@ -64,15 +65,27 @@ func (s *Server) Serve(ctx context.Context) error {
 				return
 			}
 			pgid := -cmd.Process.Pid
+			if signal.Ignored(syscall.SIGHUP) {
+				// Parent ignored SIGHUP (e.g. nohup), so the child inherited SIG_IGN.
+				_ = syscall.Kill(pgid, syscall.SIGTERM)
+				go func() {
+					select {
+					case <-exited:
+					case <-time.After(5 * time.Second):
+						_ = syscall.Kill(pgid, syscall.SIGKILL)
+					}
+				}()
+				return
+			}
 			_ = syscall.Kill(pgid, syscall.SIGHUP) // its process group (pty.Start sets setsid)
 			go func() {
 				select {
 				case <-exited:
-				case <-time.After(500 * time.Millisecond):
+				case <-time.After(5 * time.Second):
 					_ = syscall.Kill(pgid, syscall.SIGTERM)
 					select {
 					case <-exited:
-					case <-time.After(500 * time.Millisecond):
+					case <-time.After(5 * time.Second):
 						_ = syscall.Kill(pgid, syscall.SIGKILL)
 					}
 				}

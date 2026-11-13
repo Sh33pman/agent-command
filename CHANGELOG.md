@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.0](https://github.com/brettmostert/agent-command/compare/v0.49.0...v0.50.0) (2026-11-13)
+
+
+### Features
+
+* **schedule:** wake the Mac for scheduled jobs (PAN-61) ([#20](https://github.com/brettmostert/agent-command/issues/20)) ([e55d0dd](https://github.com/brettmostert/agent-command/commit/e55d0ddfdcf9c987dab213c87180e62f28cc1da9))
+
 ## [0.49.0](https://github.com/brettmostert/agent-command/compare/v0.48.0...v0.49.0) (2026-11-12)
 
 

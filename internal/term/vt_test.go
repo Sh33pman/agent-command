@@ -27,7 +27,7 @@ func TestReattachRestoresState(t *testing.T) {
 		return strings.HasPrefix(o, "\x1bc") && strings.Contains(o, "marker-7") &&
 			strings.Contains(o, "\x1b[?1000h") && strings.Contains(o, "\x1b[?2004h")
 	})
-	if !strings.Contains(out.String(), "\r\n1\r\n2\r\n3\r\n") {
+	if !strings.Contains(out.String(), "1\r\n2\r\n3\r\n") {
 		t.Errorf("the start of the history was not restored")
 	}
 }

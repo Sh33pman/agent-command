@@ -58,7 +58,9 @@ func (d *Daemon) transition(s *core.Session, tr core.Transition) {
 			kind = "error"
 		}
 	case core.StatusDone:
-		if since, ok := n.busySince[s.ID]; ok && n.cfg.OnDone && now.Sub(since) >= n.doneMin {
+		since, ok := n.busySince[s.ID]
+		since, ok = d.workStarted(s, since, ok)
+		if ok && n.cfg.OnDone && now.Sub(since) >= n.doneMin {
 			kind = "done"
 		}
 	case core.StatusPaused:

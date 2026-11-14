@@ -92,6 +92,14 @@ type Event struct {
 	// ToolInput is the tool's input (PermissionRequest, PreToolUse), as
 	// JSON, capped.
 	ToolInput json.RawMessage
+	// BackgroundTask is the id of work a tool started in the background
+	// (PostToolUse): a command, or an agent. Claude wakes up when it finishes.
+	BackgroundTask string
+	// Wakeup is a UserPromptSubmit that Claude sent itself, because background
+	// work finished, rather than a prompt someone typed. TaskDone is that
+	// work's id ("" when it doesn't say).
+	Wakeup   bool
+	TaskDone string
 }
 
 // MaxHookPayload caps hook stdin.
@@ -114,6 +122,7 @@ type hookPayload struct {
 	Error            json.RawMessage `json:"error"`
 	LastMessage      string          `json:"last_assistant_message"`
 	ToolInput        json.RawMessage `json:"tool_input"`
+	ToolResponse     json.RawMessage `json:"tool_response"`
 }
 
 // Caps for the reply popup's data.
@@ -144,6 +153,7 @@ func ParseHook(name string, raw []byte, at time.Time) (Event, error) {
 	if p.SessionID == "" {
 		return Event{}, errors.New("hook payload: no session_id")
 	}
+	wakeup, taskDone := finishedTask(kind, p.Prompt)
 	return Event{
 		Kind:             kind,
 		Time:             at,
@@ -159,6 +169,9 @@ func ParseHook(name string, raw []byte, at time.Time) (Event, error) {
 		Error:            clean(errorString(p.Error), 128),
 		LastMessage:      cleanText(p.LastMessage, maxLastMessage),
 		ToolInput:        capJSON(p.ToolInput, maxToolInput),
+		BackgroundTask:   backgroundTask(kind, p.ToolResponse),
+		Wakeup:           wakeup,
+		TaskDone:         taskDone,
 	}, nil
 }
 
@@ -226,4 +239,50 @@ func clean(s string, limit int) string {
 		n++
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// taskNotice starts the prompt Claude sends itself when background work
+// finishes; <task-id> inside it names the work.
+const taskNotice = "<task-notification>"
+
+// backgroundTask is the id of the work a tool started in the background, from
+// its result: a command's backgroundTaskId (also set when a command ran past its
+// timeout and was moved there), or an agent launched to run on its own.
+func backgroundTask(kind EventKind, raw json.RawMessage) string {
+	if kind != HookPostToolUse || len(raw) == 0 || len(raw) > MaxHookPayload {
+		return ""
+	}
+	var r struct {
+		BackgroundTaskID string `json:"backgroundTaskId"`
+		Status           string `json:"status"`
+		AgentID          string `json:"agentId"`
+	}
+	if json.Unmarshal(raw, &r) != nil {
+		return ""
+	}
+	switch {
+	case r.BackgroundTaskID != "":
+		return clean(r.BackgroundTaskID, 128)
+	case r.Status == "async_launched":
+		return clean(r.AgentID, 128)
+	}
+	return ""
+}
+
+// finishedTask reports whether a UserPromptSubmit is Claude waking up for
+// finished background work, and that work's id.
+func finishedTask(kind EventKind, prompt string) (bool, string) {
+	p := strings.TrimSpace(prompt)
+	if kind != HookUserPromptSubmit || !strings.HasPrefix(p, taskNotice) {
+		return false, ""
+	}
+	_, rest, ok := strings.Cut(p, "<task-id>")
+	if !ok {
+		return true, ""
+	}
+	id, _, ok := strings.Cut(rest, "</task-id>")
+	if !ok {
+		return true, ""
+	}
+	return true, clean(id, 128)
 }

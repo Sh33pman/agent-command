@@ -97,3 +97,44 @@ func FuzzParseHook(f *testing.F) {
 		Apply(&sess, e)
 	})
 }
+
+func TestParseHookBackgroundWork(t *testing.T) {
+	at := time.Now()
+	cases := []struct {
+		name, payload string
+		task          string
+		wakeup        bool
+		done          string
+	}{
+		{"PostToolUse", `{"session_id":"s","tool_response":{"backgroundTaskId":"bk0n6canm","stdout":""}}`, "bk0n6canm", false, ""},
+		{"PostToolUse", `{"session_id":"s","tool_response":{"status":"async_launched","agentId":"a1b2"}}`, "a1b2", false, ""},
+		{"PostToolUse", `{"session_id":"s","tool_response":{"status":"completed","agentId":"a1b2"}}`, "", false, ""},
+		{"PostToolUse", `{"session_id":"s","tool_response":"plain text"}`, "", false, ""},
+		{"PreToolUse", `{"session_id":"s","tool_response":{"backgroundTaskId":"x"}}`, "", false, ""},
+		{"UserPromptSubmit", `{"session_id":"s","prompt":"<task-notification>\n<task-id>b1\u001b</task-id>\n<status>failed</status>"}`, "", true, "b1"},
+		{"UserPromptSubmit", `{"session_id":"s","prompt":"  <task-notification> no id"}`, "", true, ""},
+		{"UserPromptSubmit", `{"session_id":"s","prompt":"<task-notification><task-id>open"}`, "", true, ""},
+		{"UserPromptSubmit", `{"session_id":"s","prompt":"what does <task-notification> mean?"}`, "", false, ""},
+		{"Stop", `{"session_id":"s","prompt":"<task-notification><task-id>b1</task-id>"}`, "", false, ""},
+	}
+	for _, c := range cases {
+		e, err := ParseHook(c.name, []byte(c.payload), at)
+		if err != nil {
+			t.Fatalf("%s %s: %v", c.name, c.payload, err)
+		}
+		if e.BackgroundTask != c.task || e.Wakeup != c.wakeup || e.TaskDone != c.done {
+			t.Errorf("%s %s: task %q wakeup %v done %q", c.name, c.payload, e.BackgroundTask, e.Wakeup, e.TaskDone)
+		}
+	}
+}
+
+func TestWakeupDoesNotNameASession(t *testing.T) {
+	s := &Session{ID: "s"}
+	e, err := ParseHook("UserPromptSubmit", []byte(`{"session_id":"s","prompt":"<task-notification><task-id>b1</task-id>"}`), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Apply(s, e); s.Name != "" || s.Status != StatusBusy {
+		t.Errorf("named %q, %s", s.Name, s.Status)
+	}
+}

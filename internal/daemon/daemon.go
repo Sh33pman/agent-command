@@ -91,7 +91,8 @@ type Daemon struct {
 	appWatches   atomic.Int32 // the app's open watches (notify.go)
 	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
 
-	notify *notifier // d.mu
+	notify *notifier   // d.mu
+	bg     *background // d.mu (background.go)
 
 	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
 
@@ -160,7 +161,7 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = ln.Close()
 		return err
 	}
-	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{})}
+	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}), bg: newBackground()}
 	sweepHosts(cfg.Paths)
 	_ = os.Remove(cfg.Paths.OldPopupLock())
 	if cfg.Notify != nil {
@@ -396,6 +397,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		}
 	}
 	tr := core.Apply(sess, e)
+	d.follow(sess, e)
 	if tr.Changed() && tr.To.NeedsAttention() {
 		sess.Unseen = true
 	}

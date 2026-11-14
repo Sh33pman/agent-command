@@ -31,6 +31,7 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
+	d.showBackground(sessions)
 	groups, err := d.store.Groups(ctx, true)
 	if err != nil {
 		return ipc.Snapshot{}, err

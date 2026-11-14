@@ -62,7 +62,7 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 		}
 
 	case HookUserPromptSubmit:
-		if s.NameSource != NameUser && s.Name == "" {
+		if s.NameSource != NameUser && s.Name == "" && !e.Wakeup {
 			if n := NameFromPrompt(e.Prompt); n != "" {
 				s.Name, s.NameSource = n, NameAuto
 			}

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.0](https://github.com/brettmostert/agent-command/compare/v0.51.0...v0.52.0) (2026-11-14)
+
+
+### Features
+
+* a Settings window for every setting, and acmd config ([#30](https://github.com/brettmostert/agent-command/issues/30)) ([1d26977](https://github.com/brettmostert/agent-command/commit/1d26977d533cfb521e9a0df41ff1a1d7af1663b4))
+
 ## [0.51.0](https://github.com/brettmostert/agent-command/compare/v0.50.1...v0.51.0) (2026-11-14)
 
 

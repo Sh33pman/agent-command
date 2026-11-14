@@ -67,7 +67,7 @@ struct InboxView: View {
     }
 
     private var footer: some View {
-        Text("↑↓ or ⌃J ⌃K move   ↩ open   x mark   ⇧⌘B sessions   1-9 answer   r reply   d dismiss   u unread   g go   ⇧⌘S read aloud   esc back")
+        Text(Keymap.shared.inboxHint)
             .font(AppFont.ui(11))
             .foregroundStyle(theme.dim)
             .lineLimit(1)

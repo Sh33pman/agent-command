@@ -37,9 +37,7 @@ struct ScheduledView: View {
     }
 
     private var footer: some View {
-        Text(model.isEditing
-            ? "⌘↩ save   esc cancel   ⌘B ⌘I ⌘E ⌘K format   ⌥⌘1-3 headings   ⇧⌘7 ⇧⌘8 ⇧⌘9 lists"
-            : "↑↓ or j k move   n new   ↩ or e edit   r run now   p pause   d duplicate   g go to last run   ⌫ delete   esc back")
+        Text(model.isEditing ? Keymap.shared.jobFormHint : Keymap.shared.scheduledHint)
             .font(AppFont.ui(11))
             .foregroundStyle(theme.dim)
             .lineLimit(1)
@@ -60,7 +58,7 @@ struct ScheduledView: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(model.isEditing)
-                .help("Add a scheduled job (n)")
+                .help(Keymap.shared.tip("Add a scheduled job", .newJob))
             }
             .padding(.horizontal, 12)
             .frame(height: 34)
@@ -212,11 +210,11 @@ private struct JobDetail: View {
                 if !job.description.isEmpty { Text(job.description).foregroundStyle(theme.dim).lineLimit(1) }
             }
             Spacer()
-            Button("Run Now") { model.runNow() }.help("Run it now, outside its schedule (r)")
-            Button(job.paused ? "Resume" : "Pause") { model.togglePause() }.help(job.paused ? "Resume (p)" : "Pause (p)")
-            Button("Duplicate") { model.duplicate() }.help("A new job like this one (d)")
-            Button("Edit") { model.edit() }.help("Edit (↩)").keyboardShortcut(.defaultAction)
-            Button(role: .destructive) { model.delete() } label: { Image(systemName: "trash") }.help("Delete (⌫)")
+            Button("Run Now") { model.runNow() }.help(Keymap.shared.tip("Run it now, outside its schedule", .runJob))
+            Button(job.paused ? "Resume" : "Pause") { model.togglePause() }.help(Keymap.shared.tip(job.paused ? "Resume" : "Pause", .pauseJob))
+            Button("Duplicate") { model.duplicate() }.help(Keymap.shared.tip("A new job like this one", .duplicateJob))
+            Button("Edit") { model.edit() }.help(Keymap.shared.tip("Edit", .open)).keyboardShortcut(.defaultAction)
+            Button(role: .destructive) { model.delete() } label: { Image(systemName: "trash") }.help(Keymap.shared.tip("Delete", .remove))
         }
         .padding(.horizontal, 16)
         .frame(height: 52)
@@ -322,7 +320,7 @@ private struct JobForm: View {
                     Button(model.saving ? "Saving…" : "Save") { model.save() }
                         .keyboardShortcut(.return, modifiers: .command)
                         .disabled(!model.canSave)
-                        .help(model.check.isValid ? "Save (⌘↩)" : "Fix what's marked in red first")
+                        .help(model.check.isValid ? Keymap.shared.tip("Save", .save) : "Fix what's marked in red first")
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 52)

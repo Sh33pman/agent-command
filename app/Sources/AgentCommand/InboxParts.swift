@@ -99,7 +99,7 @@ struct SpeakButton: View {
                 Image(systemName: speaking ? "stop.fill" : "speaker.wave.2").foregroundStyle(theme.fg)
             }
             .buttonStyle(.plain)
-            .help(speaking ? "Stop reading (⇧⌘S)" : "Read aloud (⇧⌘S)")
+            .help(Keymap.shared.tip(speaking ? "Stop reading" : "Read aloud", .readAloud))
         }
     }
 }
@@ -154,7 +154,7 @@ struct InboxAnswerView: View {
                 }
             }
             if highlighted != nil {
-                Text("←→ or h l move   ↩ choose   esc leave").font(AppFont.ui(11)).foregroundStyle(theme.dim)
+                Text(Keymap.shared.choiceHint).font(AppFont.ui(11)).foregroundStyle(theme.dim)
             }
         }
     }
@@ -175,7 +175,7 @@ struct InboxAnswerView: View {
                 .onChange(of: model.typing) { _, typing in boxFocused = typing }
                 .onChange(of: boxFocused) { _, focused in model.typing = focused }
                 .onAppear { boxFocused = model.typing }
-            Text("⌘↩ send   esc leave").font(AppFont.ui(11)).foregroundStyle(theme.dim)
+            Text(Keymap.shared.replyHint).font(AppFont.ui(11)).foregroundStyle(theme.dim)
         }
     }
 }

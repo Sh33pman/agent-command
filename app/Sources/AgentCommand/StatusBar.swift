@@ -83,7 +83,7 @@ struct StatusBarView: View {
                 .buttonStyle(.plain)
                 .font(AppFont.ui(11))
                 .lineLimit(1)
-                .help("Scheduled jobs (⇧⌘J)")
+                .help(Keymap.shared.tip("Scheduled jobs", .scheduled))
                 Button(action: openInbox) {
                     let unread = store.unreadCount()
                     Text(unread > 0 ? "Inbox \(unread)" : "Inbox")
@@ -93,7 +93,7 @@ struct StatusBarView: View {
                 .buttonStyle(.plain)
                 .font(AppFont.ui(11))
                 .lineLimit(1)
-                .help("Open the Inbox (⇧⌘I)")
+                .help(Keymap.shared.tip("Open the Inbox", .inbox))
                 Text(version)
                     .font(AppFont.ui(11))
                     .foregroundStyle(theme.dim)
@@ -156,7 +156,7 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .font(AppFont.ui(11))
-        .help(speech.isSpeaking ? "Stop reading (⇧⌘S)" : "Read the latest message aloud (⇧⌘S)")
+        .help(Keymap.shared.tip(speech.isSpeaking ? "Stop reading" : "Read the latest message aloud", .readAloud))
     }
 
     /// Turns the popup on or off, and chooses what opens it.
@@ -183,7 +183,7 @@ struct StatusBarView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .font(AppFont.ui(11))
-        .help(settings.enabled ? "Popup on (⌥⌘I)" : "Popup off (⌥⌘I)")
+        .help(Keymap.shared.tip(settings.enabled ? "Popup on" : "Popup off", .togglePopup))
     }
 
     private func layoutButton(_ layout: InboxLayout, icon: String, help: String) -> some View {

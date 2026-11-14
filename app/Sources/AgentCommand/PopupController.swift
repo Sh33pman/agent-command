@@ -284,28 +284,18 @@ final class PopupController {
 
 /// A shortcut that works from any app. Carbon's hot keys need no permission.
 final class SystemHotKey {
-    struct Combo: Equatable {
-        let id: UInt32
-        let keyCode: Int
-        let modifiers: Int
-
-        /// ⌃⌘O: the popup, or the Inbox in the app.
-        static let popup = Combo(id: 1, keyCode: kVK_ANSI_O, modifiers: cmdKey | controlKey)
-        /// ⌃⌘A: brings Agent Command forward.
-        static let app = Combo(id: 2, keyCode: kVK_ANSI_A, modifiers: cmdKey | controlKey)
-    }
-
     private static var actions: [UInt32: () -> Void] = [:]
     private static var installed = false
     private var ref: EventHotKeyRef?
 
-    init(_ combo: Combo, action: @escaping () -> Void) {
-        Self.actions[combo.id] = action
+    /// id tells hot keys apart; the keymap sets the key.
+    init(id: UInt32, _ combo: KeyCombo, action: @escaping () -> Void) {
+        Self.actions[id] = action
         Self.installHandler()
-        let id = EventHotKeyID(signature: OSType(0x41434D44), id: combo.id) // "ACMD"
+        let hotKey = EventHotKeyID(signature: OSType(0x41434D44), id: id) // "ACMD"
         let status = RegisterEventHotKey(
-            UInt32(combo.keyCode), UInt32(combo.modifiers), id, GetApplicationEventTarget(), 0, &ref)
-        if status != noErr { NSLog("system shortcut %u: couldn't register (%d)", combo.id, status) }
+            UInt32(combo.key), UInt32(combo.carbonMods), hotKey, GetApplicationEventTarget(), 0, &ref)
+        if status != noErr { NSLog("system shortcut %u: couldn't register (%d)", id, status) }
     }
 
     deinit {

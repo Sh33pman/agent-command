@@ -31,6 +31,7 @@ enum PaletteAction: Equatable {
     case focusSidebar
     case toggleSidebar
     case report(ReportKind)
+    case shortcuts
     case quit
 }
 
@@ -61,6 +62,8 @@ struct PaletteState {
     var popupOn = true
     var popupStyle = ReplyPopupStyle.window
     var popupOpens = PopupOpens.needsYou
+    /// Where the shortcuts shown come from.
+    var keys = Keymap.shared
 }
 
 enum Palette {
@@ -77,18 +80,19 @@ enum Palette {
 
     /// What can be done right now: the list depends on what's showing.
     static func entries(_ state: PaletteState) -> [PaletteEntry] {
+        let keys = state.keys
         var list: [PaletteEntry] = []
         let targets = state.targets
         let current = targets.count == 1 ? targets[0] : nil
         if targets.count > 1 {
             let section = "\(targets.count) sessions"
-            list.append(PaletteEntry(section: section, title: "Rename…", shortcut: "⌘R", action: .rename(targets)))
-            list.append(PaletteEntry(section: section, title: "Archive…", shortcut: "⇧⌘⌫", action: .archive(targets)))
+            list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename(targets)))
+            list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive(targets)))
         }
         if let session = current {
             let section = session.isTerminal ? "Terminal session" : "Claude session"
-            list.append(PaletteEntry(section: section, title: "Rename…", shortcut: "⌘R", action: .rename([session])))
-            list.append(PaletteEntry(section: section, title: "Archive…", shortcut: "⇧⌘⌫", action: .archive([session])))
+            list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename([session])))
+            list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive([session])))
             if state.setMembers.contains(where: { $0.contains(session.id) }) {
                 list.append(PaletteEntry(section: section, title: "Move out of set", action: .moveOut(sessionID: session.id)))
             }
@@ -98,27 +102,27 @@ enum Palette {
             }
         }
         if state.needsYou {
-            list.append(PaletteEntry(section: "Go to", title: "Next needing attention", shortcut: "⇧⌘A", action: .nextAttention))
+            list.append(PaletteEntry(section: "Go to", title: "Next needing attention", shortcut: keys.label(.nextAttention), action: .nextAttention))
         }
         for session in state.sessions where session.id != current?.id {
             list.append(PaletteEntry(
                 section: "Go to", title: session.displayName, shortcut: session.status, key: session.id,
                 action: .select(sessionID: session.id)))
         }
-        list.append(PaletteEntry(section: "New", title: "Claude session", shortcut: "⌘N", action: .newSession(harness: "claude")))
-        list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: "⌘T", action: .newSession(harness: "terminal")))
-        list.append(PaletteEntry(section: "New", title: "Resume a session…", shortcut: "⇧⌘O", action: .resume))
-        list.append(PaletteEntry(section: "Panes", title: "Split right", shortcut: "⌘↩", action: .split(.right)))
-        list.append(PaletteEntry(section: "Panes", title: "Split down", shortcut: "⇧⌘↩", action: .split(.down)))
-        list.append(PaletteEntry(section: "Panes", title: "Close pane", shortcut: "⌘W", action: .closePane))
+        list.append(PaletteEntry(section: "New", title: "Claude session", shortcut: keys.label(.newClaude), action: .newSession(harness: "claude")))
+        list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: "terminal")))
+        list.append(PaletteEntry(section: "New", title: "Resume a session…", shortcut: keys.label(.resume), action: .resume))
+        list.append(PaletteEntry(section: "Panes", title: "Split right", shortcut: keys.label(.splitRight), action: .split(.right)))
+        list.append(PaletteEntry(section: "Panes", title: "Split down", shortcut: keys.label(.splitDown), action: .split(.down)))
+        list.append(PaletteEntry(section: "Panes", title: "Close pane", shortcut: keys.label(.closePane), action: .closePane))
         if state.paneCount > 1 {
             for (title, shortcut, direction) in [
-                ("Focus left", "⌃⌘H", FocusDirection.left), ("Focus down", "⌃⌘J", .down),
-                ("Focus up", "⌃⌘K", .up), ("Focus right", "⌃⌘L", .right),
+                ("Focus left", keys.label(.focusLeft), FocusDirection.left), ("Focus down", keys.label(.focusDown), .down),
+                ("Focus up", keys.label(.focusUp), .up), ("Focus right", keys.label(.focusRight), .right),
             ] {
                 list.append(PaletteEntry(section: "Panes", title: title, shortcut: shortcut, action: .focus(direction)))
             }
-            list.append(PaletteEntry(section: "Panes", title: "Equalize panes", shortcut: "⌃⌘=", action: .equalizePanes))
+            list.append(PaletteEntry(section: "Panes", title: "Equalize panes", shortcut: keys.label(.equalize), action: .equalizePanes))
         }
         if state.showsScreen {
             for command in screenCommands {
@@ -126,12 +130,12 @@ enum Palette {
                     section: "Screen", title: command.title, shortcut: command.shortcut, action: .screen(binding: command.binding)))
             }
         }
-        list.append(PaletteEntry(section: "App", title: "Inbox", shortcut: "⇧⌘I", action: .inbox))
-        list.append(PaletteEntry(section: "App", title: "Scheduled jobs", shortcut: "⇧⌘J", action: .scheduled))
+        list.append(PaletteEntry(section: "App", title: "Inbox", shortcut: keys.label(.inbox), action: .inbox))
+        list.append(PaletteEntry(section: "App", title: "Scheduled jobs", shortcut: keys.label(.scheduled), action: .scheduled))
         list.append(PaletteEntry(section: "App", title: state.speechOn ? "Turn speech off" : "Turn speech on", action: .toggleSpeech))
         if state.speechOn, current?.isAgent == true || state.speaking {
             let title = state.speaking ? "Stop reading" : "Read the latest message aloud"
-            list.append(PaletteEntry(section: "App", title: title, shortcut: "⇧⌘S", action: .toggleReading))
+            list.append(PaletteEntry(section: "App", title: title, shortcut: keys.label(.readAloud), action: .toggleReading))
         }
         list.append(PaletteEntry(
             section: "Claude", title: RemoteControlSetting.paletteTitle(isOn: state.remoteControl), action: .toggleRemoteControl))
@@ -139,7 +143,7 @@ enum Palette {
             section: "App", title: state.popupReads ? "Stop reading aloud in the popup" : "Read aloud in the popup",
             action: .togglePopupReading))
         list.append(PaletteEntry(
-            section: "App", title: state.popupOn ? "Turn popup off" : "Turn popup on", shortcut: "⌥⌘I", action: .togglePopup))
+            section: "App", title: state.popupOn ? "Turn popup off" : "Turn popup on", shortcut: keys.label(.togglePopup), action: .togglePopup))
         for style in ReplyPopupStyle.allCases where style != state.popupStyle {
             list.append(PaletteEntry(section: "App", title: "Popup style: \(style.label)", action: .popupStyle(style)))
         }
@@ -149,12 +153,13 @@ enum Palette {
         if let current {
             list.append(PaletteEntry(section: "App", title: "Inbox for \(current.displayName)", action: .inboxFor(current)))
         }
-        list.append(PaletteEntry(section: "App", title: "Change theme…", shortcut: "⇧⌘T", action: .themes))
-        list.append(PaletteEntry(section: "App", title: "Focus sidebar", shortcut: "⇧⌘B", action: .focusSidebar))
+        list.append(PaletteEntry(section: "App", title: "Change theme…", shortcut: keys.label(.themes), action: .themes))
+        list.append(PaletteEntry(section: "App", title: "Keyboard shortcuts…", shortcut: keys.label(.shortcuts), action: .shortcuts))
+        list.append(PaletteEntry(section: "App", title: "Focus sidebar", shortcut: keys.label(.focusSidebar), action: .focusSidebar))
         list.append(PaletteEntry(section: "App", title: "Toggle sidebar", action: .toggleSidebar))
         list.append(PaletteEntry(section: "App", title: "Report a bug…", action: .report(.bug)))
         list.append(PaletteEntry(section: "App", title: "Request a feature…", action: .report(.feature)))
-        list.append(PaletteEntry(section: "App", title: "Quit", shortcut: "⌘Q", action: .quit))
+        list.append(PaletteEntry(section: "App", title: "Quit", shortcut: keys.label(.quit), action: .quit))
         return list
     }
 

@@ -527,75 +527,93 @@ final class InboxModel {
     // MARK: Keys
 
     /// Handles a key press, and reports whether it was used. The Inbox has the keyboard,
-    /// so nothing reaches the terminal behind it. Moving, marking, opening and leaving
-    /// use the sidebar's keys.
+    /// so nothing reaches the terminal behind it. Every key comes from the keymap, and
+    /// the app's and the lists' keys mean here what they mean elsewhere.
     func handle(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-        let key = event.charactersIgnoringModifiers?.lowercased()
-        if flags.contains(.command) {
-            switch (event.keyCode, flags, key) {
-            case (36, _, _):
-                if typing, let selected { sendReply(selected) }
-            case (_, [.command], "w"):
-                close()
-            case (_, [.command, .shift], "b"):
-                if !showsCursor { setPanel(panel == .sessions ? .messages : .sessions) }
-            case (_, [.command, .shift], "s"):
-                toggleSpeech()
-            case (_, [.command], "r"):
-                rename(sessionTargets)
-            case (51, [.command, .shift], _):
-                archive(sessionTargets)
-            default:
-                return false
-            }
-            return true
-        }
-        if typing {
-            if event.keyCode == 53 {
+        let keys = Keymap.shared
+        let combo = KeyCombo(event: event)
+        if typing, let action = keys.action(for: combo, among: [.save, .leave]) {
+            if action == .save {
+                if let selected { sendReply(selected) }
+            } else {
                 typing = false
-                return true
-            }
-            return false
-        }
-        if handleChoice(event, flags: flags) { return true }
-        // Numbers and tab are the sidebar's own: here they fall through as before.
-        if let move = SidebarKey.from(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, flags: flags),
-           !move.isSidebarOnly {
-            switch move {
-            case .up: moveCursor(-1)
-            case .down: moveCursor(1)
-            case .toggleMark: toggleMark()
-            case .open:
-                // Holding return shouldn't run on to whatever comes next.
-                if !event.isARepeat {
-                    if showsCursor { startAnswering() } else { openCursor() }
-                }
-            case .leave:
-                if panel == .sessions { setPanel(.messages) } else { close() }
-            case .number, .nextAttention:
-                break
             }
             return true
         }
-        guard panel == .messages, flags.isEmpty, let key else { return true }
-        switch key {
-        case "r": replyIfPossible()
-        case "d": messageTargets.forEach(dismiss)
-        case "u":
-            if let cursorItem {
-                let read = !cursorItem.read
-                messageTargets.forEach { setRead($0, read) }
-            }
-        case "g": if let cursorItem { go(cursorItem) }
+        switch keys.action(for: combo, among: [.closePane, .focusSidebar, .readAloud, .rename, .archive]) {
+        case .closePane: close()
+        case .focusSidebar: if !showsCursor { setPanel(panel == .sessions ? .messages : .sessions) }
+        case .readAloud: toggleSpeech()
+        case .rename: rename(sessionTargets)
+        case .archive: archive(sessionTargets)
         default:
-            // Only the open message, so you've seen what you're answering.
-            if let digit = Int(key), digit >= 1, let selected, selected.needsOption, hasSettled {
-                answer(selected, option: digit)
+            // There's no pane to split or move to behind the Inbox.
+            if keys.action(for: combo, among: KeyAction.paneActions) != nil { return true }
+            if typing { return false }
+            return handleList(combo, event)
+        }
+        return true
+    }
+
+    /// Keys for the lists and the message on show, while not writing a reply.
+    private func handleList(_ combo: KeyCombo, _ event: NSEvent) -> Bool {
+        let keys = Keymap.shared
+        if handleChoice(combo, event) { return true }
+        switch keys.action(for: combo, among: [.up, .down, .open, .back, .mark, .nextNeedingYou]) {
+        case .up: moveCursor(-1)
+        case .down: moveCursor(1)
+        case .mark: toggleMark()
+        case .open:
+            // Holding return shouldn't run on to whatever comes next.
+            if !event.isARepeat {
+                if showsCursor { startAnswering() } else { openCursor() }
+            }
+        case .back:
+            if panel == .sessions { setPanel(.messages) } else { close() }
+        case .nextNeedingYou: nextUnread()
+        default:
+            guard panel == .messages else { return !combo.mods.contains(.command) }
+            switch keys.action(for: combo, among: [.reply, .dismiss, .remove, .unread, .go]) {
+            case .reply: replyIfPossible()
+            case .dismiss, .remove: messageTargets.forEach(dismiss)
+            case .unread:
+                if let cursorItem {
+                    let read = !cursorItem.read
+                    messageTargets.forEach { setRead($0, read) }
+                }
+            case .go: if let cursorItem { go(cursorItem) }
+            default:
+                // Only the open message, so you've seen what you're answering.
+                if combo.mods.isEmpty, let index = KeyName.digitCodes.firstIndex(of: combo.key),
+                   let selected, selected.needsOption, hasSettled {
+                    answer(selected, option: index + 1)
+                }
+                // The menus get the rest of ⌘, and nothing else goes behind the Inbox.
+                return !combo.mods.contains(.command)
             }
         }
         return true
     }
+
+    /// Goes to the next unread message after the cursor, round to the start, as tab
+    /// goes to the next session that needs you in the sidebar. The Inbox opens it.
+    private func nextUnread() {
+        guard panel == .messages else { return }
+        let list = items
+        let start = list.firstIndex { $0.id == messageCursor } ?? -1
+        for step in 1...max(1, list.count) where !list.isEmpty {
+            let index = (start + step + list.count) % list.count
+            let item = list[index]
+            guard !item.read, item.id != messageCursor else { continue }
+            following = nil
+            messageCursor = item.id
+            lastIndex = index
+            if showsCursor { showCursor() } else { open(item) }
+            return
+        }
+        NSSound.beep()
+    }
+
 
     /// Not straight after a message appears: a second press meant for the one before
     /// would answer this one.
@@ -623,20 +641,18 @@ final class InboxModel {
         return choice.index
     }
 
-    /// While an option is picked out, arrows and vim's keys move between them, return
-    /// chooses and escape leaves. Key codes, as in the sidebar. Reports whether it was used.
-    private func handleChoice(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
-        guard let selected, let index = highlightedOption(of: selected), flags.isEmpty || flags == .control else {
-            return false
-        }
+    /// While an option is picked out, the list keys move between the options, open
+    /// chooses and back leaves. Reports whether it was used.
+    private func handleChoice(_ combo: KeyCombo, _ event: NSEvent) -> Bool {
+        guard let selected, let index = highlightedOption(of: selected) else { return false }
         var by = 0
-        switch (event.keyCode, flags) {
-        case (126, []), (123, []), (40, _), (4, _): by = -1
-        case (125, []), (124, []), (38, _), (37, _): by = 1
-        case (36, []), (76, []):
+        switch Keymap.shared.action(for: combo, among: [.up, .left, .down, .right, .open, .back]) {
+        case .up, .left: by = -1
+        case .down, .right: by = 1
+        case .open:
             if !event.isARepeat, hasSettled { answer(selected, option: index + 1) }
             return true
-        case (53, []):
+        case .back:
             choice = nil
             return true
         default:

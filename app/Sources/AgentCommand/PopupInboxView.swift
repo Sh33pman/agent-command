@@ -30,7 +30,7 @@ struct PopupInboxView: View {
                 }
             }
             Rectangle().fill(Color(nsColor: theme.line)).frame(height: 1)
-            Text("↑↓ or ⌃J ⌃K next and previous   ↩ reply or choose   1-9 answer   d dismiss   g go to session   ⇧⌘S read aloud   esc close")
+            Text(Keymap.shared.popupHint)
                 .font(AppFont.ui(11))
                 .foregroundStyle(theme.dim)
                 .lineLimit(1)
@@ -101,16 +101,16 @@ struct PopupInboxView: View {
             }
             Spacer()
             if let position = model.position {
-                iconButton("chevron.up", help: "Previous (↑)", enabled: position.index > 1) { model.step(-1) }
+                iconButton("chevron.up", help: Keymap.shared.tip("Previous", .up), enabled: position.index > 1) { model.step(-1) }
                 Text("\(position.index) of \(position.count)").font(AppFont.ui(11)).foregroundStyle(theme.dim)
-                iconButton("chevron.down", help: "Next (↓)", enabled: position.index < position.count) { model.step(1) }
+                iconButton("chevron.down", help: Keymap.shared.tip("Next", .down), enabled: position.index < position.count) { model.step(1) }
             }
             if let item = model.selected {
                 SpeakButton(item: item)
                 textButton("Dismiss") { model.dismiss(item) }
                 textButton("Go to session") { model.go(item) }
             }
-            iconButton("xmark", help: "Close (esc)", enabled: true) { model.close() }
+            iconButton("xmark", help: Keymap.shared.tip("Close", .back), enabled: true) { model.close() }
         }
         .padding(.horizontal, 16)
         .frame(height: 34)

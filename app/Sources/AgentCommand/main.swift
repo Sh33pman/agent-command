@@ -29,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var scheduled: ScheduledModel?
     private lazy var popupWindow = PopupController(store: store)
     private var hotKeys: [SystemHotKey] = []
+    /// The menu items whose shortcuts come from the keymap.
+    private var menuItems: [KeyAction: NSMenuItem] = [:]
+    private var shortcuts: ShortcutsModel?
     /// A clicked notification's session, if it arrived before the session list.
     private var pendingOpen: String?
 
@@ -547,10 +550,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         store.onNewItems = { [weak self] items in self?.popupWindow.itemsArrived(items) }
         notifier.popupShows = { [weak self] kind in self?.popupWindow.replacesBanner(noticeKind: kind) ?? false }
-        hotKeys = [
-            SystemHotKey(.popup) { [weak self] in self?.popupShortcut() },
-            SystemHotKey(.app) { [weak self] in self?.appShortcut() },
-        ]
+        registerHotKeys()
+        Keymap.shared.onChange = { [weak self] in self?.keysChanged() }
     }
 
     /// Closing the window keeps the app running, for the popup and the Dock badge. The
@@ -653,6 +654,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scheduled = model
     }
 
+    @objc private func toggleShortcuts() {
+        if shortcuts == nil { showShortcuts() } else { closePopup() }
+    }
+
+    /// Every shortcut, and where to change them. It goes over the whole window, like the Inbox.
+    private func showShortcuts() {
+        closePopup()
+        popupWindow.close()
+        showMainWindow()
+        let model = ShortcutsModel()
+        model.close = { [weak self] in self?.closePopup() }
+        showPopup(ShortcutsView(model: model), aboveStatusBar: true)
+        window?.makeFirstResponder(nil)
+        model.start()
+        shortcuts = model
+    }
+
     /// Popups go over the whole window, so they stay centered across panes.
     private func showPopup(_ view: some View, aboveStatusBar: Bool = false) {
         guard let content = window?.contentView else { return }
@@ -680,6 +698,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let scheduled {
             scheduled.stop()
             self.scheduled = nil
+        }
+        if let shortcuts {
+            shortcuts.stop()
+            self.shortcuts = nil
         }
         if let state = popupReturn {
             window?.makeFirstResponder(sidebarKeys)
@@ -737,6 +759,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .focusSidebar: toggleSidebarFocus()
         case .toggleSidebar: split?.toggleSidebar(nil)
         case .report(let kind): showReport(kind)
+        case .shortcuts: showShortcuts()
         case .quit: NSApp.terminate(nil)
         }
     }
@@ -768,80 +791,101 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func makeGoMenu() -> NSMenuItem {
         let go = NSMenuItem()
         go.submenu = NSMenu(title: "Go")
-        let next = NSMenuItem(title: "Next Needing Attention", action: #selector(showNextAttention), keyEquivalent: "A")
-        next.target = self
-        go.submenu?.addItem(next)
+        go.submenu?.addItem(menuItem("Next Needing Attention", #selector(showNextAttention), .nextAttention))
         go.submenu?.addItem(.separator())
-        for n in 1...9 {
-            let item = NSMenuItem(title: "Session \(n)", action: #selector(goToNumber(_:)), keyEquivalent: "\(n)")
-            item.tag = n
-            item.target = self
+        for (index, action) in KeyAction.sessions.enumerated() {
+            let item = menuItem("Session \(index + 1)", #selector(goToNumber(_:)), action)
+            item.tag = index + 1
             go.submenu?.addItem(item)
         }
         return go
+    }
+
+    /// A menu item whose shortcut comes from the keymap, and follows it when it changes.
+    private func menuItem(_ title: String, _ action: Selector, _ key: KeyAction) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        menuItems[key] = item
+        applyKey(key, to: item)
+        return item
+    }
+
+    private func applyKey(_ action: KeyAction, to item: NSMenuItem) {
+        let key = Keymap.shared.combos(action).first?.menuKey
+        item.keyEquivalent = key?.key ?? ""
+        item.keyEquivalentModifierMask = key?.mask ?? []
+    }
+
+    /// After the keymap changes: the menus and the shortcuts from any app follow it.
+    private func keysChanged() {
+        for (action, item) in menuItems { applyKey(action, to: item) }
+        registerHotKeys()
+    }
+
+    /// The shortcuts that work from any app, off while the shortcuts list records a key.
+    private func registerHotKeys() {
+        let keys = Keymap.shared
+        hotKeys = []
+        guard !keys.recording else { return }
+        let actions: [(UInt32, KeyAction, () -> Void)] = [
+            (1, .popupAnywhere, { [weak self] in self?.popupShortcut() }),
+            (2, .appAnywhere, { [weak self] in self?.appShortcut() }),
+        ]
+        for (id, action, run) in actions {
+            if let combo = keys.combos(action).first { hotKeys.append(SystemHotKey(id: id, combo, action: run)) }
+        }
     }
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         let app = NSMenuItem()
         app.submenu = NSMenu()
-        app.submenu?.addItem(
-            withTitle: "Quit Agent Command", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        app.submenu?.addItem(menuItem("Quit Agent Command", #selector(NSApplication.terminate(_:)), .quit))
+        app.submenu?.items.last?.target = NSApp
         menu.addItem(app)
         let file = NSMenuItem()
         file.submenu = NSMenu(title: "File")
         for (title, action, key) in [
-            ("New Claude Session", #selector(newClaudeSession), "n"),
-            ("New Terminal", #selector(newTerminal), "t"),
-            ("Resume Session…", #selector(resumeSession), "O"),
-            ("Commands…", #selector(toggleCommands), "P"),
-            ("Change Theme…", #selector(showThemes), "T"),
-            ("Focus Sidebar", #selector(toggleSidebarFocus), "B"),
-            ("Inbox", #selector(toggleInbox), "I"),
-            ("Scheduled Jobs", #selector(toggleScheduled), "J"),
-            ("Read Aloud", #selector(toggleReading), "S"),
+            ("New Claude Session", #selector(newClaudeSession), KeyAction.newClaude),
+            ("New Terminal", #selector(newTerminal), .newTerminal),
+            ("Resume Session…", #selector(resumeSession), .resume),
+            ("Commands…", #selector(toggleCommands), .commands),
+            ("Change Theme…", #selector(showThemes), .themes),
+            ("Focus Sidebar", #selector(toggleSidebarFocus), .focusSidebar),
+            ("Inbox", #selector(toggleInbox), .inbox),
+            ("Scheduled Jobs", #selector(toggleScheduled), .scheduled),
+            ("Read Aloud", #selector(toggleReading), .readAloud),
+            ("Rename…", #selector(renameSelection), .rename),
+            ("Turn Popup On or Off", #selector(togglePopupEnabled), .togglePopup),
         ] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-            item.target = self
-            file.submenu?.addItem(item)
+            file.submenu?.addItem(menuItem(title, action, key))
         }
-        let renameItem = NSMenuItem(title: "Rename…", action: #selector(renameSelection), keyEquivalent: "r")
-        renameItem.target = self
-        file.submenu?.addItem(renameItem)
-        let popupItem = NSMenuItem(title: "Turn Popup On or Off", action: #selector(togglePopupEnabled), keyEquivalent: "i")
-        popupItem.keyEquivalentModifierMask = [.command, .option]
-        popupItem.target = self
-        file.submenu?.addItem(popupItem)
         let remoteItem = NSMenuItem(title: "Remote Control for New Sessions", action: #selector(toggleRemoteControl), keyEquivalent: "")
         remoteItem.target = self
         file.submenu?.addItem(remoteItem)
-        let archiveItem = NSMenuItem(title: "Archive…", action: #selector(archiveSelection), keyEquivalent: "\u{8}")
-        archiveItem.keyEquivalentModifierMask = [.command, .shift]
-        archiveItem.target = self
-        file.submenu?.addItem(archiveItem)
+        file.submenu?.addItem(menuItem("Archive…", #selector(archiveSelection), .archive))
         menu.addItem(file)
         let view = NSMenuItem()
         view.submenu = NSMenu(title: "Panes")
-        let items: [(String, Selector, String, NSEvent.ModifierFlags)] = [
-            ("Split Right", #selector(splitRight), "\r", [.command]),
-            ("Split Down", #selector(splitDown), "\r", [.command, .shift]),
-            ("Close Pane", #selector(closePane), "w", [.command]),
-            ("Focus Left", #selector(focusLeft), "h", [.command, .control]),
-            ("Focus Down", #selector(focusDown), "j", [.command, .control]),
-            ("Focus Up", #selector(focusUp), "k", [.command, .control]),
-            ("Focus Right", #selector(focusRight), "l", [.command, .control]),
-            ("Equalize", #selector(equalizePanes), "=", [.command, .control]),
+        let items: [(String, Selector, KeyAction)] = [
+            ("Split Right", #selector(splitRight), .splitRight),
+            ("Split Down", #selector(splitDown), .splitDown),
+            ("Close Pane", #selector(closePane), .closePane),
+            ("Focus Left", #selector(focusLeft), .focusLeft),
+            ("Focus Down", #selector(focusDown), .focusDown),
+            ("Focus Up", #selector(focusUp), .focusUp),
+            ("Focus Right", #selector(focusRight), .focusRight),
+            ("Equalize", #selector(equalizePanes), .equalize),
         ]
-        for (title, action, key, modifiers) in items {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-            item.keyEquivalentModifierMask = modifiers
-            item.target = self
-            view.submenu?.addItem(item)
+        for (title, action, key) in items {
+            view.submenu?.addItem(menuItem(title, action, key))
         }
         menu.addItem(view)
         menu.addItem(makeGoMenu())
         let help = NSMenuItem()
         help.submenu = NSMenu(title: "Help")
+        help.submenu?.addItem(menuItem("Keyboard Shortcuts", #selector(toggleShortcuts), .shortcuts))
+        help.submenu?.addItem(.separator())
         for (title, action) in [
             ("Report a Bug…", #selector(reportBug)),
             ("Request a Feature…", #selector(requestFeature)),
@@ -860,6 +904,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         edit.submenu?.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.submenu?.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         menu.addItem(edit)
+        menu.addItem(help)
         return menu
     }
 

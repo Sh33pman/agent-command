@@ -364,62 +364,58 @@ final class ScheduledModel {
 
     // MARK: Keys
 
-    /// The view's keys. While the form is open only Esc and ⌘↩ are its own; the
-    /// rest go to the fields.
+    /// The view's keys, from the keymap. While the form is open only leaving and saving
+    /// are its own; the rest go to the fields.
     func handle(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let command = flags.contains(.command)
-        let key = event.charactersIgnoringModifiers ?? ""
+        let keys = Keymap.shared
+        let combo = KeyCombo(event: event)
         if confirmingDelete || confirmingDiscard {
-            switch event.keyCode {
-            case 53: // esc
+            switch keys.action(for: combo, among: [.back, .leave, .open]) {
+            case .back, .leave:
                 confirmingDelete = false
                 confirmingDiscard = false
-                return true
-            case 36: // return
+            case .open:
                 if confirmingDelete { delete(confirmed: true) } else { cancel(force: true) }
-                return true
-            default: return true
+            default: break
             }
+            return true
         }
+        // There's no pane to split or move to, or sidebar to go to, behind Scheduled.
+        let covered = KeyAction.paneActions + [.focusSidebar]
         if isEditing {
-            switch (event.keyCode, command) {
-            case (53, _):
-                cancel()
-                return true
-            case (36, true):
+            switch keys.action(for: combo, among: [.save, .leave, .closePane] + covered) {
+            case .save:
                 if canSave { save() }
-                return true
-            default:
-                if command && key == "s" {
-                    if canSave { save() }
-                    return true
-                }
+            case .leave, .closePane:
+                cancel()
+            case nil:
                 return false
+            default: break
             }
+            return true
         }
-        if command { return false }
-        switch event.keyCode {
-        case 53: close()
-        case 125: move(by: 1) // down
-        case 126: move(by: -1) // up
-        case 36: edit() // return
-        case 51, 117: delete() // delete, forward delete
-        default:
-            switch key {
-            case "j": move(by: 1)
-            case "k": move(by: -1)
-            case "n": newJob()
-            case "e": edit()
-            case "r": runNow()
-            case "p": togglePause()
-            case "d": duplicate()
-            case "g":
-                if let session = runs.first(where: { !$0.sessionID.isEmpty })?.sessionID {
-                    goToSession(session)
-                }
-            default: return false
+        let actions: [KeyAction] = [
+            .closePane, .rename, .archive, .duplicateJob, .up, .down, .open, .back, .go, .remove,
+            .newJob, .editJob, .runJob, .pauseJob,
+        ]
+        switch keys.action(for: combo, among: actions + covered) {
+        case .closePane, .back: close()
+        case .down: move(by: 1)
+        case .up: move(by: -1)
+        // ⌘R renames and ⇧⌘⌫ archives a session: here, the same keys edit and delete the job.
+        case .open, .editJob, .rename: edit()
+        case .remove, .archive: delete()
+        case .newJob: newJob()
+        case .runJob: runNow()
+        case .pauseJob: togglePause()
+        case .duplicateJob: duplicate()
+        case .go:
+            if let session = runs.first(where: { !$0.sessionID.isEmpty })?.sessionID {
+                goToSession(session)
             }
+        case nil:
+            return false
+        default: break
         }
         return true
     }

@@ -36,6 +36,7 @@ struct RenameView: View {
         PopupBox(
             title: title,
             placeholder: "Name",
+            hasList: false,
             search: $name,
             close: close,
             onMove: { _ in },

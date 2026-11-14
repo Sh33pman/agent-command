@@ -27,6 +27,13 @@ struct SidebarView: View {
     }
 
     /// The number keys 1 to 9, by session.
+    /// The keys the sidebar answers while it has the keyboard.
+    private var sidebarHint: String {
+        let keys = Keymap.shared
+        return ["1-9", keys.label(.nextNeedingYou), keys.label(.mark), keys.label(.open), keys.label(.back), keys.label(.shortcuts)]
+            .filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
     private var numbers: [String: Int] {
         Dictionary(uniqueKeysWithValues: rows.prefix(9).enumerated().map { ($1.session.id, $0 + 1) })
     }
@@ -40,7 +47,7 @@ struct SidebarView: View {
                         heading("Sessions")
                         Spacer()
                         if store.sidebarFocused {
-                            Text("1-9 ⇥ x ⏎ esc")
+                            Text(sidebarHint)
                                 .font(AppFont.ui(11))
                                 .foregroundStyle(theme.dim)
                                 .padding(.horizontal, 12)
@@ -104,7 +111,7 @@ struct SidebarView: View {
             HStack {
                 Text("commands").foregroundStyle(theme.fg)
                 Spacer()
-                Text("⇧⌘P").foregroundStyle(theme.dim)
+                Text(Keymap.shared.label(.commands)).foregroundStyle(theme.dim)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
@@ -293,34 +300,25 @@ enum SidebarKey: Equatable {
     /// Shows the next session that needs you.
     case nextAttention
 
-    /// Keys only the session sidebar uses, not the Inbox's lists.
-    var isSidebarOnly: Bool {
-        switch self {
-        case .number, .nextAttention: true
-        default: false
-        }
-    }
-
     /// The number row's key codes for 1 to 9, which don't depend on the layout.
-    static let numberKeyCodes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25]
+    static let numberKeyCodes = KeyName.digitCodes
 
-    /// Arrow keys or control with vim's j and k move, x marks, return opens,
-    /// 1 to 9 show that session, tab goes to the next that needs you and escape
-    /// leaves. Key codes, so the keyboard layout's control characters don't matter.
-    static func from(keyCode: UInt16, characters: String?, flags: NSEvent.ModifierFlags) -> SidebarKey? {
-        let mods = flags.intersection([.command, .control, .option, .shift])
-        if mods.isEmpty, let index = numberKeyCodes.firstIndex(of: keyCode) {
+    /// The list keys from the keymap: by default the arrows, ⌃J ⌃K or j k move, x
+    /// marks, return opens, tab goes to the next that needs you and escape leaves.
+    /// 1 to 9 show that session.
+    static func from(keyCode: UInt16, flags: NSEvent.ModifierFlags, keys: Keymap = .shared) -> SidebarKey? {
+        let combo = KeyCombo(key: keyCode, mods: KeyCombo.Mods(flags))
+        if combo.mods.isEmpty, let index = numberKeyCodes.firstIndex(of: keyCode) {
             return .number(index + 1)
         }
-        switch (keyCode, mods) {
-        case (48, []): return .nextAttention
-        case (126, []): return .up
-        case (125, []): return .down
-        case (40, .control): return .up
-        case (38, .control): return .down
-        case (36, []), (76, []): return .open
-        case (53, []): return .leave
-        default: return mods.isEmpty && characters == "x" ? .toggleMark : nil
+        switch keys.action(for: combo, among: [.up, .down, .open, .back, .mark, .nextNeedingYou]) {
+        case .up: return .up
+        case .down: return .down
+        case .open: return .open
+        case .back: return .leave
+        case .mark: return .toggleMark
+        case .nextNeedingYou: return .nextAttention
+        default: return nil
         }
     }
 }
@@ -344,8 +342,7 @@ final class SidebarKeyView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if let key = SidebarKey.from(
-            keyCode: event.keyCode, characters: event.charactersIgnoringModifiers, flags: event.modifierFlags) {
+        if let key = SidebarKey.from(keyCode: event.keyCode, flags: event.modifierFlags) {
             onKey?(key)
         } else {
             super.keyDown(with: event)

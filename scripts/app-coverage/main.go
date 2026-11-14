@@ -23,6 +23,7 @@ var minimums = map[string]float64{
 	"Daemon.swift":          85,
 	"InboxModel.swift":      90,
 	"Jobs.swift":            90,
+	"Keymap.swift":          95,
 	"Links.swift":           95,
 	"Markdown.swift":        90,
 	"MarkdownEditing.swift": 95,

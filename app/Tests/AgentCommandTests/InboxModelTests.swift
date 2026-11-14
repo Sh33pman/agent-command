@@ -274,6 +274,8 @@ struct InboxModelTests {
         try await until { daemon.received("mutate").contains { $0["kind"] as? String == "inbox.read" && $0["flag"] as? Bool == true } }
         try h.press(2, "d")
         try await until { daemon.received("mutate").contains { $0["kind"] as? String == "inbox.dismiss" } }
+        try h.press(51) // delete dismisses too, as it deletes a job in Scheduled
+        try await until { daemon.received("mutate").filter { $0["kind"] as? String == "inbox.dismiss" }.count == 2 }
         try h.press(7, "x")
         #expect(h.model.markedMessages == [1])
         try h.press(7, "x")
@@ -331,6 +333,7 @@ struct InboxModelTests {
         #expect(closed)
         #expect(try !h.press(45, "n", flags: .command), "the app's other shortcuts still work")
         #expect(try h.press(0, "z"), "other keys stop here, not in the terminal behind")
+        #expect(try h.press(Key.returnKey, flags: .command), "no split behind the Inbox")
     }
 
     @Test func typingKeepsTheKeysExceptEscape() throws {
@@ -394,6 +397,29 @@ struct InboxModelTests {
         #expect(h.model.selectedID == 1, "those keys move the option, not the message")
         try h.press(Key.escape)
         #expect(h.model.highlightedOption(of: item) == nil)
+    }
+
+    @Test func tabGoesToTheNextUnreadMessage() throws {
+        let items = [
+            try makeItem(1, session: "a", read: true), try makeItem(2, session: "b"),
+            try makeItem(3, session: "c", read: true), try makeItem(4, session: "d"),
+        ]
+        let h = try Harness(queue: items)
+        #expect(h.model.selectedID == 1)
+        try h.press(48, "\t")
+        #expect(h.model.selectedID == 2)
+        try h.press(48, "\t")
+        #expect(h.model.selectedID == 4)
+        try h.press(48, "\t")
+        #expect(h.model.selectedID == 2, "round to the start")
+    }
+
+    @Test func returnInTheInboxOpensAndAnswersAsInThePopup() throws {
+        let item = try question(1, "a")
+        let h = try Harness(queue: [item], sessions: [waiting("a")], showsCursor: false)
+        h.model.click(item: item)
+        try h.press(Key.returnKey)
+        #expect(h.model.selectedID == 1 && h.model.highlightedOption(of: item) == 0)
     }
 
     @Test func holdingReturnDoesNotChooseByItself() async throws {

@@ -71,7 +71,9 @@ private func job(_ id: String, _ name: String, cwd: String = "/w") -> Job {
     #expect(model.draft?.isNew == true && model.draft?.cwd == "/w", "a new job starts in the selected one's folder")
     board.model.cancel()
 
-    try board.press(2, "d")
+    #expect(try !board.press(2, "d"), "plain d is the Inbox's dismiss, not duplicate")
+    #expect(!model.isEditing)
+    try board.press(2, "d", flags: .command)
     #expect(model.draft?.name == "alpha copy" && model.isDirty, "a copy counts as a change")
     try board.press(53)
     #expect(model.confirmingDiscard)
@@ -284,4 +286,22 @@ struct ScheduledAcmdTests {
         #expect(!ok)
     }
 }
+}
+
+/// The app's keys mean the same here, applied to the job: ⌘R edits it, ⇧⌘⌫ deletes it,
+/// ⌘W closes Scheduled. The panes behind it don't take keys.
+@MainActor @Test func theAppKeysActOnTheJob() throws {
+    let board = try Board(jobs: [job("A", "alpha"), job("B", "beta")])
+    let model = board.model
+    try board.press(15, "r", flags: .command)
+    #expect(model.isEditing && model.draft?.name == "alpha")
+    try board.press(13, "w", flags: .command)
+    #expect(!model.isEditing && !board.closed, "⌘W leaves the form first")
+    #expect(try board.press(36, "\r", flags: .command), "no split behind Scheduled")
+    #expect(try board.press(38, "j", flags: [.command, .control]), "no pane to focus")
+    try board.press(51, flags: [.command, .shift])
+    #expect(model.confirmingDelete)
+    try board.press(53)
+    try board.press(13, "w", flags: .command)
+    #expect(board.closed)
 }

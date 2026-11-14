@@ -28,6 +28,8 @@ struct PopupBox<Content: View>: View {
     let title: String
     let placeholder: String
     var dimsBackground = true
+    /// Whether there's a list to move through, so ⌃J and ⌃K move rather than edit.
+    var hasList = true
     @Binding var search: String
     let close: () -> Void
     let onMove: (Int) -> Void
@@ -53,6 +55,7 @@ struct PopupBox<Content: View>: View {
                 PopupSearchField(
                     text: $search,
                     placeholder: placeholder,
+                    hasList: hasList,
                     onMove: onMove,
                     onSubmit: onSubmit,
                     onCancel: close
@@ -178,6 +181,7 @@ struct CommandPopupView: View {
 private struct PopupSearchField: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
+    let hasList: Bool
     let onMove: (Int) -> Void
     let onSubmit: () -> Void
     let onCancel: () -> Void
@@ -189,6 +193,20 @@ private struct PopupSearchField: NSViewRepresentable {
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = AppFont.appKit(13)
+        // The lists' keys, as in the sidebar and the Inbox, except what would type.
+        let coordinator = context.coordinator
+        field.onKey = { combo in
+            let parent = coordinator.parent
+            let moves: [KeyAction] = parent.hasList ? [.up, .down] : []
+            switch Keymap.shared.action(for: combo, among: moves + [.open, .back]) {
+            case .up: parent.onMove(-1)
+            case .down: parent.onMove(1)
+            case .open: parent.onSubmit()
+            case .back: parent.onCancel()
+            default: return false
+            }
+            return true
+        }
         return field
     }
 
@@ -238,10 +256,24 @@ private struct PopupSearchField: NSViewRepresentable {
     }
 }
 
-/// A text field that takes keyboard focus as soon as it's in a window.
+/// A text field that takes keyboard focus as soon as it's in a window. While it
+/// has the keyboard, onKey sees each key first, except what would type.
 final class FocusingTextField: NSTextField {
+    var onKey: ((KeyCombo) -> Bool)?
+    private var monitor: Any?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, let onKey = self.onKey, event.window === self.window,
+                  let editor = self.currentEditor(), self.window?.firstResponder === editor
+            else { return event }
+            let combo = KeyCombo(event: event)
+            return !combo.types && onKey(combo) ? nil : event
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self, let window = self.window else { return }
             window.makeFirstResponder(self)

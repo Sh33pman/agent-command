@@ -52,6 +52,9 @@ type Config struct {
 	ClaudeDir string
 	// Notify configures notifications (nil = none).
 	Notify *config.Notify
+	// ConfigFile is config.toml: when it changes, notifications follow its [notify]
+	// section without a restart. "" keeps Notify as it was given.
+	ConfigFile string
 	// Fallback shows a notification when no view's sidebar can (terminal-notifier,
 	// else osascript).
 	Fallback func(ipc.Notice)
@@ -91,8 +94,9 @@ type Daemon struct {
 	appWatches   atomic.Int32 // the app's open watches (notify.go)
 	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
 
-	notify *notifier   // d.mu
-	bg     *background // d.mu (background.go)
+	notify     *notifier   // d.mu
+	notifyRead time.Time   // config.toml's modification time when notify was read (d.mu)
+	bg         *background // d.mu (background.go)
 
 	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
 
@@ -167,6 +171,9 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Notify != nil {
 		d.notify = newNotifier(*cfg.Notify)
 	}
+	d.mu.Lock()
+	d.refreshNotify()
+	d.mu.Unlock()
 	defer os.Remove(sock)
 
 	if err := d.drainSpool(ctx); err != nil {

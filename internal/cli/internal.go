@@ -60,6 +60,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			} else {
 				logger.Printf("config: %v (notifications off)", err)
 			}
+			cfg.ConfigFile = p.Config()
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)
 				cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli

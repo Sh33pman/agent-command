@@ -37,6 +37,7 @@ var minimums = map[string]float64{
 	"ScheduledModel.swift":   80,
 	"ScheduleBuilder.swift":  95,
 	"SessionStore.swift":     70,
+	"SettingsModel.swift":    95,
 	"SpeechController.swift": 90,
 	"StatusSummary.swift":    95,
 	"ThemeConfig.swift":      95,

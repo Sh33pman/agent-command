@@ -105,6 +105,12 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
         UserDefaults.standard.set(Array(dismissedWarnings), forKey: Self.dismissedKey)
     }
 
+    /// Shows every warning again, dismissed or not.
+    func restoreDismissedWarnings() {
+        dismissedWarnings = []
+        UserDefaults.standard.removeObject(forKey: Self.dismissedKey)
+    }
+
     /// Opens the app's page in System Settings.
     func openSettings() {
         let id = Bundle.main.bundleIdentifier ?? ""

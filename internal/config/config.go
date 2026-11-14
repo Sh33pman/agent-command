@@ -10,46 +10,35 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
 )
 
-// Config holds the settings acmd reads so far; unknown keys are ignored
-// (the file may carry settings of later versions).
+// Config holds the settings acmd reads; unknown keys are ignored (the file may
+// carry settings of later versions, or of earlier ones: see Retired).
 type Config struct {
 	ClaudeCommand string   `toml:"claude_command"`
 	ClaudeArgs    []string `toml:"claude_args"`
 	// RemoteControl starts sessions with `claude --remote-control`, so they can be
 	// used from claude.ai and the Claude app. Off by default.
 	RemoteControl bool   `toml:"remote_control"`
-	SidebarWidth  int    `toml:"sidebar_width"`
 	Editor        Editor `toml:"editor"`
-	Keys          Keys   `toml:"keys"`
 	Notify        Notify `toml:"notify"`
-	Popup         Popup  `toml:"popup"`
 	Speech        Speech `toml:"speech"`
 }
 
-// Popup is the [popup] section: the reply popup.
-type Popup struct {
-	Enabled  bool   `toml:"enabled"`  // off by default; init asks
-	AutoPlay bool   `toml:"autoplay"` // read each item aloud when it's shown
-	Hotkey   string `toml:"hotkey"`   // system-wide: reopen the popup
-	// ReadHotkey is system-wide: read the latest response or question of the
-	// session you're in aloud (press again to stop). Empty turns it off.
-	ReadHotkey string    `toml:"read_hotkey"`
-	Keys       PopupKeys `toml:"keys"` // inside the popup
-}
-
-// PopupKeys are the popup's own keys (e.g. "cmd+ctrl+left", "escape").
-type PopupKeys struct {
-	Prev  string `toml:"prev"`
-	Next  string `toml:"next"`
-	Play  string `toml:"play"`
-	Skip  string `toml:"skip"`
-	Close string `toml:"close"`
+// Retired are what acmd v1 kept in config.toml and nothing reads any more: its
+// terminal shortcuts and popup (the app keeps its own) and the sidebar's width.
+// `acmd init` takes them out.
+var Retired = struct {
+	Sections []string
+	Keys     []string // top-level keys
+}{
+	Sections: []string{"keys", "popup", "popup.keys"},
+	Keys:     []string{"sidebar_width"},
 }
 
 // Speech is the [speech] section: text to speech.
@@ -93,36 +82,14 @@ type Editor struct {
 	Target   string   `toml:"target"`   // cwd | git_root
 }
 
-// Keys is the [keys] section: global terminal shortcuts.
-// Field order matches setup.Keys so the two convert directly.
-type Keys struct {
-	Toggle     string `toml:"toggle"`
-	New        string `toml:"new"`
-	Focus      string `toml:"focus"`
-	Attention  string `toml:"attention"`
-	Picker     string `toml:"picker"`
-	Cheatsheet string `toml:"cheatsheet"`
-	Editor     string `toml:"editor"`
-	Adopt      string `toml:"adopt"`
-	Term       string `toml:"term"`
-	GotoPrefix string `toml:"goto_prefix"`
-}
-
 // Default is the configuration used for missing keys.
 func Default() Config {
 	return Config{
 		ClaudeCommand: "claude",
-		SidebarWidth:  32,
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
 			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default"},
 		Editor: Editor{RunIn: "background", Target: "cwd"},
-		Popup: Popup{Hotkey: "cmd+ctrl+o", ReadHotkey: "cmd+ctrl+p", Keys: PopupKeys{Prev: "cmd+ctrl+left", Next: "cmd+ctrl+right",
-			Play: "cmd+ctrl+p", Skip: "cmd+ctrl+k", Close: "escape"}},
 		Speech: Speech{Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
-		Keys: Keys{
-			Toggle: "cmd+shift+b", New: "cmd+shift+n", Focus: "cmd+shift+s", Attention: "cmd+shift+a",
-			Picker: "cmd+shift+l", Cheatsheet: "cmd+shift+k", Editor: "cmd+shift+e", Adopt: "cmd+shift+m", Term: "cmd+shift+x", GotoPrefix: "ctrl+cmd",
-		},
 	}
 }
 
@@ -150,7 +117,8 @@ func Load(path string) (Config, error) {
 // Template is the config.toml written on first setup: the settings acmd
 // reads so far, at their defaults, with comments on their own lines (Set
 // replaces whole lines).
-const Template = `# agent-command (acmd) configuration. See: acmd help.
+const Template = `# agent-command (acmd) configuration. See: acmd help. The app's Settings
+# (⌘,) and ` + "`acmd config set`" + ` change it too.
 
 # Absolute path of the claude binary (resolved by ` + "`acmd init`" + `).
 claude_command = "claude"
@@ -158,7 +126,6 @@ claude_command = "claude"
 claude_args = []
 # Start sessions with Remote Control, so you can use them from claude.ai and
 # the Claude app. Applies to sessions started or resumed after a change.
-# Change with: acmd remote-control on|off
 remote_control = false
 
 [editor]
@@ -173,34 +140,20 @@ run_in = "background"
 # cwd | git_root
 target = "cwd"
 
-[keys]
-# Global terminal shortcuts. Rerun ` + "`acmd init`" + ` after changing them.
-toggle = "cmd+shift+b"
-new = "cmd+shift+n"
-focus = "cmd+shift+s"
-attention = "cmd+shift+a"
-picker = "cmd+shift+l"
-cheatsheet = "cmd+shift+k"
-editor = "cmd+shift+e"
-adopt = "cmd+shift+m"
-term = "cmd+shift+x"
-goto_prefix = "ctrl+cmd"
-
-[popup]
-# The reply popup: finished turns, questions and permissions of sessions,
-# shown while you're not in acmd. ` + "`acmd init`" + ` asks to turn it on.
-enabled = false
-# Read each item aloud when it's shown (needs speech: acmd speech install).
-autoplay = false
-# System-wide shortcut that reopens the popup.
-hotkey = "cmd+ctrl+o"
-
-[popup.keys]
-prev = "cmd+ctrl+left"
-next = "cmd+ctrl+right"
-play = "cmd+ctrl+p"
-skip = "cmd+ctrl+k"
-close = "escape"
+[notify]
+# Notifications, for sessions that need you, fail, finish or stop. A change
+# applies straight away.
+enabled = true
+on_waiting = true
+on_error = true
+on_done = true
+on_paused = false
+# Only say a turn finished when it took at least this long.
+done_min_duration = "10s"
+# At most one notification per session in this long.
+cooldown = "20s"
+# "default" plays the notification sound; "" is silent.
+sound = "default"
 
 [speech]
 # Kokoro's voice; a blend is "voice:weight,voice:weight". American English
@@ -334,4 +287,59 @@ func renderValue(v any) (string, error) {
 	}
 	s := strings.TrimSpace(buf.String())
 	return strings.TrimSpace(strings.TrimPrefix(s, "v =")), nil
+}
+
+var retiredKeyRe = regexp.MustCompile(`^\s*(` + strings.Join(Retired.Keys, "|") + `)\s*=`)
+
+// Retire takes the Retired sections and top-level keys out of text, and keeps the
+// rest as it is. A text without them comes back unchanged. The result is checked
+// to parse.
+func Retire(text string) (string, error) {
+	lines := strings.SplitAfter(text, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	var out []string
+	removed, topLevel, inRetired := false, true, false
+	for i := 0; i < len(lines); i++ {
+		l := lines[i]
+		m := sectionRe.FindStringSubmatch(strings.TrimRight(l, "\r\n"))
+		if m != nil || strings.HasPrefix(strings.TrimSpace(l), "[[") {
+			topLevel = false
+			inRetired = m != nil && slices.Contains(Retired.Sections, m[1])
+		}
+		switch {
+		case inRetired:
+			removed = true
+		case topLevel && retiredKeyRe.MatchString(l):
+			removed = true
+			i += valueExtent(lines[i:]) - 1
+		default:
+			out = append(out, l)
+		}
+	}
+	if !removed {
+		return text, nil
+	}
+	// What was taken out leaves blank lines behind: one between sections is enough.
+	var tidy []string
+	for _, l := range out {
+		blank := strings.TrimSpace(l) == ""
+		if blank && (len(tidy) == 0 || strings.TrimSpace(tidy[len(tidy)-1]) == "") {
+			continue
+		}
+		tidy = append(tidy, l)
+	}
+	for len(tidy) > 0 && strings.TrimSpace(tidy[len(tidy)-1]) == "" {
+		tidy = tidy[:len(tidy)-1]
+	}
+	result := strings.Join(tidy, "")
+	if result != "" && !strings.HasSuffix(result, "\n") {
+		result += "\n"
+	}
+	var doc map[string]any
+	if _, err := toml.Decode(result, &doc); err != nil {
+		return "", fmt.Errorf("config.toml: retiring v1 settings: %w", err)
+	}
+	return result, nil
 }

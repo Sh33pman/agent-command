@@ -14,7 +14,7 @@ func TestTemplateIsDefault(t *testing.T) {
 	}
 	d := Default()
 	if c.ClaudeCommand != d.ClaudeCommand || c.Editor.RunIn != d.Editor.RunIn || c.Editor.Target != d.Editor.Target ||
-		c.Editor.Preset != "" || len(c.Editor.Command) != 0 || c.Keys != d.Keys {
+		c.Editor.Preset != "" || len(c.Editor.Command) != 0 || c.Notify != d.Notify || c.Speech != d.Speech {
 		t.Errorf("template %+v differs from defaults %+v", c, d)
 	}
 }
@@ -22,16 +22,16 @@ func TestTemplateIsDefault(t *testing.T) {
 func TestLoad(t *testing.T) {
 	dir := t.TempDir()
 	c, err := Load(filepath.Join(dir, "missing.toml"))
-	if err != nil || c.Keys != Default().Keys {
+	if err != nil || c.Notify != Default().Notify {
 		t.Fatalf("missing file: %+v %v", c, err)
 	}
 	p := filepath.Join(dir, "config.toml")
-	must(t, os.WriteFile(p, []byte("future_key = 1\n[editor]\npreset = \"zed\"\n[keys]\ntoggle = \"cmd+b\"\n"), 0o600))
+	must(t, os.WriteFile(p, []byte("future_key = 1\n[editor]\npreset = \"zed\"\n[notify]\ncooldown = \"1m\"\n"), 0o600))
 	c, err = Load(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Editor.Preset != "zed" || c.Keys.Toggle != "cmd+b" || c.Keys.New != "cmd+shift+n" || c.Editor.RunIn != "background" {
+	if c.Editor.Preset != "zed" || c.Notify.Cooldown != "1m" || !c.Notify.OnDone || c.Editor.RunIn != "background" {
 		t.Errorf("partial file not merged over defaults: %+v", c)
 	}
 	must(t, os.WriteFile(p, []byte("[editor\n"), 0o600))
@@ -138,5 +138,61 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRetireTakesOutV1Settings(t *testing.T) {
+	const v1 = `# mine
+claude_command = "/bin/claude"
+sidebar_width = 32
+claude_args = [
+  "--x",
+]
+
+[editor]
+preset = "zed"
+
+[keys]
+# Global terminal shortcuts.
+toggle = "cmd+shift+b"
+
+[popup]
+enabled = false
+
+[popup.keys]
+prev = "cmd+ctrl+left"
+
+[speech]
+sidebar_width = 1 # not top level: kept
+voice = "af_heart"
+`
+	got, err := Retire(v1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `# mine
+claude_command = "/bin/claude"
+claude_args = [
+  "--x",
+]
+
+[editor]
+preset = "zed"
+
+[speech]
+sidebar_width = 1 # not top level: kept
+voice = "af_heart"
+`
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if again, err := Retire(got); err != nil || again != got {
+		t.Errorf("a second time changed it: %v\n%s", err, again)
+	}
+	if same, err := Retire(Template); err != nil || same != Template {
+		t.Errorf("the template has nothing to retire: %v", err)
+	}
+	if out, err := Retire("[keys]\na = 1\n"); err != nil || out != "" {
+		t.Errorf("only retired: %q %v", out, err)
 	}
 }

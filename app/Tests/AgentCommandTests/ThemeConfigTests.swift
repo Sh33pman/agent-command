@@ -36,3 +36,12 @@ import Testing
     let names = ThemeConfig.themeNames(in: [one.path, two.path, root.appendingPathComponent("missing").path])
     #expect(names == ["Dracula", "nord", "Zenburn"], "sorted ignoring case, no duplicates, folders or hidden files")
 }
+
+@Test func anyKeyCanBeSetLikeTheTheme() {
+    #expect(ThemeConfig.value("font-size", inConfig: "font-size = 14\nfont-size = 15\n") == "15")
+    #expect(ThemeConfig.value("font-family", inConfig: "font-family = \"Fira Code\"\n") == "Fira Code", "quotes aren't part of it")
+    let fonts = "font-family = A\nx = 1\nfont-family = B\n"
+    #expect(ThemeConfig.setting("font-family", to: "C", inConfig: fonts, keepingOthers: true) == "font-family = C\nx = 1\nfont-family = B\n")
+    #expect(ThemeConfig.setting("font-family", to: "C", inConfig: fonts) == "font-family = C\nx = 1\n")
+    #expect(ThemeConfig.setting("font-family", to: nil, inConfig: fonts, keepingOthers: true) == "x = 1\nfont-family = B\n")
+}

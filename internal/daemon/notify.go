@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os"
 	"path/filepath"
 	"time"
 
@@ -39,6 +40,7 @@ func newNotifier(cfg config.Notify) *notifier {
 // transition records a status change of s and returns the notices it
 // causes (d.mu is held).
 func (d *Daemon) transition(s *core.Session, tr core.Transition) {
+	d.refreshNotify()
 	n := d.notify
 	if n == nil || !tr.Changed() {
 		return
@@ -151,4 +153,33 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// refreshNotify reads the notification settings again when config.toml has changed
+// since they were read, so a change made in Settings applies straight away (d.mu
+// is held). A file that doesn't parse leaves them as they were.
+func (d *Daemon) refreshNotify() {
+	path := d.cfg.ConfigFile
+	if path == "" {
+		return
+	}
+	var mod time.Time
+	if info, err := os.Stat(path); err == nil {
+		mod = info.ModTime()
+	}
+	if !d.notifyRead.IsZero() && mod.Equal(d.notifyRead) {
+		return
+	}
+	d.notifyRead = mod
+	c, err := config.Load(path)
+	if err != nil {
+		d.cfg.Log.Printf("config: %v (notifications stay as they were)", err)
+		return
+	}
+	if d.notify == nil {
+		d.notify = newNotifier(c.Notify)
+		return
+	}
+	d.notify.cfg = c.Notify
+	d.notify.doneMin, d.notify.cooldown = c.Notify.Durations()
 }

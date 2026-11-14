@@ -247,6 +247,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
     case archive = "app.archive"
     case togglePopup = "app.toggle-popup"
     case shortcuts = "app.shortcuts"
+    case settings = "app.settings"
     case quit = "app.quit"
 
     case splitRight = "panes.split-right"
@@ -324,6 +325,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .archive: "Archive"
         case .togglePopup: "Turn the popup on or off"
         case .shortcuts: "Keyboard shortcuts"
+        case .settings: "Settings"
         case .quit: "Quit"
         case .splitRight: "Split right"
         case .splitDown: "Split down"
@@ -393,6 +395,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .archive: ["shift+cmd+delete"]
         case .togglePopup: ["opt+cmd+i"]
         case .shortcuts: ["cmd+/"]
+        case .settings: ["cmd+,"]
         case .quit: ["cmd+q"]
         case .splitRight: ["cmd+return"]
         case .splitDown: ["shift+cmd+return"]

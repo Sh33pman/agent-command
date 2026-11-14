@@ -2,7 +2,10 @@ package daemon
 
 import (
 	"context"
+	"log"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -147,5 +150,46 @@ func TestNoticeGoesToTheApp(t *testing.T) {
 	}
 	if got := fallback(); len(got) != 0 {
 		t.Errorf("fallback: %+v", got)
+	}
+}
+
+// A change to config.toml's [notify] applies without a restart, and one that
+// doesn't parse keeps what was there.
+func TestNotifyFollowsTheConfigFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "config.toml")
+	write := func(text string, at time.Time) {
+		t.Helper()
+		must(t, os.WriteFile(file, []byte(text), 0o600))
+		must(t, os.Chtimes(file, at, at))
+	}
+	start := time.Now().Add(-time.Hour)
+	write("[notify]\nenabled = false\n", start)
+	d, _, _ := notifyDaemon(t, config.Default().Notify)
+	var logged strings.Builder
+	d.cfg.ConfigFile, d.cfg.Log = file, log.New(&logged, "", 0)
+	s := &core.Session{ID: "s1"}
+	d.transition(s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
+	if len(d.notices()) != 0 {
+		t.Fatal("notified with notifications turned off in the file")
+	}
+
+	write("[notify]\nenabled = true\ncooldown = \"0s\"\n", start.Add(time.Minute))
+	d.transition(s, core.Transition{From: core.StatusWaiting, To: core.StatusError})
+	if n := d.notices(); len(n) != 1 || n[0].Kind != "error" {
+		t.Fatalf("after turning them on: %+v", n)
+	}
+
+	write("[notify\n", start.Add(2*time.Minute))
+	d.transition(s, core.Transition{From: core.StatusError, To: core.StatusWaiting})
+	if n := d.notices(); len(n) != 2 || !strings.Contains(logged.String(), "stay as they were") {
+		t.Errorf("a broken file: %+v %q", n, logged.String())
+	}
+
+	// No notifier yet (the file didn't parse at start): one is made once it does.
+	fresh := &Daemon{cfg: Config{Now: time.Now, ConfigFile: file, Log: log.New(&logged, "", 0)}}
+	write("[notify]\nenabled = true\n", start.Add(3*time.Minute))
+	fresh.transition(s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
+	if n := fresh.notices(); len(n) != 1 {
+		t.Errorf("fresh: %+v", n)
 	}
 }

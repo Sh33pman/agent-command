@@ -172,6 +172,9 @@ func planConfig(p *Plan, in Input) error {
 	if !exists {
 		text = config.Template
 	}
+	if text, err = config.Retire(text); err != nil {
+		return err
+	}
 	set := func(section, key string, v any) {
 		if err == nil {
 			text, err = config.Set(text, section, key, v)

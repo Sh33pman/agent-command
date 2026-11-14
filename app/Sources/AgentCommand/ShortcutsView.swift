@@ -6,6 +6,8 @@ import SwiftUI
 /// while it's open: while it records, the next key pressed is the new shortcut.
 @Observable final class ShortcutsModel {
     let keys: Keymap
+    /// In the Settings window: keys go to it only while it records one.
+    var embedded = false
     /// The action whose next key is being recorded.
     private(set) var recording: KeyAction?
     /// Why the last key pressed couldn't be used, and for what.
@@ -58,6 +60,7 @@ import SwiftUI
             stopRecording()
             return true
         }
+        if embedded { return false }
         if keys.action(for: combo, among: [.back, .closePane, .shortcuts]) != nil {
             close()
             return true
@@ -115,6 +118,7 @@ struct ShortcutsView: View {
             .buttonStyle(.borderless)
             .disabled(KeyAction.allCases.allSatisfy { !keys.isChanged($0) })
             .help("Put every shortcut back as it came")
+            if !model.embedded {
             Button {
                 model.close()
             } label: {
@@ -122,6 +126,7 @@ struct ShortcutsView: View {
             }
             .buttonStyle(.plain)
             .help(keys.tip("Close", .shortcuts))
+            }
         }
         .padding(.horizontal, 16)
         .frame(height: 34)

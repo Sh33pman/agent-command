@@ -32,6 +32,7 @@ enum PaletteAction: Equatable {
     case toggleSidebar
     case report(ReportKind)
     case shortcuts
+    case settings
     case quit
 }
 
@@ -154,6 +155,7 @@ enum Palette {
             list.append(PaletteEntry(section: "App", title: "Inbox for \(current.displayName)", action: .inboxFor(current)))
         }
         list.append(PaletteEntry(section: "App", title: "Change theme…", shortcut: keys.label(.themes), action: .themes))
+        list.append(PaletteEntry(section: "App", title: "Settings…", shortcut: keys.label(.settings), action: .settings))
         list.append(PaletteEntry(section: "App", title: "Keyboard shortcuts…", shortcut: keys.label(.shortcuts), action: .shortcuts))
         list.append(PaletteEntry(section: "App", title: "Focus sidebar", shortcut: keys.label(.focusSidebar), action: .focusSidebar))
         list.append(PaletteEntry(section: "App", title: "Toggle sidebar", action: .toggleSidebar))

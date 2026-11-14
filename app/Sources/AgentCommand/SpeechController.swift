@@ -137,6 +137,12 @@ final class SpeechController {
         install(upgrading: false)
     }
 
+    /// Another voice was chosen: it needs downloading, if speech is on.
+    func voiceChanged() {
+        isInstalled = false
+        if isEnabled { install(upgrading: false) }
+    }
+
     private func install(upgrading: Bool) {
         guard setupProcess == nil else { return }
         setupFailure = nil

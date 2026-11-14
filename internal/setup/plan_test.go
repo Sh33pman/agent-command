@@ -380,3 +380,24 @@ func TestStableBinaryFollowsLinkIntoApp(t *testing.T) {
 		t.Errorf("a link outside an app should stay: %s", got)
 	}
 }
+
+// An existing config.toml loses acmd v1's settings, and keeps the rest.
+func TestInitRetiresV1Settings(t *testing.T) {
+	in, _ := fakeHome(t)
+	must(t, os.MkdirAll(filepath.Dir(in.ConfigFile), 0o755))
+	must(t, os.WriteFile(in.ConfigFile, []byte("# mine\nsidebar_width = 30\n\n[keys]\ntoggle = \"cmd+b\"\n\n[speech]\nspeed = 1.5\n"), 0o600))
+	plan, err := PlanInit(in)
+	must(t, err)
+	for _, c := range plan.Changes {
+		if filepath.Base(c.Path) != "config.toml" {
+			continue
+		}
+		got := string(c.New)
+		if strings.Contains(got, "[keys]") || strings.Contains(got, "sidebar_width") ||
+			!strings.Contains(got, "# mine") || !strings.Contains(got, "speed = 1.5") {
+			t.Errorf("config.toml:\n%s", got)
+		}
+		return
+	}
+	t.Error("config.toml isn't changed")
+}

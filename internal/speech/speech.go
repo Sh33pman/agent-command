@@ -109,7 +109,16 @@ func sameVoices(a, b string) bool {
 // American English alone, and for other languages the helper's library would go
 // and download its own. The helper checks too.
 func (e *Engine) checkVoice() error {
-	for _, n := range voiceNames(e.Voice) {
+	return CheckVoice(e.Voice)
+}
+
+// CheckVoice says why the model can't speak a voice or blend, if it can't.
+func CheckVoice(spec string) error {
+	names := voiceNames(spec)
+	if len(names) == 0 {
+		return errors.New("no voice given")
+	}
+	for _, n := range names {
 		if !strings.HasPrefix(n, "af_") && !strings.HasPrefix(n, "am_") {
 			return fmt.Errorf("can't use voice %s: only American English voices (af_, am_) are available", n)
 		}

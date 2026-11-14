@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The menu items whose shortcuts come from the keymap.
     private var menuItems: [KeyAction: NSMenuItem] = [:]
     private var shortcuts: ShortcutsModel?
+    private var settingsWindow: NSWindow?
+    private var settingsClosed: NSObjectProtocol?
     /// A clicked notification's session, if it arrived before the session list.
     private var pendingOpen: String?
 
@@ -654,6 +656,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scheduled = model
     }
 
+    /// Every setting, in a window of its own that can stay open beside the sessions.
+    @objc private func showSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let settingsWindow {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+        let model = SettingsModel()
+        model.ghosttyChanged = { GhosttyRuntime.shared.reloadConfig() }
+        model.voiceChanged = { SpeechController.shared.voiceChanged() }
+        let keys = ShortcutsModel()
+        keys.embedded = true
+        keys.start()
+        let view = SettingsView(
+            model: model, store: store, notifier: notifier, shortcuts: keys,
+            chooseTheme: { [weak self] in
+                self?.showMainWindow()
+                self?.showThemes()
+            })
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered, defer: false)
+        window.title = "Settings"
+        window.isReleasedWhenClosed = false
+        window.contentViewController = NSHostingController(rootView: view)
+        window.setContentSize(NSSize(width: 780, height: 560))
+        window.center()
+        window.setFrameAutosaveName("Settings")
+        settingsClosed = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            keys.stop()
+            if let observer = self?.settingsClosed { NotificationCenter.default.removeObserver(observer) }
+            self?.settingsClosed = nil
+            self?.settingsWindow = nil
+        }
+        settingsWindow = window
+        window.makeKeyAndOrderFront(nil)
+    }
+
     @objc private func toggleShortcuts() {
         if shortcuts == nil { showShortcuts() } else { closePopup() }
     }
@@ -760,6 +803,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .toggleSidebar: split?.toggleSidebar(nil)
         case .report(let kind): showReport(kind)
         case .shortcuts: showShortcuts()
+        case .settings: showSettings()
         case .quit: NSApp.terminate(nil)
         }
     }
@@ -840,6 +884,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         let app = NSMenuItem()
         app.submenu = NSMenu()
+        app.submenu?.addItem(menuItem("Settings…", #selector(showSettings), .settings))
+        app.submenu?.addItem(.separator())
         app.submenu?.addItem(menuItem("Quit Agent Command", #selector(NSApplication.terminate(_:)), .quit))
         app.submenu?.items.last?.target = NSApp
         menu.addItem(app)

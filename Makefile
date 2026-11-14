@@ -180,6 +180,15 @@ speech-helper: ## Build the Swift speech engine into $(SPEECH_OUT)
 app: ## Build "dist/Agent Command.app" (needs scripts/build-ghostty.sh first)
 	scripts/build-app.sh
 
+.PHONY: linux-ui
+linux-ui: ## Build ./dist/agent-command-ui (needs scripts/build-ghostty.sh first)
+	mkdir -p $(DIST)
+	cd app-linux && zig build -Doptimize=ReleaseFast
+	install -m 0755 app-linux/zig-out/bin/agent-command-ui $(DIST)/agent-command-ui
+	@if [ -f build/ghostty/lib/ghostty-internal.so ]; then \
+		install -m 0755 build/ghostty/lib/ghostty-internal.so $(DIST)/ghostty-internal.so; \
+	fi
+
 .PHONY: build
 build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) for this machine
 	mkdir -p $(DIST)
@@ -187,6 +196,8 @@ build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) fo
 	ln -sf agent-command $(DIST)/acmd
 ifeq ($(UNAME_S),Darwin)
 	$(MAKE) speech-helper SPEECH_OUT=$(DIST)/acmd-speech
+else
+	@if [ -f build/ghostty/lib/ghostty-internal.so ] && pkg-config --exists gtk4 libadwaita-1 2>/dev/null; then $(MAKE) linux-ui; fi
 endif
 	$(DIST)/acmd version
 

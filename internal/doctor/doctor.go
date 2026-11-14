@@ -29,9 +29,6 @@ const (
 	MinGhostty = "1.4.0"
 )
 
-// ManagedSettings are Claude Code's managed (admin) settings on macOS.
-var ManagedSettings = []string{"/Library/Application Support/ClaudeCode/managed-settings.json"}
-
 // Status is a check's outcome.
 type Status int
 

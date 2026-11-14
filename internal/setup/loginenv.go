@@ -32,6 +32,7 @@ var excludedEnv = map[string]bool{
 var LiveEnv = []string{
 	"SSH_AUTH_SOCK", "SECURITYSESSIONID", "LaunchInstanceID", "TMPDIR",
 	"XPC_FLAGS", "XPC_SERVICE_NAME", "__CFBundleIdentifier",
+	"DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
 }
 
 // WithLive returns e with LiveEnv taken from getenv: set where it has them, and
@@ -69,7 +70,7 @@ func ParseEnv0(out []byte) LoginEnv {
 // CaptureLoginEnv runs the user's login shell to read its environment.
 func CaptureLoginEnv(ctx context.Context, shell string) (LoginEnv, error) {
 	if shell == "" {
-		shell = "/bin/zsh"
+		shell = defaultShell()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

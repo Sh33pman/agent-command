@@ -101,3 +101,33 @@ jobs:
           name: snapshot-darwin-all
           path: dist/*_darwin_all.tar.gz
           retention-days: 3
+
+  linux:
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.head_ref, 'release-please--')"
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - name: name the Ghostty cache
+        id: ghostty
+        run: echo "key=ghostty-linux-$(zig version)-${{ hashFiles('scripts/build-ghostty.sh') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/agent-command/ghostty
+          key: ${{ steps.ghostty.outputs.key }}
+      - name: build libghostty-vt
+        run: scripts/build-ghostty.sh
+      - name: lint
+        run: make lint
+      - name: test (race + coverage gate)
+        run: make test
+      - name: test with libghostty-vt
+        run: make test-vt
+      - name: build
+        run: make build

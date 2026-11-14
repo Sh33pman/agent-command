@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -341,6 +342,9 @@ func TestInitHookBinary(t *testing.T) {
 }
 
 func TestUseUserTempDirIgnoresHomebrewTMPDIR(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("darwin only")
+	}
 	want := os.TempDir()
 	t.Setenv("TMPDIR", "/private/tmp")
 	useUserTempDir()

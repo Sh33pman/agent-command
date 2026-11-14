@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 
@@ -78,7 +79,7 @@ func TestUnknownCommand(t *testing.T) {
 func TestPlainCommandOpensTheApp(t *testing.T) {
 	var got []bool
 	orig := openApp
-	openApp = func(newInstance bool) error {
+	openApp = func(_ io.Writer, newInstance bool) error {
 		got = append(got, newInstance)
 		return nil
 	}

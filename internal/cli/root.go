@@ -43,7 +43,7 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	var newInstance bool
 	root.Args = cobra.NoArgs
 	root.Flags().BoolVar(&newInstance, "new-instance", false, "start another copy of the app, even if one is running")
-	root.RunE = func(*cobra.Command, []string) error { return openApp(newInstance) }
+	root.RunE = func(cmd *cobra.Command, _ []string) error { return openApp(cmd.OutOrStdout(), newInstance) }
 	return root
 }
 

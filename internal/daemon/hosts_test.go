@@ -261,6 +261,7 @@ func TestUnarchiveDoesNotStartAnAgent(t *testing.T) {
 	// counted as one the unarchive started.
 	waitFor(t, "the new session's host", func() bool { return len(fh.requests()) == 1 })
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	waitHost(t, p, s.ID, false)
 	before := len(fh.requests())
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, ID: s.ID}, nil))
 	if got := sessionByID(t, c, s.ID); got.Status != core.StatusPaused {

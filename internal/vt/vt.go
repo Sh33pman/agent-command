@@ -9,7 +9,8 @@ package vt
 
 /*
 #cgo CFLAGS: -I${SRCDIR}/../../build/ghostty/vt/include
-#cgo LDFLAGS: ${SRCDIR}/../../build/ghostty/vt/lib/libghostty-vt.a -lc++
+#cgo darwin LDFLAGS: ${SRCDIR}/../../build/ghostty/vt/lib/libghostty-vt.a -lc++
+#cgo linux LDFLAGS: ${SRCDIR}/../../build/ghostty/vt/lib/libghostty-vt.a -lstdc++
 #include <stdlib.h>
 #include <ghostty/vt.h>
 

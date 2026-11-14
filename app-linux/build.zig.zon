@@ -1,0 +1,17 @@
+.{
+    .name = .agent_command_ui,
+    .version = "0.1.0",
+    .fingerprint = 0xda619875a591e366,
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .gobject = .{
+            .url = "https://deps.files.ghostty.org/gobject-2026-10-02-38-1.tar.zst",
+            .hash = "gobject-0.3.2-Skun7LuIogBbEh-6WrLeEzMaRCnOMB3eOf__RaPYSMCZ",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

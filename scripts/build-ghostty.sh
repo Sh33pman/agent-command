@@ -35,18 +35,27 @@ cache="$cache_root/$key"
 install_from() {
 	local from=$1
 	mkdir -p "$out" "$root/app/vendor"
-	rm -rf "$out/GhosttyKit.xcframework" "$out/vt"
+	rm -rf "$out/GhosttyKit.xcframework" "$out/vt" "$out/lib" "$out/include" "$out/ghostty-resources"
 	if [[ -d "$from/GhosttyKit.xcframework" ]]; then
 		cp -R "$from/GhosttyKit.xcframework" "$out/GhosttyKit.xcframework"
 		# SwiftPM needs a binary target inside the package.
 		rm -rf "$root/app/vendor/GhosttyKit.xcframework"
 		cp -R "$from/GhosttyKit.xcframework" "$root/app/vendor/GhosttyKit.xcframework"
 	fi
+	if [[ -d "$from/lib" ]]; then
+		cp -R "$from/lib" "$out/lib"
+	fi
+	if [[ -d "$from/include" ]]; then
+		cp -R "$from/include" "$out/include"
+	fi
 	cp -R "$from/vt" "$out/vt"
-	# The themes, which the macOS app needs without Ghostty.app installed.
+	# The themes, which the macOS/Linux apps need without Ghostty installed.
 	rm -rf "$root/app/vendor/ghostty-resources"
 	if [[ -d "$from/ghostty-resources" ]]; then
-		cp -R "$from/ghostty-resources" "$root/app/vendor/ghostty-resources"
+		cp -R "$from/ghostty-resources" "$out/ghostty-resources"
+		if [[ "$OS" == "Darwin" ]]; then
+			cp -R "$from/ghostty-resources" "$root/app/vendor/ghostty-resources"
+		fi
 	fi
 }
 
@@ -70,6 +79,8 @@ cd "$src"
 if [[ "$OS" == "Darwin" ]]; then
 	zig build -Doptimize=ReleaseFast \
 		-Demit-macos-app=false -Demit-xcframework=true -Dxcframework-target=native
+else
+	zig build -Doptimize=ReleaseFast -Dapp-runtime=none --prefix "$out/app"
 fi
 # For the CPU every runner has, not the one that built it: the cache is shared, and
 # a library built for a runner with AVX-512 crashes (SIGILL) on one without.
@@ -85,6 +96,14 @@ if [[ "$OS" == "Darwin" ]]; then
 	cp -R macos/GhosttyKit.xcframework "$partial/GhosttyKit.xcframework"
 	mkdir -p "$partial/ghostty-resources"
 	cp -R zig-out/share/ghostty/themes "$partial/ghostty-resources/themes"
+else
+	cp -R "$out/app/lib" "$partial/lib"
+	cp -R "$out/app/include" "$partial/include"
+	rm -rf "$out/app"
+	themes_url="$(awk '/\.iterm2_themes/,/\.url/ { if ($0 ~ /\.url/) { gsub(/.*= "|".*/, ""); print } }' build.zig.zon)"
+	mkdir -p "$partial/ghostty-resources/themes"
+	curl -fsSL "$themes_url" | tar -xz --strip-components=1 -C "$partial/ghostty-resources/themes"
+	rm -f "$partial/ghostty-resources/themes/"*.md
 fi
 cp -R "$out/vt" "$partial/vt"
 touch "$partial/complete"

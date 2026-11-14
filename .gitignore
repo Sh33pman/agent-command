@@ -44,10 +44,18 @@ go.work.sum
 /app/.swiftpm/
 /app/vendor/
 
+# Linux UI build output
+/app-linux/.zig-cache/
+/app-linux/zig-out/
+/app-linux/zig-pkg/
+
 # Swift speech engine build output
 /helpers/acmd-speech/.build/
 /helpers/acmd-speech/.swiftpm/
 
 # Built from test/fakeclaude
 /fakeclaude
+
+# OpenSpec skills
+/.agents/skills/
 

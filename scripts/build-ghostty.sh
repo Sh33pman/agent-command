@@ -71,7 +71,11 @@ if [[ "$OS" == "Darwin" ]]; then
 	zig build -Doptimize=ReleaseFast \
 		-Demit-macos-app=false -Demit-xcframework=true -Dxcframework-target=native
 fi
-zig build -Doptimize=ReleaseFast -Demit-lib-vt=true --prefix "$out/vt"
+# For the CPU every runner has, not the one that built it: the cache is shared, and
+# a library built for a runner with AVX-512 crashes (SIGILL) on one without.
+cpu=()
+[[ "$OS" == "Linux" ]] && cpu=(-Dcpu=baseline)
+zig build -Doptimize=ReleaseFast -Demit-lib-vt=true ${cpu[@]+"${cpu[@]}"} --prefix "$out/vt"
 
 # Built in a private folder and renamed into place, so runners working at the same
 # time never see a partial cache. If another got there first, its copy stays.

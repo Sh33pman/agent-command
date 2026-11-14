@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.51.0](https://github.com/brettmostert/agent-command/compare/v0.50.1...v0.51.0) (2026-11-14)
+
+
+### Features
+
+* add Linux Go CLI, daemon, and CI support ([#19](https://github.com/brettmostert/agent-command/issues/19)) ([ac4a1cb](https://github.com/brettmostert/agent-command/commit/ac4a1cb6be25c660533cef8ee35ad99a08fed6d4))
+* **app:** one keymap for every view, and a shortcuts list to change it ([#28](https://github.com/brettmostert/agent-command/issues/28)) ([e52d786](https://github.com/brettmostert/agent-command/commit/e52d7863bace1f8b4a9aa5519c7300b7359aeac7))
+
+
+### Bug Fixes
+
+* **ci:** build libghostty-vt for a baseline CPU on Linux ([#29](https://github.com/brettmostert/agent-command/issues/29)) ([a0de98d](https://github.com/brettmostert/agent-command/commit/a0de98dbf3bbcf657b8e5eb478d67bc869dfbf8a))
+* **linux:** isolate macOS-only env, doctor, editor, and ci target paths ([#27](https://github.com/brettmostert/agent-command/issues/27)) ([eea74a9](https://github.com/brettmostert/agent-command/commit/eea74a97aee2123ca6c94eaac235123ae1abe91f))
+* **notify:** notify when long background work finishes (PAN-45) ([#25](https://github.com/brettmostert/agent-command/issues/25)) ([037786f](https://github.com/brettmostert/agent-command/commit/037786f5c0b72735f3f1e93fb7e9f82221faebfa))
+
 ## [0.50.1](https://github.com/brettmostert/agent-command/compare/v0.50.0...v0.50.1) (2026-11-13)
 
 

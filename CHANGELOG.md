@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.1](https://github.com/brettmostert/agent-command/compare/v0.54.0...v0.54.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **release:** attest release builds and harden the release pipeline ([#43](https://github.com/brettmostert/agent-command/issues/43)) ([afaa343](https://github.com/brettmostert/agent-command/commit/afaa343662fc0fd0c58a5b0213a5d4219e8f425b))
+
 ## [0.54.0](https://github.com/brettmostert/agent-command/compare/v0.53.1...v0.54.0) (2026-11-14)
 
 

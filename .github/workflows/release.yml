@@ -52,6 +52,8 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   # Every check, on the exact release commit. No secrets, so caches are fine.
+  # The Ghostty libraries are the prebuilt ones build ships, so the checks run
+  # against what is released.
   gate:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
@@ -65,7 +67,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/macos-tools
         with:
-          ghostty: "true"
+          ghostty: "prebuilt"
           speech: "true"
       - name: lint, test, vuln, build
         run: make ci
@@ -74,8 +76,10 @@ jobs:
       - name: test with libghostty, and test the app
         run: make test-vt test-app
 
-  # A clean build, signed. No test code runs here, and Go and the speech helper
-  # are built from source, not restored from a cache.
+  # A clean build, signed. No test code runs here, and nothing comes from a
+  # cache: Go and the speech helper are built from source, and the Ghostty
+  # libraries are the prebuilt ones, checked against the SHA-256 in
+  # scripts/ghostty-prebuilt.pin.
   build:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
@@ -95,7 +99,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/macos-tools
         with:
-          ghostty: "true"
+          ghostty: "prebuilt"
           speech: "true"
           cache: "false"
 

@@ -1,0 +1,6 @@
+# The prebuilt Ghostty libraries a release ships. scripts/build-ghostty.sh --prebuilt
+# downloads url and checks it against sha256 before unpacking it.
+# .github/workflows/ghostty-archive.yml builds the archive and prints these lines.
+commit=83fb95624b0439ee660c2679b43b38c8b63769cd
+url=https://github.com/brettmostert/agent-command/releases/download/ghostty-83fb95624b-r1/ghostty-macos-arm64.tar.gz
+sha256=6b0db1bd38d0eb92415b6549b625e7dc5c4877223f945bec1c856ee45d5b34e5

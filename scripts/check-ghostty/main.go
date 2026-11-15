@@ -178,7 +178,8 @@ func issueBody(tag, commit string, releases []string, advisories []Advisory) str
 			"some are fixed at a commit. Then add its id to `" + reviewed + "`.\n\n")
 	}
 	if len(releases) > 0 {
-		fmt.Fprintf(&b, "**Newer releases:** %s. Moving to one means updating `TAG` and `COMMIT`.\n\n", strings.Join(releases, ", "))
+		fmt.Fprintf(&b, "**Newer releases:** %s. Moving to one means updating `TAG` and `COMMIT`, "+
+			"then running the `ghostty-archive` workflow and updating `scripts/ghostty-prebuilt.pin`.\n\n", strings.Join(releases, ", "))
 	}
 	return strings.TrimSuffix(b.String(), "\n")
 }

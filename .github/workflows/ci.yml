@@ -84,9 +84,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # goreleaser needs tags/history
+      # The prebuilt Ghostty libraries a release ships, so a PR that changes the
+      # Ghostty pin without a new archive fails here, not at the release.
       - uses: ./.github/actions/macos-tools
         with:
-          ghostty: "true"
+          ghostty: "prebuilt"
           speech: "true"
       - name: test (race + coverage gate)
         run: make test

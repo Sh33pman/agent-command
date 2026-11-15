@@ -1,0 +1,107 @@
+# Builds the Ghostty libraries a release ships, and publishes them as a GitHub
+# Release of this repo. Run it by hand, once per Ghostty version: after changing
+# the pin in scripts/build-ghostty.sh, or how that script builds the libraries.
+# Then put the three lines the run's summary prints in scripts/ghostty-prebuilt.pin.
+#
+# The archive is built from source on a clean runner, with no caches, and has a
+# build provenance attestation. Its SHA-256 goes in the repo, where a PR reviews
+# it and no CI job can change it. scripts/build-ghostty.sh --prebuilt checks the
+# download against it, so a release never ships a library from a cache.
+name: ghostty-archive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghostty-archive
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write # the build provenance attestation
+      attestations: write
+    outputs:
+      commit: ${{ steps.pack.outputs.commit }}
+      tag: ${{ steps.pack.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: start with no earlier build
+        run: test ! -e "$HOME/.cache/agent-command/ghostty"
+      - uses: ./.github/actions/macos-tools
+        with:
+          ghostty: "true"
+          cache: "false"
+      - name: pack the libraries
+        id: pack
+        run: |
+          mkdir -p "$RUNNER_TEMP/archive"
+          scripts/build-ghostty.sh --pack "$RUNNER_TEMP/archive/ghostty-macos-arm64.tar.gz"
+          (cd "$RUNNER_TEMP/archive" && shasum -a 256 ghostty-macos-arm64.tar.gz > checksums.txt && cat checksums.txt)
+          {
+            echo "commit=$(sed -nE 's/^COMMIT=(.+)$/\1/p' scripts/build-ghostty.sh)"
+            echo "tag=$(sed -nE 's/^TAG=(.+)$/\1/p' scripts/build-ghostty.sh)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/archive/ghostty-macos-arm64.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ghostty-archive
+          path: ${{ runner.temp }}/archive/
+          if-no-files-found: error
+
+  # Only gh from here. Releases are immutable, so the archive can't be replaced
+  # once it is published: a new build is a new release.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release
+      attestations: read
+    env:
+      COMMIT: ${{ needs.build.outputs.commit }}
+      GHOSTTY_TAG: ${{ needs.build.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ghostty-archive
+          path: archive
+      - name: check the archive and its provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd archive && shasum -a 256 -c checksums.txt)
+          gh attestation verify archive/ghostty-macos-arm64.tar.gz --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ghostty-archive.yml"
+      - name: publish the archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Not a version (no vX.Y.Z), so release-please and the app's version ignore it.
+          release="ghostty-${COMMIT:0:10}-r${GITHUB_RUN_NUMBER}"
+          sha="$(cut -d' ' -f1 archive/checksums.txt)"
+          url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${release}/ghostty-macos-arm64.tar.gz"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh release create "$release" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+            --title "Ghostty ${GHOSTTY_TAG} libraries (build ${GITHUB_RUN_NUMBER})" \
+            --notes "The Ghostty libraries a release of the app is built with: Ghostty ${GHOSTTY_TAG} (\`${COMMIT}\`), built from source by ${run_url}. This is a build input, not the app. Install the app from [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap)." \
+            archive/ghostty-macos-arm64.tar.gz archive/checksums.txt
+          {
+            echo "Published \`${release}\`. Put these lines in \`scripts/ghostty-prebuilt.pin\`:"
+            echo
+            echo '```'
+            echo "commit=${COMMIT}"
+            echo "url=${url}"
+            echo "sha256=${sha}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

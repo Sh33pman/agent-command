@@ -2,13 +2,15 @@
 # Ghostty and speech builds, Zig and Xcode's Metal toolchain. The Ghostty
 # libraries are cached, keyed like scripts/build-ghostty.sh's own cache.
 # With cache "false" (the release build), Go, Zig and the speech helper start
-# from nothing and are built from source. Only the Ghostty libraries still come
-# from the cache.
+# from nothing and are built from source, and so is Ghostty with ghostty "true".
+# With ghostty "prebuilt", the Ghostty libraries are the prebuilt ones pinned in
+# scripts/ghostty-prebuilt.pin, checked by SHA-256: a release ships those, so
+# nothing it ships comes from a cache.
 name: macos-tools
 description: Go, Zig, the Metal toolchain and the cached Ghostty and speech builds
 inputs:
   ghostty:
-    description: Build (or restore) libghostty
+    description: '"true" builds libghostty, or restores it from the cache. "prebuilt" installs the pinned, hash-checked libraries'
     default: "false"
   metal:
     description: Install Xcode's Metal toolchain
@@ -17,7 +19,7 @@ inputs:
     description: Restore (or save) the speech helper build
     default: "false"
   cache:
-    description: Use caches. With "false", Go, Zig and the speech helper are built from source; the Ghostty libraries are still cached
+    description: Use caches. With "false", Go, Zig, the speech helper and Ghostty (with ghostty "true") are built from source
     default: "true"
 runs:
   using: composite
@@ -27,7 +29,7 @@ runs:
         go-version-file: go.mod
         cache: ${{ inputs.cache == 'true' }}
     - name: install the Metal toolchain
-      if: inputs.metal == 'true' || inputs.ghostty == 'true' || inputs.speech == 'true'
+      if: inputs.metal == 'true' || inputs.ghostty != 'false' || inputs.speech == 'true'
       shell: bash
       run: xcrun -f metal >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
     # Ghostty v1.4.0 builds with this Zig (scripts/build-ghostty.sh).
@@ -36,15 +38,13 @@ runs:
       with:
         version: 0.17.0
         use-cache: ${{ inputs.cache == 'true' }}
-    # Restored even with cache "false". Replacing this cache with a prebuilt,
-    # hash-checked Ghostty archive is a planned follow-up.
     - name: name the Ghostty cache
-      if: inputs.ghostty == 'true'
+      if: inputs.ghostty == 'true' && inputs.cache == 'true'
       id: ghostty
       shell: bash
       run: echo "key=ghostty-$(zig version)-sdk$(xcrun --show-sdk-version)-${{ hashFiles('scripts/build-ghostty.sh') }}" >> "$GITHUB_OUTPUT"
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.ghostty == 'true'
+      if: inputs.ghostty == 'true' && inputs.cache == 'true'
       with:
         path: ~/.cache/agent-command/ghostty
         key: ${{ steps.ghostty.outputs.key }}
@@ -52,6 +52,10 @@ runs:
       if: inputs.ghostty == 'true'
       shell: bash
       run: scripts/build-ghostty.sh
+    - name: install the prebuilt libghostty
+      if: inputs.ghostty == 'prebuilt'
+      shell: bash
+      run: scripts/build-ghostty.sh --prebuilt
     # The speech helper takes about 10 minutes to build (MLX and its Metal
     # shaders) and rarely changes, so its build is cached, keyed on its sources,
     # the Makefile that builds it, and Xcode's version. make speech-helper uses

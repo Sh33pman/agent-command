@@ -4,6 +4,13 @@
 #   libghostty-vt           the hosts' screen state
 # Output goes to build/ghostty (git-ignored). Needs Xcode and the Zig version
 # the release asks for.
+#   build-ghostty.sh              build from the pinned source, or reuse an earlier build
+#   build-ghostty.sh --prebuilt   macOS: install the prebuilt libraries pinned in
+#                                 scripts/ghostty-prebuilt.pin, checked by SHA-256
+#   build-ghostty.sh --pack FILE  macOS: pack what is in build/ghostty as that archive
+# A release ships the prebuilt libraries, so nothing it ships comes from a cache.
+# .github/workflows/ghostty-archive.yml builds and publishes them. After changing
+# TAG or COMMIT, or how the libraries are built, run it and update the pin file.
 set -euo pipefail
 
 TAG=v1.4.0
@@ -14,22 +21,13 @@ out="$root/build/ghostty"
 src="$out/src"
 
 OS="$(uname -s)"
-if command -v shasum >/dev/null 2>&1; then
-	script_hash="$(shasum -a 256 "$0" | cut -c1-12)"
-else
-	script_hash="$(sha256sum "$0" | cut -c1-12)"
-fi
-
-# The result depends only on this script, the pinned release and the tools, so it
-# is kept between builds. CI checkouts start clean, and this takes minutes.
-cache_root="${ACMD_GHOSTTY_CACHE:-$HOME/.cache/agent-command/ghostty}"
-if [[ "$OS" == "Darwin" ]]; then
-	platform_key="sdk$(xcrun --show-sdk-version)"
-else
-	platform_key="$OS-$(uname -m)"
-fi
-key="$TAG-$COMMIT-zig$(zig version)-$platform_key-$script_hash"
-cache="$cache_root/$key"
+sha256_of() {
+	if command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$1" | cut -d' ' -f1
+	else
+		sha256sum "$1" | cut -d' ' -f1
+	fi
+}
 
 # Puts the built files where the build expects them.
 install_from() {
@@ -58,6 +56,117 @@ install_from() {
 		fi
 	fi
 }
+
+# The prebuilt libraries: one archive, laid out like a build kept in the cache.
+pin="$root/scripts/ghostty-prebuilt.pin"
+parts=(GhosttyKit.xcframework vt ghostty-resources)
+pin_field() { sed -nE "s/^$1=(.+)$/\1/p" "$pin" | head -1; }
+
+prebuilt() {
+	local commit url sha got
+	if [[ "$OS" != "Darwin" ]]; then
+		echo "build-ghostty: the prebuilt libraries are for macOS" >&2
+		exit 1
+	fi
+	if [[ ! -f "$pin" ]]; then
+		echo "build-ghostty: no prebuilt libraries are pinned ($pin is missing)" >&2
+		exit 1
+	fi
+	commit="$(pin_field commit)"
+	url="$(pin_field url)"
+	sha="$(pin_field sha256)"
+	# A changed pin above needs a new archive. This fails before anything is fetched.
+	if [[ "$commit" != "$COMMIT" ]]; then
+		echo "build-ghostty: $pin is for $commit, but this script pins $COMMIT ($TAG)." >&2
+		echo "build-ghostty: run the ghostty-archive workflow and update the pin file." >&2
+		exit 1
+	fi
+	if [[ -z "$url" || ! "$sha" =~ ^[0-9a-f]{64}$ ]]; then
+		echo "build-ghostty: $pin needs a url and a sha256" >&2
+		exit 1
+	fi
+	# Not local: the trap runs after this function has returned.
+	tmp="$(mktemp -d)"
+	trap 'rm -rf "$tmp"' EXIT
+	curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$tmp/ghostty.tar.gz" "$url"
+	# Checked before it is unpacked: the hash is in the repo, reviewed in a PR, and
+	# nothing that runs in CI can change it.
+	got="$(sha256_of "$tmp/ghostty.tar.gz")"
+	if [[ "$got" != "$sha" ]]; then
+		echo "build-ghostty: the prebuilt archive's SHA-256 is $got, but $pin has $sha" >&2
+		exit 1
+	fi
+	mkdir "$tmp/libs"
+	tar -xzf "$tmp/ghostty.tar.gz" -C "$tmp/libs"
+	if ! grep -qxF "commit=$COMMIT" "$tmp/libs/MANIFEST"; then
+		echo "build-ghostty: the prebuilt archive wasn't built from $COMMIT" >&2
+		exit 1
+	fi
+	install_from "$tmp/libs"
+	echo "build-ghostty: $TAG from the prebuilt archive (sha256 $sha)"
+}
+
+pack() {
+	local file=$1 part
+	if [[ "$OS" != "Darwin" ]]; then
+		echo "build-ghostty: the prebuilt libraries are for macOS" >&2
+		exit 1
+	fi
+	# Not local: the trap runs after this function has returned.
+	stage="$(mktemp -d)"
+	trap 'rm -rf "$stage"' EXIT
+	for part in "${parts[@]}"; do
+		if [[ ! -d "$out/$part" ]]; then
+			echo "build-ghostty: $out/$part is missing: build first" >&2
+			exit 1
+		fi
+		cp -R "$out/$part" "$stage/$part"
+	done
+	# What the archive was built from and with. --prebuilt checks the commit.
+	{
+		echo "tag=$TAG"
+		echo "commit=$COMMIT"
+		echo "zig=$(zig version)"
+		echo "sdk=$(xcrun --show-sdk-version)"
+		echo "arch=$(uname -m)"
+		if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
+			echo "run=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+		fi
+	} >"$stage/MANIFEST"
+	mkdir -p "$(dirname "$file")"
+	# COPYFILE_DISABLE keeps macOS's ._ files out of the archive.
+	COPYFILE_DISABLE=1 tar -czf "$file" -C "$stage" "${parts[@]}" MANIFEST
+	echo "build-ghostty: packed $TAG ($COMMIT) as $file"
+}
+
+case "${1:-}" in
+"") ;;
+--prebuilt)
+	prebuilt
+	exit 0
+	;;
+--pack)
+	[[ $# -eq 2 ]] || { sed -n '2,13p' "$0" >&2; exit 2; }
+	pack "$2"
+	exit 0
+	;;
+*)
+	sed -n '2,13p' "$0" >&2
+	exit 2
+	;;
+esac
+
+# The result depends only on this script, the pinned release and the tools, so it
+# is kept between builds. CI checkouts start clean, and this takes minutes.
+script_hash="$(sha256_of "$0" | cut -c1-12)"
+cache_root="${ACMD_GHOSTTY_CACHE:-$HOME/.cache/agent-command/ghostty}"
+if [[ "$OS" == "Darwin" ]]; then
+	platform_key="sdk$(xcrun --show-sdk-version)"
+else
+	platform_key="$OS-$(uname -m)"
+fi
+key="$TAG-$COMMIT-zig$(zig version)-$platform_key-$script_hash"
+cache="$cache_root/$key"
 
 if [[ -f "$cache/complete" ]]; then
 	install_from "$cache"

@@ -12,7 +12,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 dist="$root/dist"
 app="$dist/Agent Command.app"
 module="github.com/brettmostert/agent-command"
-version="${ACMD_VERSION:-$(git -C "$root" describe --tags --always --dirty)}"
+# Only release tags (vX.Y.Z): the repo also has tags for the prebuilt Ghostty libraries.
+version="${ACMD_VERSION:-$(git -C "$root" describe --tags --match 'v[0-9]*' --always --dirty)}"
 sha="$(git -C "$root" rev-parse --short HEAD)"
 date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

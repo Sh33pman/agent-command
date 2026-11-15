@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.3](https://github.com/brettmostert/agent-command/compare/v0.54.2...v0.54.3) (2026-11-15)
+
+
+### Bug Fixes
+
+* **security:** keep Linux sockets out of shared /tmp, and check who connects to a session's host ([#49](https://github.com/brettmostert/agent-command/issues/49)) ([20a0eac](https://github.com/brettmostert/agent-command/commit/20a0eacfbf29582f36bd50b1ce9528f757654ea6))
+
 ## [0.54.2](https://github.com/brettmostert/agent-command/compare/v0.54.1...v0.54.2) (2026-11-15)
 
 

@@ -11,7 +11,8 @@
 # Only what needs a Mac runs on one: GitHub runs a few Mac jobs at a time, and
 # a PR that fills them makes the next push, merge or release wait. lint, vuln
 # and fuzz run on Ubuntu. lint and vuln check the macOS build from there
-# (CHECK_GOOS=darwin), and the linux job checks the Linux one.
+# (CHECK_GOOS=darwin), and the linux job checks the Linux one. The linux-distro
+# jobs build and test on Debian and Arch.
 name: ci
 
 on:
@@ -181,6 +182,75 @@ jobs:
         run: scripts/build-ghostty.sh
       - name: lint
         run: make lint
+      # The vuln job scans the macOS build. This scans the Linux one: govulncheck
+      # only follows the code of the platform it builds for.
+      - name: scan the Linux build for known vulnerabilities
+        run: make vuln
+      - name: test (race + coverage gate)
+        run: make test
+      - name: test with libghostty-vt
+        run: make test-vt
+      - name: build
+        run: make build
+
+  # The two ends of what Linux users run: Debian stable ships older libraries
+  # and tools than Ubuntu, and Arch newer ones. Go and Zig are the pinned
+  # versions everywhere; the C compiler, linker and C libraries are the
+  # distribution's. These jobs report, and aren't required: Arch changes daily.
+  linux-distro:
+    name: linux (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    if: >-
+      !(startsWith(github.head_ref, 'release-please--')
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && github.event.pull_request.user.login == 'brettmostert-release[bot]')
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian
+            image: debian:stable
+          - distro: arch
+            image: archlinux:latest
+    steps:
+      # Before the checkout: without git, it downloads an archive with no history.
+      # procps is ps, which a Debian install has and its container image doesn't.
+      - name: install the build tools (Debian)
+        if: matrix.distro == 'debian'
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git make gcc g++ pkg-config xz-utils procps
+      - name: install the build tools (Arch)
+        if: matrix.distro == 'arch'
+        run: pacman -Syu --noconfirm --needed base-devel git curl xz
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The container runs as root, and the checkout belongs to the runner's
+      # user, so git refuses it. go build then fails: it asks git for the version.
+      - name: let git use the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      # A cache of its own: a library built on one distribution isn't the test
+      # of another.
+      - name: name the Ghostty cache
+        id: ghostty
+        env:
+          DISTRO: ${{ matrix.distro }}
+        run: echo "key=ghostty-$DISTRO-$(zig version)-${{ hashFiles('scripts/build-ghostty.sh') }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/agent-command/ghostty
+          key: ${{ steps.ghostty.outputs.key }}
+      - name: build libghostty-vt
+        run: scripts/build-ghostty.sh
       - name: test (race + coverage gate)
         run: make test
       - name: test with libghostty-vt

@@ -6,7 +6,8 @@
 # Here Swift builds the app on the cached Ghostty build, and the speech helper's
 # own code (SpeechCore, which has no dependencies). The helper's executable needs
 # MLX, a long build of other people's code, so it's scanned on main and weekly.
-# Go is analyzed for macOS (GOOS=darwin), so its darwin-only files count, on a
+# Go is analyzed twice, once as macOS builds it (GOOS=darwin) and once as Linux
+# does, so the files only one of them compiles are scanned too. Both run on a
 # Linux runner, which keeps the Mac runners free.
 #
 # The release PR (from a release-please-- branch of this repo, opened by the
@@ -67,14 +68,17 @@ jobs:
             fi
           fi
           echo "scan Swift: $swift"
+          # name is what the job is called, and category is where its results go:
+          # each scan needs its own, or one would replace the other.
           matrix="$(jq -cn --argjson swift "$swift" '{include: ([
-              {language: "actions", "build-mode": "none", runner: "ubuntu-latest"},
-              {language: "go", "build-mode": "autobuild", runner: "ubuntu-latest"}
-            ] + (if $swift then [{language: "swift", "build-mode": "manual", runner: "macos-26"}] else [] end))}')"
+              {name: "actions", language: "actions", category: "/language:actions", "build-mode": "none", runner: "ubuntu-latest"},
+              {name: "go", language: "go", goos: "darwin", category: "/language:go", "build-mode": "autobuild", runner: "ubuntu-latest"},
+              {name: "go, Linux", language: "go", goos: "linux", category: "/language:go-linux", "build-mode": "autobuild", runner: "ubuntu-latest"}
+            ] + (if $swift then [{name: "swift", language: "swift", category: "/language:swift", "build-mode": "manual", runner: "macos-26"}] else [] end))}')"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   analyze:
-    name: Analyze (${{ matrix.language }})
+    name: Analyze (${{ matrix.name }})
     needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.language == 'swift' && 75 || 20 }}
@@ -103,7 +107,7 @@ jobs:
       - if: matrix.language == 'go'
         uses: github/codeql-action/autobuild@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         env:
-          GOOS: darwin
+          GOOS: ${{ matrix.goos }}
           CGO_ENABLED: "0"
       - name: build the app and the speech helper's own code
         if: matrix.language == 'swift'
@@ -117,7 +121,7 @@ jobs:
         run: swift build --package-path helpers/acmd-speech --triple arm64-apple-macosx26.0
       - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
-          category: /language:${{ matrix.language }}
+          category: ${{ matrix.category }}
           upload: never
           output: sarif-results
       # The speech helper's full build compiles its dependencies (in .build/), and
@@ -131,4 +135,4 @@ jobs:
       - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: sarif-results
-          category: /language:${{ matrix.language }}
+          category: ${{ matrix.category }}

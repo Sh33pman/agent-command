@@ -1,4 +1,4 @@
-//go:build linux
+//go:build darwin || linux
 
 package term
 
@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestForegroundFollowsWhatRunsInFrontLinux(t *testing.T) {
+func TestForegroundFollowsWhatRunsInFront(t *testing.T) {
 	dir, err := os.MkdirTemp("", "acmdterm")
 	if err != nil {
 		t.Fatal(err)
@@ -18,13 +18,8 @@ func TestForegroundFollowsWhatRunsInFrontLinux(t *testing.T) {
 	sock := filepath.Join(dir, "t.sock")
 	ready := make(chan struct{})
 	// -i: job control, so a command gets its own process group, as in a login shell.
-	s := &Server{
-		Socket: sock,
-		Shell:  []string{"/bin/sh", "-i"},
-		Dir:    dir,
-		Env:    []string{"PS1=$ ", "PATH=/usr/bin:/bin"},
-		Ready:  func() { close(ready) },
-	}
+	s := &Server{Socket: sock, Shell: []string{"/bin/sh", "-i"}, Dir: dir, Env: []string{"PS1=$ ", "PATH=/usr/bin:/bin"},
+		Ready: func() { close(ready) }}
 	ctx, cancel := context.WithCancel(context.Background())
 	served := make(chan error, 1)
 	go func() { served <- s.Serve(ctx) }()
@@ -48,4 +43,27 @@ func TestForegroundFollowsWhatRunsInFrontLinux(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the shell back in front", is(Front{Shell: true}))
+}
+
+func TestProgramName(t *testing.T) {
+	for _, c := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"/Users/me/.local/bin/claude", "--resume"}, "claude"},
+		{[]string{"claude"}, "claude"},
+		{[]string{"/opt/homebrew/bin/node", "--no-warnings", "/opt/homebrew/bin/gemini"}, "gemini"},
+		{[]string{"node"}, "node"},
+		{[]string{"vim", "x.go"}, "vim"},
+	} {
+		if got := programName(c.argv); got != c.want {
+			t.Errorf("programName(%q) = %q, want %q", c.argv, got, c.want)
+		}
+	}
+}
+
+func TestForegroundOfNoServer(t *testing.T) {
+	if _, ok := Foreground(filepath.Join(t.TempDir(), "none.sock")); ok {
+		t.Fatal("ok without a server")
+	}
 }

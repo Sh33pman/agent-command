@@ -99,11 +99,17 @@ workflow-check: ## Fail if a workflow runs a ./bin tool directly (bypasses make'
 	@if grep -nE 'run: *(\./)?bin/' .github/workflows/*.yml; then \
 	  echo "workflows must call tools via make targets, not bin/<tool>"; exit 1; fi
 
+# CHECK_GOOS=darwin checks the macOS build from another platform: CI lints and
+# scans it on Ubuntu, which leaves the Mac runners free. cgo is off when
+# cross-checking; the only cgo file needs the libghostty tag, which these
+# checks don't set. The tools themselves are still built for this machine.
+CHECK_ENV := $(if $(CHECK_GOOS),GOOS=$(CHECK_GOOS) CGO_ENABLED=0,)
+
 .PHONY: lint
-lint: fmt tidy-check workflow-check $(BIN)/golangci-lint ## gofmt, go vet, go mod tidy check, golangci-lint
-	go vet ./...
+lint: fmt tidy-check workflow-check $(BIN)/golangci-lint ## gofmt, go vet, go mod tidy check, golangci-lint (CHECK_GOOS=darwin for another platform's build)
+	$(CHECK_ENV) go vet ./...
 	$(BIN)/golangci-lint config verify
-	$(BIN)/golangci-lint run
+	$(CHECK_ENV) $(BIN)/golangci-lint run
 
 .PHONY: test
 test: ## Run tests with -race and enforce coverage gates
@@ -115,8 +121,8 @@ fuzz: ## Run each fuzz target briefly (FUZZTIME=30s)
 	scripts/fuzz.sh $${FUZZTIME:-30s}
 
 .PHONY: vuln
-vuln: $(BIN)/govulncheck ## Scan for known vulnerabilities
-	$(BIN)/govulncheck ./...
+vuln: $(BIN)/govulncheck ## Scan for known vulnerabilities (CHECK_GOOS=darwin for another platform's build)
+	$(CHECK_ENV) $(BIN)/govulncheck ./...
 
 .PHONY: secrets
 secrets: $(BIN)/gitleaks ## Scan the git history for committed secrets

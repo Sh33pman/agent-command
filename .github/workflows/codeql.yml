@@ -12,6 +12,10 @@
 # The release PR (from a release-please-- branch of this repo, opened by the
 # release App) and the release commit are not scanned: they only change the
 # version and changelog. A PR that merely uses such a branch name is scanned.
+#
+# The Swift scan holds a Mac runner for 17 to 34 minutes. A PR gets it only when
+# it changes Swift code or how Swift is scanned: a PR with no Swift changes has
+# no Swift to scan, and main and the weekly run still scan everything.
 name: codeql
 
 on:
@@ -30,8 +34,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  analyze:
-    name: Analyze (${{ matrix.language }})
+  # Chooses what to scan. When it is skipped, so is analyze.
+  plan:
     # Release PRs and commits only change the version and changelog. As in ci.yml,
     # only the real release PR skips: not any PR from a branch with that name.
     if: >-
@@ -39,6 +43,39 @@ jobs:
         && github.event.pull_request.head.repo.full_name == github.repository
         && github.event.pull_request.user.login == 'brettmostert-release[bot]')
       && !startsWith(github.event.head_commit.message, 'chore(main): release')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: choose the languages to scan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          swift=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            # Renames count under both names. If the list can't be read, Swift is scanned.
+            if files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
+                --jq '.[] | .filename, (.previous_filename // empty)')"; then
+              if ! grep -qE '^(app/|helpers/|\.github/workflows/codeql\.yml$|\.github/actions/macos-tools/)' <<<"$files"; then
+                swift=false
+              fi
+            fi
+          fi
+          echo "scan Swift: $swift"
+          matrix="$(jq -cn --argjson swift "$swift" '{include: ([
+              {language: "actions", "build-mode": "none", runner: "ubuntu-latest"},
+              {language: "go", "build-mode": "autobuild", runner: "ubuntu-latest"}
+            ] + (if $swift then [{language: "swift", "build-mode": "manual", runner: "macos-26"}] else [] end))}')"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    needs: plan
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.language == 'swift' && 75 || 20 }}
     permissions:
@@ -47,17 +84,7 @@ jobs:
       security-events: write
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - language: actions
-            build-mode: none
-            runner: ubuntu-latest
-          - language: go
-            build-mode: autobuild
-            runner: ubuntu-latest
-          - language: swift
-            build-mode: manual
-            runner: macos-26
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: matrix.language == 'go'

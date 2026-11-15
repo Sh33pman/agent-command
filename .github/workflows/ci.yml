@@ -7,6 +7,11 @@
 # this repo, named release-please--, and opened by the release App. The branch
 # name alone would let anyone's PR skip every check, as GitHub counts a skipped
 # required check as passed.
+#
+# Only what needs a Mac runs on one: GitHub runs a few Mac jobs at a time, and
+# a PR that fills them makes the next push, merge or release wait. lint, vuln
+# and fuzz run on Ubuntu. lint and vuln check the macOS build from there
+# (CHECK_GOOS=darwin), and the linux job checks the Linux one.
 name: ci
 
 on:
@@ -27,7 +32,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: macos-26
+    runs-on: ubuntu-latest
     if: >-
       !(startsWith(github.head_ref, 'release-please--')
         && github.event.pull_request.head.repo.full_name == github.repository
@@ -36,8 +41,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/macos-tools
-      - run: make lint
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: lint the macOS build
+        run: make lint CHECK_GOOS=darwin
 
   swift:
     runs-on: macos-26
@@ -57,7 +65,7 @@ jobs:
         run: make speech-test speech-helper
 
   vuln:
-    runs-on: macos-26
+    runs-on: ubuntu-latest
     if: >-
       !(startsWith(github.head_ref, 'release-please--')
         && github.event.pull_request.head.repo.full_name == github.repository
@@ -68,8 +76,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # gitleaks scans the whole history
-      - uses: ./.github/actions/macos-tools
-      - run: make vuln secrets
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: scan the macOS build for known vulnerabilities
+        run: make vuln CHECK_GOOS=darwin
+      - name: scan the history for secrets
+        run: make secrets
+
+  # The fuzz targets are plain Go with no build tags, so they don't need a Mac.
+  fuzz:
+    runs-on: ubuntu-latest
+    if: >-
+      !(startsWith(github.head_ref, 'release-please--')
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && github.event.pull_request.user.login == 'brettmostert-release[bot]')
+      && !startsWith(github.event.head_commit.message, 'chore(main): release')
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: fuzz (short)
+        run: make fuzz FUZZTIME=15s
 
   # The macOS-only steps (snapshot, brew formula check).
   macos:
@@ -92,8 +122,6 @@ jobs:
           speech: "true"
       - name: test (race + coverage gate)
         run: make test
-      - name: fuzz (short)
-        run: make fuzz FUZZTIME=15s
       - name: test with libghostty, and test the app
         run: make test-vt test-app
       # A mistake in the cask template would otherwise first show up when a user

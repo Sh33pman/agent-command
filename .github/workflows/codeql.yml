@@ -30,9 +30,12 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR replaces the scan before it. On main, and for the weekly
+# and manual runs, a scan that has started is left to finish: a cancelled one
+# leaves the code scanning baseline out of date.
 concurrency:
   group: codeql-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Chooses what to scan. When it is skipped, so is analyze.

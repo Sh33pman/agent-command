@@ -27,9 +27,13 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR replaces the run before it. On main a run that has started
+# is left to finish: it is what fills the caches PRs use, and what checks the
+# merge. Runs on main go one at a time, and a run still waiting gives way to a
+# newer one, so they never pile up on the Mac runners.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:

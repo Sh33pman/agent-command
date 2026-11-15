@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.2](https://github.com/brettmostert/agent-command/compare/v0.54.1...v0.54.2) (2026-11-15)
+
+
+### Bug Fixes
+
+* **release:** ship the hash-checked Ghostty libraries, not a cached build ([#47](https://github.com/brettmostert/agent-command/issues/47)) ([2699d73](https://github.com/brettmostert/agent-command/commit/2699d73ddc003769814f3c33f19778b192422f76))
+
 ## [0.54.1](https://github.com/brettmostert/agent-command/compare/v0.54.0...v0.54.1) (2026-11-15)
 
 

@@ -16,8 +16,8 @@ import (
 )
 
 func TestReadsThePin(t *testing.T) {
-	tag, commit, err := pinned("set -e\nTAG=v1.4.0\nCOMMIT=83fb\n")
-	if tag != "v1.4.0" || commit != "83fb" || err != nil {
+	tag, commit, err := pinned("set -e\nTAG=v1.4.0\nCOMMIT=83fb95624b0439ee660c2679b43b38c8b63769cd\n")
+	if tag != "v1.4.0" || commit != "83fb95624b0439ee660c2679b43b38c8b63769cd" || err != nil {
 		t.Errorf("%q %q %v", tag, commit, err)
 	}
 	if _, _, err := pinned("nothing here"); err == nil {

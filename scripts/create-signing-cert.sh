@@ -5,8 +5,8 @@
 # to macOS.
 #   create-signing-cert.sh <output-dir>
 # It writes the certificate and key to <output-dir>, and prints what to store as
-# the ACMD_SIGNING_P12 and ACMD_SIGNING_PASSWORD repository secrets. It changes
-# no keychain.
+# the ACMD_SIGNING_P12 and ACMD_SIGNING_PASSWORD secrets of the release
+# environment. It changes no keychain.
 set -euo pipefail
 
 out=$1
@@ -29,4 +29,4 @@ base64 -i "$out/signing.p12" >"$out/signing.p12.base64"
 printf '%s' "$password" >"$out/signing.password"
 
 echo "Wrote $out/signing.p12.base64 (ACMD_SIGNING_P12) and $out/signing.password (ACMD_SIGNING_PASSWORD)."
-echo "Store them as repository secrets, then keep $out somewhere safe, away from the repository."
+echo "Store them as secrets in the release environment, then keep $out somewhere safe, away from the repository."

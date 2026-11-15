@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please don't open a public issue. Contact the maintainer, GitHub user `brettmostert`, privately, with a description, steps to reproduce, and the output of `acmd version`.
+Please don't open a public issue. Report it privately with GitHub's [Report a vulnerability](https://github.com/brettmostert/agent-command/security/advisories/new) button, with a description, steps to reproduce, and the output of `acmd version`.
 
 ## Scope
 
@@ -36,3 +36,11 @@ The sockets are in `$TMPDIR/agent-command-<uid>`, or `run/` in the folder above 
 ## Verifying releases
 
 Each release in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap/releases) ships `checksums.txt` with the SHA-256 of `AgentCommand.zip`. The Homebrew cask pins the same SHA-256. Releases aren't signed or notarized with an Apple Developer ID.
+
+Each `AgentCommand.zip` also has a build provenance attestation, made by this repo's release workflow. It says which workflow run built the zip, and from which commit. To check it, download the zip from the tap release and run, with the GitHub CLI:
+
+```sh
+gh attestation verify AgentCommand.zip --repo brettmostert/agent-command
+```
+
+It finds the attestation by the zip's SHA-256, so it doesn't matter where you downloaded it from. Releases made before attestations were added have none.

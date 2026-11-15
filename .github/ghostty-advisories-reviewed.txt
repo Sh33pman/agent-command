@@ -1,7 +1,7 @@
 # Ghostty's security advisories, checked against the commit pinned in scripts/build-ghostty.sh.
 # scripts/check-ghostty reports any that aren't listed here.
 #
-# Checked on 2026-11-07 against v1.4.0 (83fb95624b): each is fixed at or before v1.4.0, or
+# Checked on 2026-11-07 against v1.4.0 (83fb95624b0439ee660c2679b43b38c8b63769cd): each is fixed at or before v1.4.0, or
 # the pinned commit already contains its fixing commit.
 GHSA-3r5j-c6rj-xq2v  # low: unbounded memory via Kitty clipboard aliases (has 44c4c8f55d)
 GHSA-qjfx-r533-6vx3  # medium: use-after-free pruning the cursor's page (has 65ff54c67d)

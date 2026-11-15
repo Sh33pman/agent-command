@@ -126,6 +126,10 @@ secrets: $(BIN)/gitleaks ## Scan the git history for committed secrets
 check-ghostty: ## Report new Ghostty releases and advisories that haven't been reviewed
 	go run ./scripts/check-ghostty
 
+.PHONY: check-cask
+check-cask: ## Render the Homebrew cask with dummy values and run brew style and audit (macOS)
+	scripts/check-cask.sh
+
 .PHONY: speech-test
 speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
 	swift run --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) speech-core-checks
@@ -140,7 +144,7 @@ test-app: ## Run the app's tests and coverage gate (needs scripts/build-ghostty.
 	go run ./scripts/app-coverage "$$(swift test --package-path app --show-codecov-path)"
 
 ifeq ($(UNAME_S),Darwin)
-CI_DARWIN_CHECKS := speech-test
+CI_DARWIN_CHECKS := speech-test check-cask
 endif
 
 ci: lint secrets test $(CI_DARWIN_CHECKS) vuln build ## Everything CI checks on a PR (except snapshot/formula)

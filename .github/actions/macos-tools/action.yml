@@ -1,6 +1,9 @@
 # The tools the macOS jobs need on a GitHub-hosted runner: Go, and for the
 # Ghostty and speech builds, Zig and Xcode's Metal toolchain. The Ghostty
 # libraries are cached, keyed like scripts/build-ghostty.sh's own cache.
+# With cache "false" (the release build), Go, Zig and the speech helper start
+# from nothing and are built from source. Only the Ghostty libraries still come
+# from the cache.
 name: macos-tools
 description: Go, Zig, the Metal toolchain and the cached Ghostty and speech builds
 inputs:
@@ -13,12 +16,16 @@ inputs:
   speech:
     description: Restore (or save) the speech helper build
     default: "false"
+  cache:
+    description: Use caches. With "false", Go, Zig and the speech helper are built from source; the Ghostty libraries are still cached
+    default: "true"
 runs:
   using: composite
   steps:
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: go.mod
+        cache: ${{ inputs.cache == 'true' }}
     - name: install the Metal toolchain
       if: inputs.metal == 'true' || inputs.ghostty == 'true' || inputs.speech == 'true'
       shell: bash
@@ -28,6 +35,9 @@ runs:
       if: inputs.ghostty == 'true'
       with:
         version: 0.17.0
+        use-cache: ${{ inputs.cache == 'true' }}
+    # Restored even with cache "false". Replacing this cache with a prebuilt,
+    # hash-checked Ghostty archive is a planned follow-up.
     - name: name the Ghostty cache
       if: inputs.ghostty == 'true'
       id: ghostty
@@ -45,16 +55,16 @@ runs:
     # The speech helper takes about 10 minutes to build (MLX and its Metal
     # shaders) and rarely changes, so its build is cached, keyed on its sources,
     # the Makefile that builds it, and Xcode's version. make speech-helper uses
-    # it, or fills it.
+    # it, or fills it. Without SPEECH_CACHE, it builds from source.
     - name: name the speech helper cache
-      if: inputs.speech == 'true'
+      if: inputs.speech == 'true' && inputs.cache == 'true'
       id: speech
       shell: bash
       run: |
         echo "key=acmd-speech-$(xcodebuild -version | tr -s '\n ' '-')${{ hashFiles('helpers/acmd-speech/Package.swift', 'helpers/acmd-speech/Package.resolved', 'helpers/acmd-speech/Sources/**', 'Makefile') }}" >> "$GITHUB_OUTPUT"
         echo "SPEECH_CACHE=$HOME/.cache/agent-command/speech" >> "$GITHUB_ENV"
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.speech == 'true'
+      if: inputs.speech == 'true' && inputs.cache == 'true'
       with:
         path: ~/.cache/agent-command/speech
         key: ${{ steps.speech.outputs.key }}

@@ -8,6 +8,10 @@
 # MLX, a long build of other people's code, so it's scanned on main and weekly.
 # Go is analyzed for macOS (GOOS=darwin), so its darwin-only files count, on a
 # Linux runner, which keeps the Mac runners free.
+#
+# The release PR (from a release-please-- branch of this repo, opened by the
+# release App) and the release commit are not scanned: they only change the
+# version and changelog. A PR that merely uses such a branch name is scanned.
 name: codeql
 
 on:
@@ -28,8 +32,13 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    # Release PRs and commits only change the version and changelog.
-    if: "!startsWith(github.head_ref, 'release-please--') && !startsWith(github.event.head_commit.message, 'chore(main): release')"
+    # Release PRs and commits only change the version and changelog. As in ci.yml,
+    # only the real release PR skips: not any PR from a branch with that name.
+    if: >-
+      !(startsWith(github.head_ref, 'release-please--')
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && github.event.pull_request.user.login == 'brettmostert-release[bot]')
+      && !startsWith(github.event.head_commit.message, 'chore(main): release')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.language == 'swift' && 75 || 20 }}
     permissions:

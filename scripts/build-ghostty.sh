@@ -7,7 +7,7 @@
 set -euo pipefail
 
 TAG=v1.4.0
-COMMIT=83fb95624b
+COMMIT=83fb95624b0439ee660c2679b43b38c8b63769cd
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/build/ghostty"
@@ -67,10 +67,20 @@ fi
 
 if [[ ! -d "$src/.git" ]]; then
 	mkdir -p "$out"
-	git clone --quiet --depth 1 --branch "$TAG" https://github.com/ghostty-org/ghostty.git "$src"
+	# The commit is fetched by its full hash, not the tag: a tag can be moved, and
+	# the hash can't be made to point at anything else.
+	# A fetch that fails leaves nothing behind, so the next run starts again.
+	rm -rf "$src"
+	git init --quiet "$src"
+	if ! git -C "$src" fetch --quiet --depth 1 https://github.com/ghostty-org/ghostty.git "$COMMIT" ||
+		! git -C "$src" -c advice.detachedHead=false checkout --quiet FETCH_HEAD; then
+		rm -rf "$src"
+		echo "build-ghostty: couldn't fetch $COMMIT ($TAG)" >&2
+		exit 1
+	fi
 fi
 actual="$(git -C "$src" rev-parse HEAD)"
-if [[ "$actual" != "$COMMIT"* ]]; then
+if [[ "$actual" != "$COMMIT" ]]; then
 	echo "build-ghostty: $src is at $actual, expected $COMMIT ($TAG)" >&2
 	exit 1
 fi
@@ -100,9 +110,31 @@ else
 	cp -R "$out/app/lib" "$partial/lib"
 	cp -R "$out/app/include" "$partial/include"
 	rm -rf "$out/app"
-	themes_url="$(awk '/\.iterm2_themes/,/\.url/ { if ($0 ~ /\.url/) { gsub(/.*= "|".*/, ""); print } }' build.zig.zon)"
+	# build.zig.zon records the themes archive's Zig package hash next to its URL.
+	# It isn't a SHA-256 of the file, so only zig can check it: `zig fetch` unpacks
+	# the archive and prints that hash. The same file is checked and extracted, so
+	# nothing can change between the two.
+	zon_field() {
+		awk -v key="$1" '/\.iterm2_themes/ { in_pkg = 1 }
+			in_pkg && $0 ~ "\\." key " *=" { gsub(/.*= *"|".*/, ""); print; exit }' build.zig.zon
+	}
+	themes_url="$(zon_field url)"
+	themes_hash="$(zon_field hash)"
+	if [[ -z "$themes_url" || -z "$themes_hash" ]]; then
+		echo "build-ghostty: no themes url/hash in build.zig.zon" >&2
+		exit 1
+	fi
+	themes_tmp="$(mktemp -d)"
+	curl -fsSL "$themes_url" -o "$themes_tmp/themes.tgz"
+	got="$(ZIG_GLOBAL_CACHE_DIR="$themes_tmp/zig-cache" zig fetch "$themes_tmp/themes.tgz")"
+	if [[ "$got" != "$themes_hash" ]]; then
+		echo "build-ghostty: themes archive hash is $got, build.zig.zon says $themes_hash" >&2
+		rm -rf "$themes_tmp"
+		exit 1
+	fi
 	mkdir -p "$partial/ghostty-resources/themes"
-	curl -fsSL "$themes_url" | tar -xz --strip-components=1 -C "$partial/ghostty-resources/themes"
+	tar -xzf "$themes_tmp/themes.tgz" --strip-components=1 -C "$partial/ghostty-resources/themes"
+	rm -rf "$themes_tmp"
 	rm -f "$partial/ghostty-resources/themes/"*.md
 fi
 cp -R "$out/vt" "$partial/vt"

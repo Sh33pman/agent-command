@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
+	"github.com/brettmostert/agent-command/internal/peer"
 )
 
 const (
@@ -48,6 +50,11 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 	defer os.Remove(s.Socket)
 	defer ln.Close()
+	// Like the daemon's socket: the folder is 0700 already, and a 'w' frame
+	// here types into the session's shell.
+	if err := os.Chmod(s.Socket, 0o600); err != nil {
+		return err
+	}
 
 	cmd := exec.Command(s.Shell[0], s.Shell[1:]...) // #nosec G204 -- the user's own shell
 	cmd.Dir, cmd.Env = s.Dir, s.Env
@@ -149,6 +156,10 @@ func (s *Server) Serve(ctx context.Context) error {
 				return
 			}
 			go func() { // only an attach becomes a client
+				if peer.Check(c) != nil { // another user
+					_ = c.Close()
+					return
+				}
 				_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 				typ, p, err := readFrame(c)
 				_ = c.SetReadDeadline(time.Time{})

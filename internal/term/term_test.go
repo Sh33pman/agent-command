@@ -115,6 +115,45 @@ func TestServerAttachDetachReplay(t *testing.T) {
 	}
 }
 
+// A 'w' frame types into the session's shell, so only the owner may connect.
+func TestSocketIsOwnerOnly(t *testing.T) {
+	dir, err := os.MkdirTemp("", "acmdterm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "t.sock")
+	ready := make(chan struct{})
+	s := &Server{Socket: sock, Shell: []string{"/bin/sh"}, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"}, Ready: func() { close(ready) }}
+	served := make(chan error, 1)
+	go func() { served <- s.Serve(context.Background()) }()
+	<-ready
+	st, err := os.Stat(sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := st.Mode().Perm(); m != 0o600 {
+		t.Errorf("the socket is %o, want 600", m)
+	}
+	// The same user still gets through the peer check.
+	if !Running(sock) {
+		t.Error("the owner can't reach the server")
+	}
+	// Kill only works if the server reads the frame, which it does after the
+	// peer check: so this also shows the owner gets through it.
+	if err := Kill(sock); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Errorf("serve: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the owner's kill didn't reach the server")
+	}
+}
+
 func TestKill(t *testing.T) {
 	dir, err := os.MkdirTemp("", "acmdterm")
 	if err != nil {

@@ -26,10 +26,11 @@ In `~/.local/state/agent-command`:
 - `backups/`: copies of your Claude Code settings from before each change.
 - `speech/`: the speech model, if you install it. Its SHA-256 is checked when it's downloaded.
 
-The sockets are in `$TMPDIR/agent-command-<uid>`, or `run/` in the folder above if that path would be too long for a socket.
+The sockets are in `$TMPDIR/agent-command-<uid>` on macOS, and in `$XDG_RUNTIME_DIR/agent-command` on Linux. They are in `run/` in the folder above if that path would be too long for a socket, and on Linux when `XDG_RUNTIME_DIR` isn't set, so they are never in Linux's shared `/tmp`. acmd won't use a socket folder that is a symlink or belongs to another user. Each socket is `0600`, and the daemon and every session's host turn away a connection from another user.
 
 ## Known limits
 
+- On macOS, if `TMPDIR` isn't set, the sockets are in `/tmp/agent-command-<uid>`. If another user made that folder first, acmd refuses it and doesn't start.
 - A session's first prompt is passed to `claude` on its command line, so other users on the same Mac can see it with `ps` while the session runs.
 - Bug and feature reports are built on your Mac, and the log lines in them are redacted. The report opens as a new GitHub issue in your browser, and nothing is sent until you submit it.
 

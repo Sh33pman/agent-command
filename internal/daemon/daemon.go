@@ -23,6 +23,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/peer"
 	"github.com/brettmostert/agent-command/internal/reconcile"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
@@ -242,7 +243,7 @@ var shutdownGrace = 2 * time.Second
 
 func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 	defer c.Close()
-	if err := checkPeer(c); err != nil {
+	if err := peer.Check(c); err != nil {
 		d.cfg.Log.Printf("rejected connection: %v", err)
 		return
 	}

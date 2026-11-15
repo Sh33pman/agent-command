@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.55.0](https://github.com/brettmostert/agent-command/compare/v0.54.3...v0.55.0) (2026-11-15)
+
+
+### Features
+
+* **linux:** add daemon IPC client and ui.json preferences ([#35](https://github.com/brettmostert/agent-command/issues/35)) ([da9a72c](https://github.com/brettmostert/agent-command/commit/da9a72cbe6a814c9eddc7677bed5779246e421e7))
+
+
+### Bug Fixes
+
+* **host:** don't read the terminal's descriptor while the host is closing it ([#56](https://github.com/brettmostert/agent-command/issues/56)) ([801c5e1](https://github.com/brettmostert/agent-command/commit/801c5e1a44458b8b150c5ac5fbc5e00e88bf897c))
+* **linux:** look for the daemon socket where the daemon now puts it ([#55](https://github.com/brettmostert/agent-command/issues/55)) ([084114b](https://github.com/brettmostert/agent-command/commit/084114bbba5cb345a45719562eefc0947829ff49))
+
 ## [0.54.3](https://github.com/brettmostert/agent-command/compare/v0.54.2...v0.54.3) (2026-11-15)
 
 

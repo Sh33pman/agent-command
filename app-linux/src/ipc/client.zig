@@ -8,21 +8,17 @@ pub const max_line: usize = 2 << 20; // 2 MiB, matching internal/ipc/ipc.go MaxL
 pub const Env = struct {
     acmd_runtime_dir: ?[]const u8 = null,
     xdg_runtime_dir: ?[]const u8 = null,
-    tmpdir: ?[]const u8 = null,
     acmd_state_dir: ?[]const u8 = null,
     xdg_state_home: ?[]const u8 = null,
     home: ?[]const u8 = null,
-    uid: u32 = 0,
 
     pub fn fromProcess() Env {
         return .{
             .acmd_runtime_dir = getEnv("ACMD_RUNTIME_DIR"),
             .xdg_runtime_dir = getEnv("XDG_RUNTIME_DIR"),
-            .tmpdir = getEnv("TMPDIR"),
             .acmd_state_dir = getEnv("ACMD_STATE_DIR"),
             .xdg_state_home = getEnv("XDG_STATE_HOME"),
             .home = getEnv("HOME"),
-            .uid = std.c.getuid(),
         };
     }
 
@@ -39,21 +35,20 @@ pub fn resolveSocketPath(allocator: std.mem.Allocator, env: Env) ![]u8 {
         return std.fs.path.join(allocator, &.{ dir, "daemon.sock" });
     }
 
-    const runtime_dir = if (env.xdg_runtime_dir) |xdg|
-        try std.fs.path.join(allocator, &.{ xdg, "agent-command" })
-    else blk: {
-        const leaf = try std.fmt.allocPrint(allocator, "agent-command-{d}", .{env.uid});
-        defer allocator.free(leaf);
-        break :blk try std.fs.path.join(allocator, &.{ env.tmpdir orelse "/tmp", leaf });
-    };
-    defer allocator.free(runtime_dir);
-
-    const candidate = try std.fs.path.join(allocator, &.{ runtime_dir, "daemon.sock" });
-    if (candidate.len < max_sun_path) {
-        return candidate;
+    // With XDG_RUNTIME_DIR the sockets are there, unless that path is too long
+    // for a socket.
+    if (env.xdg_runtime_dir) |xdg| {
+        const candidate = try std.fs.path.join(allocator, &.{ xdg, "agent-command", "daemon.sock" });
+        if (candidate.len < max_sun_path) {
+            return candidate;
+        }
+        allocator.free(candidate);
     }
-    allocator.free(candidate);
 
+    // Without it (cron, some SSH and container sessions), and when it is too
+    // long, they are in run/ in the state folder. Never in the temp folder:
+    // on Linux that is the shared /tmp, where another user could make the
+    // folder first.
     const state_dir = if (env.acmd_state_dir) |s|
         try allocator.dupe(u8, s)
     else if (env.xdg_state_home) |xdg_state|
@@ -668,20 +663,26 @@ test "resolveSocketPath matches internal/paths/paths.go" {
     defer allocator.free(p2);
     try std.testing.expectEqualStrings("/run/user/1000/agent-command/daemon.sock", p2);
 
+    // No XDG_RUNTIME_DIR: the state folder, not /tmp.
     const p3 = try resolveSocketPath(allocator, .{
         .home = "/home/u",
-        .uid = 1000,
     });
     defer allocator.free(p3);
-    try std.testing.expectEqualStrings("/tmp/agent-command-1000/daemon.sock", p3);
+    try std.testing.expectEqualStrings("/home/u/.local/state/agent-command/run/daemon.sock", p3);
 
-    const p3_tmpdir = try resolveSocketPath(allocator, .{
-        .tmpdir = "/custom/tmp/",
+    const p3_state = try resolveSocketPath(allocator, .{
+        .xdg_state_home = "/data/state",
         .home = "/home/u",
-        .uid = 1000,
     });
-    defer allocator.free(p3_tmpdir);
-    try std.testing.expectEqualStrings("/custom/tmp/agent-command-1000/daemon.sock", p3_tmpdir);
+    defer allocator.free(p3_state);
+    try std.testing.expectEqualStrings("/data/state/agent-command/run/daemon.sock", p3_state);
+
+    const p3_override = try resolveSocketPath(allocator, .{
+        .acmd_state_dir = "/x/state",
+        .home = "/home/u",
+    });
+    defer allocator.free(p3_override);
+    try std.testing.expectEqualStrings("/x/state/run/daemon.sock", p3_override);
 
     const long_xdg = "/very/long/xdg/runtime/directory/path/that/exceeds/macos/sun_path/limit/for/unix/domain/sockets/in/paths";
     const p4 = try resolveSocketPath(allocator, .{

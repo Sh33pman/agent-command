@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -43,6 +44,42 @@ func TestForegroundFollowsWhatRunsInFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "the shell back in front", is(Front{Shell: true}))
+}
+
+// Asking what is in front reads the terminal's descriptor, and the server
+// closes the terminal as it ends. The two must not overlap: run with -race.
+func TestForegroundWhileTheServerEnds(t *testing.T) {
+	for i := 0; i < 15; i++ {
+		dir, err := os.MkdirTemp("", "acmdterm")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sock := filepath.Join(dir, "t.sock")
+		ready := make(chan struct{})
+		s := &Server{Socket: sock, Shell: []string{"/bin/sh"}, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"},
+			Ready: func() { close(ready) }}
+		ctx, cancel := context.WithCancel(context.Background())
+		served := make(chan error, 1)
+		go func() { served <- s.Serve(ctx) }()
+		<-ready
+
+		var asking sync.WaitGroup
+		for j := 0; j < 8; j++ {
+			asking.Add(1)
+			go func() {
+				defer asking.Done()
+				for k := 0; k < 25; k++ {
+					Foreground(sock)
+				}
+			}()
+		}
+		cancel()
+		if err := <-served; err != nil {
+			t.Error(err)
+		}
+		asking.Wait()
+		_ = os.RemoveAll(dir)
+	}
 }
 
 func TestProgramName(t *testing.T) {

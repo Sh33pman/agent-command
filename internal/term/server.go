@@ -173,7 +173,7 @@ func (s *Server) Serve(ctx context.Context) error {
 					_, _ = c.Write([]byte(st.text()))
 					_ = c.Close()
 				case err == nil && typ == frameFront:
-					if f, ok := front(ptmx, cmd.Process.Pid); ok {
+					if f, ok := st.front(cmd.Process.Pid); ok {
 						b, _ := json.Marshal(f)
 						_, _ = c.Write(b)
 					}
@@ -281,6 +281,18 @@ func (st *serverState) resize(ws pty.Winsize) {
 	st.screen.Resize(int(ws.Rows), int(ws.Cols))
 	_ = pty.Setsize(st.ptmx, &ws)
 	st.size = ws
+}
+
+// front names the program in front of the PTY. It reads the PTY's descriptor,
+// so like resize it runs with mu held and not once the server is closed: Serve
+// closes the PTY after that.
+func (st *serverState) front(shellPid int) (Front, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.closed {
+		return Front{}, false
+	}
+	return front(st.ptmx, shellPid)
 }
 
 func (st *serverState) text() string {

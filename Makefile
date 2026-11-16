@@ -21,7 +21,10 @@ DIST    := $(CURDIR)/dist
 GOLANGCI_LINT_VERSION := v2.15.0
 GOVULNCHECK_VERSION   := v1.9.0
 GITLEAKS_VERSION      := v8.30.1
-BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GOVULNCHECK_VERSION)_$(GITLEAKS_VERSION)
+ACTIONLINT_VERSION    := v1.7.12
+# zizmor isn't a Go tool: scripts/install-zizmor.sh pins its version and hashes.
+ZIZMOR_VERSION        := $(shell sed -n 's/^VERSION=//p' scripts/install-zizmor.sh)
+BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GOVULNCHECK_VERSION)_$(GITLEAKS_VERSION)_$(ACTIONLINT_VERSION)_$(ZIZMOR_VERSION)
 export PATH := $(BIN):$(PATH)
 
 # Coverage gates.
@@ -80,8 +83,14 @@ $(BIN)/govulncheck:
 $(BIN)/gitleaks:
 	$(call go_install,github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION))
 
+$(BIN)/actionlint:
+	$(call go_install,github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION))
+
+$(BIN)/zizmor: scripts/install-zizmor.sh
+	scripts/install-zizmor.sh $(BIN)
+
 .PHONY: tools
-tools: $(BIN)/golangci-lint $(BIN)/govulncheck $(BIN)/gitleaks ## Install pinned tools into $(TOOLS_DIR)
+tools: $(BIN)/golangci-lint $(BIN)/govulncheck $(BIN)/gitleaks $(BIN)/actionlint $(BIN)/zizmor ## Install pinned tools into $(TOOLS_DIR)
 
 ##@ Checks
 
@@ -94,10 +103,15 @@ fmt: ## Check formatting (gofmt)
 tidy-check: ## Fail if go.mod/go.sum are not tidy
 	go mod tidy -diff
 
+# actionlint checks the workflows' syntax and expressions. zizmor checks their
+# security habits, offline, with .github/zizmor.yml. The grep keeps workflows
+# from running a ./bin tool directly (it bypasses make's PATH, see v0.1.0).
 .PHONY: workflow-check
-workflow-check: ## Fail if a workflow runs a ./bin tool directly (bypasses make's PATH, see v0.1.0)
+workflow-check: $(BIN)/actionlint $(BIN)/zizmor ## Lint the workflow files: actionlint, zizmor, and no ./bin tools run directly
 	@if grep -nE 'run: *(\./)?bin/' .github/workflows/*.yml; then \
 	  echo "workflows must call tools via make targets, not bin/<tool>"; exit 1; fi
+	$(BIN)/actionlint
+	$(BIN)/zizmor --offline --no-progress .github
 
 # CHECK_GOOS=darwin checks the macOS build from another platform: CI lints and
 # scans it on Ubuntu, which leaves the Mac runners free. cgo is off when

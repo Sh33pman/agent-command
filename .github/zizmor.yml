@@ -1,0 +1,6 @@
+# Settings for zizmor, which make lint runs on the workflow files.
+rules:
+  # It asks for a newer way to name an action in this repo. ./.github/actions/…
+  # works, and is what GitHub's own docs and actionlint expect.
+  self-repository:
+    disable: true

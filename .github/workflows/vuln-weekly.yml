@@ -1,0 +1,47 @@
+# govulncheck runs on every PR and every push to main. An advisory published
+# while nothing is being pushed would go unseen, which is exactly when nobody is
+# looking. This scans once a week, and opens an issue if a scan fails: a failed
+# scheduled run only emails whoever last edited the schedule.
+name: vuln-weekly
+
+on:
+  schedule:
+    - cron: "47 6 * * 1" # Mondays
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write # open an issue when a scan fails
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: scan the macOS build
+        run: make vuln CHECK_GOOS=darwin
+      - name: scan the Linux build
+        if: ${{ !cancelled() }}
+        run: make vuln
+      - name: open an issue when a scan fails
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="The weekly vulnerability scan failed"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          open="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "It failed again: $run_url"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+              --body "govulncheck reported a known vulnerability in code we call, or couldn't run. See $run_url. Run \`make vuln\` and \`make vuln CHECK_GOOS=darwin\` to see it locally."
+          fi

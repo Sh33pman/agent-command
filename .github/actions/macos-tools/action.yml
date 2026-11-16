@@ -60,11 +60,13 @@ runs:
     # shaders) and rarely changes, so its build is cached, keyed on its sources,
     # the Makefile that builds it, and Xcode's version. make speech-helper uses
     # it, or fills it. Without SPEECH_CACHE, it builds from source.
+    # SPEECH_CACHE goes in the job's environment, as make reads it in later
+    # steps. The value is a fixed path, with nothing from outside in it.
     - name: name the speech helper cache
       if: inputs.speech == 'true' && inputs.cache == 'true'
       id: speech
       shell: bash
-      run: |
+      run: | # zizmor: ignore[github-env]
         echo "key=acmd-speech-$(xcodebuild -version | tr -s '\n ' '-')${{ hashFiles('helpers/acmd-speech/Package.swift', 'helpers/acmd-speech/Package.resolved', 'helpers/acmd-speech/Sources/**', 'Makefile') }}" >> "$GITHUB_OUTPUT"
         echo "SPEECH_CACHE=$HOME/.cache/agent-command/speech" >> "$GITHUB_ENV"
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

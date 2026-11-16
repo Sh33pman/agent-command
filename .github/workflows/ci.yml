@@ -113,7 +113,8 @@ jobs:
       - name: fuzz (short)
         run: make fuzz FUZZTIME=15s
 
-  # The macOS-only steps (snapshot, brew formula check).
+  # What needs a Mac: the Go tests, the libghostty and app tests, the cask check
+  # and a signed build of the app.
   macos:
     runs-on: macos-26
     if: >-
@@ -126,7 +127,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0 # goreleaser needs tags/history
       # The prebuilt Ghostty libraries a release ships, so a PR that changes the
       # Ghostty pin without a new archive fails here, not at the release.
       - uses: ./.github/actions/macos-tools
@@ -162,11 +162,6 @@ jobs:
           path: coverage.out
           retention-days: 3
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: snapshot-darwin-all
-          path: dist/*_darwin_all.tar.gz
-          retention-days: 3
 
   linux:
     runs-on: ubuntu-latest

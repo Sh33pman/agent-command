@@ -77,6 +77,7 @@ func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Ses
 	if err := d.startHost(ctx, host); err != nil {
 		d.mu.Lock()
 		_ = d.store.DeleteSession(ctx, s.ID) // nothing ran: don't leave a ghost
+		d.forget(s.ID)
 		d.mu.Unlock()
 		return nil, err
 	}

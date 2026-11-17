@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"time"
@@ -94,10 +95,10 @@ func (d *Daemon) transition(s *core.Session, tr core.Transition) {
 	no := ipc.Notice{SessionID: s.ID, Kind: kind, Sound: n.cfg.Sound}
 	switch kind {
 	case "waiting":
-		no.Title, no.Body, no.Urgent = "⚠ "+name+" needs you", firstNonEmpty(s.StatusDetail, "waiting for you"), true
+		no.Title, no.Body, no.Urgent = "⚠ "+name+" needs you", cmp.Or(s.StatusDetail, "waiting for you"), true
 		n.waiting[s.ID] = true
 	case "error":
-		no.Title, no.Body, no.Urgent = "✗ "+name+" failed", firstNonEmpty(s.StatusDetail, "error"), true
+		no.Title, no.Body, no.Urgent = "✗ "+name+" failed", cmp.Or(s.StatusDetail, "error"), true
 	case "done":
 		no.Title, no.Body = "✓ "+name+" finished", filepath.Base(s.Cwd)
 	case "paused":
@@ -139,20 +140,21 @@ func (d *Daemon) appRunning() bool {
 	return last != 0 && d.cfg.Now().Sub(time.Unix(0, last)) < appGap
 }
 
+// forget drops what the notifier keeps about a session that has been deleted.
+// Call with d.mu held.
+func (d *Daemon) forget(id string) {
+	if n := d.notify; n != nil {
+		delete(n.busySince, id)
+		delete(n.last, id)
+		delete(n.waiting, id)
+	}
+}
+
 func (d *Daemon) notices() []ipc.Notice {
 	if d.notify == nil {
 		return nil
 	}
 	return append([]ipc.Notice(nil), d.notify.notices...)
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // refreshNotify reads the notification settings again when config.toml has changed

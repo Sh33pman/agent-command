@@ -27,6 +27,11 @@ ZIZMOR_VERSION        := $(shell sed -n 's/^VERSION=//p' scripts/install-zizmor.
 BIN := $(TOOLS_DIR)/$(GOLANGCI_LINT_VERSION)_$(GOVULNCHECK_VERSION)_$(GITLEAKS_VERSION)_$(ACTIONLINT_VERSION)_$(ZIZMOR_VERSION)
 export PATH := $(BIN):$(PATH)
 
+# With libghostty-vt (scripts/build-ghostty.sh), session hosts keep the exact
+# screen, as the app's build does. Without it they replay recent output, and
+# full-screen programs need a redraw after attach. `acmd version` says which.
+BUILD_TAGS := $(if $(wildcard build/ghostty/vt/include/ghostty/vt.h),libghostty,)
+
 # Coverage gates.
 COVER_MIN_TOTAL := 60
 COVER_MIN_CORE  := 80
@@ -154,7 +159,7 @@ check-cask: ## Render the Homebrew cask with dummy values and run brew style and
 speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
 	swift run --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) speech-core-checks
 
-.PHONY: ci
+.PHONY: test-vt
 test-vt: ## Run the host's tests with libghostty-vt (needs scripts/build-ghostty.sh)
 	go test -race -shuffle=on -tags libghostty ./internal/vt ./internal/term
 
@@ -166,8 +171,17 @@ test-app: ## Run the app's tests and coverage gate (needs scripts/build-ghostty.
 ifeq ($(UNAME_S),Darwin)
 CI_DARWIN_CHECKS := speech-test check-cask
 endif
+# The libghostty-vt and app tests need scripts/build-ghostty.sh first. Once it
+# has run, make ci runs them too, so it is everything CI checks.
+ifneq ($(BUILD_TAGS),)
+CI_GHOSTTY_CHECKS := test-vt
+ifeq ($(UNAME_S),Darwin)
+CI_GHOSTTY_CHECKS += test-app
+endif
+endif
 
-ci: lint secrets test $(CI_DARWIN_CHECKS) vuln build ## Everything CI checks on a PR (except snapshot/formula)
+.PHONY: ci
+ci: lint secrets test $(CI_DARWIN_CHECKS) $(CI_GHOSTTY_CHECKS) vuln build ## Everything CI checks on a PR (the Ghostty tests once scripts/build-ghostty.sh has run)
 
 ##@ Build & release
 
@@ -220,11 +234,6 @@ linux-ui: ## Build ./dist/agent-command-ui (needs scripts/build-ghostty.sh first
 	fi
 
 .PHONY: build
-# With libghostty-vt (scripts/build-ghostty.sh), session hosts keep the exact
-# screen, as the app's build does. Without it they replay recent output, and
-# full-screen programs need a redraw after attach. `acmd version` says which.
-BUILD_TAGS := $(if $(wildcard build/ghostty/vt/include/ghostty/vt.h),libghostty,)
-
 build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) for this machine
 	mkdir -p $(DIST)
 	CGO_ENABLED=1 go build -trimpath -tags '$(BUILD_TAGS)' -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
@@ -248,10 +257,11 @@ endif
 	@echo "installed to $(INSTALL_DIR) (make sure it's on PATH)"
 
 
-.PHONY: clean
+.PHONY: hooks
 hooks: ## Use the repo's git hooks (pre-push runs lint and test)
 	git config core.hooksPath .githooks
 	@echo "git hooks enabled: .githooks/pre-push runs make lint and make test before each push"
 
+.PHONY: clean
 clean: ## Remove build output
 	rm -rf $(DIST) coverage.out

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -59,7 +60,7 @@ func InboxEffect(s *Session, e Event) (item *InboxItem, drop bool) {
 		}
 		return &InboxItem{SessionID: s.ID, Kind: InboxDone, Text: e.LastMessage, At: at}, false
 	case HookStopFailure:
-		msg := firstNonEmpty(e.Error, e.Message, "an API error")
+		msg := cmp.Or(e.Error, e.Message, "an API error")
 		return &InboxItem{SessionID: s.ID, Kind: InboxError, Text: "Claude stopped with " + msg + ".", At: at}, false
 	case HookPermissionRequest:
 		if e.ToolName == "AskUserQuestion" {
@@ -123,7 +124,7 @@ func permissionText(e Event) string {
 	var in map[string]any
 	_ = json.Unmarshal(e.ToolInput, &in)
 	str := func(k string) string { v, _ := in[k].(string); return v }
-	tool := firstNonEmpty(e.ToolName, "a tool")
+	tool := cmp.Or(e.ToolName, "a tool")
 	var b strings.Builder
 	fmt.Fprintf(&b, "Claude wants to use %s", tool)
 	switch {

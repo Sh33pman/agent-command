@@ -18,6 +18,10 @@ This document outlines the architecture of **Agent Command** (`acmd`) and a phas
 
 ## 2. Phase 1: Go CLI, Daemon & `libghostty-vt` on Linux
 
+**Status (17 Nov 2026): done.** Everything below is in `main`: PR #19 and PR #27 made the CLI, daemon, hosts and `libghostty-vt` build and run on Linux, and CI now builds and tests on Ubuntu, Debian and Arch, scans the Linux build with `govulncheck` and CodeQL, and runs the Linux UI's unit tests. Two items went another way: `editor.Opener` has no `xdg-open` fallback, and the speech helper's install hint still names Homebrew. The section is kept as a record of what was needed.
+
+The Linux UI (Phase 2) is tracked in PAN-62, and its direction in PAN-76.
+
 Goal: Make `acmd` (CLI, daemon, PTY hosts, Claude Code hooks, scheduled jobs, and `libghostty-vt` terminal state) build, pass tests, and run headless on Debian and Arch.
 
 ### 2.1 Build & CGo
@@ -77,6 +81,8 @@ Options for a Linux frontend talking to the same daemon:
 ---
 
 ## 5. Phase 4: Debian & Arch Packaging
+
+Not started. Tracked in PAN-82, with the first Linux release.
 
 - **Debian (`.deb`):**
   - Package `agent-command` and the `acmd` symlink (e.g., via `nfpm` or `debian/`), with `libnotify-bin` as a recommended dependency.

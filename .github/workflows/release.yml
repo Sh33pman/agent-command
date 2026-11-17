@@ -69,12 +69,12 @@ jobs:
         with:
           ghostty: "prebuilt"
           speech: "true"
-      - name: lint, test, vuln, build
+      # With the Ghostty libraries installed, make ci runs the libghostty and app
+      # tests too.
+      - name: lint, test, vuln, the libghostty and app tests, build
         run: make ci
       - name: fuzz
         run: make fuzz FUZZTIME=30s
-      - name: test with libghostty, and test the app
-        run: make test-vt test-app
 
   # A clean build, signed. No test code runs here, and nothing comes from a
   # cache: Go and the speech helper are built from source, and the Ghostty

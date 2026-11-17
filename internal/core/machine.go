@@ -1,6 +1,9 @@
 package core
 
-import "time"
+import (
+	"cmp"
+	"time"
+)
 
 // Transition is the result of applying an event to a session.
 type Transition struct {
@@ -100,7 +103,7 @@ func applyLive(s *Session, e Event, t Transition) Transition {
 		set(s, &t, StatusDone, "")
 
 	case HookStopFailure:
-		set(s, &t, StatusError, firstNonEmpty(e.Error, e.Message, "API error"))
+		set(s, &t, StatusError, cmp.Or(e.Error, e.Message, "API error"))
 
 	case EventInterrupted:
 		// Esc fires no Stop (M0 A12). Denying a permission, or pressing Esc on a
@@ -237,13 +240,4 @@ func waitingDetail(e Event) string {
 	default:
 		return e.NotificationType
 	}
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

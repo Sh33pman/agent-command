@@ -163,6 +163,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			if err := st.DeleteSession(ctx, id); err != nil {
 				return n, err
 			}
+			d.forget(id)
 			n++
 		}
 		return n, nil

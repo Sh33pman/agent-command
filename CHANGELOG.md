@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.55.2](https://github.com/brettmostert/agent-command/compare/v0.55.1...v0.55.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **daemon:** apply each event in one database transaction ([#63](https://github.com/brettmostert/agent-command/issues/63)) ([f19d4c4](https://github.com/brettmostert/agent-command/commit/f19d4c418c4bd8ece868479b3c0f297e2dd315b0))
+* **linux:** no Mac waker or zsh default on Linux, and test the Linux UI's logic in CI ([#62](https://github.com/brettmostert/agent-command/issues/62)) ([743bb3f](https://github.com/brettmostert/agent-command/commit/743bb3f4396e0146d13dfce99186f82cb1de6820))
+
 ## [0.55.1](https://github.com/brettmostert/agent-command/compare/v0.55.0...v0.55.1) (2026-11-17)
 
 

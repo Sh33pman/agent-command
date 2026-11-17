@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.0](https://github.com/brettmostert/agent-command/compare/v0.55.2...v0.56.0) (2026-11-17)
+
+
+### Features
+
+* run Antigravity CLI sessions, and pick a harness with Cmd+Shift+N ([#66](https://github.com/brettmostert/agent-command/issues/66)) ([6e4b7d2](https://github.com/brettmostert/agent-command/commit/6e4b7d297e964d1fbcbcb6ec18463cb569753dc5))
+
 ## [0.55.2](https://github.com/brettmostert/agent-command/compare/v0.55.1...v0.55.2) (2026-11-17)
 
 

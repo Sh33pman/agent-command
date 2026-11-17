@@ -2,4 +2,5 @@
 
 package setup
 
-func defaultShell() string { return "/bin/zsh" }
+// DefaultShell is the shell to use when the login environment doesn't name one.
+func DefaultShell() string { return "/bin/zsh" }

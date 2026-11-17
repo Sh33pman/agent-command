@@ -149,10 +149,16 @@ func TestSocketIsOwnerOnly(t *testing.T) {
 		if err != nil {
 			t.Errorf("serve: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(killWait):
 		t.Fatal("the owner's kill didn't reach the server")
 	}
 }
+
+// killWait is how long a test waits for a killed host to end. The host's own
+// escalation takes up to 10 s: SIGHUP, then SIGTERM after 5 s, then SIGKILL
+// after 5 more (an interactive shell ignores SIGTERM). A busy CI runner can
+// reach that, so a shorter wait fails now and then for no real reason.
+const killWait = 15 * time.Second
 
 func TestKill(t *testing.T) {
 	dir, err := os.MkdirTemp("", "acmdterm")
@@ -174,7 +180,7 @@ func TestKill(t *testing.T) {
 		if err != nil {
 			t.Errorf("serve: %v", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(killWait):
 		t.Fatal("kill didn't end the terminal")
 	}
 }

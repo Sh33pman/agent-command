@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -50,7 +51,12 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 				fmt.Fprintf(cmd.ErrOrStderr(), "acmd daemon: can't write to %s: %v\n", p.DaemonLog(), err)
 			}
 			logger := log.New(report.NewRedactor().Writer(cmd.ErrOrStderr()), "acmd daemon: ", log.LstdFlags)
-			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify, Waker: wake.NewMac()}
+			cfg := daemon.Config{Paths: p, Version: version.Get().Version, Log: logger, Fallback: fallbackNotify}
+			// Only macOS can wake the computer for a job (pmset, through sudo). Elsewhere
+			// the daemon has no waker, and schedules say that jobs don't wake it.
+			if runtime.GOOS == "darwin" {
+				cfg.Waker = wake.NewMac()
+			}
 			cfg.LockWait = 3 * time.Second
 			if home, err := os.UserHomeDir(); err == nil {
 				cfg.ClaudeDir = claudecli.ConfigDir(os.Getenv, home)

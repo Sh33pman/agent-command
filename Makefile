@@ -204,6 +204,12 @@ speech-helper: ## Build the Swift speech engine into $(SPEECH_OUT)
 app: ## Build "dist/Agent Command.app" (needs scripts/build-ghostty.sh first)
 	scripts/build-app.sh
 
+# The Linux UI's own logic (the daemon client, preferences) has unit tests that
+# need neither GTK nor Ghostty, so they run wherever Zig is installed.
+.PHONY: test-ui-core
+test-ui-core: ## Run the Linux UI's unit tests that need no GTK (needs Zig)
+	cd app-linux && zig test src/ipc/client.zig -lc && zig test src/config/prefs.zig -lc
+
 .PHONY: linux-ui
 linux-ui: ## Build ./dist/agent-command-ui (needs scripts/build-ghostty.sh first)
 	mkdir -p $(DIST)

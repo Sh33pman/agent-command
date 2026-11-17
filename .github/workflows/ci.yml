@@ -199,6 +199,8 @@ jobs:
         run: make test
       - name: test with libghostty-vt
         run: make test-vt
+      - name: test the Linux UI's daemon client and preferences
+        run: make test-ui-core
       - name: build
         run: make build
 

@@ -22,6 +22,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/procenv"
+	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
 )
@@ -91,7 +92,7 @@ func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) 
 		return harness.Claude{Path: claude, RemoteControl: cfg.RemoteControl}, env, nil
 	case core.HarnessTerminal:
 		env := loginEnv(p)
-		shell := "/bin/zsh"
+		shell := setup.DefaultShell() // zsh on macOS; bash, or sh, on Linux
 		for _, kv := range env {
 			if name, val, _ := splitEnv(kv); name == "SHELL" && val != "" {
 				shell = val

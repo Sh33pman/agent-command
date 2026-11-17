@@ -34,7 +34,7 @@ func TestLiveEnvIncludesSessionVars(t *testing.T) {
 	if live["WAYLAND_DISPLAY"] != "wayland-1" {
 		t.Errorf("WAYLAND_DISPLAY = %q, want wayland-1", live["WAYLAND_DISPLAY"])
 	}
-	if _, err := os.Stat(defaultShell()); err != nil {
-		t.Errorf("defaultShell() %q not found: %v", defaultShell(), err)
+	if _, err := os.Stat(DefaultShell()); err != nil {
+		t.Errorf("DefaultShell() %q not found: %v", DefaultShell(), err)
 	}
 }

@@ -70,7 +70,7 @@ func ParseEnv0(out []byte) LoginEnv {
 // CaptureLoginEnv runs the user's login shell to read its environment.
 func CaptureLoginEnv(ctx context.Context, shell string) (LoginEnv, error) {
 	if shell == "" {
-		shell = defaultShell()
+		shell = DefaultShell()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

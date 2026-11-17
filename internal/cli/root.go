@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -55,6 +56,7 @@ func newVersionCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info := version.Get()
+			info.Screen = term.ScreenKind()
 			if asJSON {
 				b, err := info.JSON()
 				if err != nil {

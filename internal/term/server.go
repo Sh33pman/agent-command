@@ -23,6 +23,10 @@ const (
 
 	clientWriteTimeout = 2 * time.Second
 	replayWriteTimeout = 10 * time.Second
+
+	// clientQueue is how many chunks of output a client may fall behind by
+	// before the program waits for it, as it would for a slow terminal.
+	clientQueue = 64
 )
 
 // Server runs one session's shell.
@@ -119,7 +123,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	st := &serverState{
 		ptmx:    ptmx,
-		clients: map[net.Conn]struct{}{},
+		clients: map[net.Conn]*client{},
 		size:    pty.Winsize{Rows: initialRows, Cols: initialCols},
 	}
 	st.screen = newScreen(initialRows, initialCols, s.Keep, func(b []byte) {
@@ -224,29 +228,119 @@ type serverState struct {
 
 	mu      sync.Mutex
 	screen  screen
-	clients map[net.Conn]struct{}
+	clients map[net.Conn]*client
 	size    pty.Winsize
 	closed  bool
 }
 
-func (st *serverState) output(p []byte) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	if st.closed {
-		return
+// client is an attached pane. Its output goes through a queue and a goroutine of
+// its own, so nothing writes to a pane with mu held. A pane that reads slowly
+// slows the program down, as a terminal does. One that stops reading is dropped
+// after clientWriteTimeout: it can attach again and get the screen as it is then.
+type client struct {
+	conn   net.Conn
+	out    chan []byte
+	finish chan struct{} // the server is ending: send what's queued, then close
+	gone   chan struct{} // dropped: stop at once
+}
+
+func newClient(conn net.Conn) *client {
+	return &client{conn: conn, out: make(chan []byte, clientQueue),
+		finish: make(chan struct{}), gone: make(chan struct{})}
+}
+
+// writes sends a client its queue until it is dropped or the server ends. The
+// first item is the replay, which may be large.
+func (st *serverState) writes(cl *client) {
+	timeout := replayWriteTimeout
+	send := func(b []byte) bool {
+		_ = cl.conn.SetWriteDeadline(time.Now().Add(timeout))
+		timeout = clientWriteTimeout
+		_, err := cl.conn.Write(b)
+		return err == nil
 	}
-	st.screen.Write(p)
-	for c := range st.clients {
-		_ = c.SetWriteDeadline(time.Now().Add(clientWriteTimeout))
-		if _, err := c.Write(p); err != nil {
-			_ = c.Close() // too slow or gone: it can attach again
-			delete(st.clients, c)
+	defer func() {
+		st.mu.Lock()
+		st.drop(cl.conn)
+		st.mu.Unlock()
+	}()
+	for {
+		select {
+		case <-cl.gone:
+			return
+		case b := <-cl.out:
+			if !send(b) {
+				return // too slow or gone
+			}
+		case <-cl.finish:
+			for {
+				select {
+				case b := <-cl.out:
+					if !send(b) {
+						return
+					}
+				default:
+					return
+				}
+			}
 		}
 	}
 }
 
-// attach sends the client the current state and adds it, under one lock, so it
-// neither misses nor repeats output.
+// drop detaches a client. Call with mu held. It does nothing for one already
+// dropped.
+func (st *serverState) drop(c net.Conn) {
+	cl, ok := st.clients[c]
+	if !ok {
+		return
+	}
+	delete(st.clients, c)
+	close(cl.gone)
+	_ = c.Close()
+}
+
+// output writes the program's output to the screen and queues it for each pane.
+// It is only called from the PTY's read loop, one chunk at a time, so each pane
+// gets the chunks in order. Waiting for a full queue happens with mu released.
+func (st *serverState) output(p []byte) {
+	st.mu.Lock()
+	if st.closed {
+		st.mu.Unlock()
+		return
+	}
+	st.screen.Write(p)
+	if len(st.clients) == 0 {
+		st.mu.Unlock()
+		return
+	}
+	b := append([]byte(nil), p...) // the read loop reuses p
+	var full []*client
+	for _, cl := range st.clients {
+		select {
+		case cl.out <- b:
+		default:
+			full = append(full, cl)
+		}
+	}
+	st.mu.Unlock()
+
+	for _, cl := range full {
+		timer := time.NewTimer(clientWriteTimeout)
+		select {
+		case cl.out <- b:
+		case <-cl.gone:
+		case <-timer.C:
+			st.mu.Lock()
+			st.drop(cl.conn) // stopped reading
+			st.mu.Unlock()
+		}
+		timer.Stop()
+	}
+}
+
+// attach queues the current state for the client and adds it, under one lock,
+// so it neither misses nor repeats output. The replay is sent by the client's
+// own writer, not with mu held.
 func (st *serverState) attach(a attachRequest) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -257,12 +351,10 @@ func (st *serverState) attach(a attachRequest) {
 	if a.rows > 0 && a.cols > 0 {
 		st.resize(pty.Winsize{Rows: a.rows, Cols: a.cols})
 	}
-	_ = a.conn.SetWriteDeadline(time.Now().Add(replayWriteTimeout))
-	if _, err := a.conn.Write(st.screen.Replay()); err != nil {
-		_ = a.conn.Close()
-		return
-	}
-	st.clients[a.conn] = struct{}{}
+	cl := newClient(a.conn)
+	cl.out <- st.screen.Replay()
+	st.clients[a.conn] = cl
+	go st.writes(cl)
 }
 
 // resize applies the size last asked for: with several clients, the last one
@@ -304,24 +396,26 @@ func (st *serverState) text() string {
 	return st.screen.Text()
 }
 
+// close ends the server's state. Each pane is sent what is already queued for
+// it, the program's last output, and is then closed by its writer.
 func (st *serverState) close() {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	for c := range st.clients {
-		_ = c.Close()
-		delete(st.clients, c)
+	if st.closed {
+		return
 	}
-	if !st.closed {
-		st.closed = true
-		st.screen.Close()
+	st.closed = true
+	for _, cl := range st.clients {
+		close(cl.finish)
 	}
+	st.screen.Close()
 }
 
 // frames handles one client's input, resizes and kill.
 func (st *serverState) frames(c net.Conn, hangup func()) {
 	defer func() {
 		st.mu.Lock()
-		delete(st.clients, c)
+		st.drop(c)
 		st.mu.Unlock()
 		_ = c.Close()
 	}()

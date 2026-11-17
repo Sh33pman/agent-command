@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -22,7 +23,9 @@ func TestVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := version.Get().String() + "\n"
+	info := version.Get()
+	info.Screen = term.ScreenKind()
+	want := info.String() + "\n"
 	if out != want {
 		t.Errorf("version output = %q, want %q", out, want)
 	}
@@ -37,8 +40,10 @@ func TestVersionJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("version --json is not JSON: %v\n%s", err, out)
 	}
-	if got != version.Get() {
-		t.Errorf("version --json = %+v, want %+v", got, version.Get())
+	want := version.Get()
+	want.Screen = term.ScreenKind()
+	if got != want {
+		t.Errorf("version --json = %+v, want %+v", got, want)
 	}
 }
 

@@ -30,6 +30,9 @@ type Info struct {
 	Date      string `json:"date"`
 	GoVersion string `json:"go_version"`
 	Platform  string `json:"platform"`
+	// Screen is how session hosts keep a terminal's screen: "exact" with
+	// libghostty-vt, "basic" without it. The CLI sets it; empty means unknown.
+	Screen string `json:"screen,omitempty"`
 }
 
 // Get returns build information for the running binary.
@@ -103,6 +106,9 @@ func (i Info) String() string {
 		parts = append(parts, "built "+i.Date)
 	}
 	parts = append(parts, i.GoVersion+" "+i.Platform)
+	if i.Screen != "" {
+		parts = append(parts, i.Screen+" screen")
+	}
 	return fmt.Sprintf("agent-command %s (%s)", i.Version, strings.Join(parts, ", "))
 }
 

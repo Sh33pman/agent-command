@@ -24,6 +24,16 @@ type screen interface {
 	Close()
 }
 
+// ScreenKind says how a host built from this binary keeps a terminal's screen:
+// "exact" with libghostty-vt, which restores it fully on attach, or "basic",
+// which replays recent output, so full-screen programs need a redraw.
+func ScreenKind() string {
+	if vt.Available {
+		return "exact"
+	}
+	return "basic"
+}
+
 // newScreen uses libghostty-vt when this binary has it, and otherwise replays
 // recent raw output. reply gets the answers to the program's terminal queries.
 func newScreen(rows, cols, keep int, reply func([]byte)) screen {

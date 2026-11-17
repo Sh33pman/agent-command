@@ -214,9 +214,14 @@ linux-ui: ## Build ./dist/agent-command-ui (needs scripts/build-ghostty.sh first
 	fi
 
 .PHONY: build
+# With libghostty-vt (scripts/build-ghostty.sh), session hosts keep the exact
+# screen, as the app's build does. Without it they replay recent output, and
+# full-screen programs need a redraw after attach. `acmd version` says which.
+BUILD_TAGS := $(if $(wildcard build/ghostty/vt/include/ghostty/vt.h),libghostty,)
+
 build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) for this machine
 	mkdir -p $(DIST)
-	CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
+	CGO_ENABLED=1 go build -trimpath -tags '$(BUILD_TAGS)' -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
 	ln -sf agent-command $(DIST)/acmd
 ifeq ($(UNAME_S),Darwin)
 	$(MAKE) speech-helper SPEECH_OUT=$(DIST)/acmd-speech

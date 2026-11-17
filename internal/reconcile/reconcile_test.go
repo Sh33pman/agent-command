@@ -357,3 +357,48 @@ func TestListingDoesNotCreateSessions(t *testing.T) {
 		t.Errorf("sessions: %+v, %v", all, err)
 	}
 }
+
+// Only a running session that isn't a terminal is reconciled against Claude's
+// listing. Without one, nothing asks for it.
+func TestNeedsListing(t *testing.T) {
+	r, st, _, c := setup(t)
+	need := func() bool {
+		t.Helper()
+		ok, err := r.NeedsListing(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if need() {
+		t.Error("no sessions: wants the listing")
+	}
+	create(t, st, &core.Session{ID: "term", Harness: core.HarnessTerminal, Status: core.StatusRunning, CreatedAt: c.now()})
+	create(t, st, &core.Session{ID: "old", ClaudeSessionID: "c-old", Kind: core.KindHosted, Status: core.StatusPaused, CreatedAt: c.now()})
+	create(t, st, &core.Session{ID: "done", ClaudeSessionID: "c-done", Kind: core.KindHosted, Status: core.StatusFinished, CreatedAt: c.now()})
+	if need() {
+		t.Error("only a terminal and stopped sessions: wants the listing")
+	}
+	create(t, st, &core.Session{ID: "live", ClaudeSessionID: "c-live", Kind: core.KindHosted, Status: core.StatusBusy, CreatedAt: c.now()})
+	if !need() {
+		t.Error("a running session: doesn't want the listing")
+	}
+}
+
+// Apply works from a listing fetched earlier, as the daemon does.
+func TestFetchThenApplyIsOnce(t *testing.T) {
+	r, st, l, _ := setup(t)
+	create(t, st, &core.Session{ID: "a", ClaudeSessionID: "s1", Kind: core.KindExternal, Status: core.StatusBusy, CreatedAt: time.Now()})
+	l.agents = []claudecli.Agent{agent("s1", "aaaaaaaa", "background", "busy", 0)}
+	fetched, err := r.Fetch(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.agents = nil // the listing has moved on; Apply uses what was fetched
+	if _, err := r.Apply(ctx, fetched); err != nil {
+		t.Fatal(err)
+	}
+	if s := get(t, st, "a"); s.Kind != core.KindBackground || s.BgID != "aaaaaaaa" {
+		t.Errorf("applied %+v", s)
+	}
+}

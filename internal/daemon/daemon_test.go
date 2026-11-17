@@ -365,3 +365,71 @@ func TestLockWaiting(t *testing.T) {
 	must(t, err)
 	next()
 }
+
+// slowAgents is a listing that takes as long as the test says.
+type slowAgents struct {
+	called  chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *slowAgents) Agents(ctx context.Context) ([]claudecli.Agent, error) {
+	s.once.Do(func() { close(s.called) })
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+	}
+	return nil, nil
+}
+
+// A slow `claude agents` must not hold up hooks: they give up after half a
+// second and spool their event.
+func TestHooksAreNotHeldUpByASlowListing(t *testing.T) {
+	p := testPaths(t)
+	agents := &slowAgents{called: make(chan struct{}), release: make(chan struct{})}
+	defer close(agents.release)
+	start(t, p, func(c *Config) {
+		c.Agents = agents
+		c.ReconcileEvery = 20 * time.Millisecond
+	})
+	c := dial(t, p)
+	now := time.Now()
+	// A running session, so the reconciler asks for the listing.
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"s1","source":"startup"}`, now, ipc.HookContext{}), nil))
+	select {
+	case <-agents.called:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the reconciler never asked for the listing")
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- c.Call(ipc.OpEvent, hookEvent("UserPromptSubmit", `{"session_id":"s1","prompt":"hi"}`, now.Add(time.Second), ipc.HookContext{}), nil)
+	}()
+	select {
+	case err := <-done:
+		must(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("a hook waited for the listing")
+	}
+}
+
+// An event spooled while the daemon runs (a hook that timed out) is applied
+// on the next reconcile tick, not at the next restart.
+func TestDaemonDrainsSpoolWhileRunning(t *testing.T) {
+	p := testPaths(t)
+	start(t, p, func(c *Config) { c.ReconcileEvery = 20 * time.Millisecond })
+	b, _ := json.Marshal(hookEvent("SessionStart", `{"session_id":"late","source":"startup"}`, time.Now(), ipc.HookContext{}))
+	must(t, os.WriteFile(p.Spool(), append(b, '\n'), 0o600))
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var st ipc.Status
+		must(t, dial(t, p).Call(ipc.OpStatus, nil, &st))
+		if _, err := os.Stat(p.Spool()); errors.Is(err, os.ErrNotExist) && st.Sessions == 1 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the spool wasn't drained: %+v", st)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}

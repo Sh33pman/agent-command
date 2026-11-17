@@ -443,7 +443,9 @@ func (d *Daemon) hostedSessionOf(ctx context.Context, hc ipc.HookContext) *core.
 }
 
 // background runs the reconciler and the transcript tail until the daemon
-// stops. Both take d.mu, like hook handling, so updates never interleave.
+// stops. Both take d.mu, like hook handling, so updates never interleave. No
+// subprocess runs while d.mu is held: a hook waits for it, and gives up after
+// half a second.
 func (d *Daemon) background(ctx context.Context) {
 	var rec *reconcile.Reconciler
 	if d.cfg.Agents != nil {
@@ -469,17 +471,14 @@ func (d *Daemon) background(ctx context.Context) {
 			} else if changed {
 				d.changes.bump()
 			}
-			if rec == nil {
-				continue
+			// A hook that timed out spools its event. Applying it now, not at the
+			// next restart, keeps it fresh: core.Apply skips it if a newer event
+			// has already arrived.
+			if err := d.drainSpool(ctx); err != nil {
+				d.cfg.Log.Printf("drain spool: %v", err)
 			}
-			d.mu.Lock()
-			res, err := rec.Once(ctx)
-			d.mu.Unlock()
-			if err != nil {
-				d.cfg.Log.Printf("reconcile: %v", err)
-			} else if res.Discovered+res.Updated > 0 {
-				d.cfg.Log.Printf("reconcile: %d discovered, %d updated", res.Discovered, res.Updated)
-				d.changes.bump()
+			if rec != nil {
+				d.reconcile(ctx, rec)
 			}
 		case <-frontT.C:
 			changed, err := d.frontOnce(ctx)
@@ -498,6 +497,34 @@ func (d *Daemon) background(ctx context.Context) {
 				d.changes.bump()
 			}
 		}
+	}
+}
+
+// reconcile runs one pass of rec. Claude's listing is fetched with d.mu
+// released, and only when a session needs it; the result is applied with it held.
+func (d *Daemon) reconcile(ctx context.Context, rec *reconcile.Reconciler) {
+	d.mu.Lock()
+	need, err := rec.NeedsListing(ctx)
+	d.mu.Unlock()
+	if err != nil {
+		d.cfg.Log.Printf("reconcile: %v", err)
+		return
+	}
+	var l reconcile.Listing
+	if need {
+		if l, err = rec.Fetch(ctx); err != nil {
+			d.cfg.Log.Printf("reconcile: %v", err)
+			return
+		}
+	}
+	d.mu.Lock()
+	res, err := rec.Apply(ctx, l)
+	d.mu.Unlock()
+	if err != nil {
+		d.cfg.Log.Printf("reconcile: %v", err)
+	} else if res.Discovered+res.Updated > 0 {
+		d.cfg.Log.Printf("reconcile: %d discovered, %d updated", res.Discovered, res.Updated)
+		d.changes.bump()
 	}
 }
 

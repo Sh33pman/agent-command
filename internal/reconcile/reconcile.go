@@ -54,14 +54,55 @@ type Result struct {
 	Discovered, Updated int
 }
 
-// Once runs one reconciliation pass.
+// Listing is one fetch of Claude's sessions.
+type Listing struct {
+	Agents []claudecli.Agent
+}
+
+// Once runs one reconciliation pass: Fetch, then Apply.
 func (r *Reconciler) Once(ctx context.Context) (Result, error) {
-	r.defaults()
-	var res Result
+	l, err := r.Fetch(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	return r.Apply(ctx, l)
+}
+
+// NeedsListing reports whether any session depends on Claude's listing: one
+// that isn't a terminal and is still running. Without one, Apply works from an
+// empty listing, and nothing starts `claude agents`, a Node process, every few
+// seconds on an idle machine.
+func (r *Reconciler) NeedsListing(ctx context.Context) (bool, error) {
+	sessions, err := r.Store.Sessions(ctx, false)
+	if err != nil {
+		return false, err
+	}
+	for _, s := range sessions {
+		if !s.IsTerminal() && !s.Stopped() {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Fetch lists Claude's sessions. It runs `claude agents`, which can take
+// seconds, and touches nothing else: the daemon calls it without its lock held,
+// so hooks aren't held up while it runs.
+func (r *Reconciler) Fetch(ctx context.Context) (Listing, error) {
 	agents, err := r.Agents.Agents(ctx)
 	if err != nil {
-		return res, err
+		return Listing{}, err
 	}
+	return Listing{Agents: agents}, nil
+}
+
+// Apply reconciles the store with a listing from Fetch. The listing may be a
+// moment old: a session a hook created since is protected by StartupGrace, and
+// a status a hook changed since by Grace.
+func (r *Reconciler) Apply(ctx context.Context, l Listing) (Result, error) {
+	r.defaults()
+	var res Result
+	agents := l.Agents
 	bySession := make(map[string]claudecli.Agent, len(agents))
 	byShortID := make(map[string]claudecli.Agent, len(agents))
 	for _, a := range agents {

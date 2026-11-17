@@ -248,3 +248,57 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+func TestAntigravity(t *testing.T) {
+	f := newFake(t)
+	hooks := filepath.Join(f.home, ".gemini/config/hooks.json")
+
+	// Without agy and its hooks, nothing is said.
+	if _, out := f.run(); strings.Contains(out, "Antigravity") {
+		t.Errorf("agy not installed:\n%s", out)
+	}
+
+	// agy installed after init: its hooks are missing.
+	f.write(filepath.Join(f.home, "bin", "agy"), "#!/bin/sh\n", 0o755)
+	r, out := f.run()
+	if !strings.Contains(out, "Antigravity\n  ✓ agy (~/bin/agy)\n  ! no acmd hooks in ~/.gemini/config/hooks.json") || r.Count(Warn) != 1 {
+		t.Errorf("hooks missing:\n%s", out)
+	}
+
+	added, _, err := setup.AddAntigravityHooks([]byte(`{"mine": {"Stop": [{"command": "true"}]}}`), f.acmd)
+	must(t, err)
+	f.write(hooks, string(added), 0o644)
+	if r, out := f.run(); r.Count(Warn)+r.Count(Fail) != 0 || !strings.Contains(out, "✓ hooks registered for all 4 events") {
+		t.Errorf("healthy:\n%s", out)
+	}
+
+	// Turned off in agy, and pointing at a binary that's gone.
+	off := strings.Replace(string(added), `"agent-command": {`, `"agent-command": {"enabled": false,`, 1)
+	f.write(hooks, strings.ReplaceAll(off, f.acmd, "/gone/acmd"), 0o644)
+	_, out = f.run()
+	for _, want := range []string{"✗ acmd's hook is turned off", "✗ hooks run /gone/acmd, which doesn't exist"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("report lacks %q:\n%s", want, out)
+		}
+	}
+
+	// Only some events.
+	part := `{"agent-command": {"Stop": [{"command": "` + setup.AntigravityHookCommand(f.acmd, "Stop") + `"}]}}`
+	f.write(hooks, part, 0o644)
+	if _, out := f.run(); !strings.Contains(out, "✗ acmd hooks for only 1 of 4 events") {
+		t.Errorf("partial:\n%s", out)
+	}
+
+	// agy uninstalled, hooks left behind: a note.
+	must(t, os.Remove(filepath.Join(f.home, "bin", "agy")))
+	if r, out := f.run(); !strings.Contains(out, "· agy isn't on your login shell's PATH") || r.Count(Fail) != 0 {
+		t.Errorf("agy gone:\n%s", out)
+	}
+
+	// Unreadable.
+	must(t, os.Remove(hooks))
+	must(t, os.Mkdir(hooks, 0o700))
+	if _, out := f.run(); !strings.Contains(out, "✗ ~/.gemini/config/hooks.json:") {
+		t.Errorf("unreadable:\n%s", out)
+	}
+}

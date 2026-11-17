@@ -9,7 +9,10 @@ final class ScheduledModel {
     private(set) var selectedID: String?
     /// The form, while adding or editing a job.
     var draft: JobDraft? {
-        didSet { if draft != oldValue, draft != nil { scheduleCheck() } }
+        didSet {
+            if draft != oldValue, draft != nil { scheduleCheck() }
+            if let agent = draft?.harness, agent != oldValue?.harness { loadSettings(agent) }
+        }
     }
     /// The draft as it was when the form opened, to tell whether it changed.
     private(set) var original: JobDraft?
@@ -21,7 +24,9 @@ final class ScheduledModel {
     /// What just happened, for a moment.
     private(set) var notice: String?
     private(set) var runs: [JobRun] = []
-    private(set) var settings: [AgentSetting] = []
+    /// Each agent's settings for scheduled runs, as the daemon lists them.
+    private(set) var agentSettings: [Harness: [AgentSetting]] = [:]
+    @ObservationIgnored private var asked: Set<Harness> = []
     /// Asking whether to delete the selected job.
     var confirmingDelete = false
     /// Asking whether to throw away the form's changes.
@@ -51,9 +56,24 @@ final class ScheduledModel {
     /// Save stays pressable while there are problems: pressing it shows them all.
     var canSave: Bool { draft != nil && !saving }
 
-    /// The sessions a job can continue: Claude sessions acmd runs.
-    var continuableSessions: [Session] {
-        store.sessions.filter { !$0.isTerminal || !$0.claudeSessionID.isEmpty }
+    /// The agent the form or the selected job is for.
+    var harness: Harness { draft?.harness ?? selected?.harnessKind ?? .claude }
+
+    /// The settings the form shows: those of the draft's agent (or the selected job's).
+    var settings: [AgentSetting] { settings(for: harness) }
+
+    func settings(for agent: Harness) -> [AgentSetting] { agentSettings[agent] ?? [] }
+
+    /// The sessions a job of the form's agent can continue.
+    var continuableSessions: [Session] { continuableSessions(for: harness) }
+
+    /// The sessions a job of an agent's can continue: Claude's, or a terminal Claude
+    /// was typed in; Antigravity's once its first hook has given its conversation id.
+    func continuableSessions(for agent: Harness) -> [Session] {
+        switch agent {
+        case .antigravity: store.sessions.filter { $0.isAntigravity && !$0.claudeSessionID.isEmpty }
+        default: store.sessions.filter { $0.isClaude || (!$0.isAntigravity && !$0.claudeSessionID.isEmpty) }
+        }
     }
 
     func sessionName(_ id: String) -> String? {
@@ -67,7 +87,7 @@ final class ScheduledModel {
     // MARK: Lifecycle
 
     func start(editing job: Job? = nil) {
-        store.loadAgentSettings { [weak self] in self?.settings = $0 }
+        loadSettings(.claude)
         if let job {
             select(job.id)
             edit()
@@ -86,6 +106,15 @@ final class ScheduledModel {
         monitor = nil
     }
 
+    /// Asks the daemon for an agent's settings, once.
+    private func loadSettings(_ agent: Harness) {
+        guard !asked.contains(agent) else { return }
+        asked.insert(agent)
+        store.loadAgentSettings(harness: agent == .claude ? "" : agent.rawValue) { [weak self] in
+            self?.agentSettings[agent] = $0
+        }
+    }
+
     // MARK: The list
 
     func select(_ id: String?) {
@@ -95,6 +124,7 @@ final class ScheduledModel {
         error = nil
         runs = []
         guard let id else { return }
+        if let job = selected { loadSettings(job.harnessKind) }
         store.loadJobRuns(id) { [weak self] runs in
             guard let self, self.selectedID == id else { return }
             self.runs = runs
@@ -212,6 +242,7 @@ final class ScheduledModel {
         case "prompt": draft.prompt != original.prompt || draft.promptFile != original.promptFile
         case "cwd": draft.cwd != original.cwd
         case "session": draft.sessionID != original.sessionID
+        case "harness": draft.harness != original.harness
         default: true
         }
         return changed ? message : nil
@@ -239,6 +270,7 @@ final class ScheduledModel {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = directory
         panel.canChooseFiles = !directory
+        panel.canCreateDirectories = directory
         panel.allowsMultipleSelection = false
         if !directory { panel.allowedContentTypes = [.init(filenameExtension: "md")!, .plainText] }
         if !start.isEmpty { panel.directoryURL = URL(fileURLWithPath: start) }

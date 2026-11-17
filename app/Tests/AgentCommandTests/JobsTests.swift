@@ -109,6 +109,23 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
     #expect(JobDraft(folder: "/w").cwd == "/w" && JobDraft().isNew)
 }
 
+@Test func aJobRunsTheAgentItsSetTo() throws {
+    let older = try decodeJob(["id": "J", "name": "n"])
+    #expect(older.harnessKind == .claude && JobDraft(older).harness == .claude, "no harness is Claude's")
+    #expect(try decodeJob(["id": "J", "harness": "claude"]).harnessKind == .claude)
+    let gravity = try decodeJob(["id": "J", "harness": "antigravity", "where": "session", "session_id": "S",
+                                 "settings": ["model": ["m"]]])
+    var draft = JobDraft(gravity)
+    #expect(draft.harness == .antigravity && draft.job.harness == "antigravity", "it goes back as it came")
+
+    draft.setHarness(.antigravity)
+    #expect(draft.sessionID == "S" && draft.settings["model"] == "m", "the same agent keeps them")
+    draft.setHarness(.claude)
+    #expect(draft.harness == .claude && draft.job.harness == "", "Claude's as before: no harness")
+    #expect(draft.settings.isEmpty && draft.sessionID.isEmpty, "the other agent's settings and session go")
+    #expect(JobDraft().harness == .claude)
+}
+
 @Test func timesReadAsTheListShowsThem() throws {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC")!
@@ -132,7 +149,8 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
     let settings = try JSONDecoder().decode([AgentSetting].self, from: Data(#"[{"key":"effort","label":"Effort","kind":"choice","choices":["low","high"],"flag":"--effort"},{"key":"add-dir","kind":"paths"}]"#.utf8))
     #expect(settings[0].choices == ["low", "high"] && !settings[0].isList)
     #expect(settings[1].label == "add-dir" && settings[1].isList && settings[1].help.isEmpty)
-    #expect(JobPlace.allCases.allSatisfy { !$0.label.isEmpty && !$0.help.isEmpty })
+    #expect(JobPlace.allCases.allSatisfy { !$0.label.isEmpty && !$0.help(.claude).isEmpty && !$0.help(.antigravity).isEmpty })
+    #expect(JobPlace.folder.help(.claude).contains("CLAUDE.md") && !JobPlace.folder.help(.antigravity).contains("CLAUDE"))
     #expect(JobDraft.PromptSource.file.label == "Markdown file")
 }
 

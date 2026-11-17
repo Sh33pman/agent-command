@@ -22,8 +22,13 @@ import (
 type Config struct {
 	ClaudeCommand string   `toml:"claude_command"`
 	ClaudeArgs    []string `toml:"claude_args"`
-	// RemoteControl starts sessions with `claude --remote-control`, so they can be
-	// used from claude.ai and the Claude app. Off by default.
+	// AgyCommand and AgyArgs are Antigravity's CLI (agy) and the extra
+	// arguments for its new sessions, as claude_command and claude_args are Claude's.
+	AgyCommand string   `toml:"agy_command"`
+	AgyArgs    []string `toml:"agy_args"`
+	// RemoteControl starts agent sessions with --remote-control, so they can be
+	// used remotely: Claude's from claude.ai and the Claude app, Antigravity's
+	// from its Remote Control browser view. Off by default.
 	RemoteControl bool   `toml:"remote_control"`
 	Editor        Editor `toml:"editor"`
 	Notify        Notify `toml:"notify"`
@@ -86,6 +91,7 @@ type Editor struct {
 func Default() Config {
 	return Config{
 		ClaudeCommand: "claude",
+		AgyCommand:    "agy",
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
 			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default"},
 		Editor: Editor{RunIn: "background", Target: "cwd"},
@@ -124,8 +130,13 @@ const Template = `# agent-command (acmd) configuration. See: acmd help. The app'
 claude_command = "claude"
 # Extra arguments for new sessions (passed to ` + "`claude`" + `).
 claude_args = []
-# Start sessions with Remote Control, so you can use them from claude.ai and
-# the Claude app. Applies to sessions started or resumed after a change.
+# Absolute path of Antigravity's CLI, agy (resolved by ` + "`acmd init`" + `).
+agy_command = "agy"
+# Extra arguments for new Antigravity sessions (passed to ` + "`agy`" + `).
+agy_args = []
+# Start agent sessions with Remote Control, so you can use them remotely:
+# Claude's from claude.ai and the Claude app, Antigravity's from its Remote
+# Control in a browser. Applies to sessions started or resumed after a change.
 remote_control = false
 
 [editor]

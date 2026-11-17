@@ -102,12 +102,17 @@ func gather(ctx context.Context, captureEnv bool) (*gathered, error) {
 		AcmdPath:   setup.StableBinary(invokedAs, exe, exec.LookPath),
 		ClaudeDir:  setup.ClaudeConfigDir(home, os.Getenv),
 		Read:       os.ReadFile,
+
+		AntigravityDir: setup.AntigravityConfigDir(home),
 	}
 	if captureEnv {
 		g.in.LoginEnv = loginEnv
 	}
 	if claude, err := setup.LookPathIn("claude", g.path); err == nil {
 		g.in.ClaudePath = claude
+	}
+	if agy, err := setup.LookPathIn("agy", g.path); err == nil {
+		g.in.AgyPath = agy
 	}
 
 	return g, nil
@@ -367,7 +372,8 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	if err != nil {
 		return err
 	}
-	in := setup.Input{Home: home, ClaudeDir: setup.ClaudeConfigDir(home, os.Getenv), Read: os.ReadFile}
+	in := setup.Input{Home: home, ClaudeDir: setup.ClaudeConfigDir(home, os.Getenv), Read: os.ReadFile,
+		AntigravityDir: setup.AntigravityConfigDir(home)}
 	if ok {
 		in.ClaudeDir = rec.ClaudeDir
 	}

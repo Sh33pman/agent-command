@@ -145,6 +145,7 @@ func Run(ctx context.Context, e Env) *Report {
 	r := &Report{}
 	rec, initDone := checkAcmd(r, e)
 	checkClaude(ctx, r, e, rec, initDone)
+	checkAntigravity(r, e, initDone)
 	checkDaemon(ctx, r, e)
 	if initDone {
 		checkPlan(ctx, r, e)
@@ -155,6 +156,7 @@ func Run(ctx context.Context, e Env) *Report {
 const (
 	secAcmd   = "acmd"
 	secClaude = "Claude Code"
+	secAgy    = "Antigravity"
 	secDaemon = "Daemon"
 	fixInit   = "acmd doctor --fix"
 )
@@ -346,6 +348,50 @@ func checkHooks(r *Report, e Env, path string, settings []byte, initDone bool) {
 	}
 	if events == total && len(hookPaths) == 1 && e.executable(hookPaths[0]) {
 		r.add(secClaude, OK, "", "hooks registered for all %d events", total)
+	}
+}
+
+// checkAntigravity reports agy's hooks. agy is optional: without it, and
+// without acmd's hooks for it, the section isn't shown.
+func checkAntigravity(r *Report, e Env, initDone bool) {
+	path := filepath.Join(setup.AntigravityConfigDir(e.Home), "hooks.json")
+	file, err := e.Read(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		r.add(secAgy, Fail, "", "%s: %v", setup.Tilde(path, e.Home), err)
+		return
+	}
+	st := setup.AntigravityHooks(file)
+	agy, lookErr := e.LookPath("agy")
+	if lookErr != nil {
+		if st.Events > 0 {
+			r.add(secAgy, Info, "", "agy isn't on your login shell's PATH; acmd's hooks for it are still in %s", setup.Tilde(path, e.Home))
+		}
+		return
+	}
+	r.add(secAgy, OK, "", "agy (%s)", setup.Tilde(agy, e.Home))
+	total := len(setup.AntigravityEvents)
+	switch {
+	case st.Events == 0:
+		if initDone {
+			r.add(secAgy, Warn, fixInit, "no acmd hooks in %s, so Antigravity sessions show no status", setup.Tilde(path, e.Home))
+		}
+		return
+	case st.Events < total:
+		r.add(secAgy, Fail, fixInit, "acmd hooks for only %d of %d events", st.Events, total)
+	}
+	if st.Disabled {
+		r.add(secAgy, Fail, "turn the \""+setup.AntigravityHookName+"\" hook back on in agy's /hooks", "acmd's hook is turned off in %s", setup.Tilde(path, e.Home))
+	}
+	for _, p := range st.Paths {
+		if !e.executable(p) {
+			r.add(secAgy, Fail, fixInit, "hooks run %s, which doesn't exist (sessions aren't tracked)", setup.Tilde(p, e.Home))
+		}
+	}
+	if len(st.Paths) > 1 {
+		r.add(secAgy, Warn, fixInit, "hooks point at %d different acmd binaries", len(st.Paths))
+	}
+	if st.Events == total && !st.Disabled && len(st.Paths) == 1 && e.executable(st.Paths[0]) {
+		r.add(secAgy, OK, "", "hooks registered for all %d events (no waiting status: agy has no hook for its prompts)", total)
 	}
 }
 

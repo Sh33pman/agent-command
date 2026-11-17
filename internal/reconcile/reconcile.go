@@ -78,7 +78,7 @@ func (r *Reconciler) NeedsListing(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	for _, s := range sessions {
-		if !s.IsTerminal() && !s.Stopped() {
+		if !s.IsTerminal() && !s.IsAntigravity() && !s.Stopped() {
 			return true, nil
 		}
 	}
@@ -175,7 +175,7 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 		return r.terminal(s)
 	}
 	a, listed := bySession[s.ClaudeSessionID]
-	if !listed {
+	if !listed || s.IsAntigravity() { // Claude never lists agy: its host says whether it runs
 		return r.unlisted(s)
 	}
 	changed := false

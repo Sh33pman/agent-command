@@ -32,16 +32,24 @@ type newOptions struct {
 	name        string
 	description string
 	prompt      string
+	harness     string
 }
 
 func newNewCmd() *cobra.Command {
 	var o newOptions
 	cmd := &cobra.Command{
 		Use:   "new [-- <first prompt>]",
-		Short: "Start a new Claude session hosted by acmd",
+		Short: "Start a new session hosted by acmd (Claude, unless --harness says otherwise)",
 		Long: "Starts an interactive `claude` in a folder (default: this one), hosted by acmd, and lists it in the app.\n" +
-			"A folder Claude hasn't trusted yet shows Claude's trust prompt in the session.",
+			"A folder Claude hasn't trusted yet shows Claude's trust prompt in the session.\n" +
+			"--harness antigravity starts Antigravity's CLI (agy) instead, and --harness terminal a shell.\n" +
+			"claude_args (or agy_args) in acmd's config are added to the agent's arguments.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch o.harness {
+			case "", core.HarnessClaude, core.HarnessAntigravity, core.HarnessTerminal:
+			default:
+				return fmt.Errorf("--harness is claude, antigravity or terminal, not %q", o.harness)
+			}
 			o.prompt = strings.TrimSpace(strings.Join(args, " "))
 			if o.cwd == "" {
 				o.cwd, _ = os.Getwd()
@@ -58,8 +66,9 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&o.group, "group", "", "group to put it in (created if missing)")
 	f.BoolVar(&o.noCreate, "no-create", false, "fail instead of creating a missing --group")
 	f.StringVar(&o.cwd, "cwd", "", "folder to start in (default: the current folder)")
-	f.StringVar(&o.name, "name", "", "session name (default: Claude's)")
+	f.StringVar(&o.name, "name", "", "session name (default: the agent's)")
 	f.StringVar(&o.description, "description", "", "session description")
+	f.StringVar(&o.harness, "harness", core.HarnessClaude, "what runs in it: claude, antigravity or terminal")
 	return cmd
 }
 
@@ -68,8 +77,8 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := config.Load(p.Config())
-	if err != nil {
+	// A broken config.toml stops here, before a session that would fail to start.
+	if _, err := config.Load(p.Config()); err != nil {
 		return nil, err
 	}
 	dir, err := filepath.Abs(o.cwd)
@@ -81,7 +90,7 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 	}
 	var s core.Session
 	err = withClient(ctx, func(c *client, snap ipc.Snapshot) error {
-		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Args: cfg.ClaudeArgs, Prompt: o.prompt}
+		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Prompt: o.prompt, Harness: o.harness}
 		if o.group != "" {
 			g, err := resolveGroup(snap, o.group)
 			if err != nil && o.noCreate {
@@ -99,6 +108,19 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 		return c.conn.Call(ipc.OpNew, req, &s)
 	})
 	return &s, err
+}
+
+// newSessionArgs are the extra arguments every session gets, which its host adds:
+// claude_args for Claude, agy_args for agy (each agent's are its own flags), none
+// for a terminal.
+func newSessionArgs(cfg config.Config, harnessName string) []string {
+	switch harnessName {
+	case "", core.HarnessClaude:
+		return cfg.ClaudeArgs
+	case core.HarnessAntigravity:
+		return cfg.AgyArgs
+	}
+	return nil
 }
 
 func newResumeCmd() *cobra.Command {

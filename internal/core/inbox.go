@@ -61,7 +61,7 @@ func InboxEffect(s *Session, e Event) (item *InboxItem, drop bool) {
 		return &InboxItem{SessionID: s.ID, Kind: InboxDone, Text: e.LastMessage, At: at}, false
 	case HookStopFailure:
 		msg := cmp.Or(e.Error, e.Message, "an API error")
-		return &InboxItem{SessionID: s.ID, Kind: InboxError, Text: "Claude stopped with " + msg + ".", At: at}, false
+		return &InboxItem{SessionID: s.ID, Kind: InboxError, Text: cmp.Or(e.Agent, "Claude") + " stopped with " + msg + ".", At: at}, false
 	case HookPermissionRequest:
 		if e.ToolName == "AskUserQuestion" {
 			if it := questionItem(s, e, at); it != nil {

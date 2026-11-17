@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/term"
@@ -28,6 +30,15 @@ func TestHostArgv(t *testing.T) {
 	if got, want := hostArgv(h, hostOptions{Resume: "sid", Prompt: "# go", Args: []string{"--model", "opus"}}),
 		[]string{"/c", "--remote-control", "--model", "opus", "--resume", "sid", "--", "# go"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("resume with a prompt = %v", got)
+	}
+	// agy: the prompt joined to -i, on a new or a resumed conversation.
+	a := harness.Antigravity{Path: "/agy"}
+	if got, want := hostArgv(a, hostOptions{Dir: "/w", Name: "n", Prompt: "-p", ClaudeSession: "u", Args: []string{"--mode", "plan"}}),
+		[]string{"/agy", "-i=-p", "--mode", "plan"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("agy new = %v", got)
+	}
+	if got, want := hostArgv(a, hostOptions{Resume: "conv", Prompt: "go"}), []string{"/agy", "--conversation", "conv", "-i=go"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("agy resume = %v", got)
 	}
 	// A shell gets no prompt.
 	if got := hostArgv(harness.Terminal{Shell: "/bin/zsh"}, hostOptions{Resume: "x", Prompt: "p"}); slices.Contains(got, "p") {
@@ -196,5 +207,73 @@ func TestLoginEnvUsesThisLoginsSSHAgent(t *testing.T) {
 	}
 	if !strings.Contains(env, "PATH=/usr/bin") {
 		t.Errorf("the saved PATH should stay:\n%s", env)
+	}
+}
+
+// agy is found on the login shell's PATH; without it, starting a session says so.
+func TestHostHarnessAntigravity(t *testing.T) {
+	dir := t.TempDir()
+	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r"), ConfigDir: filepath.Join(dir, "c")}
+	bin := filepath.Join(dir, "bin")
+	must(t, os.MkdirAll(bin, 0o700))
+	must(t, os.MkdirAll(p.StateDir, 0o700))
+	t.Setenv("PATH", filepath.Join(dir, "nothing")) // not the real agy
+	must(t, os.WriteFile(p.Env(), []byte(`{"PATH":"`+bin+`","HOME":"`+dir+`"}`), 0o600))
+
+	if _, _, err := hostHarness(p, "antigravity"); !errors.Is(err, errNoAgy) || err.Error() != "Antigravity's CLI (agy) isn't installed" {
+		t.Errorf("without agy: %v", err)
+	}
+	if err := (execHosts{paths: p}).Start(context.Background(), daemon.HostRequest{ID: "x", Harness: "antigravity", Dir: dir}); !errors.Is(err, errNoAgy) {
+		t.Errorf("starting without agy: %v", err)
+	}
+
+	agy := filepath.Join(bin, "agy")
+	must(t, os.WriteFile(agy, []byte("#!/bin/sh\n"), 0o700))
+	h, env, err := hostHarness(p, "antigravity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, ok := h.(harness.Antigravity); !ok || a.Path != agy || !slices.Contains(env, "PATH="+bin) {
+		t.Errorf("harness %+v, env %v", h, env)
+	}
+}
+
+// agy_command picks agy, as claude_command picks claude, and a job's settings
+// are checked against each agent's own --help (agy's is on stderr).
+func TestAgyCommandAndAgentHelp(t *testing.T) {
+	dir := t.TempDir()
+	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r"), ConfigDir: filepath.Join(dir, "c")}
+	for _, d := range []string{p.StateDir, p.ConfigDir} {
+		must(t, os.MkdirAll(d, 0o700))
+	}
+	t.Setenv("PATH", filepath.Join(dir, "nothing"))
+	must(t, os.WriteFile(p.Env(), []byte(`{"PATH":"`+filepath.Join(dir, "nothing")+`"}`), 0o600))
+	agy := filepath.Join(dir, "my-agy")
+	claude := filepath.Join(dir, "my-claude")
+	must(t, os.WriteFile(agy, []byte("#!/bin/sh\necho '  --mode   Set the agent execution mode' >&2\n"), 0o700))
+	must(t, os.WriteFile(claude, []byte("#!/bin/sh\necho '  --permission-mode <mode>'\n"), 0o700))
+	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+claude+"\"\nagy_command = \""+agy+"\"\n"), 0o600))
+
+	if got, _, err := agyCommand(p); err != nil || got != agy {
+		t.Errorf("agyCommand = %q, %v", got, err)
+	}
+	help := agentHelp(p)
+	if got := help("antigravity"); !strings.Contains(got, "--mode") || strings.Contains(got, "--permission-mode") {
+		t.Errorf("agy's help: %q", got)
+	}
+	if got := help("claude"); !strings.Contains(got, "--permission-mode") {
+		t.Errorf("claude's help: %q", got)
+	}
+
+	must(t, os.WriteFile(p.Config(), []byte("claude_command = \"no-such-claude\"\nagy_command = \"no-such-agy\"\n"), 0o600))
+	if _, _, err := agyCommand(p); !errors.Is(err, errNoAgy) {
+		t.Errorf("a missing agy_command: %v", err)
+	}
+	if got := agentHelp(p)("antigravity"); got != "" {
+		t.Errorf("help without agy: %q", got)
+	}
+	if err := (execHosts{paths: p}).Start(context.Background(), daemon.HostRequest{ID: "x", Dir: dir}); err == nil ||
+		!strings.Contains(err.Error(), "claude not found") {
+		t.Errorf("starting without claude: %v", err)
 	}
 }

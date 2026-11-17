@@ -13,6 +13,7 @@ private final class FakeAcmd {
     var show = """
         {"path": "/tmp/x/config.toml", "voices": ["af_heart", "am_adam"], "settings": {
           "claude_command": "/bin/claude", "claude_args": ["--model", "opus"], "remote_control": true,
+          "agy_command": "/bin/agy", "agy_args": ["--x"],
           "notify.enabled": true, "notify.on_waiting": true, "notify.on_error": false, "notify.on_done": true,
           "notify.on_paused": false, "notify.done_min_duration": "1m0s", "notify.cooldown": "20s", "notify.sound": "",
           "speech.voice": "af_heart:0.6,af_bella:0.4", "speech.speed": 1.25, "editor.preset": "zed",
@@ -47,11 +48,13 @@ private func model(_ acmd: FakeAcmd) -> SettingsModel {
     let v = m.values
     #expect(m.loaded && m.acmd.path == "/tmp/x/config.toml" && m.acmd.voices == ["af_heart", "am_adam"])
     #expect(v.claudeCommand == "/bin/claude" && v.claudeArgs == ["--model", "opus"] && v.remoteControl)
+    #expect(v.agyCommand == "/bin/agy" && v.agyArgs == ["--x"])
     #expect(!v.onError && v.doneMin == "1m0s" && v.sound.isEmpty && v.speed == 1.25 && v.editorTarget == "git_root")
 
     acmd.show = #"{"path": "p", "voices": [], "settings": {"notify.cooldown": "5s"}}"#
     m.load()
-    #expect(m.values.cooldown == "5s" && m.values.claudeCommand == "claude", "what's missing is the default")
+    #expect(m.values.cooldown == "5s" && m.values.claudeCommand == "claude" && m.values.agyCommand == "agy" && m.values.agyArgs.isEmpty,
+            "what's missing is the default")
 
     acmd.fail = ["show"]
     m.load()
@@ -65,6 +68,13 @@ private func model(_ acmd: FakeAcmd) -> SettingsModel {
     m.set("notify.cooldown", "60s")
     m.setArgs(#"--model opus --append-system-prompt "be brief""#)
     m.setArgs("")
+    m.set("agy_command", "/Users/me/.local/bin/agy")
+    m.setArgs("--flag 'two words'", key: "agy_args")
+    #expect(acmd.changes.suffix(2) == [
+        ["config", "set", "--", "agy_command", "/Users/me/.local/bin/agy"],
+        ["config", "set", "--", "agy_args", #"["--flag","two words"]"#],
+    ])
+    acmd.calls.removeLast(4)
     #expect(acmd.changes == [
         ["config", "set", "--", "notify.on_error", "on"],
         ["config", "set", "--", "notify.cooldown", "60s"],

@@ -6,6 +6,8 @@ struct AcmdSettings: Decodable, Equatable {
     struct Values: Decodable, Equatable {
         var claudeCommand = "claude"
         var claudeArgs: [String] = []
+        var agyCommand = "agy"
+        var agyArgs: [String] = []
         var remoteControl = false
         var notify = true
         var onWaiting = true
@@ -24,6 +26,7 @@ struct AcmdSettings: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey {
             case claudeCommand = "claude_command", claudeArgs = "claude_args", remoteControl = "remote_control"
+            case agyCommand = "agy_command", agyArgs = "agy_args"
             case notify = "notify.enabled", onWaiting = "notify.on_waiting", onError = "notify.on_error"
             case onDone = "notify.on_done", onPaused = "notify.on_paused", doneMin = "notify.done_min_duration"
             case cooldown = "notify.cooldown", sound = "notify.sound", voice = "speech.voice", speed = "speech.speed"
@@ -38,6 +41,8 @@ struct AcmdSettings: Decodable, Equatable {
             let d = Values()
             claudeCommand = try c.decodeIfPresent(String.self, forKey: .claudeCommand) ?? d.claudeCommand
             claudeArgs = try c.decodeIfPresent([String].self, forKey: .claudeArgs) ?? d.claudeArgs
+            agyCommand = try c.decodeIfPresent(String.self, forKey: .agyCommand) ?? d.agyCommand
+            agyArgs = try c.decodeIfPresent([String].self, forKey: .agyArgs) ?? d.agyArgs
             remoteControl = try c.decodeIfPresent(Bool.self, forKey: .remoteControl) ?? d.remoteControl
             notify = try c.decodeIfPresent(Bool.self, forKey: .notify) ?? d.notify
             onWaiting = try c.decodeIfPresent(Bool.self, forKey: .onWaiting) ?? d.onWaiting
@@ -185,10 +190,11 @@ enum ShellWords {
         set(key, on ? "on" : "off")
     }
 
-    func setArgs(_ text: String) {
+    /// Sets an agent's extra arguments (claude_args, agy_args) from shell words.
+    func setArgs(_ text: String, key: String = "claude_args") {
         let words = ShellWords.split(text)
         let json = (try? JSONEncoder().encode(words)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
-        set("claude_args", json)
+        set(key, json)
     }
 
     func setVoice(_ voice: String) {
@@ -214,7 +220,7 @@ enum ShellWords {
         }
     }
 
-    /// Re-adds the Claude Code hooks and replaces a stale background service.
+    /// Re-adds the agents' hooks and replaces a stale background service.
     func repairSetup() {
         command(["doctor", "--fix"], key: "doctor", keepsOutput: true)
     }

@@ -31,7 +31,8 @@ const (
 	OpWatch    = "watch"    // wait for a change (WatchRequest → WatchResponse); a view's heartbeat
 	OpNew      = "new"      // start a background session (NewRequest → *core.Session)
 	OpResume   = "resume"   // resume a paused background session (Mutation.ID → *core.Session)
-	// OpConversations lists earlier Claude sessions to resume (→ []Conversation).
+	// OpConversations lists earlier Claude and Antigravity conversations to
+	// resume (→ []Conversation).
 	OpConversations = "conversations"
 	OpLayout        = "layout"       // the app's pane layout (→ Layout)
 	OpSetLayout     = "layout.set"   // stores it (Layout)
@@ -190,8 +191,9 @@ type NewRequest struct {
 	GroupID string `json:"group_id,omitempty"`
 	Cwd     string `json:"cwd"`
 	Harness string `json:"harness,omitempty"` // "" = claude
-	// Resume continues this Claude conversation, by its id or an id prefix.
-	// Its folder comes from the conversation, so Cwd can be empty.
+	// Resume continues this conversation, by its id or an id prefix: Claude's,
+	// or agy's with Harness "antigravity". Its folder comes from the
+	// conversation, so Cwd can be empty.
 	Resume      string   `json:"resume,omitempty"`
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
@@ -206,14 +208,19 @@ type Layout struct {
 	JSON string `json:"json"`
 }
 
-// Conversation is an earlier Claude session that can be resumed.
+// Conversation is an earlier Claude or Antigravity conversation that can be
+// resumed.
 type Conversation struct {
-	ID        string    `json:"id"`
+	ID string `json:"id"`
+	// Harness is whose it is: "claude" or "antigravity" ("" from an older
+	// daemon: Claude). NewRequest takes it with the id to resume it.
+	Harness   string    `json:"harness,omitempty"`
 	Cwd       string    `json:"cwd"`
 	Title     string    `json:"title,omitempty"`
 	Branch    string    `json:"branch,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
-	// Running: Claude reports it as live, possibly in another terminal.
+	// Running: Claude reports it as live, possibly in another terminal (agy
+	// reports none).
 	Running bool `json:"running,omitempty"`
 	// SessionID is the hosted acmd session that already has it ("" = none).
 	SessionID string `json:"session_id,omitempty"`

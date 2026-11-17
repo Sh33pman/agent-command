@@ -70,7 +70,7 @@ func (d *Daemon) watch(ctx context.Context, req ipc.WatchRequest) (ipc.WatchResp
 // newSession starts a hosted session.
 func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
 	if d.cfg.Hosts == nil {
-		return nil, errors.New("claude not available: run `acmd doctor`")
+		return nil, fmt.Errorf("%s isn't available: run `acmd doctor`", core.AgentApp(req.Harness))
 	}
 	if req.Resume != "" {
 		return d.resumeConversation(ctx, req)
@@ -88,7 +88,7 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 // pane (acmd adopt).
 func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 	if d.cfg.Hosts == nil {
-		return nil, errors.New("claude not available: run `acmd doctor`")
+		return nil, errors.New("acmd can't start sessions: run `acmd doctor`")
 	}
 	d.mu.Lock()
 	s, err := d.store.Session(ctx, id)
@@ -99,7 +99,7 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 	switch {
 	case s.Status == core.StatusArchived:
 		return nil, errors.New("that session is archived (acmd unarchive first)")
-	case s.ClaudeSessionID == "" && !s.IsTerminal():
+	case s.ClaudeSessionID == "" && !s.IsTerminal() && !s.IsAntigravity(): // such an agy starts afresh
 		return nil, errors.New("that session has no Claude conversation to resume")
 	case s.Kind == core.KindHosted && !s.Stopped():
 		return s, nil // already running

@@ -1,22 +1,17 @@
 import SwiftUI
 
-/// Claude Code's crab, drawn so it takes any color. It's the pixel grid of the
-/// logo Claude Code prints in the terminal: a body with two eyes, arms out to
-/// the sides and four legs.
-struct ClaudeMarkShape: Shape {
+/// A mark drawn from a pixel grid, so it takes any color.
+protocol PixelMark: Shape {
     /// One string per row, "#" for a filled pixel. Pixels are twice as tall as
     /// they are wide, like the terminal's quarter-block characters.
-    static let pixels = [
-        "  ############  ",
-        "  ## ###### ##  ",
-        "################",
-        "  ############  ",
-        "   # #    # #   ",
-    ]
-    static let columns = CGFloat(pixels[0].count)
-    static let rows = CGFloat(pixels.count)
+    static var pixels: [String] { get }
+}
+
+extension PixelMark {
+    static var columns: CGFloat { CGFloat(pixels[0].count) }
+    static var rows: CGFloat { CGFloat(pixels.count) }
     /// Width over height.
-    static let aspect = columns / (rows * 2)
+    static var aspect: CGFloat { columns / (rows * 2) }
 
     func path(in rect: CGRect) -> Path {
         // Fit the grid in the rect, centered, keeping its shape.
@@ -35,20 +30,45 @@ struct ClaudeMarkShape: Shape {
     }
 }
 
-/// The mark on a Claude row. It hops while Claude is busy.
-struct ClaudeMark: View {
+/// Claude Code's crab. It's the pixel grid of the logo Claude Code prints in the
+/// terminal: a body with two eyes, arms out to the sides and four legs.
+struct ClaudeMarkShape: PixelMark {
+    static let pixels = [
+        "  ############  ",
+        "  ## ###### ##  ",
+        "################",
+        "  ############  ",
+        "   # #    # #   ",
+    ]
+}
+
+/// Antigravity's mark: an arch, the same size as the crab.
+struct AntigravityMarkShape: PixelMark {
+    static let pixels = [
+        "      ####      ",
+        "    ########    ",
+        "   ###    ###   ",
+        "  ###      ###  ",
+        "####        ####",
+    ]
+}
+
+/// The mark on an agent's row. It hops while the agent is busy.
+struct AgentMark<Mark: PixelMark>: View {
+    let mark: Mark
+    let label: String
     let color: Color
     let busy: Bool
     @State private var hop = 0.0
 
     var body: some View {
-        ClaudeMarkShape()
+        mark
             .fill(color)
             .frame(width: 13, height: 10)
             .offset(y: hop)
             .onAppear(perform: animate)
             .onChange(of: busy) { animate() }
-            .accessibilityLabel("Claude")
+            .accessibilityLabel(label)
     }
 
     private func animate() {
@@ -60,7 +80,7 @@ struct ClaudeMark: View {
     }
 }
 
-/// A session's mark (Claude, $ or a dot) in its status's color, as on its row.
+/// A session's mark (Claude, Antigravity, $ or a dot) in its status's color, as on its row.
 struct SessionMark: View {
     let session: Session
     /// Drawn on the selection's bar: in the background color.
@@ -70,12 +90,18 @@ struct SessionMark: View {
     var body: some View {
         switch RowMark(session) {
         case .claude(let dimmed, let busy):
-            ClaudeMark(color: onBar ? theme.bg : (dimmed ? theme.dim : color), busy: busy)
+            AgentMark(mark: ClaudeMarkShape(), label: "Claude", color: markColor(dimmed), busy: busy)
+        case .antigravity(let dimmed, let busy):
+            AgentMark(mark: AntigravityMarkShape(), label: "Antigravity", color: markColor(dimmed), busy: busy)
         case .terminal:
             Text("$").foregroundStyle(onBar ? theme.bg : color)
         case .dot:
             Text("●").foregroundStyle(onBar ? theme.bg : color)
         }
+    }
+
+    private func markColor(_ dimmed: Bool) -> Color {
+        onBar ? theme.bg : (dimmed ? theme.dim : color)
     }
 
     private var color: Color {

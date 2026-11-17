@@ -53,8 +53,8 @@ type hostOptions struct {
 func hostArgv(h harness.Harness, o hostOptions) []string {
 	if o.Resume != "" {
 		argv := h.Resume(o.Resume, o.Args)
-		if o.Prompt != "" && h.StatusSource() == harness.StatusHooks { // an agent, not a shell
-			argv = append(argv, "--", o.Prompt)
+		if p, ok := h.(harness.Prompter); ok && o.Prompt != "" { // an agent, not a shell
+			argv = append(argv, p.PromptArgs(o.Prompt)...)
 		}
 		return argv
 	}
@@ -90,6 +90,21 @@ func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) 
 			return nil, nil, err
 		}
 		return harness.Claude{Path: claude, RemoteControl: cfg.RemoteControl}, env, nil
+	case core.HarnessAntigravity:
+		agy, env, err := agyCommand(p)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Read when the session starts, so a change applies to the next one.
+		cfg, err := config.Load(p.Config())
+		if err != nil {
+			return nil, nil, err
+		}
+		// agy reports working, waiting on you, done or failed over OSC 7501 when it
+		// thinks the terminal supports it. The host reads it, whatever the pane
+		// attached to it can show, so it is always on.
+		env = append(env, "AGY_CLI_OSC7501=on")
+		return harness.Antigravity{Path: agy, RemoteControl: cfg.RemoteControl}, env, nil
 	case core.HarnessTerminal:
 		env := loginEnv(p)
 		shell := setup.DefaultShell() // zsh on macOS; bash, or sh, on Linux
@@ -138,6 +153,12 @@ func newHostServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// claude_args or agy_args come first, then the session's own: so every
+			// session acmd starts or resumes gets them, from the app, the CLI or a
+			// job, read when it starts.
+			if cfg, err := config.Load(p.Config()); err == nil {
+				o.Args = append(newSessionArgs(cfg, o.Harness), o.Args...)
+			}
 			if st, err := os.Stat(o.Dir); err != nil || !st.IsDir() {
 				return fmt.Errorf("folder %s is gone", o.Dir)
 			}
@@ -160,12 +181,12 @@ func newHostServeCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.ID, "session", "", "the acmd session")
-	f.StringVar(&o.Harness, "harness", "", "what the session runs: claude (default) or terminal")
+	f.StringVar(&o.Harness, "harness", "", "what the session runs: claude (default), antigravity or terminal")
 	f.StringVar(&o.Dir, "dir", "", "the folder to run in")
 	f.StringVar(&o.Name, "name", "", "the session's name")
 	f.StringVar(&o.Prompt, "prompt", "", "the first prompt")
 	f.StringVar(&o.ClaudeSession, "claude-session", "", "the Claude session id to start with (a UUID)")
-	f.StringVar(&o.Resume, "resume", "", "continue this Claude session instead of starting a new one")
+	f.StringVar(&o.Resume, "resume", "", "continue this conversation (Claude's session id, or agy's conversation id) instead of starting a new one")
 	return cmd
 }
 
@@ -174,6 +195,18 @@ type execHosts struct{ paths paths.Paths }
 
 // Start implements daemon.Hosts.
 func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
+	// The agent is checked here, not in the host: its errors only reach the
+	// daemon's log.
+	switch r.Harness {
+	case "", core.HarnessClaude:
+		if _, _, err := claudeCommand(h.paths); err != nil {
+			return fmt.Errorf("claude not found: %w", err)
+		}
+	case core.HarnessAntigravity:
+		if _, _, err := agyCommand(h.paths); err != nil {
+			return err
+		}
+	}
 	exe, err := executable()
 	if err != nil {
 		return err

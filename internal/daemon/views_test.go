@@ -28,7 +28,7 @@ func TestWithoutClaude(t *testing.T) {
 		func() error { return c.Call(ipc.OpNew, ipc.NewRequest{Cwd: "/w"}, nil) },
 		func() error { return c.Call(ipc.OpResume, ipc.Mutation{ID: "x"}, nil) },
 	} {
-		if err := call(); err == nil || !strings.Contains(err.Error(), "claude not available") {
+		if err := call(); err == nil || !strings.Contains(err.Error(), "run `acmd doctor`") {
 			t.Errorf("without claude: %v", err)
 		}
 	}

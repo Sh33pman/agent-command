@@ -1,6 +1,6 @@
 import Foundation
 
-/// Whether new sessions start with Claude's Remote Control: `remote_control` in
+/// Whether new agent sessions (Claude and Antigravity) start with Remote Control: `remote_control` in
 /// acmd's config.toml, off by default. The CLI writes it, so the file keeps one
 /// writer that knows how to keep its comments.
 enum RemoteControlSetting {

@@ -13,7 +13,8 @@ func TestTemplateIsDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := Default()
-	if c.ClaudeCommand != d.ClaudeCommand || c.Editor.RunIn != d.Editor.RunIn || c.Editor.Target != d.Editor.Target ||
+	if c.ClaudeCommand != d.ClaudeCommand || c.AgyCommand != "agy" || c.AgyCommand != d.AgyCommand || len(c.AgyArgs) != 0 ||
+		c.Editor.RunIn != d.Editor.RunIn || c.Editor.Target != d.Editor.Target ||
 		c.Editor.Preset != "" || len(c.Editor.Command) != 0 || c.Notify != d.Notify || c.Speech != d.Speech {
 		t.Errorf("template %+v differs from defaults %+v", c, d)
 	}

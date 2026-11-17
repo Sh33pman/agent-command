@@ -86,6 +86,9 @@ struct Job: Codable, Identifiable, Equatable {
 
     var next: Date? { JobTime.parse(nextRun) }
 
+    /// The agent it runs: Antigravity, or else Claude ("" is Claude's).
+    var harnessKind: Harness { harness == Harness.antigravity.rawValue ? .antigravity : .claude }
+
     /// How it stands, for the list.
     var state: JobState {
         if paused { return .paused }
@@ -234,9 +237,11 @@ enum JobPlace: String, CaseIterable, Identifiable {
         }
     }
 
-    var help: String {
+    /// What it means for a job of this agent's.
+    func help(_ harness: Harness) -> String {
         switch self {
-        case .folder: "Each run is a new session in the folder, with its CLAUDE.md, settings and skills."
+        case .folder where harness == .claude: "Each run is a new session in the folder, with its CLAUDE.md, settings and skills."
+        case .folder: "Each run is a new \(harness.title) session in the folder."
         case .worktree: "Each run gets its own worktree of the repo, so it can't touch your own work there."
         case .session: "Each run continues the session's conversation, so it remembers the runs before."
         }
@@ -270,6 +275,8 @@ struct JobDraft: Equatable {
     var name = ""
     var description = ""
     var groupID = ""
+    /// The agent it runs. Set it with setHarness, which drops what was the other agent's.
+    var harness = Harness.claude
     /// Cron, or a one-off ("once on 2026-12-01 at 14:00"). ScheduleBuilder edits it.
     var schedule = "0 9 * * 1-5"
     /// Custom was chosen: show the cron as typed, even when the controls could show it.
@@ -294,6 +301,7 @@ struct JobDraft: Equatable {
         name = job.name
         description = job.description
         groupID = job.groupID
+        harness = job.harnessKind
         if !job.cron.isEmpty {
             schedule = job.cron
         } else if let once = JobTime.parse(job.once) {
@@ -316,6 +324,14 @@ struct JobDraft: Equatable {
     }
 
     var isNew: Bool { id.isEmpty }
+
+    /// Changes the agent. The settings and the session were the other agent's, so they go.
+    mutating func setHarness(_ agent: Harness) {
+        guard agent != harness else { return }
+        harness = agent
+        settings = [:]
+        sessionID = ""
+    }
 
     /// The schedule as the form's controls show it.
     var builder: ScheduleBuilder {
@@ -340,6 +356,8 @@ struct JobDraft: Equatable {
         j.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         j.description = description.trimmingCharacters(in: .whitespacesAndNewlines)
         j.groupID = groupID
+        // Claude's as before: no harness.
+        j.harness = harness == .claude ? "" : harness.rawValue
         j.schedule = schedule
         j.prompt = promptSource == .text ? prompt : ""
         j.promptFile = promptSource == .file ? promptFile : ""

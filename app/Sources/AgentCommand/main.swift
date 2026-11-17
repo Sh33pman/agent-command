@@ -183,24 +183,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         #endif
     }
 
-    /// Offers to add the Claude Code hooks that live status needs, if they're missing.
+    /// Offers to add the hooks that live status needs (Claude Code's, and agy's once
+    /// it's installed), if they're missing.
     private func offerSetup() {
-        guard !DaemonPaths.hooksInstalled else {
+        let need = DaemonPaths.setupNeed
+        switch need {
+        case .none: return
+        case .refresh:
             // The hooks were accepted before, and the app has since moved.
-            if !DaemonPaths.hooksCurrent { _ = runInit() }
+            _ = runInit()
             return
+        case .offer: break
         }
         let alert = NSAlert()
         alert.messageText = "Set up Agent Command?"
-        alert.informativeText = """
-            This adds hook entries to your Claude Code settings, so sessions can show when they're busy, waiting \
-            or done. It backs the file up first, and keeps your other settings. It also saves your login shell's \
-            environment for the sessions it starts.
-            """
+        alert.informativeText = need.offerText
         // Opt-in: it adds a sudoers rule, so macOS asks for the password too.
         let wake = NSButton(checkboxWithTitle: "Also let scheduled jobs wake the Mac (asks for your password)", target: nil, action: nil)
         wake.state = .off
-        alert.accessoryView = wake
+        if need.isFirstSetup { alert.accessoryView = wake }
         alert.addButton(withTitle: "Set Up")
         alert.addButton(withTitle: "Not Now")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -299,7 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// The pane opens once the terminal has started, so a failed start leaves none.
     private func splitPane(_ direction: SplitDirection) {
         let folder = store.selected?.cwd ?? lastFolder?.path ?? NSHomeDirectory()
-        store.newSession(harness: "terminal", in: folder) { [weak self] session in
+        store.newSession(harness: Harness.terminal.rawValue, in: folder) { [weak self] session in
             self?.pane?.split(direction, session: session.id)
         }
     }
@@ -421,49 +422,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    @objc private func newClaudeSession() { newSession(harness: "claude") }
+    /// ⌘N: a session with the default harness, Claude.
+    @objc private func newDefaultSession() { newSession(harness: Harness.defaultForNew) }
 
-    @objc private func newTerminal() { newSession(harness: "terminal") }
+    @objc private func newTerminal() { newSession(harness: .terminal) }
 
-    private func newSession(harness: String) {
+    /// A popup asking which harness, then the folder panel.
+    @objc private func chooseHarness() {
+        closePopup()
+        showMainWindow()
+        showPopup(HarnessPickerView(
+            close: { [weak self] in self?.closePopup() },
+            choose: { [weak self] harness in
+                self?.closePopup()
+                // After closing, as the folder panel is modal.
+                DispatchQueue.main.async { self?.newSession(harness: harness) }
+            }
+        ))
+    }
+
+    private func newSession(harness: Harness) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
+        panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = harness == "terminal" ? "Open Terminal" : "Start Session"
+        panel.prompt = harness.panelPrompt
         panel.message = "Choose the folder for the new session"
         panel.directoryURL = lastFolder
         guard panel.runModal() == .OK, let url = panel.url else { return }
         lastFolder = url
-        store.newSession(harness: harness, in: url.path)
+        store.newSession(harness: harness.rawValue, in: url.path)
     }
 
-    /// A popup to pick an earlier Claude session, or enter its id.
+    /// A popup to pick an earlier Claude or Antigravity conversation, or enter its id.
     @objc private func resumeSession() {
         closePopup()
         showPopup(ResumeView(
             store: store,
             close: { [weak self] in self?.closePopup() },
-            choose: { [weak self] id, isRunning in
+            choose: { [weak self] target in
                 self?.closePopup()
-                DispatchQueue.main.async { self?.resume(id, isRunning: isRunning) }
+                DispatchQueue.main.async { self?.resume(target) }
             }
         ))
     }
 
-    private func resume(_ id: String, isRunning: Bool) {
-        if isRunning {
+    private func resume(_ target: ResumeTarget) {
+        if target.isRunning {
             let alert = NSAlert()
             alert.messageText = "This session looks like it's still running"
             alert.informativeText = """
-                Claude reports it as live, possibly in another terminal. Resuming puts a \
+                \(target.harness.title) reports it as live, possibly in another terminal. Resuming puts a \
                 second process on the same conversation. Exit the other one first if you can.
                 """
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Resume Anyway")
             guard alert.runModal() == .alertSecondButtonReturn else { return }
         }
-        store.resumeConversation(id)
+        store.resumeConversation(target.id, harness: target.harness)
     }
 
     /// Shows or hides the command popup.
@@ -740,7 +757,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         add("Open Agent Command", #selector(menuBarOpen))
         add(waiting > 0 ? "Inbox (\(waiting) waiting)" : "Inbox", #selector(menuBarInbox))
         add("Scheduled Jobs", #selector(menuBarScheduled))
-        add("New Claude Session", #selector(menuBarNewSession))
+        add("New \(Harness.defaultForNew.title) Session", #selector(menuBarNewSession))
+        add("New Session…", #selector(menuBarChooseHarness))
         menu.addItem(.separator())
         add("Reply Popup", #selector(togglePopupEnabled)).state = PopupSettings.shared.enabled ? .on : .off
         menu.addItem(.separator())
@@ -764,7 +782,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func menuBarNewSession() {
         showMainWindow()
-        newClaudeSession()
+        newDefaultSession()
+    }
+
+    @objc private func menuBarChooseHarness() {
+        showMainWindow()
+        chooseHarness()
     }
 
     @objc private func menuBarShortcuts() {
@@ -904,7 +927,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .copy(let text): Self.copyToPasteboard(text)
         case .select(let id): store.selectedID = id
         case .nextAttention: showNextAttention()
-        case .newSession(let harness): newSession(harness: harness)
+        case .newSession(let name): if let harness = Harness(rawValue: name) { newSession(harness: harness) }
+        case .chooseHarness: chooseHarness()
         case .resume: resumeSession()
         case .split(let direction): splitPane(direction)
         case .closePane: closePane()
@@ -1017,8 +1041,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let file = NSMenuItem()
         file.submenu = NSMenu(title: "File")
         for (title, action, key) in [
-            ("New Claude Session", #selector(newClaudeSession), KeyAction.newClaude),
+            ("New \(Harness.defaultForNew.title) Session", #selector(newDefaultSession), KeyAction.newClaude),
             ("New Terminal", #selector(newTerminal), .newTerminal),
+            ("New Session…", #selector(chooseHarness), .newSession),
             ("Resume Session…", #selector(resumeSession), .resume),
             ("Commands…", #selector(toggleCommands), .commands),
             ("Change Theme…", #selector(showThemes), .themes),

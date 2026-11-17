@@ -290,7 +290,7 @@ func newFinishCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "finish <N|id|name-prefix>",
-		Short: "Finish a session: Claude stops it; it stays listed and showing it resumes it",
+		Short: "Finish a session: its agent stops; it stays listed and showing it resumes it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
@@ -298,7 +298,7 @@ func newFinishCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				q := fmt.Sprintf("Finish %s? Claude stops it; the conversation is kept and showing it resumes it.", nameOf(s))
+				q := fmt.Sprintf("Finish %s? %s stops; the conversation is kept and showing it resumes it.", nameOf(s), core.AgentName(s.Harness))
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}

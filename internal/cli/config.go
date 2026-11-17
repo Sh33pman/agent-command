@@ -80,7 +80,14 @@ var settings = []setting{
 		}
 		return strings.TrimSpace(v), nil
 	}},
-	{key: "claude_args", get: func(c config.Config) any { return orEmpty(c.ClaudeArgs) }, parse: parseList},
+	listSetting("claude_args", func(c config.Config) []string { return c.ClaudeArgs }),
+	{key: "agy_command", get: func(c config.Config) any { return c.AgyCommand }, parse: func(v string) (any, error) {
+		if strings.TrimSpace(v) == "" {
+			return nil, errors.New("agy_command can't be empty")
+		}
+		return strings.TrimSpace(v), nil
+	}},
+	listSetting("agy_args", func(c config.Config) []string { return c.AgyArgs }),
 	boolSetting("remote_control", func(c config.Config) bool { return c.RemoteControl }),
 	boolSetting("notify.enabled", func(c config.Config) bool { return c.Notify.Enabled }),
 	boolSetting("notify.on_waiting", func(c config.Config) bool { return c.Notify.OnWaiting }),
@@ -121,13 +128,24 @@ func orEmpty(list []string) []string {
 	return list
 }
 
-// parseList reads a JSON array, as the app sends, or words separated by spaces.
-func parseList(v string) (any, error) {
+// listSetting is a list: a JSON array, as the app sends, or words separated by
+// spaces.
+func listSetting(key string, get func(config.Config) []string) setting {
+	return setting{key: key, get: func(c config.Config) any { return orEmpty(get(c)) }, parse: func(v string) (any, error) {
+		list, err := parseList(v)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", key, err)
+		}
+		return list, nil
+	}}
+}
+
+func parseList(v string) ([]string, error) {
 	v = strings.TrimSpace(v)
 	if strings.HasPrefix(v, "[") {
 		var list []string
 		if err := json.Unmarshal([]byte(v), &list); err != nil {
-			return nil, fmt.Errorf("claude_args: %w", err)
+			return nil, err
 		}
 		return orEmpty(list), nil
 	}
@@ -160,7 +178,7 @@ func newConfigCmd() *cobra.Command {
 		Use:   "config",
 		Short: "Show or change acmd's settings (config.toml)",
 		Long: "The settings in config.toml, which the app's Settings window (⌘,) also changes. A change to\n" +
-			"notifications applies straight away; Claude's settings apply to sessions started after it,\n" +
+			"notifications applies straight away; the agents' settings apply to sessions started after it,\n" +
 			"and a new voice needs `acmd speech install`.",
 		Args: cobra.NoArgs,
 	}

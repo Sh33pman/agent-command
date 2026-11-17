@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -142,11 +143,11 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 		run.Result, run.Detail = core.RunFailed, fmt.Sprintf(format, a...)
 		return run
 	}
-	if d.cfg.Hosts == nil {
-		return fail("Claude isn't available: run `acmd doctor`.")
+	if !schedulable(j.Harness) {
+		return fail("acmd can't schedule %s.", j.Harness)
 	}
-	if j.Harness != "" && j.Harness != core.HarnessClaude {
-		return fail("acmd can't schedule %s yet.", j.Harness)
+	if d.cfg.Hosts == nil {
+		return fail("%s isn't available: run `acmd doctor`.", core.AgentApp(j.Harness))
 	}
 	if j.Where != core.WhereSession && j.LastRun != nil && j.LastRun.Result == core.RunStarted && j.LastRun.SessionID != "" {
 		d.mu.Lock()
@@ -174,7 +175,7 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 			}
 			args = append(args, "--worktree", worktreeName(j, due.In(d.cfg.Location)))
 		}
-		s, err := d.hostSession(ctx, ipc.NewRequest{GroupID: d.jobGroup(ctx, j), Cwd: j.Cwd, Harness: core.HarnessClaude,
+		s, err := d.hostSession(ctx, ipc.NewRequest{GroupID: d.jobGroup(ctx, j), Cwd: j.Cwd, Harness: cmp.Or(j.Harness, core.HarnessClaude),
 			Name: j.Name, Description: j.Description, Prompt: prompt, Args: args})
 		if err != nil {
 			return fail("Couldn't start the session: %s.", err)
@@ -204,6 +205,11 @@ func (d *Daemon) runInSession(ctx context.Context, j *core.Job, run core.JobRun,
 		return run
 	case s.Status == core.StatusArchived:
 		run.Result, run.Detail = core.RunFailed, "The session it continues is archived."
+		return run
+	case len(args) > 0 && !s.IsTerminal() && agentOf(s.Harness) != agentOf(j.Harness):
+		// Saved before jobs took the session's agent: its settings are another's flags.
+		run.Result, run.Detail = core.RunFailed, fmt.Sprintf("The session runs %s, but the job's settings are for %s: edit the job.",
+			core.AgentName(s.Harness), core.AgentName(j.Harness))
 		return run
 	case s.Stopped():
 		if _, err := d.resumeHosted(ctx, s, prompt, args); err != nil {
@@ -235,6 +241,14 @@ func (d *Daemon) runInSession(ctx context.Context, j *core.Job, run core.JobRun,
 	run.Result = core.RunStarted
 	return run
 }
+
+// schedulable says whether jobs can run a harness's agent.
+func schedulable(h string) bool {
+	return h == "" || h == core.HarnessClaude || h == core.HarnessAntigravity
+}
+
+// agentOf is a harness with Claude's two names made one.
+func agentOf(h string) string { return cmp.Or(h, core.HarnessClaude) }
 
 func busy(st core.Status) bool {
 	return st == core.StatusStarting || st == core.StatusBusy || st == core.StatusWaiting
@@ -365,8 +379,8 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 	case len(j.Name) > 100:
 		errs["name"] = "The name is over 100 characters."
 	}
-	if j.Harness != "" && j.Harness != core.HarnessClaude {
-		errs["harness"] = "Only Claude Code can be scheduled for now."
+	if !schedulable(j.Harness) {
+		errs["harness"] = "Only Claude Code and Antigravity can be scheduled."
 	}
 
 	var check ipc.JobCheck
@@ -419,7 +433,7 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 	settings := harness.SettingsFor(j.Harness)
 	if err := harness.CheckSettings(settings, j.Settings); err != nil {
 		errs["settings"] = sentence(err)
-	} else if msg := d.checkAgentFlags(settings, j.Settings); msg != "" {
+	} else if msg := d.checkAgentFlags(j.Harness, settings, j.Settings); msg != "" {
 		errs["settings"] = msg
 	}
 	j.Settings = tidySettings(j.Settings)
@@ -438,7 +452,8 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 	return check
 }
 
-// checkJobSession checks the session a job continues, and takes its folder.
+// checkJobSession checks the session a job continues, and takes its folder and
+// its agent.
 func (d *Daemon) checkJobSession(ctx context.Context, j *core.Job) string {
 	if j.SessionID == "" {
 		return "Choose the session to continue."
@@ -452,21 +467,27 @@ func (d *Daemon) checkJobSession(ctx context.Context, j *core.Job) string {
 	case s.Status == core.StatusArchived:
 		return "That session is archived."
 	case s.ClaudeSessionID == "":
-		return "That session has no Claude conversation to continue."
+		return fmt.Sprintf("That session has no %s conversation to continue.", core.AgentName(s.Harness))
 	case s.Kind == core.KindExternal:
 		return "That session runs in your own terminal, outside acmd."
 	}
 	j.Cwd = s.Cwd
+	switch {
+	case s.IsAntigravity():
+		j.Harness = core.HarnessAntigravity
+	case !s.IsTerminal() && j.Harness == core.HarnessAntigravity:
+		j.Harness = core.HarnessClaude
+	}
 	return ""
 }
 
 // checkAgentFlags checks the installed agent takes the flags the settings
-// need, so a typo or an old Claude Code fails now rather than at 08:00.
-func (d *Daemon) checkAgentFlags(settings []harness.Setting, values map[string][]string) string {
+// need, so a typo or an old Claude Code or agy fails now rather than at 08:00.
+func (d *Daemon) checkAgentFlags(harnessName string, settings []harness.Setting, values map[string][]string) string {
 	if d.cfg.AgentHelp == nil {
 		return ""
 	}
-	help := d.cfg.AgentHelp()
+	help := d.cfg.AgentHelp(agentOf(harnessName))
 	if help == "" {
 		return ""
 	}
@@ -474,11 +495,31 @@ func (d *Daemon) checkAgentFlags(settings []harness.Setting, values map[string][
 		if len(tidySettings(map[string][]string{"x": values[s.Key]})) == 0 {
 			continue
 		}
-		if !strings.Contains(help, s.Flag) {
-			return fmt.Sprintf("The installed Claude Code has no %s option: update it, or clear %s.", s.Flag, s.Label)
+		if !hasFlag(help, s.Flag) {
+			return fmt.Sprintf("The installed %s has no %s option: update it, or clear %s.", core.AgentApp(harnessName), s.Flag, s.Label)
 		}
 	}
 	return ""
+}
+
+// hasFlag says whether help lists flag as a whole word: agy has both --mode
+// and --model.
+func hasFlag(help, flag string) bool {
+	for i := 0; ; {
+		j := strings.Index(help[i:], flag)
+		if j < 0 {
+			return false
+		}
+		end := i + j + len(flag)
+		if end == len(help) || !isFlagChar(help[end]) {
+			return true
+		}
+		i = end
+	}
+}
+
+func isFlagChar(c byte) bool {
+	return c == '-' || c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // tidySettings drops empty values and settings.

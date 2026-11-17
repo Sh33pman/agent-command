@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The parts of the Settings window, in its sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, claude, notifications, popup, speech, scheduled, appearance, keyboard, editor, advanced
+    case general, claude, antigravity, notifications, popup, speech, scheduled, appearance, keyboard, editor, advanced
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .claude: "Claude"
+        case .antigravity: "Antigravity"
         case .notifications: "Notifications"
         case .popup: "Reply Popup"
         case .speech: "Read Aloud"
@@ -27,6 +28,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .claude: "sparkles"
+        case .antigravity: "arrow.up.circle"
         case .notifications: "bell.badge"
         case .popup: "rectangle.on.rectangle"
         case .speech: "speaker.wave.2"
@@ -83,13 +85,14 @@ struct SettingsView: View {
     }
 
     private var needsAcmd: Bool {
-        [.claude, .notifications, .speech, .editor].contains(section)
+        [.claude, .antigravity, .notifications, .speech, .editor].contains(section)
     }
 
     @ViewBuilder private var form: some View {
         switch section {
         case .general: GeneralSettings(model: model, notifier: notifier)
         case .claude: ClaudeSettings(model: model)
+        case .antigravity: AntigravitySettings(model: model)
         case .notifications: NotificationSettings(model: model, notifier: notifier)
         case .popup: PopupSettingsForm()
         case .speech: SpeechSettings(model: model)
@@ -141,7 +144,7 @@ private struct GeneralSettings: View {
         Section {
             AcmdToggle(
                 title: "Remote Control for new sessions",
-                note: "Use sessions from claude.ai and the Claude app. Applies to sessions started or resumed after the change.",
+                note: "Use Claude sessions from claude.ai and the Claude app, and Antigravity sessions from Antigravity's Remote Control. Applies to sessions started or resumed after the change.",
                 key: "remote_control", model: model, value: model.values.remoteControl)
         }
         Section("Warnings") {
@@ -186,7 +189,7 @@ private struct ClaudeSettings: View {
                         .disabled(ShellWords.split(args) == model.values.claudeArgs)
                 }
             }
-            Text("Added to every session acmd starts or resumes, after the change. Quote an argument with spaces.")
+            Text("Added to every Claude session acmd starts or resumes, after the change. Quote an argument with spaces.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear(perform: fill)
@@ -196,6 +199,42 @@ private struct ClaudeSettings: View {
     private func fill() {
         command = model.values.claudeCommand
         args = ShellWords.join(model.values.claudeArgs)
+    }
+}
+
+private struct AntigravitySettings: View {
+    let model: SettingsModel
+    @State private var command = ""
+    @State private var args = ""
+
+    var body: some View {
+        Section {
+            LabeledContent("Antigravity CLI") {
+                HStack {
+                    TextField("agy", text: $command).labelsHidden()
+                    Button("Save") { model.set("agy_command", command) }
+                        .disabled(command == model.values.agyCommand || command.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            Text("The agy command acmd runs. Leave it as agy to use the one on your PATH.")
+                .font(.caption).foregroundStyle(.secondary)
+            LabeledContent("Extra arguments") {
+                HStack {
+                    TextField("agy's own flags", text: $args).labelsHidden()
+                    Button("Save") { model.setArgs(args, key: "agy_args") }
+                        .disabled(ShellWords.split(args) == model.values.agyArgs)
+                }
+            }
+            Text("Added to every Antigravity session acmd starts or resumes, after the change. Quote an argument with spaces.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .onAppear(perform: fill)
+        .onChange(of: model.values) { fill() }
+    }
+
+    private func fill() {
+        command = model.values.agyCommand
+        args = ShellWords.join(model.values.agyArgs)
     }
 }
 
@@ -443,7 +482,7 @@ private struct AdvancedSettings: View {
 
     var body: some View {
         Section("Setup") {
-            LabeledContent("Claude Code hooks and the background service") {
+            LabeledContent("The agents' hooks and the background service") {
                 HStack {
                     Button("Check") { model.checkSetup() }
                     Button("Repair") { model.repairSetup() }

@@ -186,7 +186,7 @@ private struct JobDetail: View {
                         }
                     }
                     if !job.settings.isEmpty {
-                        section("Claude Code settings") {
+                        section("\(job.harnessKind.productName) settings") {
                             ForEach(job.settings.keys.sorted(), id: \.self) { key in
                                 HStack(alignment: .top) {
                                     Text(label(key)).foregroundStyle(theme.dim).frame(width: 150, alignment: .leading)
@@ -241,6 +241,7 @@ private struct JobDetail: View {
 
     private var facts: some View {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+            fact("Agent", job.harnessKind.title)
             fact("When", job.scheduleLine)
             fact("Next run", job.paused ? "Paused" : (job.next.map { JobTime.describe($0) } ?? "None"))
             fact("Where", job.placeLine(sessionName: model.sessionName))
@@ -293,7 +294,7 @@ private struct JobDetail: View {
     }
 
     private func label(_ key: String) -> String {
-        model.settings.first { $0.key == key }?.label ?? key
+        model.settings(for: job.harnessKind).first { $0.key == key }?.label ?? key
     }
 }
 
@@ -336,6 +337,7 @@ private struct JobForm: View {
                             TextField("", text: draft.description, prompt: hint("What it does")).textFieldStyle(.plain)
                                 .padding(6).overlay { outline(false) }
                         }
+                        harnessField(draft)
                         scheduleField(draft)
                         promptField(draft)
                         placeField(draft)
@@ -380,6 +382,16 @@ private struct JobForm: View {
         }
     }
 
+    private func harnessField(_ draft: Binding<JobDraft>) -> some View {
+        field("Agent", hint: "What each run starts. Changing it clears the settings and the session below.",
+              error: model.problem("harness")) {
+            Picker("", selection: Binding(get: { draft.wrappedValue.harness }, set: { draft.wrappedValue.setHarness($0) })) {
+                ForEach(Harness.agents) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+        }
+    }
+
     private func scheduleField(_ draft: Binding<JobDraft>) -> some View {
         field("When", error: model.problem("schedule")) {
             VStack(alignment: .leading, spacing: 8) {
@@ -412,7 +424,7 @@ private struct JobForm: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
                 if draft.wrappedValue.promptSource == .text {
-                    MarkdownEditor(text: draft.prompt, placeholder: "What should Claude do? Markdown works: headings, lists, **bold**, `code`.")
+                    MarkdownEditor(text: draft.prompt, placeholder: "What should \(draft.wrappedValue.harness.title) do? Markdown works: headings, lists, **bold**, `code`.")
                         .frame(minHeight: 220)
                         .overlay { outline(model.problem("prompt") != nil) }
                 } else {
@@ -451,7 +463,7 @@ private struct JobForm: View {
     }
 
     private func placeField(_ draft: Binding<JobDraft>) -> some View {
-        field("Where it runs", hint: draft.wrappedValue.place.help,
+        field("Where it runs", hint: draft.wrappedValue.place.help(draft.wrappedValue.harness),
               error: model.problem("where") ?? model.problem("cwd") ?? model.problem("session")) {
             VStack(alignment: .leading, spacing: 6) {
                 Picker("", selection: draft.place) {
@@ -466,6 +478,9 @@ private struct JobForm: View {
                         }
                     }
                     .fixedSize()
+                    if model.continuableSessions.isEmpty {
+                        hint("No \(draft.wrappedValue.harness.title) session has a conversation to continue yet.").font(AppFont.ui(11))
+                    }
                 } else {
                     HStack {
                         TextField("", text: draft.cwd, prompt: hint(draft.wrappedValue.place == .worktree ? "The repo's folder" : "The folder"))
@@ -479,7 +494,8 @@ private struct JobForm: View {
     }
 
     private func settingsField(_ draft: Binding<JobDraft>) -> some View {
-        field("Claude Code settings", hint: "Empty ones use Claude's own settings.", error: model.problem("settings")) {
+        let agent = draft.wrappedValue.harness
+        return field("\(agent.productName) settings", hint: "Empty ones use \(agent.title)'s own settings.", error: model.problem("settings")) {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                 ForEach(model.settings) { setting in
                     GridRow(alignment: .top) {
@@ -502,7 +518,7 @@ private struct JobForm: View {
         switch setting.kind {
         case "choice":
             Picker("", selection: value) {
-                Text("Claude's default").tag("")
+                Text("\(draft.wrappedValue.harness.title)'s default").tag("")
                 ForEach(setting.choices, id: \.self) { Text($0).tag($0) }
             }
             .labelsHidden().fixedSize()
@@ -522,7 +538,8 @@ private struct JobForm: View {
             }
         default:
             HStack {
-                TextField("", text: value, prompt: hint(setting.choices.isEmpty ? "Claude's default" : "Claude's default, or " + setting.choices.joined(separator: ", ")))
+                let fallback = "\(draft.wrappedValue.harness.title)'s default"
+                TextField("", text: value, prompt: hint(setting.choices.isEmpty ? fallback : fallback + ", or " + setting.choices.joined(separator: ", ")))
                     .textFieldStyle(.plain)
                     .padding(6).overlay { outline(false) }
                 if setting.kind == "path" {

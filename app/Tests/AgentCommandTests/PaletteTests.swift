@@ -12,7 +12,15 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
 
 @Test func paletteWithNothingShowingHasTheAppWideCommands() {
     let entries = Palette.entries(PaletteState())
-    #expect(titles(entries, in: "New") == ["Claude session", "Terminal", "Resume a session…"])
+    #expect(titles(entries, in: "New") == [
+        "Claude session", "Antigravity session", "Terminal", "New session…", "Resume a session…",
+    ])
+    #expect(entry(entries, "New", "Claude session")?.action == .newSession(harness: "claude"))
+    #expect(entry(entries, "New", "Claude session")?.shortcut == "⌘N")
+    #expect(entry(entries, "New", "Antigravity session")?.action == .newSession(harness: "antigravity"))
+    #expect(entry(entries, "New", "Terminal")?.action == .newSession(harness: "terminal"))
+    #expect(entry(entries, "New", "New session…")?.action == .chooseHarness)
+    #expect(entry(entries, "New", "New session…")?.shortcut == "⇧⌘N")
     #expect(titles(entries, in: "Panes") == ["Split right", "Split down", "Close pane"], "no focus commands for one pane")
     #expect(titles(entries, in: "Screen").isEmpty, "no screen commands without a terminal")
     #expect(titles(entries, in: "Go to").isEmpty, "nothing needs you, and no sessions")
@@ -22,6 +30,16 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     #expect(entry(entries, "App", "Read the latest message aloud") == nil, "nothing to read")
     let ids = entries.map { $0.section + "/" + $0.title + "/" + $0.key }
     #expect(Set(ids).count == ids.count, "every entry has its own id")
+}
+
+@Test func antigravitySessionsCopyTheirConversationID() throws {
+    let hooked = try makeSession(id: "g1", name: "grav", harness: "antigravity", claude: "conv-9")
+    let entries = Palette.entries(PaletteState(targets: [hooked], sessions: [hooked], setMembers: []))
+    #expect(entry(entries, "Antigravity session", "Copy Antigravity conversation ID")?.action == .copy("conv-9"))
+    #expect(entry(entries, "Antigravity session", "Copy Claude session ID") == nil)
+    let fresh = try makeSession(id: "g2", name: "new", harness: "antigravity")
+    let before = Palette.entries(PaletteState(targets: [fresh], sessions: [fresh], setMembers: []))
+    #expect(entry(before, "Antigravity session", "Copy Antigravity conversation ID") == nil, "no id before its first hook")
 }
 
 @Test func paletteActsOnTheOneSessionShowing() throws {
@@ -51,6 +69,15 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     #expect(!titles(Palette.entries(PaletteState(targets: [nowhere])), in: "Terminal session").contains("Open in editor"))
 }
 
+@Test func paletteForAntigravityHasNoClaudeID() throws {
+    let agent = try makeSession(id: "g1", harness: "antigravity")
+    let entries = Palette.entries(PaletteState(targets: [agent], sessions: [agent]))
+    #expect(titles(entries, in: "Antigravity session") == ["Rename…", "Archive…", "Open in editor", "Copy folder path"])
+    let unnamed = try makeSession(id: "x1", harness: "codex")
+    #expect(titles(Palette.entries(PaletteState(targets: [unnamed])), in: "Agent session").first == "Rename…")
+    #expect(Palette.archivePrompt([agent])?.note.hasPrefix("Agents stop.") == true, "it can be unarchived, as Claude can")
+}
+
 @Test func paletteActsOnASelectionTogether() throws {
     let a = try makeSession(id: "a"), b = try makeSession(id: "b")
     let entries = Palette.entries(PaletteState(targets: [a, b], sessions: [a, b]))
@@ -75,7 +102,7 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     var state = PaletteState(targets: [claude], sessions: [claude])
     var entries = Palette.entries(state)
     #expect(entry(entries, "App", "Turn speech on")?.action == .toggleSpeech)
-    #expect(entry(entries, "Claude", "Turn Remote Control on for new sessions")?.action == .toggleRemoteControl)
+    #expect(entry(entries, "Sessions", "Turn Remote Control on for new sessions")?.action == .toggleRemoteControl)
     #expect(entry(entries, "App", "Read aloud in the popup") != nil)
     #expect(entry(entries, "App", "Turn popup off")?.action == .togglePopup)
     #expect(titles(entries, in: "App").filter { $0.hasPrefix("Popup style") }.count == ReplyPopupStyle.allCases.count - 1)
@@ -91,7 +118,7 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     entries = Palette.entries(state)
     #expect(entry(entries, "App", "Turn speech off") != nil)
     #expect(entry(entries, "App", "Read the latest message aloud")?.action == .toggleReading)
-    #expect(entry(entries, "Claude", "Turn Remote Control off for new sessions") != nil)
+    #expect(entry(entries, "Sessions", "Turn Remote Control off for new sessions") != nil)
     #expect(entry(entries, "App", "Stop reading aloud in the popup")?.action == .togglePopupReading)
     #expect(entry(entries, "App", "Turn popup on") != nil)
 

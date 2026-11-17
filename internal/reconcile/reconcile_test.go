@@ -379,6 +379,11 @@ func TestNeedsListing(t *testing.T) {
 	if need() {
 		t.Error("only a terminal and stopped sessions: wants the listing")
 	}
+	// Claude never lists agy.
+	create(t, st, &core.Session{ID: "agy", Harness: core.HarnessAntigravity, ClaudeSessionID: "conv", Kind: core.KindHosted, Status: core.StatusBusy, CreatedAt: c.now()})
+	if need() {
+		t.Error("only an Antigravity session running: wants the listing")
+	}
 	create(t, st, &core.Session{ID: "live", ClaudeSessionID: "c-live", Kind: core.KindHosted, Status: core.StatusBusy, CreatedAt: c.now()})
 	if !need() {
 		t.Error("a running session: doesn't want the listing")
@@ -400,5 +405,25 @@ func TestFetchThenApplyIsOnce(t *testing.T) {
 	}
 	if s := get(t, st, "a"); s.Kind != core.KindBackground || s.BgID != "aaaaaaaa" {
 		t.Errorf("applied %+v", s)
+	}
+}
+
+// An Antigravity session isn't in Claude's listing: its host says whether it
+// runs, even when Claude lists a session with the same id.
+func TestAntigravityFollowsItsHost(t *testing.T) {
+	r, st, l, c := setup(t)
+	alive := true
+	r.HostAlive = func(*core.Session) bool { return alive }
+	s := create(t, st, &core.Session{Harness: core.HarnessAntigravity, ClaudeSessionID: "conv", Kind: core.KindHosted,
+		Status: core.StatusBusy, CreatedAt: c.now().Add(-time.Hour)})
+	l.agents = []claudecli.Agent{agent("conv", "aaaaaaaa", "background", "idle", 0)}
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status != core.StatusBusy || got.Kind != core.KindHosted || got.BgID != "" {
+		t.Fatalf("host alive: %+v", got)
+	}
+	alive = false
+	once(t, r)
+	if got := get(t, st, s.ID); got.Status != core.StatusPaused {
+		t.Errorf("host gone, status %v", got.Status)
 	}
 }

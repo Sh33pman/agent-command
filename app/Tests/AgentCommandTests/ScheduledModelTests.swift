@@ -165,12 +165,13 @@ private func job(_ id: String, _ name: String, cwd: String = "/w") -> Job {
     other.groupID = "G"
     let s = try makeSession(id: "S1", name: "standup")
     let term = try makeSession(id: "T1", name: "shell", harness: "terminal")
-    let board = try Board(jobs: [job("A", "alpha"), other], sessions: [s, term])
+    let ag = try makeSession(id: "G1", name: "gravity", harness: "antigravity")
+    let board = try Board(jobs: [job("A", "alpha"), other], sessions: [s, term, ag])
     board.store.groups = [SessionGroup(id: "G", name: "Scheduled")]
     let model = board.model
     #expect(model.sessionName("S1") == "standup" && model.sessionName("nope") == nil)
     #expect(model.groupName("G") == "Scheduled" && model.groupName("") == "Default")
-    #expect(model.continuableSessions.map(\.id) == ["S1"], "terminals without Claude can't continue")
+    #expect(model.continuableSessions.map(\.id) == ["S1"], "terminals without Claude, and other agents, can't continue")
 
     // A job deleted elsewhere moves the selection on.
     model.select("B")
@@ -304,4 +305,61 @@ struct ScheduledAcmdTests {
     try board.press(53)
     try board.press(13, "w", flags: .command)
     #expect(board.closed)
+}
+
+@MainActor @Test func eachAgentContinuesItsOwnSessions() throws {
+    let claude = try makeSession(id: "C1", name: "claude")
+    let typed = try makeSession(id: "T1", name: "typed", harness: "terminal", claude: "s-1")
+    let fresh = try makeSession(id: "G0", name: "fresh", harness: "antigravity")
+    let hooked = try makeSession(id: "G1", name: "hooked", harness: "antigravity", claude: "conv-1")
+    let board = try Board(jobs: [], sessions: [claude, typed, fresh, hooked])
+    let model = board.model
+    #expect(model.continuableSessions(for: .claude).map(\.id) == ["C1", "T1"], "not Antigravity's, though it has an id")
+    #expect(model.continuableSessions(for: .antigravity).map(\.id) == ["G1"], "only once it has its conversation")
+    #expect(model.harness == .claude && model.continuableSessions.map(\.id) == ["C1", "T1"])
+    model.newJob()
+    model.draft?.setHarness(.antigravity)
+    #expect(model.harness == .antigravity && model.continuableSessions.map(\.id) == ["G1"], "the form's agent")
+}
+
+@MainActor @Test func changingTheAgentIsAChange() throws {
+    let board = try Board(jobs: [])
+    let model = board.model
+    model.newJob()
+    model.receive(check: ["harness": "Antigravity isn't installed."])
+    #expect(model.problem("harness") == nil, "not until it's changed")
+    model.draft?.setHarness(.antigravity)
+    #expect(model.problem("harness") == "Antigravity isn't installed.")
+}
+
+extension UsesSharedSpeech {
+    @Suite @MainActor
+    struct ScheduledAgentSettingsTests {
+        @Test func theFormShowsItsAgentsSettings() async throws {
+            let daemon = try FakeDaemon()
+            defer { daemon.stop() }
+            daemon.reply("agent.settings", [["key": "model", "label": "Model", "kind": "text"]])
+            var gravityJob = job("G", "gravity")
+            gravityJob.harness = "antigravity"
+            gravityJob.settings = ["mode": ["plan"]]
+            let board = try Board(jobs: [job("A", "alpha"), gravityJob])
+            let model = board.model
+            try await until { !model.settings(for: .claude).isEmpty }
+            #expect(daemon.received("agent.settings").map { $0["harness"] as? String } == [""], "Claude's, as before")
+            #expect(model.settings.map(\.label) == ["Model"] && model.settings(for: .antigravity).isEmpty)
+
+            daemon.reply("agent.settings", [["key": "mode", "label": "Mode", "kind": "choice", "choices": ["plan", "fast"]]])
+            model.select("G")
+            try await until { !model.settings(for: .antigravity).isEmpty }
+            #expect(daemon.received("agent.settings").last?["harness"] as? String == "antigravity")
+            #expect(model.harness == .antigravity && model.settings.map(\.key) == ["mode"], "the selected job's agent")
+
+            model.select("A")
+            model.newJob()
+            #expect(model.settings.map(\.key) == ["model"])
+            model.draft?.setHarness(.antigravity)
+            #expect(model.settings.map(\.key) == ["mode"], "the form's agent")
+            #expect(daemon.received("agent.settings").count == 2, "each agent's are asked for once")
+        }
+    }
 }

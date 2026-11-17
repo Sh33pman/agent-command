@@ -158,7 +158,7 @@ func TestCheckJob(t *testing.T) {
 		"no session":    {func(j *core.Job) { j.Where = core.WhereSession }, "session", "Choose the session"},
 		"lost session":  {func(j *core.Job) { j.Where, j.SessionID = core.WhereSession, "nope" }, "session", "gone"},
 		"bad setting":   {func(j *core.Job) { j.Settings = map[string][]string{"effort": {"huge"}} }, "settings", "one of low"},
-		"other harness": {func(j *core.Job) { j.Harness = "codex" }, "harness", "Only Claude Code"},
+		"other harness": {func(j *core.Job) { j.Harness = "codex" }, "harness", "Only Claude Code and Antigravity"},
 		"lost group":    {func(j *core.Job) { j.GroupID = "nope" }, "group", "gone"},
 	} {
 		j := folderJob(dir)
@@ -188,7 +188,12 @@ func TestCheckJob(t *testing.T) {
 	}
 
 	// Settings are checked against the installed Claude Code.
-	d.cfg.AgentHelp = func() string { return "--model <model>\n--permission-mode" }
+	d.cfg.AgentHelp = func(h string) string {
+		if h != core.HarnessClaude {
+			t.Errorf("asked %q for Claude's flags", h)
+		}
+		return "--model <model>\n--permission-mode"
+	}
 	needsEffort := folderJob(dir)
 	needsEffort.Settings = map[string][]string{"effort": {"high"}}
 	if check := d.checkJob(ctx, &needsEffort); !strings.Contains(check.Errors["settings"], "no --effort option") {
@@ -197,7 +202,7 @@ func TestCheckJob(t *testing.T) {
 	if check := d.checkJob(ctx, &ok); len(check.Errors) != 0 {
 		t.Errorf("flags it has: %v", check.Errors)
 	}
-	d.cfg.AgentHelp = func() string { return "" } // couldn't run it: don't block
+	d.cfg.AgentHelp = func(string) string { return "" } // couldn't run it: don't block
 	if check := d.checkJob(ctx, &needsEffort); len(check.Errors) != 0 {
 		t.Errorf("no help: %v", check.Errors)
 	}
@@ -523,6 +528,10 @@ func TestJobOps(t *testing.T) {
 	if len(settings) != len(harness.ClaudeSettings) {
 		t.Errorf("settings: %d", len(settings))
 	}
+	must(t, c.Call(ipc.OpAgentSettings, ipc.JobRef{Harness: core.HarnessAntigravity}, &settings))
+	if len(settings) != len(harness.AntigravitySettings) || settings[2].Key != "mode" || settings[2].Flag != "--mode" {
+		t.Errorf("agy's settings: %+v", settings)
+	}
 	if err := c.Call(ipc.OpAgentSettings, ipc.JobRef{Harness: "terminal"}, &settings); err == nil {
 		t.Error("terminal settings")
 	}
@@ -539,5 +548,151 @@ func TestJobOps(t *testing.T) {
 	}
 	if err := c.Call(ipc.OpJobRun, "nope", nil); err == nil {
 		t.Error("bad ref")
+	}
+}
+
+func agyJob(dir string) core.Job {
+	j := folderJob(dir)
+	j.Harness, j.Settings = core.HarnessAntigravity, map[string][]string{"mode": {"accept-edits"}, "effort": {"high"}}
+	return j
+}
+
+// An Antigravity job is checked against agy's settings and agy's --help.
+func TestCheckAntigravityJob(t *testing.T) {
+	d, _, _, _ := jobDaemon(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	ok := agyJob(dir)
+	if check := d.checkJob(ctx, &ok); len(check.Errors) != 0 {
+		t.Fatalf("valid: %v", check.Errors)
+	}
+	claudes := agyJob(dir)
+	claudes.Settings = map[string][]string{"permission-mode": {"plan"}}
+	if check := d.checkJob(ctx, &claudes); !strings.Contains(check.Errors["settings"], `no setting "permission-mode"`) {
+		t.Errorf("Claude's setting on agy: %v", check.Errors)
+	}
+
+	d.cfg.AgentHelp = func(h string) string {
+		if h == core.HarnessAntigravity {
+			return "  --model  Model\n  --effort  Reasoning effort"
+		}
+		return "--model --effort --permission-mode --mode"
+	}
+	if check := d.checkJob(ctx, &ok); check.Errors["settings"] != "The installed Antigravity CLI has no --mode option: update it, or clear Mode." {
+		t.Errorf("old agy: %v", check.Errors)
+	}
+
+	// A session to continue: its agent's conversation, and its agent.
+	none := &core.Session{Kind: core.KindHosted, Cwd: dir, Harness: core.HarnessAntigravity, Status: core.StatusDone}
+	must(t, d.store.CreateSession(ctx, none))
+	j := folderJob("")
+	j.Where, j.SessionID, j.Settings = core.WhereSession, none.ID, nil
+	if check := d.checkJob(ctx, &j); check.Errors["session"] != "That session has no Antigravity conversation to continue." {
+		t.Errorf("no conversation: %v", check.Errors)
+	}
+	claude := &core.Session{Kind: core.KindHosted, Cwd: dir, Harness: core.HarnessClaude, Status: core.StatusDone}
+	must(t, d.store.CreateSession(ctx, claude))
+	j.SessionID = claude.ID
+	if check := d.checkJob(ctx, &j); check.Errors["session"] != "That session has no Claude conversation to continue." {
+		t.Errorf("no Claude conversation: %v", check.Errors)
+	}
+	none.ClaudeSessionID = "conv-1"
+	must(t, d.store.UpdateSession(ctx, none))
+	j.SessionID = none.ID
+	if check := d.checkJob(ctx, &j); len(check.Errors) != 0 || j.Harness != core.HarnessAntigravity || j.Cwd != dir {
+		t.Errorf("agy session: %v, harness %q", check.Errors, j.Harness)
+	}
+	claude.ClaudeSessionID = "c-1"
+	must(t, d.store.UpdateSession(ctx, claude))
+	j.SessionID = claude.ID
+	if check := d.checkJob(ctx, &j); len(check.Errors) != 0 || j.Harness != core.HarnessClaude {
+		t.Errorf("back to a Claude session: %v, harness %q", check.Errors, j.Harness)
+	}
+}
+
+// An Antigravity job runs agy: in a new session with its flags and the prompt,
+// or in its session's conversation, resumed with the prompt.
+func TestRunAntigravityJob(t *testing.T) {
+	d, fh, clk, typed := jobDaemon(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	job := mustSave(t, d, agyJob(dir))
+	clk.set("2026-11-12 08:00:00")
+	d.runDueJobs(ctx)
+	run := lastRun(t, d, job.ID)
+	if run.Result != core.RunStarted {
+		t.Fatalf("run: %+v", run)
+	}
+	r := fh.requests()
+	if len(r) != 1 || r[0].Harness != core.HarnessAntigravity || r[0].Prompt != job.Prompt || r[0].ClaudeSession != "" ||
+		!slices.Equal(r[0].Args, []string{"--effort", "high", "--mode", "accept-edits"}) {
+		t.Errorf("host: %+v", r)
+	}
+	if s, err := d.store.Session(ctx, run.SessionID); err != nil || !s.IsAntigravity() {
+		t.Errorf("session: %+v %v", s, err)
+	}
+
+	s := &core.Session{Kind: core.KindHosted, Cwd: dir, Harness: core.HarnessAntigravity, ClaudeSessionID: "conv-1", Status: core.StatusPaused}
+	must(t, d.store.CreateSession(ctx, s))
+	j := agyJob("")
+	j.Where, j.SessionID, j.Harness = core.WhereSession, s.ID, ""
+	cont := mustSave(t, d, j)
+	if cont.Harness != core.HarnessAntigravity {
+		t.Errorf("the job takes its session's agent: %q", cont.Harness)
+	}
+	clk.set("2026-11-13 08:00:00")
+	d.runDueJobs(ctx)
+	r = fh.requests()
+	if run := lastRun(t, d, cont.ID); run.Result != core.RunStarted || len(r) != 2 { // the first job's run is still starting
+		t.Fatalf("resumed: %+v (%d starts)", run, len(r))
+	}
+	if got := r[len(r)-1]; got.ID != s.ID || got.Harness != core.HarnessAntigravity || got.Resume != "conv-1" || got.Prompt != j.Prompt ||
+		!slices.Equal(got.Args, []string{"--effort", "high", "--mode", "accept-edits"}) {
+		t.Errorf("resume: %+v", got)
+	}
+
+	// Done with its turn: typed in, as for Claude.
+	s, _ = d.store.Session(ctx, s.ID)
+	s.Status = core.StatusDone
+	must(t, d.store.UpdateSession(ctx, s))
+	if run, _ := d.runJobNow(ctx, cont.ID); run.Result != core.RunStarted {
+		t.Errorf("typed: %+v", run)
+	}
+	if keys := typed.to(s.ID); len(keys) != 2 || keys[0] != "\x1b[200~"+j.Prompt+"\x1b[201~" || keys[1] != "\r" {
+		t.Errorf("keys: %q", keys)
+	}
+
+	// A job saved for Claude, before jobs took the session's agent, doesn't send
+	// Claude's flags to agy.
+	stale, _ := d.store.Job(ctx, cont.ID)
+	stale.Harness, stale.Settings = "", map[string][]string{"permission-mode": {"plan"}}
+	must(t, d.store.SaveJob(ctx, stale))
+	if run, _ := d.runJobNow(ctx, cont.ID); run.Result != core.RunFailed ||
+		run.Detail != "The session runs Antigravity, but the job's settings are for Claude: edit the job." {
+		t.Errorf("stale: %+v", run)
+	}
+
+	d.cfg.Hosts = nil
+	if run, _ := d.runJobNow(ctx, job.ID); run.Detail != "Antigravity CLI isn't available: run `acmd doctor`." {
+		t.Errorf("no hosts: %+v", run)
+	}
+	other, _ := d.store.Job(ctx, job.ID)
+	other.Harness = "codex"
+	must(t, d.store.SaveJob(ctx, other))
+	if run, _ := d.runJobNow(ctx, job.ID); run.Detail != "acmd can't schedule codex." {
+		t.Errorf("other: %+v", run)
+	}
+}
+
+func TestHasFlag(t *testing.T) {
+	help := "  --model   Model\n  --mode    Mode (accept-edits)\n  --add-dir"
+	for flag, want := range map[string]bool{"--model": true, "--mode": true, "--add-dir": true, "--add": false, "--mod": false, "--effort": false} {
+		if got := hasFlag(help, flag); got != want {
+			t.Errorf("%s: %v", flag, got)
+		}
+	}
+	if hasFlag("  --model  Model", "--mode") {
+		t.Error("--mode found in --model")
 	}
 }

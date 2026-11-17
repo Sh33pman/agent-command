@@ -77,7 +77,7 @@ func TestScheduleCommands(t *testing.T) {
 	}
 
 	// The test daemon has no hosts, so a run fails, and says why.
-	if _, err := acmd(t, "schedule", "run", "Triage"); err == nil || !strings.Contains(err.Error(), "Claude isn't available") {
+	if _, err := acmd(t, "schedule", "run", "Triage"); err == nil || !strings.Contains(err.Error(), "Claude Code isn't available") {
 		t.Errorf("run: %v", err)
 	}
 	if out := mustRun(t, "schedule", "runs", "Triage"); !strings.Contains(out, "failed") {
@@ -86,6 +86,20 @@ func TestScheduleCommands(t *testing.T) {
 	if out := mustRun(t, "schedule", "show", "Triage"); !strings.Contains(out, "DUE") {
 		t.Errorf("show runs: %q", out)
 	}
+
+	// An Antigravity job takes agy's settings, not Claude's.
+	if _, err := acmd(t, "schedule", "add", "Agy", "--cron", "0 9 * * *", "--prompt", "go", "--harness", "antigravity",
+		"--set", "permission-mode=plan"); err == nil {
+		t.Error("agy took Claude's setting")
+	}
+	mustRun(t, "schedule", "add", "Agy", "--cron", "0 9 * * *", "--prompt", "go", "--harness", "antigravity", "--set", "mode=plan")
+	if j := job(t, "Agy"); j.Harness != "antigravity" || j.Settings["mode"][0] != "plan" {
+		t.Errorf("agy job: %+v", j)
+	}
+	if out := mustRun(t, "schedule", "show", "Agy"); !strings.Contains(out, "Antigravity CLI") {
+		t.Errorf("show agy: %q", out)
+	}
+	mustRun(t, "schedule", "delete", "Agy", "--yes")
 
 	if _, err := acmd(t, "schedule", "delete", "Triage"); err == nil {
 		t.Error("deleted without --yes")
@@ -154,10 +168,19 @@ func TestScheduleExplainAndSettings(t *testing.T) {
 		t.Errorf("explain cron with no words: %q", out)
 	}
 	out = mustRun(t, "schedule", "settings")
-	for _, want := range []string{"permission-mode", "--allowedTools", "low, medium, high"} {
+	for _, want := range []string{"CLAUDE FLAG", "permission-mode", "--allowedTools", "low, medium, high"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("settings is missing %q:\n%s", want, out)
 		}
+	}
+	out = mustRun(t, "schedule", "settings", "--harness", "antigravity")
+	for _, want := range []string{"ANTIGRAVITY FLAG", "--mode", "accept-edits, auto, plan"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("agy's settings are missing %q:\n%s", want, out)
+		}
+	}
+	if _, err := acmd(t, "schedule", "settings", "--harness", "terminal"); err == nil {
+		t.Error("terminal settings listed")
 	}
 }
 

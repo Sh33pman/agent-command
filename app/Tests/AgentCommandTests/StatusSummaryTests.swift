@@ -35,6 +35,24 @@ private func session(_ status: String, harness: String = "claude", claude: Strin
     #expect(RowMark(try session("unknown", harness: "terminal", claude: "", detail: "opencode")) == .dot)
 }
 
+@Test func aRowMarksAntigravity() throws {
+    #expect(RowMark(try session("busy", harness: "antigravity", claude: "")) == .antigravity(dimmed: false, busy: true))
+    #expect(RowMark(try session("paused", harness: "antigravity", claude: "")) == .antigravity(dimmed: true, busy: false))
+    #expect(RowMark(try session("unknown", harness: "antigravity", claude: "")) == .antigravity(dimmed: true, busy: false))
+    #expect(RowMark(try session("done", harness: "codex", claude: "")) == .dot, "an agent the app can't name")
+}
+
+@Test func theAntigravityMarkIsAnArch() {
+    let rows = AntigravityMarkShape.pixels
+    #expect(Set(rows.map(\.count)) == [16] && rows.count == ClaudeMarkShape.pixels.count, "the crab's size")
+    #expect(rows != ClaudeMarkShape.pixels)
+    #expect(rows[4].hasPrefix("####") && rows[4].hasSuffix("####"), "two feet")
+    let rect = CGRect(x: 0, y: 0, width: 13, height: 10)
+    let bounds = AntigravityMarkShape().path(in: rect).boundingRect
+    #expect(rect.insetBy(dx: -0.01, dy: -0.01).contains(bounds))
+    #expect(abs(bounds.midX - rect.midX) < 0.01)
+}
+
 @Test func aSessionDescribesItself() throws {
     let s = try session("waiting", detail: "permission: Write", description: "the auth fix", cwd: "/w/api")
     #expect(s.statusLine == "waiting · permission: Write")

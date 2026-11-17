@@ -16,9 +16,10 @@ func newRemoteControlCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "remote-control [on|off]",
 		Short: "Show or set whether sessions start with Remote Control (off by default)",
-		Long: "With Remote Control on, sessions start with `claude --remote-control`, so you can use them\n" +
-			"from claude.ai and the Claude app. It applies to sessions started or resumed after the\n" +
-			"change; running sessions keep what they started with.",
+		Long: "With Remote Control on, agent sessions start with --remote-control, so you can use them\n" +
+			"remotely: Claude sessions from claude.ai and the Claude app, Antigravity sessions from\n" +
+			"Antigravity's Remote Control in a browser. It applies to sessions started or resumed after\n" +
+			"the change; running sessions keep what they started with.",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"on", "off"},
 		RunE: func(cmd *cobra.Command, args []string) error {

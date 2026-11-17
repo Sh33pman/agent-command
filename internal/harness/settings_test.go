@@ -46,11 +46,19 @@ func TestCheckSettings(t *testing.T) {
 }
 
 func TestSettingsFor(t *testing.T) {
-	if len(SettingsFor("")) == 0 || len(SettingsFor("claude")) == 0 || SettingsFor("terminal") != nil {
+	if len(SettingsFor("")) == 0 || len(SettingsFor("claude")) == 0 || SettingsFor("terminal") != nil ||
+		len(SettingsFor("antigravity")) == 0 {
 		t.Error("settings by harness")
 	}
+	for _, table := range [][]Setting{ClaudeSettings, AntigravitySettings} {
+		checkTable(t, table)
+	}
+}
+
+func checkTable(t *testing.T, table []Setting) {
+	t.Helper()
 	keys := map[string]bool{}
-	for _, s := range ClaudeSettings {
+	for _, s := range table {
 		if keys[s.Key] || s.Label == "" || s.Flag == "" || !strings.HasPrefix(s.Flag, "--") {
 			t.Errorf("setting %+v", s)
 		}
@@ -58,5 +66,22 @@ func TestSettingsFor(t *testing.T) {
 		if s.Kind == KindChoice && len(s.Choices) == 0 {
 			t.Errorf("%s has no choices", s.Key)
 		}
+	}
+}
+
+func TestAntigravitySettingsArgs(t *testing.T) {
+	got := SettingsArgs(AntigravitySettings, map[string][]string{
+		"mode": {"accept-edits"}, "effort": {"high"}, "model": {"gemini-3-flash"}, "add-dir": {"/a"},
+	})
+	want := []string{"--model", "gemini-3-flash", "--effort", "high", "--mode", "accept-edits", "--add-dir", "/a"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+	if err := CheckSettings(AntigravitySettings, map[string][]string{"mode": {"acceptEdits"}}); err == nil ||
+		!strings.Contains(err.Error(), "accept-edits, auto, plan") {
+		t.Errorf("Claude's mode accepted: %v", err)
+	}
+	if err := CheckSettings(AntigravitySettings, map[string][]string{"permission-mode": {"plan"}}); err == nil {
+		t.Error("a Claude setting accepted")
 	}
 }

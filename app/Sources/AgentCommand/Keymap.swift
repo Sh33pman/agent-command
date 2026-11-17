@@ -236,6 +236,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
 
     case newClaude = "app.new-claude"
     case newTerminal = "app.new-terminal"
+    case newSession = "app.new-session"
     case resume = "app.resume"
     case commands = "app.commands"
     case themes = "app.themes"
@@ -315,6 +316,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .appAnywhere: "Bring the app forward, or hide it"
         case .newClaude: "New Claude session"
         case .newTerminal: "New terminal"
+        case .newSession: "New session: choose Claude, Antigravity or a terminal"
         case .resume: "Resume a session"
         case .commands: "Commands"
         case .themes: "Change theme"
@@ -387,6 +389,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .appAnywhere: ["ctrl+cmd+a"]
         case .newClaude: ["cmd+n"]
         case .newTerminal: ["cmd+t"]
+        case .newSession: ["shift+cmd+n"]
         case .resume: ["shift+cmd+o"]
         case .commands: ["shift+cmd+p"]
         case .themes: ["shift+cmd+t"]

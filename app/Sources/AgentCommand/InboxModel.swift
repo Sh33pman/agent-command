@@ -515,13 +515,19 @@ final class InboxModel {
     func answerable(_ item: InboxItem) -> String? {
         guard item.isOpen else { return "This has been dealt with." }
         if item.multipart { return "This question has several parts. Answer it in the session." }
-        guard let session = store.session(id: item.sessionID), !session.claudeSessionID.isEmpty, !session.isStopped,
-            !session.isArchived
-        else { return "Claude isn't running in this session." }
+        let found = store.session(id: item.sessionID)
+        // The agent's own name, or Claude's for a terminal it was typed in.
+        let agent = found?.isAntigravity == true ? Harness.antigravity.title : Harness.claude.title
+        // Claude's conversation id says Claude runs in the session. Antigravity's
+        // comes only with its first hook, after its sign-in and trust prompts, so
+        // for it the session running is enough, as the daemon checks too.
+        guard let session = found, session.isAntigravity || !session.claudeSessionID.isEmpty,
+              !session.isStopped, !session.isArchived
+        else { return "\(agent) isn't running in this session." }
         if item.needsOption {
             return session.status == "waiting" ? nil : "This session isn't waiting for an answer."
         }
-        return session.status == "done" || session.status == "error" ? nil : "Claude is busy. Your draft is kept."
+        return session.status == "done" || session.status == "error" ? nil : "\(agent) is busy. Your draft is kept."
     }
 
     // MARK: Keys

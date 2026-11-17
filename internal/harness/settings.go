@@ -53,11 +53,32 @@ var ClaudeSettings = []Setting{
 		Help: "A settings JSON file to load."},
 }
 
+// AntigravitySettings are Antigravity's CLI's (agy's) settings for a scheduled
+// run. Its on/off flags (--dangerously-skip-permissions, --sandbox) are left
+// out: a setting always becomes a flag and a value.
+var AntigravitySettings = []Setting{
+	{Key: "model", Label: "Model", Kind: KindText, Flag: "--model",
+		Help: "A model's name, as `agy models` lists them. Empty: Antigravity's default."},
+	{Key: "effort", Label: "Effort", Kind: KindChoice, Flag: "--effort",
+		Choices: []string{"low", "medium", "high", "xhigh", "max"}},
+	{Key: "mode", Label: "Mode", Kind: KindChoice, Flag: "--mode",
+		Help:    "What Antigravity may do without asking. A run nobody watches stops at the first question.",
+		Choices: []string{"accept-edits", "auto", "plan"}},
+	{Key: "add-dir", Label: "Extra folders", Kind: KindPaths, Flag: "--add-dir",
+		Help: "Folders Antigravity may read and edit besides the job's folder."},
+	{Key: "agent", Label: "Agent", Kind: KindText, Flag: "--agent",
+		Help: "An agent to run as, by name (`agy agents` lists them)."},
+	{Key: "settings", Label: "Settings file", Kind: KindPath, Flag: "--settings",
+		Help: "A JSON file of settings.json keys, for this run only."},
+}
+
 // SettingsFor is a harness's settings for scheduled runs (nil: it has none).
 func SettingsFor(harnessName string) []Setting {
 	switch harnessName {
 	case "", "claude":
 		return ClaudeSettings
+	case "antigravity":
+		return AntigravitySettings
 	}
 	return nil
 }

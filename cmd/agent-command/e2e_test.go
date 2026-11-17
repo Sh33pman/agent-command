@@ -126,3 +126,42 @@ func daemonVersion(t *testing.T, bin string) string {
 	}
 	return info.Version
 }
+
+// TestAntigravityHookAnswers runs the real binary the way agy does. agy reads
+// every hook's answer from stdout, so `{}` must come out whatever the hook
+// does with the event: no daemon, no acmd session, or a payload it can't read.
+func TestAntigravityHookAnswers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the binary")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "agent-command")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	// Not set up, so nothing spawns a daemon.
+	base := append(os.Environ(), "ACMD_STATE_DIR="+filepath.Join(dir, "s"), "ACMD_RUNTIME_DIR="+filepath.Join(dir, "r"))
+	stop := `{"conversationId":"c1","hookEventName":"Stop","terminationReason":"NO_TOOL_CALL","cwd":"/w"}`
+	for name, tc := range map[string]struct{ env, stdin string }{
+		"in a session":  {"ACMD_SESSION_ID=e2e", stop},
+		"outside":       {"ACMD_SESSION_ID=", stop},
+		"bad payload":   {"ACMD_SESSION_ID=e2e", "not json"},
+		"empty payload": {"ACMD_SESSION_ID=e2e", ""},
+	} {
+		hook := exec.Command(bin, "hook", "antigravity:Stop")
+		hook.Env = append(append([]string(nil), base...), tc.env)
+		hook.Stdin = strings.NewReader(tc.stdin)
+		var stdout, stderr bytes.Buffer
+		hook.Stdout, hook.Stderr = &stdout, &stderr
+		start := time.Now()
+		if err := hook.Run(); err != nil {
+			t.Fatalf("%s: hook exited with %v (stderr %q)", name, err, stderr.String())
+		}
+		if stdout.String() != "{}\n" {
+			t.Errorf("%s: stdout %q, want {}", name, stdout.String())
+		}
+		if d := time.Since(start); d > 10*time.Second { // a hang guard, as above
+			t.Errorf("%s: hook took %v", name, d)
+		}
+	}
+}

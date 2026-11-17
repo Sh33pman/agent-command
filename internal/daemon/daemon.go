@@ -49,8 +49,10 @@ type Config struct {
 	Hosts Hosts
 	// Remover deletes background sessions on purge (claudecli.CLI).
 	Remover Remover
-	// ClaudeDir is Claude's folder, read for conversations to resume.
+	// ClaudeDir is Claude's folder, and AgyDir agy's (agycli.Dir), read for
+	// conversations to resume. AgyDir "" leaves agy's out.
 	ClaudeDir string
+	AgyDir    string
 	// Notify configures notifications (nil = none).
 	Notify *config.Notify
 	// ConfigFile is config.toml: when it changes, notifications follow its [notify]
@@ -71,13 +73,19 @@ type Config struct {
 	// HostFront asks one (default: through its host).
 	FrontEvery time.Duration
 	HostFront  func(sessionID string) (term.Front, bool)
+	// HostAgent asks a session's host for its agent's last OSC 7501 report,
+	// on the same tick (default: through its host).
+	HostAgent func(sessionID string) (term.AgentState, bool)
+	// HostScreen reads a session's screen as text when its agent reports it
+	// waits on you, for the answers it shows (default: through its host).
+	HostScreen func(sessionID string) (string, bool)
 	// ScheduleEvery is how often scheduled jobs are checked (15 s), and
 	// Location the time zone their schedules are in (the Mac's).
 	ScheduleEvery time.Duration
 	Location      *time.Location
-	// AgentHelp is Claude's --help, to check a job's settings against the
-	// installed version ("" or nil: don't check).
-	AgentHelp func() string
+	// AgentHelp is an agent's --help, by harness ("claude" or "antigravity"), to
+	// check a job's settings against the installed version ("" or nil: don't check).
+	AgentHelp func(harness string) string
 	// Waker sets the Mac's wakes for jobs (wake.Mac); nil: jobs don't wake it.
 	Waker wake.Waker
 }
@@ -100,6 +108,7 @@ type Daemon struct {
 	bg         *background // d.mu (background.go)
 
 	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
+	agentSeen  map[string]uint64    // agentstate.go: the last OSC 7501 report applied, per session
 
 	wake waking // wake.go
 }
@@ -130,6 +139,15 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.HostFront == nil {
 		cfg.HostFront = func(id string) (term.Front, bool) { return term.Foreground(cfg.Paths.HostSocket(id)) }
+	}
+	if cfg.HostAgent == nil {
+		cfg.HostAgent = func(id string) (term.AgentState, bool) { return term.AgentStatus(cfg.Paths.HostSocket(id)) }
+	}
+	if cfg.HostScreen == nil {
+		cfg.HostScreen = func(id string) (string, bool) {
+			text, err := term.ScreenText(cfg.Paths.HostSocket(id))
+			return text, err == nil
+		}
 	}
 	if err := cfg.Paths.Ensure(); err != nil {
 		return err
@@ -394,6 +412,10 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		if !sess.FollowConversation(e) {
 			return nil
 		}
+	case core.IsAntigravityHook(ev.Name):
+		// agy only reports for the session it runs in; a row of its own would
+		// be taken for a Claude conversation.
+		return nil
 	default:
 		sess, err = d.store.SessionByClaudeID(ctx, e.SessionID)
 		isNew = errors.Is(err, store.ErrNotFound)
@@ -494,7 +516,11 @@ func (d *Daemon) background(ctx context.Context) {
 			if err != nil {
 				d.cfg.Log.Printf("foreground: %v", err)
 			}
-			if changed {
+			agentChanged, err := d.agentStateOnce(ctx)
+			if err != nil {
+				d.cfg.Log.Printf("agent state: %v", err)
+			}
+			if changed || agentChanged {
 				d.changes.bump()
 			}
 		case <-tailT.C:

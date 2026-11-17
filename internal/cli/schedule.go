@@ -26,8 +26,9 @@ func newScheduleCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "schedule",
 		Aliases: []string{"jobs"},
-		Short:   "Manage scheduled jobs: prompts Claude runs on a cron schedule",
-		Long: `Manage scheduled jobs: prompts Claude runs on a cron schedule, or once.
+		Short:   "Manage scheduled jobs: prompts Claude or Antigravity runs on a cron schedule",
+		Long: `Manage scheduled jobs: prompts Claude (or Antigravity, with --harness
+antigravity) runs on a cron schedule, or once.
 
 A schedule is cron: five fields, minute hour day-of-month month day-of-week,
 in this Mac's time zone. "0 9 * * 1-5" is weekdays at 09:00. Use --once for a
@@ -88,7 +89,7 @@ func newScheduleShowCmd() *cobra.Command {
 // jobFlags are the flags add and edit share.
 type jobFlags struct {
 	cron, once, prompt, promptFile, description string
-	folder, worktree, session                   string
+	folder, worktree, session, harness          string
 	set, unset                                  []string
 	runMissed, wake                             bool
 }
@@ -103,6 +104,7 @@ func (f *jobFlags) bind(cmd *cobra.Command) {
 	fl.StringVar(&f.folder, "folder", "", "run in a new session in this folder (default: the current folder)")
 	fl.StringVar(&f.worktree, "worktree", "", "run in a new git worktree of this folder's repo")
 	fl.StringVar(&f.session, "session", "", "continue this session's conversation (number, id or name)")
+	fl.StringVar(&f.harness, "harness", "", "the agent that runs it: claude (default) or antigravity; --session takes its session's")
 	fl.StringArrayVar(&f.set, "set", nil, "an agent setting, key=value (repeat for lists); see `acmd schedule settings`")
 	fl.StringArrayVar(&f.unset, "unset", nil, "clear an agent setting, by key")
 	fl.BoolVar(&f.runMissed, "run-missed", false, "run a run the Mac slept through when it wakes")
@@ -147,6 +149,9 @@ func (f *jobFlags) apply(cmd *cobra.Command, snap ipc.Snapshot, j *core.Job) err
 	}
 	if changed("description") {
 		j.Description = f.description
+	}
+	if changed("harness") {
+		j.Harness = f.harness
 	}
 	if changed("run-missed") {
 		j.RunMissed = f.runMissed
@@ -431,14 +436,19 @@ func newScheduleExplainCmd() *cobra.Command {
 }
 
 func newScheduleSettingsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "settings",
+	var agent string
+	cmd := &cobra.Command{
+		Use:   "settings [--harness antigravity]",
 		Short: "List the agent settings a job can --set",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			settings := harness.SettingsFor(agent)
+			if settings == nil {
+				return fmt.Errorf("--harness is claude or antigravity, not %q", agent)
+			}
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "KEY\tCLAUDE FLAG\tVALUES")
-			for _, s := range harness.ClaudeSettings {
+			fmt.Fprintf(tw, "KEY\t%s FLAG\tVALUES\n", strings.ToUpper(core.AgentName(agent)))
+			for _, s := range settings {
 				values := s.Help
 				if s.Kind == harness.KindChoice {
 					values = strings.Join(s.Choices, ", ")
@@ -448,6 +458,8 @@ func newScheduleSettingsCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
+	cmd.Flags().StringVar(&agent, "harness", core.HarnessClaude, "whose settings: claude or antigravity")
+	return cmd
 }
 
 // resolveJob finds a job by id, or by name: exact, then a unique prefix,
@@ -565,6 +577,7 @@ func showJob(out io.Writer, j *core.Job, snap ipc.Snapshot, runs []core.JobRun) 
 	row("Schedule", jobSchedule(j))
 	row("Next run", whenText(j.NextRun))
 	row("State", jobState(j))
+	row("Agent", core.AgentApp(j.Harness))
 	switch j.Where {
 	case core.WhereFolder:
 		row("Runs in", "a new session in "+j.Cwd)

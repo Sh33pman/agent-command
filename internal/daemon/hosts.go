@@ -52,7 +52,7 @@ func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Ses
 	switch {
 	case req.Resume != "":
 		s.ClaudeSessionID = req.Resume
-	case !s.IsTerminal():
+	case !s.IsTerminal() && !s.IsAntigravity(): // agy picks its own: its first hook says it
 		s.ClaudeSessionID = newUUID()
 	}
 	core.Apply(s, core.Event{Kind: core.EventCreated, Time: d.cfg.Now()})

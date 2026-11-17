@@ -51,3 +51,9 @@ type Harness interface {
 	// StatusSource says where status comes from.
 	StatusSource() StatusSource
 }
+
+// Prompter is a harness that can be given a prompt to send once a resumed
+// session is running; each CLI takes it its own way.
+type Prompter interface {
+	PromptArgs(prompt string) []string
+}

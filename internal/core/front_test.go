@@ -80,7 +80,7 @@ func TestShellBackClosesTheInboxItem(t *testing.T) {
 }
 
 func TestIsAgent(t *testing.T) {
-	for name, want := range map[string]bool{"claude": true, "opencode": true, "codex": true, "2.1.319": false, "vim": false, "": false, FrontShell: false} {
+	for name, want := range map[string]bool{"claude": true, "opencode": true, "codex": true, "agy": true, "2.1.319": false, "vim": false, "": false, FrontShell: false} {
 		if IsAgent(name) != want {
 			t.Errorf("IsAgent(%q) = %v", name, !want)
 		}

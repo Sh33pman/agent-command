@@ -202,21 +202,31 @@ struct Session: Decodable, Identifiable, Equatable {
     }
 
     /// Claude runs in it: a Claude session, or Claude typed in a terminal (with
-    /// or without hooks).
+    /// or without hooks). Not Antigravity, whose conversation id is kept in the same place.
     var runsClaude: Bool {
-        !isTerminal || !claudeSessionID.isEmpty || (status == "unknown" && statusDetail == "claude")
+        isClaude || (!isAntigravity && (!claudeSessionID.isEmpty || (status == "unknown" && statusDetail == "claude")))
     }
+
+    /// Whose conversation claudeSessionID is: Antigravity's, or else Claude's.
+    var conversationHarness: Harness { isAntigravity ? .antigravity : .claude }
 
     /// The row's tooltip: everything about the session on a few lines.
     var details: String {
         var lines = [displayName, statusLine]
         if let description, !description.isEmpty { lines.append(description) }
         if !cwd.isEmpty { lines.append((cwd as NSString).abbreviatingWithTildeInPath) }
-        if !claudeSessionID.isEmpty { lines.append("Claude session \(claudeSessionID)") }
+        if !claudeSessionID.isEmpty { lines.append("\(conversationHarness.conversationTitle) \(claudeSessionID)") }
         return lines.joined(separator: "\n")
     }
 
     var isTerminal: Bool { harness == "terminal" }
+    /// What it was started with, if the app knows it.
+    var harnessKind: Harness? { Harness(session: harness) }
+    /// Started as Claude: what Claude's own features (its session id, resume) need.
+    var isClaude: Bool { harnessKind == .claude }
+    var isAntigravity: Bool { harnessKind == .antigravity }
+    /// "Claude", "Antigravity" or "Terminal"; "Agent" for one the app can't name.
+    var harnessTitle: String { harnessKind?.title ?? "Agent" }
     /// A terminal counts once an agent has started in it.
     var isAgent: Bool { !isTerminal || !claudeSessionID.isEmpty }
     var isArchived: Bool { status == "archived" }
@@ -229,9 +239,11 @@ struct Session: Decodable, Identifiable, Equatable {
     }
 }
 
-/// An earlier Claude session that can be resumed (internal/ipc.Conversation).
+/// An earlier agent conversation that can be resumed (internal/ipc.Conversation).
 struct Conversation: Decodable, Identifiable, Hashable {
     let id: String
+    /// "antigravity" for Antigravity's; "" or "claude" for Claude's.
+    var harness: String? = nil
     let cwd: String
     let title: String?
     let branch: String?
@@ -240,6 +252,8 @@ struct Conversation: Decodable, Identifiable, Hashable {
     let session_id: String?
 
     var displayTitle: String { title ?? "Untitled" }
+    /// The agent it's from. Older daemons send no harness: those are Claude's.
+    var harnessKind: Harness { harness == Harness.antigravity.rawValue ? .antigravity : .claude }
     var isRunning: Bool { running == true }
 
     /// The time, as far as RFC 3339 can be parsed.
@@ -253,7 +267,45 @@ struct Conversation: Decodable, Identifiable, Hashable {
     func matches(_ search: String) -> Bool {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return true }
-        return [displayTitle, cwd, branch ?? "", id].contains { $0.lowercased().contains(query) }
+        return [displayTitle, cwd, branch ?? "", id, harnessKind.title].contains { $0.lowercased().contains(query) }
+    }
+}
+
+/// What launch does about the agents' hooks: nothing, refresh them quietly with
+/// `acmd init` (the app has moved), or offer to add the missing ones.
+enum SetupNeed: Equatable {
+    case none, refresh
+    /// Ask first. claude: Claude Code's hooks are missing; antigravity: agy is
+    /// installed and its hook is missing.
+    case offer(claude: Bool, antigravity: Bool)
+
+    init(claudeHooked: Bool, claudeCurrent: Bool, agyInstalled: Bool, agyHooked: Bool, agyCurrent: Bool) {
+        let agyMissing = agyInstalled && !agyHooked
+        if !claudeHooked || agyMissing {
+            self = .offer(claude: !claudeHooked, antigravity: agyMissing)
+        } else if !claudeCurrent || (agyInstalled && !agyCurrent) {
+            self = .refresh
+        } else {
+            self = .none
+        }
+    }
+
+    /// The offer's words: where the hooks go.
+    var offerText: String {
+        guard case .offer(let claude, let antigravity) = self else { return "" }
+        let places = [claude ? "your Claude Code settings" : nil, antigravity ? "Antigravity's hooks.json" : nil]
+            .compactMap { $0 }.joined(separator: " and ")
+        return """
+            This adds hook entries to \(places), so sessions can show when they're busy, waiting \
+            or done. It backs the file up first, and keeps your other settings. It also saves your login shell's \
+            environment for the sessions it starts.
+            """
+    }
+
+    /// First-time setup, rather than an agent installed since: it also offers waking the Mac.
+    var isFirstSetup: Bool {
+        if case .offer(claude: true, _) = self { return true }
+        return false
     }
 }
 
@@ -294,10 +346,62 @@ enum DaemonPaths {
         return (try? String(contentsOfFile: settings, encoding: .utf8)) ?? ""
     }
 
-    static var hooksInstalled: Bool { claudeSettings.contains("# managed by acmd") }
+    /// internal/setup's HookMarker, at the end of each hook command acmd writes.
+    static let hookMarker = "# managed by acmd"
+
+    static var hooksInstalled: Bool { claudeSettings.contains(hookMarker) }
 
     /// The hooks run this binary, rather than one from before the app moved.
     static var hooksCurrent: Bool { claudeSettings.contains(acmd) }
+
+    /// agy's shared hooks.json, where internal/setup adds its named hook.
+    private static var agyHooksFile: String {
+        let path = NSString(string: "~/.gemini/config/hooks.json").expandingTildeInPath
+        return (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    }
+
+    /// What the app needs to do about the hooks, from what's on this Mac.
+    static var setupNeed: SetupNeed {
+        let agy = agyPath(ProcessInfo.processInfo.environment, home: NSHomeDirectory()) {
+            FileManager.default.isExecutableFile(atPath: $0)
+        }
+        let hooks = agyHooks(agyHooksFile)
+        return SetupNeed(
+            claudeHooked: hooksInstalled, claudeCurrent: hooksCurrent,
+            agyInstalled: agy != nil, agyHooked: hooks.contains { $0.contains(hookMarker) },
+            agyCurrent: hooks.contains { $0.contains(acmd) })
+    }
+
+    /// Where agy is, if it's installed: on PATH, or where its installer and Homebrew put
+    /// it, as an app started from the Dock gets a short PATH.
+    static func agyPath(_ env: [String: String], home: String, isExecutable: (String) -> Bool) -> String? {
+        let path = (env["PATH"] ?? "").split(separator: ":").map(String.init)
+        let usual = [(home as NSString).appendingPathComponent(".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"]
+        return (path + usual).lazy
+            .filter { !$0.isEmpty }
+            .map { ($0 as NSString).appendingPathComponent("agy") }
+            .first(where: isExecutable)
+    }
+
+    /// The handler commands of acmd's named hook ("agent-command") in agy's hooks.json; none
+    /// when the file or the hook isn't there.
+    static func agyHooks(_ file: String) -> [String] {
+        let text = file.hasPrefix("\u{FEFF}") ? String(file.dropFirst()) : file
+        guard let data = text.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hook = root["agent-command"]
+        else { return [] }
+        // Handlers sit under each event, flat or in matcher groups: find their commands.
+        func commands(_ value: Any) -> [String] {
+            switch value {
+            case let list as [Any]: list.flatMap(commands)
+            case let object as [String: Any]:
+                object.flatMap { key, value in key == "command" ? [value as? String].compactMap { $0 } : commands(value) }
+            default: []
+            }
+        }
+        return commands(hook)
+    }
 
     /// The binary inside the app, which always matches it.
     static var acmd: String {

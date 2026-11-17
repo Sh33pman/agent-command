@@ -57,6 +57,7 @@ const FrontShell = "$shell"
 var agents = map[string]bool{
 	"claude": true, "opencode": true, "codex": true, "gemini": true, "aider": true,
 	"amp": true, "cursor-agent": true, "goose": true, "crush": true, "qwen": true,
+	"agy": true,
 }
 
 // IsAgent reports whether program, a name from a terminal's host, is a coding agent.
@@ -100,6 +101,8 @@ type Event struct {
 	// work's id ("" when it doesn't say).
 	Wakeup   bool
 	TaskDone string
+	// Agent names the agent in messages, when it isn't Claude ("Antigravity").
+	Agent string
 }
 
 // MaxHookPayload caps hook stdin.
@@ -138,6 +141,9 @@ const (
 func ParseHook(name string, raw []byte, at time.Time) (Event, error) {
 	if len(raw) > MaxHookPayload {
 		return Event{}, ErrPayloadTooLarge
+	}
+	if event, ok := strings.CutPrefix(name, AntigravityHookPrefix); ok {
+		return parseAntigravityHook(event, raw, at)
 	}
 	var p hookPayload
 	if err := json.Unmarshal(raw, &p); err != nil {

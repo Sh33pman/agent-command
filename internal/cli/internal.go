@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,8 +19,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/brettmostert/agent-command/internal/agycli"
 	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/hook"
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -60,6 +63,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			cfg.LockWait = 3 * time.Second
 			if home, err := os.UserHomeDir(); err == nil {
 				cfg.ClaudeDir = claudecli.ConfigDir(os.Getenv, home)
+				cfg.AgyDir = agycli.Dir(home)
 			}
 			if c, err := config.Load(p.Config()); err == nil {
 				cfg.Notify = &c.Notify
@@ -72,11 +76,13 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			} else if changed {
 				logger.Printf("config: took out acmd v1's unused settings")
 			}
+			// Sessions run Claude or agy, whichever is there: starting a host checks
+			// for the one it runs.
+			cfg.Hosts = execHosts{paths: p}
+			cfg.AgentHelp = agentHelp(p)
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)
 				cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli
-				cfg.Hosts = execHosts{paths: p}
-				cfg.AgentHelp = agentHelp(claude, env)
 			} else {
 				logger.Printf("claude not found; reconciliation disabled: %v", err)
 			}
@@ -144,11 +150,15 @@ func newDaemonRestartCmd() *cobra.Command {
 func newHookCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:    "hook <Event>",
-		Short:  "Handle a Claude Code hook event (called by Claude Code)",
+		Short:  "Handle a Claude Code or Antigravity hook event (called by the agent)",
 		Hidden: true,
 		Args:   cobra.ExactArgs(1),
-		// Always succeeds: a hook must never block or break Claude.
+		// Always succeeds: a hook must never block or break the agent.
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if core.IsAntigravityHook(args[0]) {
+				// First, so agy has its answer whatever happens next.
+				fmt.Fprint(cmd.OutOrStdout(), hook.AntigravityReply)
+			}
 			p, err := paths.Default()
 			if err != nil {
 				debugf(cmd, "paths: %v", err)
@@ -191,44 +201,89 @@ func claudeCommand(p paths.Paths) (string, []string, error) {
 		return "", nil, err
 	}
 	env := loginEnv(p)
-	claude := cfg.ClaudeCommand
-	if !filepath.IsAbs(claude) {
-		pathList := ""
-		for _, kv := range env {
-			if v, ok := strings.CutPrefix(kv, "PATH="); ok {
-				pathList = v
-			}
-		}
-		if claude, err = setup.LookPathIn(claude, pathList); err != nil {
-			if claude, err = exec.LookPath(cfg.ClaudeCommand); err != nil {
-				return "", nil, err
-			}
-		}
-	}
-	return claude, env, nil
+	claude, err := findCommand(cfg.ClaudeCommand, env)
+	return claude, env, err
 }
 
-// agentHelp returns claude's --help, read once and kept for an hour, so job
-// settings can be checked against the installed version. "" when it can't run.
-func agentHelp(claude string, env []string) func() string {
+// errNoAgy is what starting an Antigravity session says when agy can't be found.
+var errNoAgy = errors.New("Antigravity's CLI (agy) isn't installed") //nolint:staticcheck // ST1005: starts with a name
+
+// agyCommand finds agy the way claudeCommand finds claude: config's
+// agy_command (pinned by `acmd init`), else on the login shell's PATH, then on
+// acmd's own.
+func agyCommand(p paths.Paths) (string, []string, error) {
+	cfg, err := config.Load(p.Config())
+	if err != nil {
+		return "", nil, err
+	}
+	env := loginEnv(p)
+	agy, err := findCommand(cmp.Or(strings.TrimSpace(cfg.AgyCommand), "agy"), env)
+	if err != nil {
+		return "", nil, errNoAgy
+	}
+	return agy, env, nil
+}
+
+// findCommand is name's absolute path: name itself if it is one, else found on
+// env's PATH, then on acmd's own.
+func findCommand(name string, env []string) (string, error) {
+	if filepath.IsAbs(name) {
+		return name, nil
+	}
+	pathList := ""
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "PATH="); ok {
+			pathList = v
+		}
+	}
+	if found, err := setup.LookPathIn(name, pathList); err == nil {
+		return found, nil
+	}
+	return exec.LookPath(name)
+}
+
+// agentHelp returns an agent's --help by harness, read once and kept for an
+// hour, so job settings can be checked against the installed version. "" when
+// it can't run. The agent is found each time it is read, so one installed
+// after the daemon started counts.
+func agentHelp(p paths.Paths) func(harness string) string {
 	var mu sync.Mutex
-	var text string
-	var at time.Time
-	return func() string {
+	type read struct {
+		text string
+		at   time.Time
+	}
+	cache := map[string]read{}
+	return func(h string) string {
 		mu.Lock()
 		defer mu.Unlock()
-		if text != "" && time.Since(at) < time.Hour {
-			return text
+		if r := cache[h]; r.text != "" && time.Since(r.at) < time.Hour {
+			return r.text
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		c := exec.CommandContext(ctx, claude, "--help") // #nosec G204 -- the configured claude
-		c.Env = env
-		out, err := c.Output()
+		find := claudeCommand
+		if h == core.HarnessAntigravity {
+			find = agyCommand
+		}
+		bin, env, err := find(p)
 		if err != nil {
 			return ""
 		}
-		text, at = string(out), time.Now()
+		text := helpText(bin, env)
+		if text != "" {
+			cache[h] = read{text, time.Now()}
+		}
 		return text
 	}
+}
+
+// helpText is bin's --help. agy writes it to stderr, so both are read.
+func helpText(bin string, env []string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	c := exec.CommandContext(ctx, bin, "--help") // #nosec G204 -- the configured agent
+	c.Env = env
+	out, err := c.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return string(out)
 }

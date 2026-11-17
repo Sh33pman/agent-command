@@ -475,8 +475,12 @@ struct InboxModelTests {
         let h = try Harness(queue: [], sessions: [
             try waiting("waiting"), try makeSession(id: "done", status: "done", claude: "c"),
             try makeSession(id: "busy", status: "busy", claude: "c"), try makeSession(id: "gone", status: "paused", claude: "c"),
-            try makeSession(id: "none", status: "done"),
+            try makeSession(id: "none", status: "done"), try makeSession(id: "ag", harness: "antigravity", status: "done"),
         ])
+        #expect(h.model.answerable(try makeItem(1, session: "busy")) == "Claude is busy. Your draft is kept.")
+        // Antigravity's conversation id comes with its first hook; before it, a
+        // running session can still be answered.
+        #expect(h.model.answerable(try makeItem(1, session: "ag")) == nil)
         #expect(h.model.answerable(try question(1, "waiting")) == nil)
         #expect(h.model.answerable(try question(1, "done")) != nil)
         #expect(h.model.answerable(try makeItem(1, session: "done")) == nil)
@@ -484,6 +488,18 @@ struct InboxModelTests {
         #expect(h.model.answerable(try makeItem(1, session: "gone")) != nil)
         #expect(h.model.answerable(try makeItem(1, session: "none")) != nil)
         #expect(h.model.answerable(try makeItem(1, session: "unknown")) != nil)
+    }
+
+    @Test func anAntigravitySessionIsAnsweredOnceItHasItsConversation() throws {
+        let h = try Harness(queue: [], sessions: [
+            try makeSession(id: "agw", harness: "antigravity", status: "waiting", claude: "conv-1"),
+            try makeSession(id: "agb", harness: "antigravity", status: "busy", claude: "conv-2"),
+            try makeSession(id: "agd", harness: "antigravity", status: "done", claude: "conv-3"),
+        ])
+        let permission = try makeItem(1, session: "agw", kind: "permission", options: ["Allow", "Deny"])
+        #expect(h.model.answerable(permission) == nil, "its options are read from its screen, and answered the same way")
+        #expect(h.model.answerable(try makeItem(2, session: "agb")) == "Antigravity is busy. Your draft is kept.")
+        #expect(h.model.answerable(try makeItem(3, session: "agd")) == nil)
     }
 }
 }

@@ -176,6 +176,12 @@ func (s *Server) Serve(ctx context.Context) error {
 				case err == nil && typ == frameText:
 					_, _ = c.Write([]byte(st.text()))
 					_ = c.Close()
+				case err == nil && typ == frameAgent:
+					st.mu.Lock()
+					b, _ := json.Marshal(st.agent)
+					st.mu.Unlock()
+					_, _ = c.Write(b)
+					_ = c.Close()
 				case err == nil && typ == frameFront:
 					if f, ok := st.front(cmd.Process.Pid); ok {
 						b, _ := json.Marshal(f)
@@ -231,6 +237,9 @@ type serverState struct {
 	clients map[net.Conn]*client
 	size    pty.Winsize
 	closed  bool
+
+	osc   oscAgentScanner
+	agent AgentState // the agent's last OSC 7501 report
 }
 
 // client is an attached pane. Its output goes through a queue and a goroutine of
@@ -309,6 +318,10 @@ func (st *serverState) output(p []byte) {
 		return
 	}
 	st.screen.Write(p)
+	for _, rep := range st.osc.scan(p) {
+		rep.Seq, rep.At = st.agent.Seq+1, time.Now()
+		st.agent = rep
+	}
 	if len(st.clients) == 0 {
 		st.mu.Unlock()
 		return

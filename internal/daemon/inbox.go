@@ -105,8 +105,12 @@ func (d *Daemon) answerKeys(ctx context.Context, a ipc.InboxAnswer) ([][]byte, e
 	if err != nil {
 		return nil, err
 	}
-	if s.ClaudeSessionID == "" || s.Stopped() {
-		return nil, errors.New("no Claude is running in this session")
+	// An answer is typed into the session's pane. For Claude, a conversation id
+	// says Claude runs there. agy's comes only with its first hook, after its
+	// sign-in and folder trust prompts, which it reports anyway: its host running
+	// is enough.
+	if s.Stopped() || (s.ClaudeSessionID == "" && !s.IsAntigravity()) {
+		return nil, fmt.Errorf("no %s is running in this session", core.AgentName(s.Harness))
 	}
 	switch it.Kind {
 	case core.InboxQuestion, core.InboxPermission:
@@ -119,6 +123,8 @@ func (d *Daemon) answerKeys(ctx context.Context, a ipc.InboxAnswer) ([][]byte, e
 		if a.Option < 1 || a.Option > len(it.Options) || a.Option > 9 {
 			return nil, errors.New("that isn't one of the options")
 		}
+		// The option's number picks it, in Claude's prompts and agy's alike, with
+		// no Enter.
 		return [][]byte{{byte('0' + a.Option)}}, nil
 	default:
 		if s.Status != core.StatusDone && s.Status != core.StatusError {

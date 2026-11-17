@@ -10,6 +10,8 @@ enum PaletteAction: Equatable {
     case select(sessionID: String)
     case nextAttention
     case newSession(harness: String)
+    /// Asks which harness, then the folder.
+    case chooseHarness
     case resume
     case split(SplitDirection)
     case closePane
@@ -92,7 +94,7 @@ enum Palette {
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive(targets)))
         }
         if let session = current {
-            let section = session.isTerminal ? "Terminal session" : "Claude session"
+            let section = "\(session.harnessTitle) session"
             list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename([session])))
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive([session])))
             if state.setMembers.contains(where: { $0.contains(session.id) }) {
@@ -103,8 +105,11 @@ enum Palette {
                     section: section, title: "Open in editor", shortcut: keys.label(.openInEditor), action: .openInEditor(session)))
             }
             list.append(PaletteEntry(section: section, title: "Copy folder path", action: .copy(session.cwd)))
-            if !session.isTerminal {
+            if session.isClaude {
                 list.append(PaletteEntry(section: section, title: "Copy Claude session ID", action: .copy(session.claudeSessionID)))
+            } else if session.isAntigravity, !session.claudeSessionID.isEmpty {
+                // Its id comes with its first hook.
+                list.append(PaletteEntry(section: section, title: "Copy Antigravity conversation ID", action: .copy(session.claudeSessionID)))
             }
         }
         if state.needsYou {
@@ -115,8 +120,10 @@ enum Palette {
                 section: "Go to", title: session.displayName, shortcut: session.status, key: session.id,
                 action: .select(sessionID: session.id)))
         }
-        list.append(PaletteEntry(section: "New", title: "Claude session", shortcut: keys.label(.newClaude), action: .newSession(harness: "claude")))
-        list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: "terminal")))
+        list.append(PaletteEntry(section: "New", title: "Claude session", shortcut: keys.label(.newClaude), action: .newSession(harness: Harness.claude.rawValue)))
+        list.append(PaletteEntry(section: "New", title: "Antigravity session", action: .newSession(harness: Harness.antigravity.rawValue)))
+        list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: Harness.terminal.rawValue)))
+        list.append(PaletteEntry(section: "New", title: "New session…", shortcut: keys.label(.newSession), action: .chooseHarness))
         list.append(PaletteEntry(section: "New", title: "Resume a session…", shortcut: keys.label(.resume), action: .resume))
         list.append(PaletteEntry(section: "Panes", title: "Split right", shortcut: keys.label(.splitRight), action: .split(.right)))
         list.append(PaletteEntry(section: "Panes", title: "Split down", shortcut: keys.label(.splitDown), action: .split(.down)))
@@ -144,7 +151,7 @@ enum Palette {
             list.append(PaletteEntry(section: "App", title: title, shortcut: keys.label(.readAloud), action: .toggleReading))
         }
         list.append(PaletteEntry(
-            section: "Claude", title: RemoteControlSetting.paletteTitle(isOn: state.remoteControl), action: .toggleRemoteControl))
+            section: "Sessions", title: RemoteControlSetting.paletteTitle(isOn: state.remoteControl), action: .toggleRemoteControl))
         list.append(PaletteEntry(
             section: "App", title: state.popupReads ? "Stop reading aloud in the popup" : "Read aloud in the popup",
             action: .togglePopupReading))

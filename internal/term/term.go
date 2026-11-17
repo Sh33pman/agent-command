@@ -35,6 +35,7 @@ const (
 	frameWrite  = 'w' // input from a connection that doesn't attach (Send)
 	frameText   = 't' // the screen as plain text (ScreenText)
 	frameFront  = 'f' // the program in front (Foreground)
+	frameAgent  = 'g' // the agent's last OSC 7501 report (AgentStatus)
 )
 
 // Front is the program in front of a terminal: the one the keyboard reaches.

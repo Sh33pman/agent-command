@@ -210,8 +210,8 @@ func TestIsHeadless(t *testing.T) {
 }
 
 func TestFindClaude(t *testing.T) {
-	if p, ok := findClaude(100, fakeProcs()); !ok || p.Pid != 200 {
-		t.Errorf("findClaude = %+v %v", p, ok)
+	if p, ok := findAgent(100, fakeProcs(), "claude"); !ok || p.Pid != 200 {
+		t.Errorf("findAgent = %+v %v", p, ok)
 	}
 	// By argv[0] when comm differs (e.g. node wrapper).
 	tree := func(pid int) (Proc, error) {
@@ -220,13 +220,13 @@ func TestFindClaude(t *testing.T) {
 		}
 		return Proc{}, errors.New("gone")
 	}
-	if p, ok := findClaude(5, tree); !ok || p.Pid != 5 {
+	if p, ok := findAgent(5, tree, "claude"); !ok || p.Pid != 5 {
 		t.Errorf("by argv: %+v %v", p, ok)
 	}
-	if _, ok := findClaude(42, tree); ok {
+	if _, ok := findAgent(42, tree, "claude"); ok {
 		t.Error("missing process should not be found")
 	}
-	if _, ok := findClaude(1, tree); ok {
+	if _, ok := findAgent(1, tree, "claude"); ok {
 		t.Error("walk must stop at pid 1")
 	}
 }
@@ -278,7 +278,7 @@ func TestContextNamesTheSessionItRunsIn(t *testing.T) {
 		}
 		return ""
 	}}
-	hc, headless := o.context()
+	hc, headless := o.context(false)
 	if hc.HostSession != "S1" || headless {
 		t.Errorf("context = %+v, headless %v", hc, headless)
 	}
@@ -313,5 +313,72 @@ func TestRunDoesNotSpawnAfterUninstall(t *testing.T) {
 	}
 	if _, err := os.Stat(p.Spool()); !os.IsNotExist(err) {
 		t.Errorf("spool file: %v", err)
+	}
+}
+
+// agyProcs builds a process tree: hook shell (100) -> agy (200, args) -> login (300).
+func agyProcs(agyArgs ...string) func(int) (Proc, error) {
+	tree := map[int]Proc{
+		100: {Pid: 100, PPid: 200, Comm: "sh", Args: []string{"sh", "-c", "acmd hook antigravity:Stop"}},
+		200: {Pid: 200, PPid: 300, Comm: "agy", Args: append([]string{"/Users/u/.local/bin/agy"}, agyArgs...)},
+		300: {Pid: 300, PPid: 1, Comm: "login"},
+	}
+	return func(pid int) (Proc, error) {
+		if p, ok := tree[pid]; ok {
+			return p, nil
+		}
+		return Proc{}, errors.New("no such process")
+	}
+}
+
+func TestRunAntigravity(t *testing.T) {
+	p := testPaths(t)
+	spawned := 0
+	o := opts(p, `{"conversationId":"conv-1","hookEventName":"Stop","terminationReason":"NO_TOOL_CALL"}`, &spawned)
+	o.ProcInfo = agyProcs("-i=fix it")
+	if out, err := Run("antigravity:Stop", o); out != Spooled || err != nil || spawned != 1 {
+		t.Fatalf("Run = %s, %v (spawned %d)", out, err, spawned)
+	}
+	evs := readSpool(t, p)
+	if len(evs) != 1 || evs[0].Name != "antigravity:Stop" || evs[0].Context.ClaudePid != 200 || evs[0].Context.HostSession != "S1" {
+		t.Fatalf("spool = %+v", evs)
+	}
+
+	// A Claude higher up isn't agy's process.
+	o = opts(p, `{"conversationId":"conv-1"}`, &spawned)
+	if hc, _ := o.context(true); hc.ClaudePid != 0 {
+		t.Errorf("found %d for agy in a Claude tree", hc.ClaudePid)
+	}
+
+	// Headless agy is ignored.
+	o = opts(p, `{"conversationId":"conv-1"}`, &spawned)
+	o.ProcInfo = agyProcs("--prompt", "summarize")
+	if out, _ := Run("antigravity:Stop", o); out != Ignored {
+		t.Errorf("headless: %s", out)
+	}
+}
+
+func TestIsAgyHeadless(t *testing.T) {
+	cases := map[string]bool{
+		"agy":                         false,
+		"agy -p hi":                   true,
+		"agy --print hi":              true,
+		"agy -print hi":               true,
+		"agy --prompt hi":             true,
+		"agy --prompt=hi":             true,
+		"agy --prompt-interactive hi": false,
+		"agy -i hi":                   false,
+		"agy -i -p":                   false, // -p is -i's value
+		"agy -i=-p --model flash":     false,
+		"agy -i=x -p":                 true,
+		"agy --conversation abc":      false,
+		"agy --model flash -- -p":     false,
+		"agy --output-format json -p": true,
+		"":                            false,
+	}
+	for cmdline, want := range cases {
+		if got := IsAgyHeadless(strings.Fields(cmdline)); got != want {
+			t.Errorf("IsAgyHeadless(%q) = %v, want %v", cmdline, got, want)
+		}
 	}
 }

@@ -274,6 +274,17 @@ extension UsesSharedSpeech {
             try await until { s.selectedID == "n" }
             let new = try #require(daemon.received("new").first)
             #expect(new["cwd"] as? String == "/work" && new["harness"] as? String == "terminal")
+
+            daemon.reply("new", hosted("r"))
+            s.resumeConversation("conv-1", harness: .antigravity)
+            try await until { s.selectedID == "r" }
+            let request = try #require(daemon.received("new").last)
+            #expect(request["resume"] as? String == "conv-1" && request["harness"] as? String == "antigravity")
+            #expect(request["cwd"] as? String == "", "the folder comes from the conversation")
+            daemon.reply("new", hosted("q"))
+            s.resumeConversation("sess-2")
+            try await until { s.selectedID == "q" }
+            #expect(daemon.received("new").last?["harness"] as? String == "claude", "Claude's by default")
         }
 
         @Test func aNewSessionCanBePlacedInstead() async throws {

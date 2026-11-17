@@ -32,6 +32,23 @@ import Testing
     #expect(keys.label(.back) == "esc")
     #expect(keys.pair(.up, .down) == "↑↓ or ⌃K ⌃J or k j")
     #expect(keys.tip("Inbox", .inbox) == "Inbox (⇧⌘I)")
+    #expect(keys.label(.newClaude) == "⌘N" && keys.label(.newSession) == "⇧⌘N")
+}
+
+@Test func choosingWhatANewSessionRunsHasItsOwnKey() throws {
+    let keys = Keymap()
+    let combo = try #require(KeyCombo("shift+cmd+n"))
+    #expect(keys.action(for: combo, among: KeyAction.allCases) == .newSession)
+    #expect(keys.clashes(combo, for: .newSession).isEmpty)
+    #expect(KeyAction.newSession.section == .app && !KeyAction.newSession.takesSeveral)
+    #expect(combo.menuKey?.key == "n" && combo.menuKey?.mask == [.shift, .command])
+    // It can be changed like the rest, and acmd keys lists it.
+    keys.set(.newSession, [KeyCombo("opt+cmd+n")!])
+    #expect(keys.label(.newSession) == "⌥⌘N" && keys.isChanged(.newSession))
+    let listed = try #require(keys.export.sections.flatMap(\.keys).first { $0.action == "app.new-session" })
+    #expect(listed.keys == ["⌥⌘N"] && listed.changed && listed.title.hasPrefix("New session"))
+    keys.reset(.newSession)
+    #expect(keys.label(.newSession) == "⇧⌘N")
 }
 
 @Test func everyKeyReadsBackAsWritten() {

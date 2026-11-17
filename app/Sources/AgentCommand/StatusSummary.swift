@@ -4,15 +4,20 @@ import SwiftUI
 enum RowMark: Equatable {
     /// Claude: in the status's color, greyed out when stopped, hopping while busy.
     case claude(dimmed: Bool, busy: Bool)
+    /// Antigravity, the same way with its own mark.
+    case antigravity(dimmed: Bool, busy: Bool)
     /// A plain terminal.
     case terminal
     /// Another agent, or one acmd can't name.
     case dot
 
     init(_ session: Session) {
+        let dimmed = session.isStopped || session.isArchived || session.status == "unknown"
+        let busy = session.status == "busy"
         if session.runsClaude {
-            self = .claude(dimmed: session.isStopped || session.isArchived || session.status == "unknown",
-                           busy: session.status == "busy")
+            self = .claude(dimmed: dimmed, busy: busy)
+        } else if session.isAntigravity {
+            self = .antigravity(dimmed: dimmed, busy: busy)
         } else if session.isTerminal && session.status != "unknown" {
             self = .terminal
         } else {

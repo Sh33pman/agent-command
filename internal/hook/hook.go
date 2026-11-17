@@ -1,9 +1,11 @@
 // Package hook implements `acmd hook <Event>`, which Claude Code runs for
-// every hook event. It only acts for a Claude running in one
+// every hook event, and Antigravity's CLI (agy) for its events as
+// `acmd hook antigravity:<Event>`. It only acts for an agent running in one
 // of acmd's sessions. It must be fast and fail-open: it
-// never writes to stdout, never influences Claude's decisions and always
-// exits 0. If the daemon is unreachable (or a different version) the event
-// is spooled and a fresh daemon is started.
+// never writes to stdout, never influences the agent's decisions and always
+// exits 0. (agy needs a JSON answer on stdout: the command prints a neutral
+// `{}` for it, see AntigravityReply.) If the daemon is unreachable (or a
+// different version) the event is spooled and a fresh daemon is started.
 package hook
 
 import (
@@ -40,7 +42,7 @@ type Options struct {
 	Stdin   io.Reader
 	Getenv  func(string) string
 	Now     func() time.Time
-	// ParentPid is where the walk up to the claude process starts.
+	// ParentPid is where the walk up to the agent's process starts.
 	ParentPid int
 	// ProcInfo looks up a process (default: sysctl on macOS).
 	ProcInfo func(pid int) (Proc, error)
@@ -57,7 +59,7 @@ type Outcome string
 const (
 	Sent     Outcome = "sent"
 	Spooled  Outcome = "spooled"
-	Ignored  Outcome = "ignored" // headless `claude -p`
+	Ignored  Outcome = "ignored" // headless `claude -p` or `agy -p`
 	Rejected Outcome = "rejected"
 )
 
@@ -82,7 +84,7 @@ func Run(name string, o Options) (Outcome, error) {
 		return Rejected, errors.New("hook payload is not JSON")
 	}
 
-	hc, headless := o.context()
+	hc, headless := o.context(core.IsAntigravityHook(name))
 	if headless {
 		return Ignored, nil
 	}
@@ -144,39 +146,42 @@ func Spool(p paths.Paths, ev ipc.HookEvent) error {
 	return f.Close()
 }
 
+// AntigravityReply is what `acmd hook antigravity:<Event>` prints: agy reads
+// every hook's answer from stdout, and an empty object changes nothing (a Stop
+// hook that doesn't say "continue" lets the agent stop).
+const AntigravityReply = "{}\n"
+
 // context gathers terminal/process context, and reports whether the
-// Claude process is headless (`claude -p` / `--print`), which acmd ignores.
-func (o *Options) context() (ipc.HookContext, bool) {
+// agent's process is headless (`claude -p` / `--print`, `agy -p`), which acmd
+// ignores.
+func (o *Options) context(agy bool) (ipc.HookContext, bool) {
 	hc := ipc.HookContext{HostSession: o.Getenv("ACMD_SESSION_ID")}
-	p, ok := findClaude(o.ParentPid, o.ProcInfo)
+	name, headless := "claude", IsHeadless
+	if agy {
+		name, headless = "agy", IsAgyHeadless
+	}
+	p, ok := findAgent(o.ParentPid, o.ProcInfo, name)
 	if !ok {
 		return hc, false
 	}
 	hc.ClaudePid = p.Pid
-	return hc, IsHeadless(p.Args)
+	return hc, headless(p.Args)
 }
 
-// findClaude walks up from pid to the nearest claude process (hooks run in
-// a shell started by claude).
-func findClaude(pid int, info func(int) (Proc, error)) (Proc, bool) {
+// findAgent walks up from pid to the nearest process named name (hooks run in
+// a shell started by the agent).
+func findAgent(pid int, info func(int) (Proc, error), name string) (Proc, bool) {
 	for i := 0; i < 8 && pid > 1; i++ {
 		p, err := info(pid)
 		if err != nil {
 			return Proc{}, false
 		}
-		if isClaude(p) {
+		if p.Comm == name || len(p.Args) > 0 && filepath.Base(p.Args[0]) == name {
 			return p, true
 		}
 		pid = p.PPid
 	}
 	return Proc{}, false
-}
-
-func isClaude(p Proc) bool {
-	if p.Comm == "claude" {
-		return true
-	}
-	return len(p.Args) > 0 && filepath.Base(p.Args[0]) == "claude"
 }
 
 // IsHeadless reports whether claude was started in print mode.
@@ -188,6 +193,33 @@ func IsHeadless(args []string) bool {
 		// Only exact flags: a heuristic for combined short flags (-dp) could
 		// misread a prompt argument and drop a real session.
 		if a == "-p" || a == "--print" || strings.HasPrefix(a, "--print=") {
+			return true
+		}
+	}
+	return false
+}
+
+// IsAgyHeadless reports whether agy was started in print mode: -p, --print,
+// or --prompt, its alias. -i takes the first prompt as its value, which may look
+// like a flag.
+func IsAgyHeadless(args []string) bool {
+	rest := args[min(1, len(args)):]
+	for i := 0; i < len(rest); i++ {
+		arg := rest[i]
+		if arg == "--" {
+			return false
+		}
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		// agy takes -flag and --flag alike.
+		name, _, hasValue := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(arg, "-"), "-"), "=")
+		switch name {
+		case "i", "prompt-interactive":
+			if !hasValue {
+				i++ // its value
+			}
+		case "p", "print", "prompt":
 			return true
 		}
 	}

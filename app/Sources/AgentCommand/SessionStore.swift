@@ -409,7 +409,7 @@ final class SessionStore {
         try? process.run()
     }
 
-    /// Starts a new session in a folder. harness is "claude" or "terminal". It's
+    /// Starts a new session in a folder. harness is "claude", "antigravity" or "terminal". It's
     /// selected, unless placed puts it somewhere itself.
     func newSession(harness: String, in folder: String, placed: ((Session) -> Void)? = nil) {
         struct New: Encodable {
@@ -453,7 +453,7 @@ final class SessionStore {
         } done: { _ in }
     }
 
-    /// Lists earlier Claude sessions that can be resumed. done gets an error
+    /// Lists earlier agent conversations (Claude's and Antigravity's) that can be resumed. done gets an error
     /// message when that fails.
     func loadConversations(done: @escaping ([Conversation], String?) -> Void) {
         calls.async {
@@ -467,14 +467,16 @@ final class SessionStore {
         }
     }
 
-    /// Continues an earlier conversation, by its id or an id prefix, and selects it.
-    func resumeConversation(_ id: String) {
+    /// Continues an earlier conversation of an agent's, by its id or an id prefix, and
+    /// selects it.
+    func resumeConversation(_ id: String, harness: Harness = .claude) {
         struct New: Encodable {
             let cwd: String
+            let harness: String
             let resume: String
         }
         run(failure: "Couldn't resume the session") { conn in
-            let session: Session = try conn.call("new", New(cwd: "", resume: id))
+            let session: Session = try conn.call("new", New(cwd: "", harness: harness.rawValue, resume: id))
             return session
         } done: { session in
             if !self.sessions.contains(session) { self.sessions.append(session) }

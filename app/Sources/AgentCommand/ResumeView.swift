@@ -1,53 +1,41 @@
 import SwiftUI
 
-/// Picks an earlier Claude session to continue, or takes its id.
+/// Picks an earlier Claude or Antigravity conversation to continue, or takes its id.
 struct ResumeView: View {
     let store: SessionStore
     let close: () -> Void
-    let choose: (_ id: String, _ isRunning: Bool) -> Void
+    let choose: (ResumeTarget) -> Void
 
-    @State private var conversations: [Conversation] = []
-    @State private var search = ""
-    @State private var selected = 0
+    @State private var choice = ResumeChoice()
     @State private var loading = true
     @State private var problem: String?
 
     private var theme: AppTheme { .shared }
 
-    private var matches: [Conversation] { conversations.filter { $0.matches(search) } }
-
-    /// What search holds, if it could be an id with nothing listed for it.
-    private var typedID: String? {
-        let text = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let isHex = !text.isEmpty && text.allSatisfy { $0.isHexDigit || $0 == "-" }
-        return matches.isEmpty && text.count >= 8 && isHex ? text : nil
-    }
-
     var body: some View {
-        let list = matches
+        let list = choice.rows
         PopupBox(
             title: "Resume a session",
             placeholder: "Search, or paste a session id",
-            search: $search,
+            search: Binding(get: { choice.search }, set: { choice.setSearch($0) }),
             close: close,
-            onMove: { delta in
-                if !list.isEmpty { selected = (selected + delta + list.count) % list.count }
-            },
-            onSubmit: { submit(list) }
+            onMove: { choice.move($0) },
+            onSubmit: {
+                if let row = choice.chosen { choose(row.target) }
+            }
         ) {
             rows(list)
         }
-        .onChange(of: search) { selected = 0 }
         .onAppear {
             store.loadConversations { found, error in
-                conversations = found
+                choice.conversations = found
                 problem = error
                 loading = false
             }
         }
     }
 
-    private func rows(_ list: [Conversation]) -> some View {
+    private func rows(_ list: [ResumeChoice.Row]) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -56,36 +44,72 @@ struct ResumeView: View {
                             .foregroundStyle(problem == nil ? theme.dim : theme.red)
                             .padding(.horizontal, 24)
                     }
-                    ForEach(list) { conversation in
-                        let index = list.firstIndex { $0.id == conversation.id } ?? 0
-                        ConversationRow(conversation: conversation, isSelected: index == selected)
-                            .id(conversation.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture { choose(conversation.id, conversation.isRunning) }
+                    ForEach(list) { row in
+                        let isSelected = row == choice.chosen
+                        Group {
+                            switch row {
+                            case .conversation(let conversation):
+                                ConversationRow(conversation: conversation, isSelected: isSelected)
+                            case .typed(_, let harness):
+                                TypedIDRow(harness: harness, isSelected: isSelected)
+                            }
+                        }
+                        .id(row.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture { choose(row.target) }
                     }
                 }
             }
             .frame(maxHeight: 520)
             .fixedSize(horizontal: false, vertical: true)
-            .onChange(of: selected) {
-                if list.indices.contains(selected) { proxy.scrollTo(list[selected].id) }
+            .onChange(of: choice.chosen) {
+                if let row = choice.chosen { proxy.scrollTo(row.id) }
             }
         }
     }
 
-    private func message(_ list: [Conversation]) -> String? {
+    private func message(_ list: [ResumeChoice.Row]) -> String? {
         if let problem { return problem }
         if loading { return "Loading…" }
-        guard list.isEmpty else { return nil }
-        return typedID == nil ? "No matching sessions" : "Press return to look up this id"
+        if choice.typedID != nil { return "Whose session is this id? Press return to look it up" }
+        return list.isEmpty ? "No matching sessions" : nil
     }
+}
 
-    private func submit(_ list: [Conversation]) {
-        if list.indices.contains(selected) {
-            choose(list[selected].id, list[selected].isRunning)
-        } else if let id = typedID {
-            choose(id, false)
+/// The agent's mark, in the row's colors.
+private struct HarnessMark: View {
+    let harness: Harness
+    let isSelected: Bool
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        let color = isSelected ? theme.bg : theme.fg
+        if harness == .antigravity {
+            AgentMark(mark: AntigravityMarkShape(), label: harness.title, color: color, busy: false)
+        } else {
+            AgentMark(mark: ClaudeMarkShape(), label: harness.title, color: color, busy: false)
         }
+    }
+}
+
+/// Looks the typed id up as one agent's.
+private struct TypedIDRow: View {
+    let harness: Harness
+    let isSelected: Bool
+    private var theme: AppTheme { .shared }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HarnessMark(harness: harness, isSelected: isSelected)
+            Text("As \(harness == .antigravity ? "an" : "a") \(harness.title) session")
+                .fontWeight(isSelected ? .bold : .regular)
+                .foregroundStyle(isSelected ? theme.bg : theme.fg)
+            Spacer(minLength: 12)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 19)
+        .background(isSelected ? theme.yellow : Color.clear)
+        .padding(.horizontal, 16)
     }
 }
 
@@ -97,7 +121,9 @@ private struct ConversationRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 8) {
+                HarnessMark(harness: conversation.harnessKind, isSelected: isSelected)
+                    .help(conversation.harnessKind.title)
                 Text(conversation.displayTitle)
                     .fontWeight(isSelected ? .bold : .regular)
                     .foregroundStyle(isSelected ? theme.bg : theme.fg)
@@ -118,6 +144,8 @@ private struct ConversationRow: View {
                 .foregroundStyle(isSelected ? theme.bg : theme.dim)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                // Under the title, past the mark.
+                .padding(.leading, 21)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)

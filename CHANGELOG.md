@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.57.0](https://github.com/brettmostert/agent-command/compare/v0.56.0...v0.57.0) (2026-11-17)
+
+
+### Features
+
+* warn when an installed agent's hooks aren't set up ([#68](https://github.com/brettmostert/agent-command/issues/68)) ([98ee0b4](https://github.com/brettmostert/agent-command/commit/98ee0b47822f3e76212eaeaa26209764b1e9866e))
+
 ## [0.56.0](https://github.com/brettmostert/agent-command/compare/v0.55.2...v0.56.0) (2026-11-17)
 
 

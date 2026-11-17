@@ -25,7 +25,7 @@ func (s *Store) AppendEvent(ctx context.Context, e LoggedEvent) error {
 	if e.At.IsZero() {
 		e.At = s.now()
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO events (at, session_id, claude_session_id, kind, detail, tool_name)
+	res, err := s.q.ExecContext(ctx, `INSERT INTO events (at, session_id, claude_session_id, kind, detail, tool_name)
 		VALUES (?,?,?,?,?,?)`, ms(e.At), e.SessionID, e.ClaudeSessionID, e.Kind, e.Detail, e.ToolName)
 	if err != nil {
 		return err
@@ -36,7 +36,7 @@ func (s *Store) AppendEvent(ctx context.Context, e LoggedEvent) error {
 	}
 	// Prune in batches: only when we're 10% over the cap.
 	if id%(MaxEvents/10) == 0 {
-		_, err = s.db.ExecContext(ctx, `DELETE FROM events WHERE id <= ?`, id-MaxEvents)
+		_, err = s.q.ExecContext(ctx, `DELETE FROM events WHERE id <= ?`, id-MaxEvents)
 	}
 	return err
 }
@@ -49,7 +49,7 @@ func (s *Store) RecentEvents(ctx context.Context, sessionID string, n int) ([]Lo
 		q += ` WHERE session_id = ?`
 		args = append(args, sessionID)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id DESC LIMIT ?`, append(args, n)...)
+	rows, err := s.q.QueryContext(ctx, q+` ORDER BY id DESC LIMIT ?`, append(args, n)...)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +70,6 @@ func (s *Store) RecentEvents(ctx context.Context, sessionID string, n int) ([]Lo
 // EventCount returns the number of logged events.
 func (s *Store) EventCount(ctx context.Context) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM events`).Scan(&n)
+	err := s.q.QueryRowContext(ctx, `SELECT count(*) FROM events`).Scan(&n)
 	return n, err
 }

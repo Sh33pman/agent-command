@@ -38,25 +38,20 @@ func (s *Store) AddInboxItem(ctx context.Context, it core.InboxItem) error {
 	if err != nil {
 		return err
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `UPDATE inbox_items SET state = ?, handled_at = ? WHERE session_id = ? AND state = ?`,
+			core.InboxStale, ms(s.now()), it.SessionID, core.InboxOpen); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO inbox_items (session_id, kind, text, options, multipart, at)
+		VALUES (?,?,?,?,?,?)`, it.SessionID, it.Kind, it.Text, string(options), b2i(it.Multipart), ms(it.At))
 		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `UPDATE inbox_items SET state = ?, handled_at = ? WHERE session_id = ? AND state = ?`,
-		core.InboxStale, ms(s.now()), it.SessionID, core.InboxOpen); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO inbox_items (session_id, kind, text, options, multipart, at)
-		VALUES (?,?,?,?,?,?)`, it.SessionID, it.Kind, it.Text, string(options), b2i(it.Multipart), ms(it.At)); err != nil {
-		return err
-	}
-	return tx.Commit()
+	})
 }
 
 // CloseInboxItems marks a session's open items as no longer relevant.
 func (s *Store) CloseInboxItems(ctx context.Context, sessionID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE inbox_items SET state = ?, handled_at = ? WHERE session_id = ? AND state = ?`,
+	_, err := s.q.ExecContext(ctx, `UPDATE inbox_items SET state = ?, handled_at = ? WHERE session_id = ? AND state = ?`,
 		core.InboxStale, ms(s.now()), sessionID, core.InboxOpen)
 	return err
 }
@@ -64,7 +59,7 @@ func (s *Store) CloseInboxItems(ctx context.Context, sessionID string) error {
 // CloseUnanswerableItems marks questions and permissions of stopped sessions as no
 // longer relevant: nothing is waiting for the answer. It reports whether any changed.
 func (s *Store) CloseUnanswerableItems(ctx context.Context) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE inbox_items SET state = ?, handled_at = ?
+	res, err := s.q.ExecContext(ctx, `UPDATE inbox_items SET state = ?, handled_at = ?
 		WHERE state = ? AND kind IN (?, ?) AND session_id IN (SELECT id FROM sessions WHERE status IN (?, ?))`,
 		core.InboxStale, ms(s.now()), core.InboxOpen, core.InboxQuestion, core.InboxPermission,
 		core.StatusPaused, core.StatusArchived)
@@ -77,7 +72,7 @@ func (s *Store) CloseUnanswerableItems(ctx context.Context) (bool, error) {
 
 // InboxItem returns one item.
 func (s *Store) InboxItem(ctx context.Context, id int64) (*core.InboxItem, error) {
-	it, err := scanInboxItem(s.db.QueryRowContext(ctx, `SELECT `+inboxCols+` FROM inbox_items WHERE id = ?`, id))
+	it, err := scanInboxItem(s.q.QueryRowContext(ctx, `SELECT `+inboxCols+` FROM inbox_items WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -102,7 +97,7 @@ func (s *Store) InboxHistory(ctx context.Context, sessionID string, limit int) (
 }
 
 func (s *Store) inboxItems(ctx context.Context, query string, args ...any) ([]core.InboxItem, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +116,7 @@ func (s *Store) inboxItems(ctx context.Context, query string, args ...any) ([]co
 // SetInboxRead marks items read or unread.
 func (s *Store) SetInboxRead(ctx context.Context, ids []int64, read bool) error {
 	for _, id := range ids {
-		if _, err := s.db.ExecContext(ctx, `UPDATE inbox_items SET read = ? WHERE id = ?`, b2i(read), id); err != nil {
+		if _, err := s.q.ExecContext(ctx, `UPDATE inbox_items SET read = ? WHERE id = ?`, b2i(read), id); err != nil {
 			return err
 		}
 	}
@@ -131,7 +126,7 @@ func (s *Store) SetInboxRead(ctx context.Context, ids []int64, read bool) error 
 // HandleInboxItem takes an open item out of the queue, as responded or dismissed. An
 // item already handled keeps what happened to it.
 func (s *Store) HandleInboxItem(ctx context.Context, id int64, state string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE inbox_items SET state = ?, read = 1, handled_at = ? WHERE id = ? AND state = ?`,
+	res, err := s.q.ExecContext(ctx, `UPDATE inbox_items SET state = ?, read = 1, handled_at = ? WHERE id = ? AND state = ?`,
 		state, ms(s.now()), id, core.InboxOpen)
 	if err != nil {
 		return err
@@ -144,6 +139,6 @@ func (s *Store) HandleInboxItem(ctx context.Context, id int64, state string) err
 
 // PruneInbox deletes items handled before the given time. Open items stay.
 func (s *Store) PruneInbox(ctx context.Context, before time.Time) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM inbox_items WHERE state <> ? AND handled_at < ?`, core.InboxOpen, ms(before))
+	_, err := s.q.ExecContext(ctx, `DELETE FROM inbox_items WHERE state <> ? AND handled_at < ?`, core.InboxOpen, ms(before))
 	return err
 }

@@ -43,6 +43,37 @@ type Store struct {
 	db   *sql.DB
 	path string
 	now  func() time.Time
+	// q runs the queries: db, or tx in a Store that WithTx hands out.
+	q  querier
+	tx *sql.Tx
+}
+
+// querier is what *sql.DB and *sql.Tx share.
+type querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// WithTx runs fn with a Store whose every read and write is in one
+// transaction, committed when fn returns nil and rolled back otherwise. Inside
+// fn, use only the Store it is given: the database has one connection, which
+// the transaction holds until it ends. Called on a Store that is already in a
+// transaction, fn joins it.
+func (s *Store) WithTx(ctx context.Context, fn func(*Store) error) error {
+	if s.tx != nil {
+		return fn(s)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	in := &Store{db: s.db, path: s.path, now: s.now, q: tx, tx: tx}
+	if err := fn(in); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 // Option configures Open.
@@ -68,7 +99,7 @@ func Open(ctx context.Context, dbPath string, opts ...Option) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s.db = db
+	s.db, s.q = db, db
 	if existed {
 		_ = os.Chmod(dbPath, 0o600)
 	}

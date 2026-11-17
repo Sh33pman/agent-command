@@ -27,7 +27,7 @@ func (s *Store) SaveJob(ctx context.Context, j *core.Job) error {
 	j.UpdatedAt = now
 	if j.ID == "" {
 		j.ID, j.CreatedAt, j.LastDue = NewID(), now, now
-		_, err = s.db.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (?,?,?,?,?,?,?,?)`,
+		_, err = s.q.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (?,?,?,?,?,?,?,?)`,
 			j.ID, string(spec), j.Cron, ms(j.Once), b2i(j.Paused), ms(j.CreatedAt), ms(j.UpdatedAt), ms(j.LastDue))
 		return err
 	}
@@ -48,7 +48,7 @@ func (s *Store) SaveJob(ctx context.Context, j *core.Job) error {
 
 // Job returns a job, with its last run.
 func (s *Store) Job(ctx context.Context, id string) (*core.Job, error) {
-	j, err := scanJob(s.db.QueryRowContext(ctx, `SELECT `+jobCols+` FROM jobs WHERE id = ?`, id))
+	j, err := scanJob(s.q.QueryRowContext(ctx, `SELECT `+jobCols+` FROM jobs WHERE id = ?`, id))
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (s *Store) Job(ctx context.Context, id string) (*core.Job, error) {
 
 // Jobs lists the jobs by name, each with its last run.
 func (s *Store) Jobs(ctx context.Context) ([]*core.Job, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+jobCols+` FROM jobs`)
+	rows, err := s.q.QueryContext(ctx, `SELECT `+jobCols+` FROM jobs`)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (s *Store) Jobs(ctx context.Context) ([]*core.Job, error) {
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	last, err := s.db.QueryContext(ctx, `SELECT `+runCols+` FROM job_runs
+	last, err := s.q.QueryContext(ctx, `SELECT `+runCols+` FROM job_runs
 		WHERE id IN (SELECT max(id) FROM job_runs GROUP BY job_id)`)
 	if err != nil {
 		return nil, err
@@ -111,13 +111,13 @@ func (s *Store) SetJobPaused(ctx context.Context, id string, paused bool) error 
 		q = `UPDATE jobs SET paused = 0, updated_at = ?, last_due = max(last_due, ?) WHERE id = ?`
 		args = []any{now, now, id}
 	}
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.q.ExecContext(ctx, q, args...)
 	return notFoundIfNone(res, err)
 }
 
 // DeleteJob deletes a job and its runs. The sessions its runs started stay.
 func (s *Store) DeleteJob(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, id)
+	res, err := s.q.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, id)
 	return notFoundIfNone(res, err)
 }
 
@@ -150,7 +150,7 @@ func (s *Store) JobRuns(ctx context.Context, jobID string, limit int) ([]core.Jo
 	if limit <= 0 {
 		limit = runsKept
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+runCols+` FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?`, jobID, limit)
+	rows, err := s.q.QueryContext(ctx, `SELECT `+runCols+` FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?`, jobID, limit)
 	if err != nil {
 		return nil, err
 	}

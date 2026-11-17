@@ -71,13 +71,13 @@ func (s *Store) UpdateSession(ctx context.Context, sess *core.Session) error {
 
 // Session returns the session with the given acmd id.
 func (s *Store) Session(ctx context.Context, id string) (*core.Session, error) {
-	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE id = ?`, id))
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE id = ?`, id))
 }
 
 // SessionByClaudeID finds the session that has (or had) this Claude session
 // id, so hooks from a /clear'ed or forked session still land on it.
 func (s *Store) SessionByClaudeID(ctx context.Context, claudeID string) (*core.Session, error) {
-	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionCols)+`
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionCols)+`
 		FROM claude_ids c JOIN sessions s ON s.id = c.session_id WHERE c.claude_session_id = ?`, claudeID))
 }
 
@@ -85,7 +85,7 @@ func (s *Store) SessionByClaudeID(ctx context.Context, claudeID string) (*core.S
 // been linked to its Claude session id yet. Claude's short id is the first
 // 8 characters of the session id (M0 A3), which links the first hook.
 func (s *Store) SessionByBgID(ctx context.Context, bgID string) (*core.Session, error) {
-	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions
 		WHERE bg_id = ? AND claude_session_id = '' ORDER BY created_at DESC LIMIT 1`, bgID))
 }
 
@@ -95,7 +95,7 @@ func (s *Store) SessionByClaudePrefix(ctx context.Context, prefix string) (*core
 	if prefix == "" {
 		return nil, ErrNotFound
 	}
-	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionCols)+`
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionCols)+`
 		FROM claude_ids c JOIN sessions s ON s.id = c.session_id
 		WHERE substr(c.claude_session_id, 1, length(?)) = ? ORDER BY s.created_at DESC LIMIT 1`, prefix, prefix))
 }
@@ -106,7 +106,7 @@ func (s *Store) Sessions(ctx context.Context, includeArchived bool) ([]*core.Ses
 	if !includeArchived {
 		q += ` WHERE archived_at = 0`
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY created_at, id`)
+	rows, err := s.q.QueryContext(ctx, q+` ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (s *Store) Sessions(ctx context.Context, includeArchived bool) ([]*core.Ses
 
 // DeleteSession permanently removes a session (`acmd purge`).
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+	res, err := s.q.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -247,7 +247,11 @@ func prefixed(alias, cols string) string {
 	return strings.Join(parts, ", ")
 }
 
+// inTx runs fn in a transaction: the Store's own, when it is in one.
 func (s *Store) inTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	if s.tx != nil {
+		return fn(s.tx)
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

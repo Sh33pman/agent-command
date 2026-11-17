@@ -51,12 +51,12 @@ func (s *Store) CreateGroup(ctx context.Context, name, color string) (*core.Grou
 
 // Group returns a group by id.
 func (s *Store) Group(ctx context.Context, id string) (*core.Group, error) {
-	return scanGroup(s.db.QueryRowContext(ctx, `SELECT `+groupCols+` FROM groups WHERE id = ?`, id))
+	return scanGroup(s.q.QueryRowContext(ctx, `SELECT `+groupCols+` FROM groups WHERE id = ?`, id))
 }
 
 // GroupByName finds a non-archived group by name, case-insensitively.
 func (s *Store) GroupByName(ctx context.Context, name string) (*core.Group, error) {
-	return scanGroup(s.db.QueryRowContext(ctx, `SELECT `+groupCols+` FROM groups
+	return scanGroup(s.q.QueryRowContext(ctx, `SELECT `+groupCols+` FROM groups
 		WHERE lower(name) = lower(?) AND archived_at = 0`, strings.TrimSpace(name)))
 }
 
@@ -66,7 +66,7 @@ func (s *Store) Groups(ctx context.Context, includeArchived bool) ([]*core.Group
 	if !includeArchived {
 		q += ` WHERE archived_at = 0`
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY is_default, sort_key, created_at`)
+	rows, err := s.q.QueryContext(ctx, q+` ORDER BY is_default, sort_key, created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (s *Store) updateNonDefault(ctx context.Context, id, q string, args ...any)
 }
 
 func (s *Store) exec1(ctx context.Context, q string, args ...any) error {
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.q.ExecContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}

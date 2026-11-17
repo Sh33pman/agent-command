@@ -409,24 +409,33 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	if tr.Changed() && tr.To.NeedsAttention() {
 		sess.Unseen = true
 	}
-	if isNew {
-		err = d.store.CreateSession(ctx, sess)
-	} else if tr.Applied {
-		err = d.store.UpdateSession(ctx, sess)
-	}
+	// The session, its Inbox and the event log change together, or not at all:
+	// a crash in between would leave a status and an Inbox that disagree.
+	err = d.store.WithTx(ctx, func(st *store.Store) error {
+		if isNew {
+			if err := st.CreateSession(ctx, sess); err != nil {
+				return err
+			}
+		} else if tr.Applied {
+			if err := st.UpdateSession(ctx, sess); err != nil {
+				return err
+			}
+		}
+		if tr.Applied { // not a stale event
+			if err := applyInbox(ctx, st, sess, e); err != nil {
+				return err
+			}
+		}
+		return st.AppendEvent(ctx, store.LoggedEvent{
+			At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
+			Detail: string(sess.Status), ToolName: e.ToolName,
+		})
+	})
 	if err != nil {
 		return err
 	}
-	d.transition(sess, tr)
-	if tr.Applied { // not a stale event
-		if err := d.applyInbox(ctx, sess, e); err != nil {
-			return err
-		}
-	}
-	return d.store.AppendEvent(ctx, store.LoggedEvent{
-		At: e.Time, SessionID: sess.ID, ClaudeSessionID: e.SessionID, Kind: string(e.Kind),
-		Detail: string(sess.Status), ToolName: e.ToolName,
-	})
+	d.transition(sess, tr) // after the commit: a notice for a change that was saved
+	return nil
 }
 
 // hostedSessionOf is the session a hook's agent runs in, if it names one. This holds
@@ -553,20 +562,23 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 		if !tr.Changed() {
 			continue
 		}
-		d.transition(s, tr)
-		// A permission denied or a question left in the session isn't waiting any more.
-		if err := d.applyInbox(ctx, s, e); err != nil {
-			return changed, err
-		}
 		s.Unseen = true
+		err = d.store.WithTx(ctx, func(st *store.Store) error {
+			// A permission denied or a question left in the session isn't waiting any more.
+			if err := applyInbox(ctx, st, s, e); err != nil {
+				return err
+			}
+			if err := st.UpdateSession(ctx, s); err != nil {
+				return err
+			}
+			return st.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID, ClaudeSessionID: s.ClaudeSessionID,
+				Kind: string(core.EventInterrupted), Detail: string(s.Status)})
+		})
+		if err != nil {
+			return changed, err
+		}
 		changed = true
-		if err := d.store.UpdateSession(ctx, s); err != nil {
-			return changed, err
-		}
-		if err := d.store.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID, ClaudeSessionID: s.ClaudeSessionID,
-			Kind: string(core.EventInterrupted), Detail: string(s.Status)}); err != nil {
-			return changed, err
-		}
+		d.transition(s, tr)
 	}
 	return changed, nil
 }

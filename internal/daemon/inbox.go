@@ -24,13 +24,15 @@ const inboxHistoryLimit = 500
 const pasteEnterDelay = 300 * time.Millisecond
 
 // applyInbox updates the inbox for event e of session s (d.mu is held).
-func (d *Daemon) applyInbox(ctx context.Context, s *core.Session, e core.Event) error {
+// applyInbox opens or closes s's Inbox item for e. st is the store to write to:
+// the transaction its caller applies the event in.
+func applyInbox(ctx context.Context, st *store.Store, s *core.Session, e core.Event) error {
 	item, drop := core.InboxEffect(s, e)
 	switch {
 	case item != nil:
-		return d.store.AddInboxItem(ctx, *item)
+		return st.AddInboxItem(ctx, *item)
 	case drop:
-		return d.store.CloseInboxItems(ctx, s.ID)
+		return st.CloseInboxItems(ctx, s.ID)
 	}
 	return nil
 }

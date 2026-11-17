@@ -69,18 +69,21 @@ func (d *Daemon) frontOnce(ctx context.Context) (bool, error) {
 		if !tr.Changed() {
 			continue
 		}
-		d.transition(s, tr)
-		if err := d.applyInbox(ctx, s, e); err != nil {
+		err = d.store.WithTx(ctx, func(st *store.Store) error {
+			if err := applyInbox(ctx, st, s, e); err != nil {
+				return err
+			}
+			if err := st.UpdateSession(ctx, s); err != nil {
+				return err
+			}
+			return st.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID,
+				Kind: string(core.EventForeground), Detail: string(s.Status) + " " + e.Front})
+		})
+		if err != nil {
 			return changed, err
 		}
 		changed = true
-		if err := d.store.UpdateSession(ctx, s); err != nil {
-			return changed, err
-		}
-		if err := d.store.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID,
-			Kind: string(core.EventForeground), Detail: string(s.Status) + " " + e.Front}); err != nil {
-			return changed, err
-		}
+		d.transition(s, tr)
 	}
 	return changed, nil
 }

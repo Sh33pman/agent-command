@@ -12,7 +12,7 @@ import (
 // ViewState returns the shared view state, with defaults if never saved.
 func (s *Store) ViewState(ctx context.Context) (core.ViewState, error) {
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT state FROM view_state WHERE id = 1`).Scan(&raw)
+	err := s.q.QueryRowContext(ctx, `SELECT state FROM view_state WHERE id = 1`).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.ViewState{Mode: "groups", Sort: "created"}, nil
 	}
@@ -32,7 +32,7 @@ func (s *Store) PutViewState(ctx context.Context, vs core.ViewState) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO view_state (id, state) VALUES (1, ?)
+	_, err = s.q.ExecContext(ctx, `INSERT INTO view_state (id, state) VALUES (1, ?)
 		ON CONFLICT (id) DO UPDATE SET state = excluded.state`, string(b))
 	return err
 }
@@ -40,7 +40,7 @@ func (s *Store) PutViewState(ctx context.Context, vs core.ViewState) error {
 // AppState returns a value the app stored ("" if there is none).
 func (s *Store) AppState(ctx context.Context, key string) (string, error) {
 	var value string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
+	err := s.q.QueryRowContext(ctx, `SELECT value FROM app_state WHERE key = ?`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -49,7 +49,7 @@ func (s *Store) AppState(ctx context.Context, key string) (string, error) {
 
 // SetAppState stores a value for the app.
 func (s *Store) SetAppState(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO app_state (key, value) VALUES (?, ?)
+	_, err := s.q.ExecContext(ctx, `INSERT INTO app_state (key, value) VALUES (?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }

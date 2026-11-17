@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.55.1](https://github.com/brettmostert/agent-command/compare/v0.55.0...v0.55.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **daemon:** don't hold the daemon's lock while claude agents runs ([#59](https://github.com/brettmostert/agent-command/issues/59)) ([eeff130](https://github.com/brettmostert/agent-command/commit/eeff130adfeae9d04f81cbc132c57c2479f24dc2))
+* **host:** a pane that stops reading no longer pauses the session ([#60](https://github.com/brettmostert/agent-command/issues/60)) ([bbe2e8b](https://github.com/brettmostert/agent-command/commit/bbe2e8be64acab43b3e3f1b46610b90e0c6de6d0))
+
 ## [0.55.0](https://github.com/brettmostert/agent-command/compare/v0.54.3...v0.55.0) (2026-11-15)
 
 

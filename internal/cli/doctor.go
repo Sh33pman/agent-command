@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -33,7 +34,7 @@ var versionOutput = func(ctx context.Context, name string, args ...string) ([]by
 }
 
 func newDoctorCmd() *cobra.Command {
-	var fix bool
+	var fix, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check acmd's setup, Claude Code and the daemon, and show how to fix problems",
@@ -52,6 +53,18 @@ func newDoctorCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if asJSON {
+				// For the app: each agent, whether it's installed, and what's wrong
+				// with its hooks. It always succeeds: the problems are the answer.
+				b, err := json.MarshalIndent(struct {
+					Agents []doctor.AgentHooks `json:"agents"`
+				}{doctor.Agents(cmd.Context(), env)}, "", "  ")
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				return err
+			}
 			report := doctor.Run(cmd.Context(), env)
 			report.Write(cmd.OutOrStdout())
 			if report.Count(doctor.Fail) > 0 {
@@ -61,6 +74,7 @@ func newDoctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&fix, "fix", false, "fix what it can: re-add the hooks and replace a stale daemon")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print each agent's hook setup as JSON: installed, and its problems")
 	return cmd
 }
 

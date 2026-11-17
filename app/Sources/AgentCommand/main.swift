@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var popupReturn: (cursor: String?, marks: Set<String>)?
     private let sidebarKeys = SidebarKeyView()
     private let notifier = AppNotifier()
+    private let hookHealth = HookHealth()
     private var inbox: InboxModel?
     private var scheduled: ScheduledModel?
     private lazy var popupWindow = PopupController(store: store)
@@ -126,11 +127,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         notifier.isLooking = { [weak store] id in store?.isInMainWindow == true && store?.visibleIDs.contains(id) == true }
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
         notifier.moreWarnings = { [weak store, weak self] in
-            guard let store, let advice = WakeAdvice.check(store.wake, jobs: store.jobs) else { return [] }
-            return [AppWarning(
-                id: "wake", title: advice.title, detail: advice.detail,
-                fix: "Turn on waking the Mac: macOS asks for your password once.",
-                actionTitle: advice.actionTitle, action: { self?.turnWakeOn(advice.args) })]
+            var list: [AppWarning] = []
+            if let store, let advice = WakeAdvice.check(store.wake, jobs: store.jobs) {
+                list.append(AppWarning(
+                    id: "wake", title: advice.title, detail: advice.detail,
+                    fix: "Turn on waking the Mac: macOS asks for your password once.",
+                    actionTitle: advice.actionTitle, action: { self?.turnWakeOn(advice.args) }))
+            }
+            if let self { list += hookHealth.warnings(setUp: { [weak self] in self?.setUpHooks() }) }
+            return list
         }
         notifier.start()
         store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
@@ -138,6 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         SpeechController.shared.checkSetup()
         let args = CommandLine.arguments
         offerSetup()
+        hookHealth.start()
         store.start()
 
         NSApp.mainMenu = makeMenu()
@@ -185,6 +191,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// Offers to add the hooks that live status needs (Claude Code's, and agy's once
     /// it's installed), if they're missing.
+    /// Runs `acmd init` for a hooks warning, then checks again so it goes away.
+    private func setUpHooks() {
+        Acmd.run(["init"]) { [weak self] ok, output in
+            if !ok {
+                let failed = NSAlert()
+                failed.messageText = "Setup didn't finish"
+                failed.informativeText = output.isEmpty ? "Run \(DaemonPaths.acmd) init in a terminal to see why." : output
+                failed.runModal()
+            }
+            self?.hookHealth.check(force: true)
+        }
+    }
+
     private func offerSetup() {
         let need = DaemonPaths.setupNeed
         switch need {
@@ -1118,6 +1137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        hookHealth.check() // a fix or an install made elsewhere shows on coming back
         popupWindow.appBecameActive()
         notifier.refreshPermission()
         GhosttyRuntime.shared.setFocus(true)

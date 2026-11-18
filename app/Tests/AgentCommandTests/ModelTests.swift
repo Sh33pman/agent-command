@@ -28,6 +28,17 @@ import Testing
     #expect(item.text.isEmpty && item.options.isEmpty && !item.multipart && !item.read)
 }
 
+@Test func aSessionDecodesItsRemoteFlag() throws {
+    #expect(try makeSession(id: "old").remote == nil, "older daemons don't send it")
+    #expect(try !makeSession(id: "old").isRemote)
+    for on in [true, false] {
+        let fields: [String: Any] = ["ID": "r", "Name": "r", "Cwd": "/", "Status": "busy", "Kind": "hosted", "Unseen": false,
+                                     "Harness": "claude", "ClaudeSessionID": "", "Remote": on]
+        let decoded = try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
+        #expect(decoded.isRemote == on)
+    }
+}
+
 @Test func aSessionKnowsWhatItIs() throws {
     let terminal = try makeSession(id: "t", harness: "terminal", status: "running")
     #expect(terminal.isTerminal && !terminal.isAgent && !terminal.isStopped)

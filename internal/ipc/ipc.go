@@ -142,6 +142,7 @@ const (
 	MutInboxRead      = "inbox.read"        // ItemIDs, Flag = read (else unread)
 	MutInboxDismiss   = "inbox.dismiss"     // ItemIDs: take them out of the queue
 	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
+	MutRemote         = "session.remote"    // ID, Flag = Remote: clients of Hosting may see and use it
 )
 
 // Mutation is one change requested by a client.
@@ -200,6 +201,9 @@ type NewRequest struct {
 	Args        []string `json:"args,omitempty"`
 	Prompt      string   `json:"prompt,omitempty"`
 	ShowIn      string   `json:"show_in,omitempty"`
+	// Remote makes it a Remote session, or not. nil (as from ⌘N) is the
+	// config's [remote] new_sessions_remote.
+	Remote *bool `json:"remote,omitempty"`
 }
 
 // Layout is the app's pane layout. It belongs to the app: the daemon only keeps
@@ -268,6 +272,8 @@ type Status struct {
 	Pid      int    `json:"pid"`
 	Sessions int    `json:"sessions"`
 	Events   int    `json:"events"`
+	// RemoteSessions counts the Remote sessions that aren't archived.
+	RemoteSessions int `json:"remote_sessions,omitempty"`
 }
 
 // RemoteError is an error the daemon reported (the connection is fine).

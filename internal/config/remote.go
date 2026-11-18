@@ -10,7 +10,8 @@ import (
 )
 
 // Remote is the [remote] section: Remote sessions, used from another acmd.
-// Nothing reads it yet beyond Validate; Hosting and Remote hosts build on it.
+// New sessions read NewSessionsRemote, and doctor and `acmd remote sessions`
+// read Host.Enabled; Hosting and Remote hosts build on the rest.
 type Remote struct {
 	// NewSessionsRemote is ⌘N's default for a new session's Remote checkbox.
 	NewSessionsRemote bool               `toml:"new_sessions_remote"`

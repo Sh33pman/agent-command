@@ -161,7 +161,7 @@ func TestSessionRoundTrip(t *testing.T) {
 		Name: "fix flaky e2e", Description: "PROJ-123", Cwd: "/w/api",
 		ClaudeSessionID: "c3", ClaudeHistory: []string{"c1", "c2"}, TranscriptPath: "/t/c3.jsonl",
 		Status: core.StatusWaiting, StatusDetail: "question", Unseen: true,
-		Kind: core.KindExternal, BgID: "", Pid: 4242,
+		Kind: core.KindExternal, BgID: "", Pid: 4242, Remote: true,
 		External:    &core.PaneLoc{Terminal: "kitty", KittySocket: "/tmp/k", KittyWindow: 7, TTY: "ttys010"},
 		LastEventAt: time.UnixMilli(1793380000123).UTC(),
 	}
@@ -191,7 +191,7 @@ func TestSessionRoundTrip(t *testing.T) {
 	// Update: new Claude id after /clear, archived.
 	in.ClaudeHistory = append(in.ClaudeHistory, in.ClaudeSessionID)
 	in.ClaudeSessionID = "c4"
-	in.Status, in.External = core.StatusArchived, nil
+	in.Status, in.External, in.Remote = core.StatusArchived, nil, false
 	in.ArchivedAt = time.UnixMilli(1793390000000).UTC()
 	if err := s.UpdateSession(ctx, in); err != nil {
 		t.Fatal(err)
@@ -588,5 +588,52 @@ func TestOpenDeletesBackupsOlderThan30Days(t *testing.T) {
 		if _, err := os.Stat(f); (err == nil) != want {
 			t.Errorf("%s: kept = %v, want %v", filepath.Base(f), err == nil, want)
 		}
+	}
+}
+
+// A store from before Remote sessions keeps its sessions, all of them local,
+// and they can be made Remote after the upgrade.
+func TestRemoteMigration(t *testing.T) {
+	orig := migrations
+	t.Cleanup(func() { migrations = orig })
+	migrations = func() ([]migration, error) {
+		ms, err := orig()
+		var before []migration
+		for _, m := range ms {
+			if m.name < "0008" {
+				before = append(before, m)
+			}
+		}
+		return before, err
+	}
+	p := filepath.Join(t.TempDir(), "state.db")
+	old, err := Open(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.db.ExecContext(ctx, `INSERT INTO sessions (id, name, description, group_id, name_source, cwd,
+		claude_session_id, claude_history, transcript_path, status, status_detail, unseen, kind, bg_id, pid, external,
+		created_at, last_event_at, archived_at, harness) VALUES ('old', 'old', '', ?, 'auto', '/w', '', '[]', '',
+		'running', '', 0, 'hosted', '', 0, '', 1, 0, 0, 'terminal')`, DefaultGroupID); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+
+	migrations = orig
+	s, err := Open(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err := s.Session(ctx, "old")
+	if err != nil || got.Remote {
+		t.Fatalf("old session after the upgrade: %+v, %v", got, err)
+	}
+	got.Remote = true
+	if err := s.UpdateSession(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Session(ctx, "old"); err != nil || !got.Remote {
+		t.Errorf("made Remote: %+v, %v", got, err)
 	}
 }

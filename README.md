@@ -23,6 +23,7 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 - **Resume** an earlier Claude conversation by ID or from a list.
 - **Command popup** and a live **theme picker**, using Ghostty's themes.
 - **Agent Remote Control:** when it's on, every Claude and Antigravity session starts with `--remote-control`, so you can use it from claude.ai, the Claude app or Antigravity. Turn it on in Settings or with `acmd agent-remote-control on` (it was `acmd remote-control`, and the `remote_control` setting is now `agent_remote_control`).
+- **Remote sessions** (in progress): mark a session Remote so another Agent Command can use it, once Hosting arrives. `acmd remote on|off <session>` changes it, `acmd remote sessions` lists them, and `acmd new --remote` or `--no-remote` sets it for a new session (`new_sessions_remote` under `[remote]` in the config is the default). `acmd doctor` warns when sessions are Remote but Hosting is off.
 - **Report a bug or request a feature** from the Help menu or the command popup. It opens a filled-in GitHub issue in your browser for you to submit. A bug report can include the last 200 lines of the daemon log, with secrets, your account name and your home folder taken out, and you see what will be included first.
 - `acmd` brings up the app, or its window if it's already running. `acmd --new-instance` starts another copy, and its subcommands list and manage sessions.
 

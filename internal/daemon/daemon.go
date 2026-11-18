@@ -88,6 +88,8 @@ type Config struct {
 	AgentHelp func(harness string) string
 	// Waker sets the Mac's wakes for jobs (wake.Mac); nil: jobs don't wake it.
 	Waker wake.Waker
+	// OnRemoteChanged, when set, is subscribed to Daemon.OnRemoteChanged from the start.
+	OnRemoteChanged func(RemoteChange)
 }
 
 // Daemon is a running daemon.
@@ -111,6 +113,8 @@ type Daemon struct {
 	agentSeen  map[string]uint64    // agentstate.go: the last OSC 7501 report applied, per session
 
 	wake waking // wake.go
+
+	remoteHooks remoteHooks // remote.go
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks
@@ -189,6 +193,9 @@ func Run(ctx context.Context, cfg Config) error {
 	_ = os.Remove(cfg.Paths.OldPopupLock())
 	if cfg.Notify != nil {
 		d.notify = newNotifier(*cfg.Notify)
+	}
+	if cfg.OnRemoteChanged != nil {
+		d.OnRemoteChanged(cfg.OnRemoteChanged)
 	}
 	d.mu.Lock()
 	d.refreshNotify()
@@ -383,7 +390,8 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return ipc.Status{Version: d.cfg.Version, Pid: os.Getpid(), Sessions: len(sessions), Events: events}, nil
+		return ipc.Status{Version: d.cfg.Version, Pid: os.Getpid(), Sessions: len(sessions), Events: events,
+			RemoteSessions: remoteCount(sessions)}, nil
 	default:
 		return nil, fmt.Errorf("unknown op %q", req.Op)
 	}

@@ -129,10 +129,12 @@ type Session struct {
 	Harness         string // HarnessClaude, HarnessTerminal or HarnessAntigravity
 	BgID            string
 	Pid             int
-	External        *PaneLoc
-	CreatedAt       time.Time
-	LastEventAt     time.Time
-	ArchivedAt      time.Time
+	// Remote: clients of this acmd's Hosting may see and use it (Remote sessions).
+	Remote      bool
+	External    *PaneLoc
+	CreatedAt   time.Time
+	LastEventAt time.Time
+	ArchivedAt  time.Time
 }
 
 // Group is a session group.

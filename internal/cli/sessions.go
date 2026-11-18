@@ -151,6 +151,7 @@ type jsonRow struct {
 	Status          string `json:"status"`
 	StatusDetail    string `json:"status_detail,omitempty"`
 	Unseen          bool   `json:"unseen,omitempty"`
+	Remote          bool   `json:"remote,omitempty"`
 	Group           string `json:"group"`
 	Cwd             string `json:"cwd"`
 	Kind            string `json:"kind"`
@@ -165,7 +166,7 @@ func writeListJSON(w io.Writer, rows []listRow) error {
 	for _, r := range rows {
 		s := r.Session
 		j := jsonRow{Number: r.Number, ID: s.ID, Name: s.Name, Description: s.Description, Status: string(s.Status),
-			StatusDetail: s.StatusDetail, Unseen: s.Unseen, Group: r.Group.Name, Cwd: s.Cwd, Kind: string(s.Kind),
+			StatusDetail: s.StatusDetail, Unseen: s.Unseen, Remote: s.Remote, Group: r.Group.Name, Cwd: s.Cwd, Kind: string(s.Kind),
 			Where: where(s), BgID: s.BgID, ClaudeSessionID: s.ClaudeSessionID}
 		if !s.LastEventAt.IsZero() {
 			j.LastEventAt = s.LastEventAt.UTC().Format(time.RFC3339)

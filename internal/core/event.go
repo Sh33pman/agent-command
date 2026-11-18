@@ -48,6 +48,9 @@ const (
 	EventFinished EventKind = "acmd:finished"
 	// EventForeground: a terminal's host said what runs in front (Event.Front).
 	EventForeground EventKind = "acmd:foreground"
+	// EventRemote: the user turned a session's Remote flag on or off. It's
+	// only logged (Detail "on" or "off"): the state machine ignores it.
+	EventRemote EventKind = "acmd:remote"
 )
 
 // FrontShell is Event.Front when the terminal's own shell is in front.

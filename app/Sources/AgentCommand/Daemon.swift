@@ -188,12 +188,17 @@ struct Session: Decodable, Identifiable, Equatable {
     /// What it's doing or waiting on, such as "Bash" or "permission: Write".
     var statusDetail: String?
     var description: String?
+    /// Clients of this Mac's Hosting may see and use it (a Remote session).
+    /// Older daemons don't send it: nil, a local session.
+    var remote: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
         case harness = "Harness", claudeSessionID = "ClaudeSessionID"
-        case statusDetail = "StatusDetail", description = "Description"
+        case statusDetail = "StatusDetail", description = "Description", remote = "Remote"
     }
+
+    var isRemote: Bool { remote == true }
 
     /// The status with its detail, as "waiting · permission: Write".
     var statusLine: String {

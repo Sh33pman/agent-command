@@ -26,6 +26,7 @@ func newRemoteCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newRemoteIdentityCmd())
+	cmd.AddCommand(remoteSessionCmds()...)
 	return cmd
 }
 

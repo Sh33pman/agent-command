@@ -472,6 +472,7 @@ func checkDaemon(ctx context.Context, r *Report, e Env) {
 		r.add(secDaemon, Info, "", "not running (it starts with the first session or command)")
 	default:
 		r.add(secDaemon, OK, "", "running (pid %d): %s, %s recorded", d.Status.Pid, plural(d.Status.Sessions, "session"), plural(d.Status.Events, "event"))
+		checkRemote(r, e, d.Status.RemoteSessions)
 	}
 }
 
@@ -493,6 +494,25 @@ func checkIdentity(r *Report, e Env) {
 	default:
 		r.add(secRemote, OK, "", "identity %s (%s)", id.Fingerprint(), id.CommonName)
 	}
+}
+
+// checkRemote warns about Remote sessions that no client can reach, because
+// Hosting is off.
+func checkRemote(r *Report, e Env, remote int) {
+	if remote == 0 {
+		return
+	}
+	cfg, err := config.Load(e.Paths.Config())
+	if err != nil {
+		return // checkAcmd reports a config that doesn't load
+	}
+	if !cfg.Remote.Host.Enabled {
+		r.add(secRemote, Warn, "set enabled = true under [remote.host] in "+setup.Tilde(e.Paths.Config(), e.Home)+
+			", or make them local with acmd remote off <session>",
+			"%s marked Remote, but Hosting is off: no client can reach them", plural(remote, "session"))
+		return
+	}
+	r.add(secRemote, OK, "", "%s, Hosting on at %s", plural(remote, "Remote session"), cfg.Remote.Host.BindAddress())
 }
 
 // checkPlan reports anything `acmd init` would still change: the catch-all

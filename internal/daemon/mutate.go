@@ -53,6 +53,9 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 
 // mutate applies one client change. It returns a value for group.create.
 func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
+	if m.Kind == ipc.MutRemote { // takes d.mu itself: its subscribers run without it
+		return nil, d.setRemote(ctx, m.ID, m.Flag)
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	st := d.store

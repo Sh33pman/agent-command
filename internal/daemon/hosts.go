@@ -47,8 +47,10 @@ func newUUID() string {
 // hostSession records a new hosted session and starts its host. Claude's
 // session id is chosen here, so its hooks find the row from the first one.
 func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
+	remote := d.newSessionsRemote(req.Remote)
 	d.mu.Lock()
-	s := &core.Session{Kind: core.KindHosted, Cwd: req.Cwd, Harness: req.Harness, CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto}
+	s := &core.Session{Kind: core.KindHosted, Cwd: req.Cwd, Harness: req.Harness, CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto,
+		Remote: remote}
 	switch {
 	case req.Resume != "":
 		s.ClaudeSessionID = req.Resume

@@ -34,10 +34,14 @@ type newOptions struct {
 	description string
 	prompt      string
 	harness     string
+	remote      *bool // nil: [remote] new_sessions_remote
 }
 
 func newNewCmd() *cobra.Command {
-	var o newOptions
+	var (
+		o                newOptions
+		remote, noRemote bool
+	)
 	cmd := &cobra.Command{
 		Use:   "new [-- <first prompt>]",
 		Short: "Start a new session hosted by acmd (default_harness, else Claude, unless --harness says otherwise)",
@@ -45,8 +49,14 @@ func newNewCmd() *cobra.Command {
 			"A folder Claude hasn't trusted yet shows Claude's trust prompt in the session.\n" +
 			"Without --harness it starts default_harness from acmd's config, or Claude when that isn't set.\n" +
 			"--harness antigravity starts Antigravity's CLI (agy) instead, and --harness terminal a shell.\n" +
-			"claude_args (or agy_args) in acmd's config are added to the agent's arguments.",
+			"claude_args (or agy_args) in acmd's config are added to the agent's arguments.\n" +
+			"--remote makes it a Remote session (clients of Hosting can use it), --no-remote a local one;\n" +
+			"without either, [remote] new_sessions_remote in acmd's config decides.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			if o.remote, err = remoteFlag(remote, noRemote); err != nil {
+				return err
+			}
 			switch o.harness {
 			case "", core.HarnessClaude, core.HarnessAntigravity, core.HarnessTerminal:
 			default:
@@ -71,6 +81,8 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&o.name, "name", "", "session name (default: the agent's)")
 	f.StringVar(&o.description, "description", "", "session description")
 	f.StringVar(&o.harness, "harness", "", "what runs in it: claude, antigravity or terminal (default: default_harness, else claude)")
+	f.BoolVar(&remote, "remote", false, "make it a Remote session (default: [remote] new_sessions_remote)")
+	f.BoolVar(&noRemote, "no-remote", false, "make it a local session, not Remote")
 	return cmd
 }
 
@@ -94,7 +106,7 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 	}
 	var s core.Session
 	err = withClient(ctx, func(c *client, snap ipc.Snapshot) error {
-		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Prompt: o.prompt, Harness: o.harness}
+		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Prompt: o.prompt, Harness: o.harness, Remote: o.remote}
 		if o.group != "" {
 			g, err := resolveGroup(snap, o.group)
 			if err != nil && o.noCreate {

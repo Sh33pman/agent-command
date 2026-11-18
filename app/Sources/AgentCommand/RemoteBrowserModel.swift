@@ -2,8 +2,8 @@ import AppKit
 import Observation
 
 /// The Remote Hosts browser: your known hosts and their state on the left, and
-/// the chosen host's Remote sessions on the right, to open, add, or start one
-/// on. Everything comes through the daemon (RemoteHostsClient).
+/// the chosen host's Remote sessions on the right, to open, add, remove from
+/// this Mac, or start one on. Everything comes through the daemon (RemoteHostsClient).
 @Observable final class RemoteBrowserModel {
     enum Panel { case hosts, sessions }
 
@@ -21,6 +21,8 @@ import Observation
     private(set) var error: String?
     /// The sessions being added, by their id on the host.
     private(set) var adding: Set<String> = []
+    /// The sessions being removed from this Mac, by their id on the host.
+    private(set) var removing: Set<String> = []
     private(set) var retrying: Set<String> = []
     @ObservationIgnored private var monitor: Any?
     /// Whether a key is the browser's: not one typed in another window.
@@ -145,14 +147,30 @@ import Observation
         }
     }
 
+    /// Takes an added session off this Mac. The host keeps it, so it can be added again.
+    func remove(_ session: RemoteSession) {
+        guard session.added, !session.localID.isEmpty, !removing.contains(session.id) else { return }
+        removing.insert(session.id)
+        client.removeSession(session.localID) { [weak self] failure in
+            guard let self else { return }
+            self.removing.remove(session.id)
+            if let failure { return self.error = errorText(failure) }
+            if let i = self.sessions.firstIndex(where: { $0.id == session.id }) {
+                self.sessions[i].added = false
+                self.sessions[i].localID = ""
+            }
+        }
+    }
+
     // MARK: Keys
 
     /// The browser's keys, like the Inbox's: the arrows (or ⌃J ⌃K) move, left
     /// and right go between hosts and sessions, return opens, escape goes back.
-    /// a adds, n starts a session on the host, r retries and c copies its fingerprint.
+    /// a adds, Remove from This Mac's shortcut removes, n starts a session on the
+    /// host, r retries and c copies its fingerprint.
     func handle(_ combo: KeyCombo) -> Bool {
         let keys = Keymap.shared
-        switch keys.action(for: combo, among: [.up, .down, .left, .right, .open, .back, .closePane]) {
+        switch keys.action(for: combo, among: [.up, .down, .left, .right, .open, .back, .closePane, .removeAdded]) {
         case .up: move(-1)
         case .down: move(1)
         case .left: panel = .hosts
@@ -166,6 +184,7 @@ import Observation
         case .back:
             if panel == .sessions { panel = .hosts } else { close() }
         case .closePane: close()
+        case .removeAdded: if let session = cursorSession { remove(session) }
         default:
             guard combo.mods.isEmpty else { return !combo.mods.contains(.command) }
             if combo == KeyCombo("a"), let session = cursorSession {
@@ -205,6 +224,10 @@ import Observation
         }
     }
 
-    /// The keys, for the browser's top line.
-    static let hint = "↑↓ move  ←→ hosts and sessions  return open  a add  n new session  r retry  c copy  esc close"
+    /// The keys, for the browser's bottom line.
+    static func hint(_ keys: Keymap = .shared) -> String {
+        let remove = keys.label(.removeAdded)
+        return "↑↓ move  ←→ hosts and sessions  return open  a add  " + (remove.isEmpty ? "" : "\(remove) remove  ")
+            + "n new session  r retry  c copy  esc close"
+    }
 }

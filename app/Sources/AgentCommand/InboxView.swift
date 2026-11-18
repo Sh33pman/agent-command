@@ -108,7 +108,12 @@ struct InboxView: View {
                                     Button("Move Out of Set") { model.moveOut(row.session) }
                                 }
                                 Button("Rename…") { model.rename(model.targets(forRow: row.session)) }
-                                Button("Archive…") { model.archive(model.targets(forRow: row.session)) }
+                                if row.session.isOnHost {
+                                    Button("Remove from This Mac") { model.removeAdded(model.targets(forRow: row.session)) }
+                                }
+                                if !row.session.isHostGone {
+                                    Button("Archive…") { model.archive(model.targets(forRow: row.session)) }
+                                }
                             }
                     }
                 }

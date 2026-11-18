@@ -182,7 +182,7 @@ func makeRemoteSession(
 
     let local = SessionPlace(try makeRemoteSession(id: "a"), hosts: hosts)
     #expect(local.hostBadge == nil && local.shared == nil && !local.dimmed && local.note == nil)
-    #expect(local.canToggleRemote && !local.canRemove && local.help == nil)
+    #expect(local.canToggleRemote && !local.canRemove && local.canArchive && local.help == nil)
 
     let shared = SessionPlace(try makeRemoteSession(id: "b", remote: true), hosts: hosts)
     #expect(shared.shared == "shared" && shared.help == "Remote: clients of Hosting can use it" && shared.canToggleRemote)
@@ -191,9 +191,10 @@ func makeRemoteSession(
 
     let up = SessionPlace(try makeRemoteSession(id: "c", host: "studio"), hosts: hosts)
     #expect(up.hostBadge == "↗ studio" && !up.dimmed && up.note == nil && !up.canToggleRemote && up.help == "On studio")
+    #expect(up.canRemove && up.canArchive, "a live added session can be removed here, or archived (ending it there)")
 
     let down = SessionPlace(try makeRemoteSession(id: "d", host: "laptop"), hosts: hosts)
-    #expect(down.dimmed && down.note == "reconnecting…" && down.help == "On laptop: reconnecting…" && !down.canRemove)
+    #expect(down.dimmed && down.note == "reconnecting…" && down.help == "On laptop: reconnecting…" && down.canRemove && down.canArchive)
 
     let waiting = SessionPlace(try makeRemoteSession(id: "e", host: "new"), hosts: hosts)
     #expect(waiting.dimmed && waiting.note == "waiting for approval")
@@ -203,6 +204,8 @@ func makeRemoteSession(
 
     let gone = SessionPlace(try makeRemoteSession(id: "g", host: "studio", gone: true), hosts: hosts)
     #expect(gone.dimmed && gone.note == "no longer available" && gone.canRemove && !gone.canToggleRemote)
+    #expect(!gone.canArchive, "gone from its host: it can only be removed")
+    #expect(!shared.canRemove && shared.canArchive, "a session shared from this Mac is this Mac's")
 }
 
 @Test func theSidebarFilterKeepsItsChoice() throws {

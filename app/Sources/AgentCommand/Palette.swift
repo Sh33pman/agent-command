@@ -108,13 +108,13 @@ enum Palette {
             let section = "\(targets.count) sessions"
             list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename(targets)))
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive(targets)))
-            list += remoteEntries(targets, section: section)
+            list += remoteEntries(targets, section: section, keys: keys)
         }
         if let session = current {
             let section = "\(session.harnessTitle) session"
             list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename([session])))
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive([session])))
-            list += remoteEntries([session], section: section)
+            list += remoteEntries([session], section: section, keys: keys)
             if state.setMembers.contains(where: { $0.contains(session.id) }) {
                 list.append(PaletteEntry(section: section, title: "Move out of set", action: .moveOut(sessionID: session.id)))
             }
@@ -208,17 +208,18 @@ enum Palette {
     }
 
     /// Remote on or off for the targets on this Mac (on, unless all are already),
-    /// and Remove for those their host no longer has.
-    static func remoteEntries(_ targets: [Session], section: String) -> [PaletteEntry] {
+    /// and Remove for those added from a host, live or gone from there.
+    static func remoteEntries(_ targets: [Session], section: String, keys: Keymap = .shared) -> [PaletteEntry] {
         var list: [PaletteEntry] = []
         let local = targets.filter { !$0.isOnHost }
         if !local.isEmpty {
             let on = local.contains { !$0.isRemote }
             list.append(PaletteEntry(section: section, title: on ? "Turn Remote on" : "Turn Remote off", action: .setRemote(local, on)))
         }
-        let gone = targets.filter(\.isHostGone)
-        if !gone.isEmpty {
-            list.append(PaletteEntry(section: section, title: "Remove from this Mac", action: .removeAdded(gone)))
+        let added = targets.filter(\.isOnHost)
+        if !added.isEmpty {
+            list.append(PaletteEntry(
+                section: section, title: "Remove from this Mac", shortcut: keys.label(.removeAdded), action: .removeAdded(added)))
         }
         return list
     }
@@ -233,6 +234,14 @@ enum Palette {
         }
         if sessions.contains(where: { !$0.isTerminal }) {
             notes.append("Agents stop. You can unarchive them later and continue the conversation.")
+        }
+        // Archive ends a session added from a host on the host as well.
+        let added = sessions.filter { $0.isOnHost && !$0.isHostGone }
+        if added.count == 1, let one = added.first {
+            let name = sessions.count == 1 ? "It" : one.displayName
+            notes.append("\(name) ends on \(one.hostName) too. To keep it running there, use Remove from This Mac instead.")
+        } else if added.count > 1 {
+            notes.append("Sessions added from a host end there too. To keep them running there, use Remove from This Mac instead.")
         }
         return (title, notes.joined(separator: " "))
     }

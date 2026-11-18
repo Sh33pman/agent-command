@@ -92,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 },
                 removeAdded: { [weak self] session in
                     guard let self else { return }
-                    self.store.removeAdded(self.store.actionTargets(forRow: session).filter(\.isHostGone))
+                    self.store.removeAdded(self.store.actionTargets(forRow: session))
                 }
             ))
         let split = NSSplitViewController()
@@ -425,6 +425,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func archiveSelection() {
         archive(store.actionTargets)
+    }
+
+    /// Takes the sessions added from a host off this Mac: they keep running there.
+    /// Any others are left alone, so it does nothing without one.
+    @objc private func removeAddedSelection() {
+        store.removeAdded(store.actionTargets)
     }
 
     @objc private func renameSelection() {
@@ -1229,6 +1235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         remoteItem.target = self
         file.submenu?.addItem(remoteItem)
         file.submenu?.addItem(menuItem("Archive…", #selector(archiveSelection), .archive))
+        file.submenu?.addItem(menuItem("Remove from This Mac", #selector(removeAddedSelection), .removeAdded))
         menu.addItem(file)
         let view = NSMenuItem()
         view.submenu = NSMenu(title: "Panes")

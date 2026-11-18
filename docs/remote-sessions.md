@@ -100,7 +100,7 @@ On the host:
 
 On the client:
 
-- **App:** open **Remote hosts…** from the command palette (or **Browse Remote Hosts…** in Settings → Remote → Known hosts). It covers the main window, like the Inbox. Choose the host on the left, then **Open** a session (return), or **Add** it (a) to put it in the sidebar. The browser's keys: ↑ ↓ move, ← → go between hosts and sessions, r retries a host now, n starts a new session on it, and c copies your fingerprint.
+- **App:** open **Remote hosts…** from the command palette (or **Browse Remote Hosts…** in Settings → Remote → Known hosts). It covers the main window, like the Inbox. Choose the host on the left, then **Open** a session (return), or **Add** it (a) to put it in the sidebar. A session already added has **Remove** (⌥⌘⌫) to take it off this Mac again, and goes back to **Add**. The browser's keys: ↑ ↓ move, ← → go between hosts and sessions, r retries a host now, n starts a new session on it, and c copies your fingerprint.
 - **CLI:**
 
   ```sh
@@ -108,7 +108,11 @@ On the client:
   acmd remote open studio 1          # add it here and attach this terminal; Ctrl+] detaches
   ```
 
-The session now shows in the client's sidebar with "↗ studio". While the host can't be reached, its row is greyed and reconnects by itself. If the host stops offering it (it was ended, or made local), its row says "no longer available", and **Remove from This Mac** in its menu (or **Remove from this Mac** in the palette) takes it away here. Once a known host exists, the sidebar has a filter next to "Sessions": All, Local (the sessions that run on this Mac, Remote ones included), Remote (every session added from a host), or one host's sessions.
+The session now shows in the client's sidebar with "↗ studio". While the host can't be reached, its row is greyed and reconnects by itself. If the host stops offering it (it was ended, or made local), its row says "no longer available".
+
+To take an added session off the client, use **Remove from This Mac**: in its menu in the sidebar or the Inbox, in the File menu, in the palette (**Remove from this Mac**), with ⌥⌘⌫ (change it in Settings → Keyboard), or **Remove** in the Remote Hosts browser. It's removed here only, and its pane closes. It keeps running on the host, so you can add it again. **Archive…** (⇧⌘⌫) is different: it ends the session on the host too, and its confirmation says so. A session that's "no longer available" can only be removed. `acmd remote drop` does the same from a terminal.
+
+Once a known host exists, the sidebar has a filter next to "Sessions": All, Local (the sessions that run on this Mac, Remote ones included), Remote (every session added from a host), or one host's sessions.
 
 To start a new session on the host from the client: ⇧⌘N, then choose the host on its **Where** line, which lists This Mac and every known host (tab changes it), and a folder from the host's own folders. The palette's **Session on studio…**, and **New Session on studio…** in the Remote Hosts browser, open ⇧⌘N with the host already chosen. Or `acmd new --on studio --dir ~/code/app`.
 

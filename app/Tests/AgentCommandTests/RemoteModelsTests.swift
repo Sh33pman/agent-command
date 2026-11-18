@@ -191,6 +191,46 @@ struct RemoteBrowserTests {
         #expect(m.error == "the host has no session s3" && m.adding.isEmpty)
     }
 
+    @Test func removeTakesAnAddedSessionOffThisMac() {
+        let fake = FakeCalls()
+        fake.replies["remote.browse"] = listing
+        let m = model(fake)
+        m.load()
+        m.remove(m.sessions[0])
+        #expect(fake.ops == ["remote.browse"], "one that isn't added has nothing to remove")
+
+        fake.holding = true
+        m.remove(m.sessions[1])
+        #expect(m.removing == ["s2"])
+        m.remove(m.sessions[1])
+        fake.release()
+        #expect(fake.ops == ["remote.browse", "remote.sessions.remove"], "once")
+        #expect(fake.last as? [String: String] == ["id": "L2"], "by its id here")
+        #expect(!m.sessions[1].added && m.sessions[1].localID.isEmpty && m.removing.isEmpty, "the row goes back to Add")
+        fake.holding = false
+
+        fake.replies["remote.sessions.add"] = session
+        m.add(m.sessions[1])
+        #expect(m.sessions[1].added && m.sessions[1].localID == "L9", "and it can be added again")
+
+        fake.failures["remote.sessions.remove"] = "no such session"
+        m.remove(m.sessions[1])
+        #expect(m.error == "no such session" && m.sessions[1].added && m.removing.isEmpty)
+    }
+
+    @Test func removeFromThisMacsKeyWorksOnTheCursor() throws {
+        let fake = FakeCalls()
+        fake.replies["remote.browse"] = listing
+        let m = model(fake)
+        m.load()
+        let combo = try #require(KeyCombo("opt+cmd+delete"))
+        #expect(m.handle(combo) && fake.ops == ["remote.browse"], "taken, with no session under the cursor")
+        m.setCursor(m.sessions[1])
+        #expect(m.handle(combo))
+        #expect(fake.ops.last == "remote.sessions.remove" && !m.sessions[1].added)
+        #expect(RemoteBrowserModel.hint(Keymap()).contains("a add  ⌥⌘⌫ remove  n new session"))
+    }
+
     @Test func retryConnectsNow() {
         let fake = FakeCalls()
         let m = model(fake)

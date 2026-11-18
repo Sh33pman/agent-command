@@ -134,7 +134,8 @@ struct SidebarView: View {
                                 }
                                 if place.canRemove {
                                     Button("Remove from This Mac") { removeAdded(session) }
-                                } else {
+                                }
+                                if place.canArchive {
                                     Button("Archive…") { archive(session) }
                                 }
                             }

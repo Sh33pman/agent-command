@@ -326,8 +326,10 @@ struct SessionPlace: Equatable {
     var dimmed = false
     /// Said instead of its state: "reconnecting…", "no longer available".
     var note: String?
-    /// Gone from its host: it can only be removed.
+    /// Added from a host: Remove from This Mac takes it off here, and the host keeps it.
     var canRemove = false
+    /// Archive ends it, on its host too. One gone from its host can only be removed.
+    var canArchive = true
     /// Remote can be turned on or off: only for this Mac's sessions.
     var canToggleRemote = true
 
@@ -338,11 +340,12 @@ struct SessionPlace: Equatable {
             return
         }
         canToggleRemote = false
+        canRemove = true
         hostBadge = "↗ \(session.hostName)"
         if session.isHostGone {
             dimmed = true
             note = "no longer available"
-            canRemove = true
+            canArchive = false
             return
         }
         // A host that's gone from the list is as good as unreachable.

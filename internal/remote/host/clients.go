@@ -79,7 +79,7 @@ func (h *Host) closeUnauthorizedLocked() int {
 	for c, cn := range h.conns {
 		ac, ok := h.authorizedLocked(c.Peer.Fingerprint)
 		if !ok {
-			_ = c.Close()
+			h.dropLocked(c)
 			n++
 			continue
 		}
@@ -356,7 +356,7 @@ func (h *Host) Disconnect(client string) (int, error) {
 	n := 0
 	for c, cn := range h.conns {
 		if cn.id == sel || cn.name == sel || identity.Equal(c.Peer.Fingerprint, sel) {
-			_ = c.Close()
+			h.dropLocked(c)
 			n++
 		}
 	}

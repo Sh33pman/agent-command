@@ -80,8 +80,13 @@ func TestKnownHosts(t *testing.T) {
 	}
 
 	// An edit: a rename moves the sessions added from it.
+	// Under the locks: the hosts' goroutines read both.
+	l.b.mu.Lock()
 	l.b.sessions["L09"] = &core.Session{ID: "L09", Host: "box", RemoteID: "r1", Status: core.StatusArchived}
+	l.b.mu.Unlock()
+	l.c.mu.Lock()
 	l.c.added["L09"] = &added{Added: Added{ID: "L09", Host: "box", RemoteID: "r1", Archived: true}}
+	l.c.mu.Unlock()
 	if _, err := l.c.EditHost(ctx5(), ipc.RemoteHostEdit{Host: "nope", Name: "x"}); err == nil {
 		t.Error("edited a host that isn't there")
 	}

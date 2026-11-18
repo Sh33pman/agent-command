@@ -483,6 +483,14 @@ func TestDisconnect(t *testing.T) {
 		if n != 1 || err != nil {
 			t.Fatalf("%s: %d %v", sel, n, err)
 		}
+		// Gone at once, not once its goroutine notices: a second disconnect
+		// finds nothing.
+		if st := f.h.Status(); st.Connected != 0 || len(f.h.Clients()[0].Connections) != 0 {
+			t.Errorf("%s: still connected: %+v", sel, st)
+		}
+		if _, err := f.h.Disconnect(sel); err == nil {
+			t.Errorf("%s: disconnected twice", sel)
+		}
 		waitDone(t, c, sel)
 		// It's still authorized, so it can come back.
 		c, err = f.dial(laptop)

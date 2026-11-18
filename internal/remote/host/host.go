@@ -267,7 +267,7 @@ func (h *Host) stopLocked() {
 		h.ln = nil
 	}
 	for c := range h.conns {
-		_ = c.Close()
+		h.dropLocked(c)
 	}
 	h.since, h.err = time.Time{}, ""
 }
@@ -381,6 +381,20 @@ func (h *Host) register(c *wire.Conn, ln net.Listener) *conn {
 func (h *Host) unregister(cn *conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	h.unregisterLocked(cn)
+}
+
+// dropLocked closes a connection and forgets it at once, so it no longer
+// counts as connected while its goroutine winds down: a second disconnect
+// doesn't find it again (h.mu is held).
+func (h *Host) dropLocked(c *wire.Conn) {
+	_ = c.Close()
+	if cn := h.conns[c]; cn != nil {
+		h.unregisterLocked(cn)
+	}
+}
+
+func (h *Host) unregisterLocked(cn *conn) {
 	delete(h.conns, cn.c)
 	for a := range h.attachments {
 		if a.conn == cn {

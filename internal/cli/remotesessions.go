@@ -63,7 +63,7 @@ func newRemoteSetCmd(on bool) *cobra.Command {
 }
 
 // hostingOffNote says why a Remote session can't be reached yet.
-const hostingOffNote = "Hosting is off, so no client can reach it yet: set enabled = true under [remote.host] in acmd's config."
+const hostingOffNote = "Hosting is off, so no client can reach it yet: turn it on with acmd remote hosting on."
 
 // remoteHosting is [remote.host] from acmd's config.
 func remoteHosting() (config.RemoteHost, error) {
@@ -90,6 +90,9 @@ func newRemoteSessionsCmd() *cobra.Command {
 				return err
 			}
 			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+				if snap.Remote != nil && snap.Remote.Listening {
+					host.Port = snap.Remote.Port // the one in use: the fallback may have picked another
+				}
 				vs := snap.ViewState
 				vs.Filter, vs.ShowArchived = "", false
 				var rows []listRow

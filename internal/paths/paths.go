@@ -185,6 +185,10 @@ func (p Paths) Config() string { return filepath.Join(p.ConfigDir, "config.toml"
 // this machine's identity, unless the config names other files.
 func (p Paths) RemoteIdentityDir() string { return filepath.Join(p.ConfigDir, "identity") }
 
+// RemoteHostState is what Hosting keeps that isn't config: pending requests
+// from unknown clients, and the port the fallback picked.
+func (p Paths) RemoteHostState() string { return filepath.Join(p.StateDir, "remote-host.json") }
+
 // Env is the captured login-shell environment.
 func (p Paths) Env() string { return filepath.Join(p.StateDir, "env.json") }
 

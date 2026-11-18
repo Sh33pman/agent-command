@@ -304,6 +304,45 @@ func TestAntigravity(t *testing.T) {
 	}
 }
 
+func TestRemoteIdentityRoles(t *testing.T) {
+	f := newFake(t)
+	p := f.paths()
+	gen, err := identity.Ensure(p.RemoteIdentityDir())
+	must(t, err)
+	own, err := identity.Ensure(filepath.Join(f.home, "own"))
+	must(t, err)
+	b, err := os.ReadFile(p.Config())
+	must(t, err)
+	cfg, err := config.Set(string(b), "remote.host", "cert", own.CertPath)
+	must(t, err)
+	cfg, err = config.Set(cfg, "remote.host", "key", own.KeyPath)
+	must(t, err)
+	f.write(p.Config(), cfg, 0o600)
+	r, out := f.run()
+	for _, want := range []string{"✓ Hosting identity " + own.Fingerprint(), "✓ client identity " + gen.Fingerprint()} {
+		if !strings.Contains(out, want) || r.Count(Fail) != 0 {
+			t.Errorf("report lacks %q:\n%s", want, out)
+		}
+	}
+	// Your own key, readable by others.
+	must(t, os.Chmod(own.KeyPath, 0o644))
+	if _, out := f.run(); !strings.Contains(out, "✗ Hosting identity key ~/own/key.pem is readable by others") {
+		t.Errorf("report:\n%s", out)
+	}
+	// Your own cert that's gone.
+	must(t, os.Remove(own.CertPath))
+	if _, out := f.run(); !strings.Contains(out, "✗ Hosting identity unusable:") || !strings.Contains(out, "fix: check cert and key in [remote.host] of ~/config/config.toml") {
+		t.Errorf("report:\n%s", out)
+	}
+	// Half a pair.
+	cfg, err = config.Set(cfg, "remote.host", "key", "")
+	must(t, err)
+	f.write(p.Config(), cfg, 0o600)
+	if _, out := f.run(); !strings.Contains(out, "✗ Hosting identity: [remote.host] names only one of cert and key") {
+		t.Errorf("report:\n%s", out)
+	}
+}
+
 func TestRemoteIdentity(t *testing.T) {
 	f := newFake(t)
 	// No identity yet: nothing to check.

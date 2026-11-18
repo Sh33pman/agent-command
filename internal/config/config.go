@@ -195,7 +195,10 @@ sound = "default"
 voice = "af_heart:0.6,af_bella:0.4"
 speed = 1.0
 
-# Remote sessions: use sessions on another acmd. Not in use yet.
+# Remote sessions: use sessions on another acmd. Hosting ([remote.host]) lets
+# the clients in [[remote.authorized_clients]] connect; acmd remote hosting on
+# turns it on, and acmd remote requests approves clients. A change applies
+# straight away.
 # [remote]
 # new_sessions_remote = false
 #
@@ -307,11 +310,13 @@ func Set(text, section, key string, value any) (string, error) {
 		return "", fmt.Errorf("config.toml: setting %s: %w", key, err)
 	}
 	if section != "" {
-		sub, ok := doc[section].(map[string]any)
-		if !ok {
-			return "", fmt.Errorf("config.toml: [%s] is not a table", section)
+		for _, k := range strings.Split(section, ".") { // [remote.host] is doc["remote"]["host"]
+			sub, ok := doc[k].(map[string]any)
+			if !ok {
+				return "", fmt.Errorf("config.toml: [%s] is not a table", section)
+			}
+			doc = sub
 		}
-		doc = sub
 	}
 	got, _ := renderValue(doc[key])
 	if got != rendered {

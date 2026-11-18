@@ -25,6 +25,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/peer"
 	"github.com/brettmostert/agent-command/internal/reconcile"
+	"github.com/brettmostert/agent-command/internal/remote/host"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/wake"
@@ -115,6 +116,7 @@ type Daemon struct {
 	wake waking // wake.go
 
 	remoteHooks remoteHooks // remote.go
+	remote      *host.Host  // Hosting (hosting.go)
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks
@@ -201,6 +203,8 @@ func Run(ctx context.Context, cfg Config) error {
 	d.refreshNotify()
 	d.mu.Unlock()
 	defer os.Remove(sock)
+	d.startRemote()
+	defer d.remote.Close()
 
 	if err := d.drainSpool(ctx); err != nil {
 		cfg.Log.Printf("drain spool: %v", err)
@@ -316,6 +320,9 @@ func changesState(op string) bool {
 func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	if isJobOp(req.Op) {
 		return d.handleJob(ctx, req)
+	}
+	if isRemoteOp(req.Op) {
+		return d.handleRemote(req)
 	}
 	switch req.Op {
 	case ipc.OpHello:
@@ -516,6 +523,8 @@ func (d *Daemon) background(ctx context.Context) {
 			if err := d.drainSpool(ctx); err != nil {
 				d.cfg.Log.Printf("drain spool: %v", err)
 			}
+			// Hosting follows config.toml, edited by hand or in Settings.
+			_ = d.remote.ReloadIfChanged()
 			if rec != nil {
 				d.reconcile(ctx, rec)
 			}

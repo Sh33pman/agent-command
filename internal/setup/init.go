@@ -328,21 +328,67 @@ func SaveEditor(configFile string, e config.Editor) error {
 // is, apart from what config.Retire migrates or takes out. A missing file
 // starts from the template.
 func SaveSetting(configFile, section, key string, value any) error {
-	b, err := os.ReadFile(configFile) // #nosec G304 -- acmd's own config file
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		b = []byte(config.Template)
-	case err != nil:
-		return err
-	}
-	text, err := config.Retire(string(b))
+	orig, text, err := readConfig(configFile)
 	if err != nil {
 		return err
 	}
 	if text, err = config.Set(text, section, key, value); err != nil {
 		return err
 	}
-	if text == string(b) {
+	return writeConfig(configFile, orig, text)
+}
+
+// AddAuthorizedClient adds a [[remote.authorized_clients]] entry to the end of
+// config.toml, keeping the rest of the file as SaveSetting does.
+func AddAuthorizedClient(configFile string, c config.AuthorizedClient) error {
+	orig, text, err := readConfig(configFile)
+	if err != nil {
+		return err
+	}
+	text, err = config.AppendTable(text, "remote.authorized_clients",
+		config.KeyValue{Key: "name", Value: c.Name}, config.KeyValue{Key: "fingerprint", Value: c.Fingerprint})
+	if err != nil {
+		return err
+	}
+	return writeConfig(configFile, orig, text)
+}
+
+// RemoveAuthorizedClients takes the [[remote.authorized_clients]] entries that
+// match out of config.toml, keeping the rest of the file, and says how many it
+// took.
+func RemoveAuthorizedClients(configFile string, match func(config.AuthorizedClient) bool) (int, error) {
+	orig, text, err := readConfig(configFile)
+	if err != nil {
+		return 0, err
+	}
+	text, n, err := config.RemoveTables(text, "remote.authorized_clients", func(t map[string]any) bool {
+		name, _ := t["name"].(string)
+		fp, _ := t["fingerprint"].(string)
+		return match(config.AuthorizedClient{Name: name, Fingerprint: fp})
+	})
+	if err != nil {
+		return 0, err
+	}
+	return n, writeConfig(configFile, orig, text)
+}
+
+// readConfig reads config.toml as it is, and as config.Retire makes it. A
+// missing file is the template.
+func readConfig(configFile string) (orig, text string, err error) {
+	b, err := os.ReadFile(configFile) // #nosec G304 -- acmd's own config file
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		b = []byte(config.Template)
+	case err != nil:
+		return "", "", err
+	}
+	text, err = config.Retire(string(b))
+	return string(b), text, err
+}
+
+// writeConfig writes config.toml when text differs from what was read.
+func writeConfig(configFile, orig, text string) error {
+	if text == orig {
 		return nil
 	}
 	return writeAtomic(configFile, []byte(text), 0o600, false)

@@ -476,23 +476,54 @@ func checkDaemon(ctx context.Context, r *Report, e Env) {
 	}
 }
 
-// checkIdentity checks the generated identity for Remote sessions, once there
-// is one: that others can't read its key, and that the cert and key belong
-// together.
+// checkIdentity checks the identities for Remote sessions: the generated one
+// once there is one, or the certs config.toml names for Hosting
+// ([remote.host]) and for connecting to hosts ([remote.client]). Others must
+// not be able to read a key, and each cert and key must belong together. When
+// the two roles use different identities, each is checked under its name.
 func checkIdentity(r *Report, e Env) {
-	dir := e.Paths.RemoteIdentityDir()
-	if !identity.Exists(dir) {
+	c, err := config.Load(e.Paths.Config())
+	if err != nil {
+		c = config.Default() // checkAcmd reports the file
+	}
+	host := roleFiles{"[remote.host]", c.Remote.Host.Cert, c.Remote.Host.Key}
+	client := roleFiles{"[remote.client]", c.Remote.Client.Cert, c.Remote.Client.Key}
+	if host.cert == client.cert && host.key == client.key {
+		checkRole(r, e, "identity", host)
 		return
 	}
-	cert, key := identity.Files(dir)
+	checkRole(r, e, "Hosting identity", host)
+	checkRole(r, e, "client identity", client)
+}
+
+// roleFiles are the cert and key a role uses, as config.toml names them (""
+// for the generated identity).
+type roleFiles struct{ section, cert, key string }
+
+func checkRole(r *Report, e Env, what string, f roleFiles) {
+	fix := "acmd remote identity --regenerate (peers must then trust the new fingerprint)"
+	cert, key := f.cert, f.key
+	switch {
+	case cert == "" && key == "":
+		dir := e.Paths.RemoteIdentityDir()
+		if !identity.Exists(dir) {
+			return
+		}
+		cert, key = identity.Files(dir)
+	case cert == "" || key == "":
+		r.add(secRemote, Fail, "set both cert and key in "+f.section+", or neither", "%s: %s names only one of cert and key", what, f.section)
+		return
+	default:
+		fix = "check cert and key in " + f.section + " of " + setup.Tilde(e.Paths.Config(), e.Home)
+	}
 	id, err := identity.Load(cert, key)
 	switch {
 	case errors.Is(err, identity.ErrKeyPermissions):
-		r.add(secRemote, Fail, "chmod 600 "+setup.Tilde(key, e.Home), "identity key %s is readable by others", setup.Tilde(key, e.Home))
+		r.add(secRemote, Fail, "chmod 600 "+setup.Tilde(key, e.Home), "%s key %s is readable by others", what, setup.Tilde(key, e.Home))
 	case err != nil:
-		r.add(secRemote, Fail, "acmd remote identity --regenerate (peers must then trust the new fingerprint)", "identity unusable: %v", err)
+		r.add(secRemote, Fail, fix, "%s unusable: %v", what, err)
 	default:
-		r.add(secRemote, OK, "", "identity %s (%s)", id.Fingerprint(), id.CommonName)
+		r.add(secRemote, OK, "", "%s %s (%s)", what, id.Fingerprint(), id.CommonName)
 	}
 }
 
@@ -507,7 +538,7 @@ func checkRemote(r *Report, e Env, remote int) {
 		return // checkAcmd reports a config that doesn't load
 	}
 	if !cfg.Remote.Host.Enabled {
-		r.add(secRemote, Warn, "set enabled = true under [remote.host] in "+setup.Tilde(e.Paths.Config(), e.Home)+
+		r.add(secRemote, Warn, "acmd remote hosting on"+
 			", or make them local with acmd remote off <session>",
 			"%s marked Remote, but Hosting is off: no client can reach them", plural(remote, "session"))
 		return

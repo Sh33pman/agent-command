@@ -47,7 +47,89 @@ const (
 	OpJobRuns       = "job.runs"       // its runs, newest first (JobRef.ID) → []core.JobRun
 	OpAgentSettings = "agent.settings" // an agent's settings for jobs (JobRef.Harness) → []harness.Setting
 	OpWakeSet       = "wake.set"       // wakes the Mac for every job or not (WakeRef), checking the sudoers rule again → WakeState
+	// Remote sessions: Hosting, this machine's listener for other acmds.
+	OpRemoteStatus     = "remote.status"     // → RemoteStatus
+	OpRemoteHosting    = "remote.hosting"    // turns Hosting on or off in config.toml (RemoteRef.Enabled) → RemoteStatus
+	OpRemoteReload     = "remote.reload"     // reads [remote] from config.toml again, after editing it → RemoteStatus
+	OpRemoteClients    = "remote.clients"    // the authorized clients, with their connections → []RemoteClient
+	OpRemoteRequests   = "remote.requests"   // pending requests from unknown clients → []RemoteRequest
+	OpRemoteApprove    = "remote.approve"    // authorizes a request's client (RemoteRef.ID, Name) → RemoteClient
+	OpRemoteDeny       = "remote.deny"       // drops a request (RemoteRef.ID)
+	OpRemoteAuthorize  = "remote.authorize"  // authorizes a client (RemoteRef.Fingerprint, Name) → RemoteClient
+	OpRemoteRevoke     = "remote.revoke"     // un-authorizes a client and drops it (RemoteRef.Client) → RemoteClient
+	OpRemoteDisconnect = "remote.disconnect" // drops a client's connections (RemoteRef.Client) → RemoteDisconnected
 )
+
+// RemoteRef names what a remote.* op acts on. Client is an authorized
+// client's name or fingerprint, or for remote.disconnect also a connection's
+// id.
+type RemoteRef struct {
+	ID          string `json:"id,omitempty"`
+	Client      string `json:"client,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Enabled     bool   `json:"enabled,omitempty"`
+}
+
+// RemoteStatus is Hosting: whether it's on, where it listens, and why not
+// when it can't.
+type RemoteStatus struct {
+	Enabled   bool   `json:"enabled"`
+	Listening bool   `json:"listening"`
+	Listen    string `json:"listen"` // "localhost" or "all"
+	// Address and Port are where it actually listens: Port differs from
+	// ConfiguredPort when that one was taken and PortFallback picked another.
+	Address        string    `json:"address,omitempty"`
+	Port           int       `json:"port,omitempty"`
+	ConfiguredPort int       `json:"configured_port"`
+	PortFallback   bool      `json:"port_fallback"`
+	Since          time.Time `json:"since,omitzero"`
+	Error          string    `json:"error,omitempty"` // why it isn't listening
+	// The identity it shows clients.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Cert        string `json:"cert,omitempty"`
+	Proto       int    `json:"proto"` // the Remote protocol it speaks
+	Authorized  int    `json:"authorized"`
+	Connected   int    `json:"connected"` // connections
+	Pending     int    `json:"pending"`   // requests waiting for approval
+}
+
+// RemoteClient is an authorized client, and its connections.
+type RemoteClient struct {
+	Name        string             `json:"name"`
+	Fingerprint string             `json:"fingerprint"`
+	Connections []RemoteConnection `json:"connections,omitempty"`
+}
+
+// RemoteConnection is a client connected now.
+type RemoteConnection struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"` // its authorized name
+	Fingerprint string    `json:"fingerprint"`
+	CommonName  string    `json:"common_name,omitempty"` // its cert's
+	Addr        string    `json:"addr"`
+	Version     string    `json:"version,omitempty"` // its acmd
+	Since       time.Time `json:"since"`
+	Sessions    []string  `json:"sessions,omitempty"` // the sessions it's attached to
+}
+
+// RemoteRequest is an unknown client that tried to connect: it gets in once
+// it's approved. Repeats from one fingerprint add to Count.
+type RemoteRequest struct {
+	ID          string    `json:"id"`
+	Fingerprint string    `json:"fingerprint"`
+	CommonName  string    `json:"common_name,omitempty"`
+	Addr        string    `json:"addr"`
+	FirstSeen   time.Time `json:"first_seen"`
+	LastSeen    time.Time `json:"last_seen"`
+	Count       int       `json:"count"`
+}
+
+// RemoteDisconnected is how many connections remote.disconnect closed.
+type RemoteDisconnected struct {
+	Closed int `json:"closed"`
+}
 
 // JobRef names a job, and what to do with it.
 type JobRef struct {
@@ -97,6 +179,8 @@ type Snapshot struct {
 	Jobs []*core.Job `json:"jobs,omitempty"`
 	// Wake is waking the Mac for jobs (nil: this daemon can't).
 	Wake *WakeState `json:"wake,omitempty"`
+	// Remote is Hosting (nil: this daemon has none).
+	Remote *RemoteStatus `json:"remote,omitempty"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view

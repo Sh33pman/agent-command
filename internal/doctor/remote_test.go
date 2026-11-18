@@ -11,7 +11,7 @@ func TestRemoteSessionsWithHostingOff(t *testing.T) {
 	f.daemon.Status.RemoteSessions = 2
 	r, out := f.run()
 	if r.Count(Warn) != 1 || !strings.Contains(out, "Remote sessions\n  ! 2 sessions marked Remote, but Hosting is off: no client can reach them\n"+
-		"      fix: set enabled = true under [remote.host] in ~/config/config.toml") {
+		"      fix: acmd remote hosting on, or make them local") {
 		t.Errorf("no warning about Hosting:\n%s", out)
 	}
 

@@ -35,6 +35,15 @@ final class SessionStore {
     private(set) var remote: RemoteStatus?
     /// Called with Hosting's status, from each snapshot.
     @ObservationIgnored var onRemote: ((RemoteStatus?) -> Void)?
+    /// The Remote hosts this Mac uses sessions on, and their connections.
+    private(set) var remoteHosts: [RemoteHost] = []
+    /// Which sessions the sidebar lists; kept for next time.
+    var filter = SidebarFilter.load() {
+        didSet { if filter != oldValue { filter.save(defaults) } }
+    }
+    @ObservationIgnored var defaults = UserDefaults.standard
+    /// The daemon's Remote host ops; tests swap its calls.
+    @ObservationIgnored var remoteClient = RemoteHostsClient()
 
     /// Whether the sidebar has the keyboard, and its cursor and marks while it does.
     private(set) var sidebarFocused = false
@@ -51,7 +60,7 @@ final class SessionStore {
     @ObservationIgnored var isWindowShown = true
     /// Whether you're in the main window, as against another app or the app in the background.
     var isInMainWindow: Bool { NSApp.isActive && isWindowShown }
-    @ObservationIgnored private var newestItem: Int64?
+    @ObservationIgnored private var news: InboxNews?
     /// Called when the queue changes, for an open Inbox.
     @ObservationIgnored var onInboxChanged: (() -> Void)?
     /// Called with the daemon's recent notices, whenever its state is read.
@@ -72,9 +81,27 @@ final class SessionStore {
         if closed != closedIDs { closedIDs = closed }
     }
 
-    /// The sessions in sidebar order, with each set's together.
+    /// The sessions in sidebar order, with each set's together: those the filter lists.
     var sidebarIDs: [String] {
+        let filter = shownFilter
+        return PaneSets.rows(order: sessions.filter(filter.includes).map(\.id), sets: setMembers).map(\.id)
+    }
+
+    /// Every session in sidebar order, whatever the filter.
+    private var allSidebarIDs: [String] {
         PaneSets.rows(order: sessions.map(\.id), sets: setMembers).map(\.id)
+    }
+
+    /// The hosts the sidebar's filter offers.
+    var filterHosts: [String] { SidebarFilter.hostNames(known: remoteHosts, sessions: sessions) }
+
+    /// The filter as it applies now: a host that's gone lists everything.
+    var shownFilter: SidebarFilter { filter.effective(hosts: filterHosts) }
+
+    /// What a session's row says about where it runs. clients counts the
+    /// connections attached to it, for one shared from this Mac.
+    func place(of session: Session, clients: [String: Int] = [:]) -> SessionPlace {
+        SessionPlace(session, hosts: remoteHosts, clients: clients[session.id] ?? 0)
     }
 
     /// The sidebar takes or gives up the keyboard. Marks only last while it has it.
@@ -99,7 +126,8 @@ final class SessionStore {
     /// finished turn you haven't seen. In sidebar order within each.
     var attentionIDs: [String] {
         let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
-        let ordered = sidebarIDs.compactMap { byID[$0] }.filter { !$0.isArchived }
+        // Whatever the filter shows: nothing that needs you is missed.
+        let ordered = allSidebarIDs.compactMap { byID[$0] }.filter { !$0.isArchived }
         let tiers: [(Session) -> Bool] = [
             { $0.status == "waiting" },
             { $0.status == "error" },
@@ -117,7 +145,9 @@ final class SessionStore {
     }
 
     /// Shows a session, and moves the sidebar's cursor to it while it has the keyboard.
+    /// One the filter hides brings everything back into the list.
     func show(_ id: String) {
+        if let session = sessions.first(where: { $0.id == id }), !shownFilter.includes(session) { filter = .all }
         if sidebarFocused { cursorID = id }
         selectedID = id
     }
@@ -387,18 +417,21 @@ final class SessionStore {
             if groups != self.groups { self.groups = groups }
             if snapshot.remote != self.remote { self.remote = snapshot.remote }
             self.onRemote?(snapshot.remote)
+            let hosts = snapshot.remoteHosts ?? []
+            if hosts != self.remoteHosts { self.remoteHosts = hosts }
             let queue = snapshot.inbox ?? []
             if queue != self.queue {
                 self.queue = queue
                 self.onInboxChanged?()
             }
             // Items from before this launch aren't news.
-            let newest = max(self.newestItem ?? 0, queue.map(\.id).max() ?? 0)
-            if let seen = self.newestItem {
-                let fresh = queue.filter { $0.id > seen }
+            if let news = self.news {
+                let (fresh, next) = news.fresh(queue)
                 if !fresh.isEmpty { self.onNewItems?(fresh) }
+                self.news = next
+            } else {
+                self.news = InboxNews(queue)
             }
-            self.newestItem = newest
             self.markLookedAtSeen()
             self.onNotices?(snapshot.notices ?? [])
             self.showUnreadOnDock()
@@ -417,20 +450,75 @@ final class SessionStore {
 
     /// Starts a new session in a folder. harness is "claude", "antigravity" or "terminal". It's
     /// selected, unless placed puts it somewhere itself.
-    func newSession(harness: String, in folder: String, placed: ((Session) -> Void)? = nil) {
+    /// remote makes it a Remote session or not; nil, as from ⌘N, is the config's
+    /// `new_sessions_remote`.
+    func newSession(harness: String, in folder: String, remote: Bool? = nil, placed: ((Session) -> Void)? = nil) {
         struct New: Encodable {
             let cwd: String
             let harness: String
+            let remote: Bool?
         }
         run(failure: "Couldn't start the session") { conn in
-            let session: Session = try conn.call("new", New(cwd: folder, harness: harness))
+            let session: Session = try conn.call("new", New(cwd: folder, harness: harness, remote: remote))
             return session
         } done: { session in
-            if !self.sessions.contains(session) { self.sessions.append(session) }
+            self.adopt(session)
             if let placed {
                 placed(session)
             } else {
                 self.selectedID = session.id
+            }
+        }
+    }
+
+    /// Lists a session the daemon just made, before its next snapshot does.
+    func adopt(_ session: Session) {
+        if !sessions.contains(where: { $0.id == session.id }) { sessions.append(session) }
+    }
+
+    /// Shows a session, listing it first if it's new here.
+    func focus(_ session: Session) {
+        adopt(session)
+        show(session.id)
+    }
+
+    // MARK: Remote
+
+    /// Turns Remote on or off for this Mac's sessions: clients of its Hosting
+    /// may see and use a Remote session. Sessions added from a host are skipped.
+    func setRemote(_ targets: [Session], _ on: Bool) {
+        struct Flag: Encodable {
+            let kind: String
+            let id: String
+            let flag: Bool
+        }
+        for session in targets where !session.isOnHost {
+            run(failure: on ? "Couldn't make the session Remote" : "Couldn't turn Remote off") { conn in
+                try conn.send("mutate", Flag(kind: "session.remote", id: session.id, flag: on))
+            } done: { _ in }
+        }
+    }
+
+    /// Removes sessions added from a host, here only: the host keeps them.
+    func removeAdded(_ targets: [Session]) {
+        for session in targets where session.isOnHost {
+            remoteClient.removeSession(session.id) { [weak self] failure in
+                if let failure { self?.problem = "Couldn't remove the session: \(errorText(failure))" }
+            }
+        }
+        let gone = Set(targets.filter(\.isOnHost).map(\.id))
+        markedIDs.subtract(gone)
+    }
+
+    /// Starts a session on a host, then shows it here. done gets why it couldn't, if it couldn't.
+    func newRemoteSession(host: String, dir: String, harness: Harness?, done: @escaping (String?) -> Void = { _ in }) {
+        remoteClient.newSession(host: host, dir: dir, harness: harness?.rawValue) { [weak self] result in
+            switch result {
+            case .success(let session):
+                self?.focus(session)
+                done(nil)
+            case .failure(let failure):
+                done(errorText(failure))
             }
         }
     }

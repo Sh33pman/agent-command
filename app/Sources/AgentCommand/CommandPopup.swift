@@ -34,6 +34,8 @@ struct PopupBox<Content: View>: View {
     let close: () -> Void
     let onMove: (Int) -> Void
     let onSubmit: () -> Void
+    /// Sees each key that doesn't type before the list does: true when it took it.
+    var onKey: ((KeyCombo) -> Bool)? = nil
     @ViewBuilder let content: () -> Content
 
     private var theme: AppTheme { .shared }
@@ -58,7 +60,8 @@ struct PopupBox<Content: View>: View {
                     hasList: hasList,
                     onMove: onMove,
                     onSubmit: onSubmit,
-                    onCancel: close
+                    onCancel: close,
+                    onKey: onKey
                 )
                 .frame(height: PopupStyle.rowHeight)
                 .padding(.horizontal, 24)
@@ -185,6 +188,7 @@ private struct PopupSearchField: NSViewRepresentable {
     let onMove: (Int) -> Void
     let onSubmit: () -> Void
     let onCancel: () -> Void
+    var onKey: ((KeyCombo) -> Bool)? = nil
 
     func makeNSView(context: Context) -> FocusingTextField {
         let field = FocusingTextField()
@@ -197,6 +201,7 @@ private struct PopupSearchField: NSViewRepresentable {
         let coordinator = context.coordinator
         field.onKey = { combo in
             let parent = coordinator.parent
+            if parent.onKey?(combo) == true { return true }
             let moves: [KeyAction] = parent.hasList ? [.up, .down] : []
             switch Keymap.shared.action(for: combo, among: moves + [.open, .back]) {
             case .up: parent.onMove(-1)

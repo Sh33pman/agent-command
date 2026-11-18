@@ -28,6 +28,14 @@ enum PaletteAction: Equatable {
     /// Hosting, for Remote sessions: other Agent Commands connecting to this one.
     case toggleHosting
     case remoteSettings
+    /// Remote on or off for this Mac's sessions.
+    case setRemote([Session], Bool)
+    /// Removes sessions added from a host that it no longer has.
+    case removeAdded([Session])
+    /// The Remote Hosts browser.
+    case remoteHosts
+    /// ⌘⇧N with this host chosen.
+    case newOnHost(String)
     case togglePopupReading
     case togglePopup
     case popupStyle(ReplyPopupStyle)
@@ -66,6 +74,8 @@ struct PaletteState {
     var speaking = false
     var agentRemoteControl = false
     var hostingOn = false
+    /// The known Remote hosts' names.
+    var hosts: [String] = []
     /// What ⌘N starts, whose entry shows the shortcut; nil asks first.
     var defaultHarness: Harness? = .claude
     var popupReads = false
@@ -98,15 +108,18 @@ enum Palette {
             let section = "\(targets.count) sessions"
             list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename(targets)))
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive(targets)))
+            list += remoteEntries(targets, section: section)
         }
         if let session = current {
             let section = "\(session.harnessTitle) session"
             list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename([session])))
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive([session])))
+            list += remoteEntries([session], section: section)
             if state.setMembers.contains(where: { $0.contains(session.id) }) {
                 list.append(PaletteEntry(section: section, title: "Move out of set", action: .moveOut(sessionID: session.id)))
             }
-            if !session.cwd.isEmpty {
+            // A host's folder isn't on this Mac.
+            if !session.cwd.isEmpty, !session.isOnHost {
                 list.append(PaletteEntry(
                     section: section, title: "Open in editor", shortcut: keys.label(.openInEditor), action: .openInEditor(session)))
             }
@@ -135,6 +148,9 @@ enum Palette {
         list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: Harness.terminal.rawValue)))
         list.append(PaletteEntry(section: "New", title: "New session…", shortcut: keys.label(.newSession), action: .chooseHarness))
         list.append(PaletteEntry(section: "New", title: "Resume a session…", shortcut: keys.label(.resume), action: .resume))
+        for host in state.hosts {
+            list.append(PaletteEntry(section: "New", title: "Session on \(host)…", key: host, action: .newOnHost(host)))
+        }
         list.append(PaletteEntry(section: "Panes", title: "Split right", shortcut: keys.label(.splitRight), action: .split(.right)))
         list.append(PaletteEntry(section: "Panes", title: "Split down", shortcut: keys.label(.splitDown), action: .split(.down)))
         list.append(PaletteEntry(section: "Panes", title: "Close pane", shortcut: keys.label(.closePane), action: .closePane))
@@ -164,6 +180,7 @@ enum Palette {
             section: "Sessions", title: AgentRemoteControlSetting.paletteTitle(isOn: state.agentRemoteControl), action: .toggleAgentRemoteControl))
         list.append(PaletteEntry(
             section: "Remote", title: RemoteSettingsModel.paletteTitle(hostingOn: state.hostingOn), action: .toggleHosting))
+        list.append(PaletteEntry(section: "Remote", title: "Remote hosts…", action: .remoteHosts))
         list.append(PaletteEntry(section: "Remote", title: "Remote settings…", action: .remoteSettings))
         list.append(PaletteEntry(
             section: "App", title: state.popupReads ? "Stop reading aloud in the popup" : "Read aloud in the popup",
@@ -187,6 +204,22 @@ enum Palette {
         list.append(PaletteEntry(section: "App", title: "Report a bug…", action: .report(.bug)))
         list.append(PaletteEntry(section: "App", title: "Request a feature…", action: .report(.feature)))
         list.append(PaletteEntry(section: "App", title: "Quit", shortcut: keys.label(.quit), action: .quit))
+        return list
+    }
+
+    /// Remote on or off for the targets on this Mac (on, unless all are already),
+    /// and Remove for those their host no longer has.
+    static func remoteEntries(_ targets: [Session], section: String) -> [PaletteEntry] {
+        var list: [PaletteEntry] = []
+        let local = targets.filter { !$0.isOnHost }
+        if !local.isEmpty {
+            let on = local.contains { !$0.isRemote }
+            list.append(PaletteEntry(section: section, title: on ? "Turn Remote on" : "Turn Remote off", action: .setRemote(local, on)))
+        }
+        let gone = targets.filter(\.isHostGone)
+        if !gone.isEmpty {
+            list.append(PaletteEntry(section: section, title: "Remove from this Mac", action: .removeAdded(gone)))
+        }
         return list
     }
 

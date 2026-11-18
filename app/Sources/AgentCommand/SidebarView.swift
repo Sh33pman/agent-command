@@ -16,15 +16,47 @@ struct SidebarView: View {
     let clickRow: (Session) -> Void
     /// A double click, like return, shows the session.
     let openRow: (Session) -> Void
+    /// Hosting's clients, for how many are attached to a Remote session.
+    var remote: RemoteSettingsModel? = nil
+    /// Turns Remote on or off for a session on this Mac.
+    var setRemote: (Session, Bool) -> Void = { _, _ in }
+    /// Removes a session added from a host, here only.
+    var removeAdded: (Session) -> Void = { _ in }
     @State private var showArchived = false
 
     private var theme: AppTheme { .shared }
 
-    /// The sessions, with each set's together.
+    /// The sessions the filter lists, with each set's together.
     private var rows: [(session: Session, link: SetLink)] {
-        let byID = Dictionary(uniqueKeysWithValues: store.sessions.map { ($0.id, $0) })
-        return PaneSets.rows(order: store.sessions.map(\.id), sets: store.setMembers)
+        let filter = store.shownFilter
+        let listed = store.sessions.filter(filter.includes)
+        let byID = Dictionary(uniqueKeysWithValues: listed.map { ($0.id, $0) })
+        return PaneSets.rows(order: listed.map(\.id), sets: store.setMembers)
             .compactMap { row in byID[row.id].map { ($0, row.link) } }
+    }
+
+    private var attached: [String: Int] { RemoteAttached.counts(remote?.clients ?? []) }
+
+    /// All, Local, Remote or a host: only once there's a host to tell apart.
+    @ViewBuilder private var filterMenu: some View {
+        let hosts = store.filterHosts
+        if !hosts.isEmpty {
+            Menu {
+                ForEach(SidebarFilter.choices(hosts: hosts)) { choice in
+                    Button {
+                        store.filter = choice
+                    } label: {
+                        if choice == store.shownFilter { Label(choice.title, systemImage: "checkmark") } else { Text(choice.title) }
+                    }
+                }
+            } label: {
+                Text(store.shownFilter.title.lowercased() + " ▾").font(AppFont.ui(11)).foregroundStyle(theme.dim)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Which sessions to list: all, this Mac's, or a Remote host's")
+        }
     }
 
     /// The number keys 1 to 9, by session.
@@ -46,6 +78,7 @@ struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         heading("Sessions")
+                        filterMenu.padding(.bottom, 2)
                         Spacer()
                         if store.sidebarFocused {
                             Text(sidebarHint)
@@ -55,11 +88,13 @@ struct SidebarView: View {
                                 .lineLimit(1)
                         }
                     }
-                    if store.sessions.isEmpty {
-                        Text("none").foregroundStyle(theme.dim).padding(.horizontal, 12)
+                    if rows.isEmpty {
+                        Text(store.sessions.isEmpty ? "none" : "none here: \(store.sessions.count) in All")
+                            .foregroundStyle(theme.dim).padding(.horizontal, 12)
                     }
                     ForEach(rows, id: \.session.id) { row in
                         let session = row.session
+                        let place = store.place(of: session, clients: attached)
                         if row.link == .first {
                             SetLabelRow()
                                 .contentShape(Rectangle())
@@ -76,7 +111,8 @@ struct SidebarView: View {
                             isMarked: store.markedIDs.contains(session.id),
                             unread: store.unreadCount(session: session.id),
                             number: store.sidebarFocused ? numbers[session.id] : nil,
-                            showsFolder: true)
+                            showsFolder: true,
+                            place: place)
                             .id(session.id)
                             .contentShape(Rectangle())
                             .simultaneousGesture(TapGesture().onEnded { clickRow(session) })
@@ -86,9 +122,20 @@ struct SidebarView: View {
                                     Button("Move Out of Set") { moveOut(session) }
                                 }
                                 Button("Inbox") { openInbox(session) }
-                                Button("Open in Editor") { openInEditor(session) }
+                                if !session.isOnHost {
+                                    Button("Open in Editor") { openInEditor(session) }
+                                }
                                 Button("Rename…") { rename(session) }
-                                Button("Archive…") { archive(session) }
+                                if place.canToggleRemote {
+                                    Button(session.isRemote ? "Turn Remote Off" : "Turn Remote On") {
+                                        setRemote(session, !session.isRemote)
+                                    }
+                                }
+                                if place.canRemove {
+                                    Button("Remove from This Mac") { removeAdded(session) }
+                                } else {
+                                    Button("Archive…") { archive(session) }
+                                }
                             }
                     }
                     if !store.archived.isEmpty {
@@ -211,11 +258,19 @@ struct SessionRow: View {
     var number: Int?
     /// Shows the session's working directory under its name.
     var showsFolder = false
+    /// Where it runs: a host's badge, or shared from this Mac.
+    var place: SessionPlace? = nil
 
     private var theme: AppTheme { .shared }
 
+    private var help: String {
+        [session.details, place?.help].compactMap { $0 }.joined(separator: "\n")
+    }
+
+    /// A host's folder is as it gave it: this Mac's home means nothing there.
     private var folder: String? {
-        showsFolder && !session.cwd.isEmpty ? (session.cwd as NSString).abbreviatingWithTildeInPath : nil
+        guard showsFolder, !session.cwd.isEmpty || session.isOnHost else { return nil }
+        return session.isOnHost ? session.cwd : (session.cwd as NSString).abbreviatingWithTildeInPath
     }
 
     var body: some View {
@@ -240,7 +295,13 @@ struct SessionRow: View {
                     } else if session.unseen && !isSelected {
                         Text("•").foregroundStyle(theme.blue)
                     }
-                    Text(session.status)
+                    if let shared = place?.shared {
+                        Text(shared)
+                            .font(AppFont.ui(11))
+                            .foregroundStyle(isSelected ? theme.bg : theme.cyan)
+                            .lineLimit(1)
+                    }
+                    Text(place?.note ?? session.status)
                         .font(AppFont.ui(11))
                         .foregroundStyle(isSelected ? theme.bg : theme.dim)
                         .lineLimit(1)
@@ -253,18 +314,27 @@ struct SessionRow: View {
                 }
                 if let folder {
                     // Lined up with the name. The end of a long path matters most.
-                    Text(folder)
-                        .font(AppFont.ui(11))
-                        .foregroundStyle(isSelected ? theme.bg : theme.dim)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .padding(.leading, 14)
-                        .help(session.cwd)
+                    HStack(spacing: 6) {
+                        if let badge = place?.hostBadge {
+                            Text(badge)
+                                .foregroundStyle(isSelected ? theme.bg : theme.cyan)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                        }
+                        Text(folder)
+                            .foregroundStyle(isSelected ? theme.bg : theme.dim)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .help(session.cwd)
+                    }
+                    .font(AppFont.ui(11))
+                    .padding(.leading, 14)
                 }
             }
-            .opacity(isClosed ? 0.4 : 1)
+            .opacity(isClosed || place?.dimmed == true ? 0.4 : 1)
         }
-        .help(session.details)
+        .help(help)
+        .accessibilityLabel(place?.hostBadge.map { "\(session.displayName), \($0)" } ?? session.displayName)
         .padding(.horizontal, 12)
         .frame(height: folder == nil ? 22 : 38)
         .background(isSelected ? theme.yellow : (isVisible ? Color(nsColor: theme.line) : Color.clear))

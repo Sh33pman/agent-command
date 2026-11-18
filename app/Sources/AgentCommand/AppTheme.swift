@@ -32,6 +32,7 @@ struct AppTheme {
     var yellow: Color { ansi(3) }
     var blue: Color { ansi(4) }
     var magenta: Color { ansi(5) }
+    var cyan: Color { ansi(6) }
 
     private func ansi(_ index: Int) -> Color { Color(nsColor: palette[index]) }
 

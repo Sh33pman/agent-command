@@ -10,6 +10,13 @@ struct Snapshot: Decodable {
     let wake: WakeState?
     /// Hosting, for Remote sessions; nil from a daemon without it.
     var remote: RemoteStatus? = nil
+    /// The Remote hosts this Mac uses sessions on, and their connections.
+    var remoteHosts: [RemoteHost]? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case sessions, notices, inbox, jobs, groups, wake, remote
+        case remoteHosts = "remote_hosts"
+    }
 }
 
 /// Waking the Mac for jobs (internal/ipc.WakeState): whether acmd may (its
@@ -73,9 +80,11 @@ struct InboxItem: Decodable, Identifiable, Equatable {
     let at: String
     let read: Bool
     let state: String
+    /// The Remote host of an item from a session added from one; "" for this Mac's.
+    let host: String
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, text, options, multipart, at, read, state
+        case id, kind, text, options, multipart, at, read, state, host
         case sessionID = "session_id"
     }
 
@@ -90,6 +99,7 @@ struct InboxItem: Decodable, Identifiable, Equatable {
         at = try c.decodeIfPresent(String.self, forKey: .at) ?? ""
         read = try c.decodeIfPresent(Bool.self, forKey: .read) ?? false
         state = try c.decodeIfPresent(String.self, forKey: .state) ?? "open"
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
     }
 
     var isOpen: Bool { state == "open" }
@@ -157,12 +167,21 @@ struct Notice: Decodable {
     let body: String
     let sound: String
     let emitter: String
+    /// The Remote host, for a session added from one.
+    let host: String
+
+    /// The banner's title, naming the host for a session added from one. The
+    /// daemon names it already; an older one doesn't.
+    var displayTitle: String {
+        guard !host.isEmpty, !title.hasSuffix(" · \(host)") else { return title }
+        return title.isEmpty ? host : "\(title) · \(host)"
+    }
 
     var isWithdrawal: Bool { kind == "withdraw" }
     var isForApp: Bool { emitter == "app" }
 
     private enum CodingKeys: String, CodingKey {
-        case seq, kind, title, body, sound, emitter
+        case seq, kind, title, body, sound, emitter, host
         case sessionID = "session_id"
     }
 
@@ -175,6 +194,7 @@ struct Notice: Decodable {
         body = try c.decodeIfPresent(String.self, forKey: .body) ?? ""
         sound = try c.decodeIfPresent(String.self, forKey: .sound) ?? ""
         emitter = try c.decodeIfPresent(String.self, forKey: .emitter) ?? ""
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
     }
 }
 
@@ -193,14 +213,26 @@ struct Session: Decodable, Identifiable, Equatable {
     /// Clients of this Mac's Hosting may see and use it (a Remote session).
     /// Older daemons don't send it: nil, a local session.
     var remote: Bool?
+    /// The Remote host it was added from, and its id there; nil or "" for a
+    /// session on this Mac.
+    var host: String?
+    var remoteID: String?
+    /// The host no longer has it: it can only be removed here.
+    var hostGone: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
         case harness = "Harness", claudeSessionID = "ClaudeSessionID"
         case statusDetail = "StatusDetail", description = "Description", remote = "Remote"
+        case host = "Host", remoteID = "RemoteID", hostGone = "HostGone"
     }
 
     var isRemote: Bool { remote == true }
+    /// Its Remote host's name, or "" for this Mac.
+    var hostName: String { host ?? "" }
+    /// It runs on a Remote host, added here from it.
+    var isOnHost: Bool { !hostName.isEmpty }
+    var isHostGone: Bool { isOnHost && hostGone == true }
 
     /// The status with its detail, as "waiting · permission: Write".
     var statusLine: String {
@@ -476,6 +508,11 @@ final class DaemonConnection {
 
     func call<Out: Decodable>(_ op: String) throws -> Out {
         try JSONDecoder().decode(Out.self, from: try exchange(op, nil))
+    }
+
+    /// A call with its input and its reply as JSON.
+    func raw(_ op: String, _ input: Data) throws -> Data {
+        try exchange(op, input)
     }
 
     /// A call whose reply has no data to read.

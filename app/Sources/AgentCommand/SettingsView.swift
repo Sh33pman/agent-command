@@ -51,6 +51,9 @@ struct SettingsView: View {
     let notifier: AppNotifier
     let shortcuts: ShortcutsModel
     let chooseTheme: () -> Void
+    let knownHosts: KnownHostsModel
+    /// Opens the Remote Hosts browser, at a host when one is given.
+    let browseHosts: (String?) -> Void
 
     var body: some View {
         NavigationSplitView {
@@ -101,7 +104,8 @@ struct SettingsView: View {
         case .popup: PopupSettingsForm()
         case .speech: SpeechSettings(model: model)
         case .scheduled: ScheduledSettings(model: model, store: store)
-        case .remote: RemoteSettings(model: model, remote: remote, store: store)
+        case .remote:
+            RemoteSettings(model: model, remote: remote, store: store, knownHosts: knownHosts, browseHosts: browseHosts)
         case .appearance: AppearanceSettings(model: model, chooseTheme: chooseTheme)
         case .editor: EditorSettings(model: model)
         case .advanced: AdvancedSettings(model: model)

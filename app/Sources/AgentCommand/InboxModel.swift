@@ -155,8 +155,10 @@ final class InboxModel {
         store.session(id: item.sessionID)
     }
 
+    /// Its name, with its host's for one added from a Remote host: "api ↗ studio".
     func sessionName(_ id: String) -> String {
-        store.session(id: id)?.displayName ?? "Deleted session"
+        guard let session = store.session(id: id) else { return "Deleted session" }
+        return session.isOnHost ? "\(session.displayName) ↗ \(session.hostName)" : session.displayName
     }
 
     // MARK: Showing

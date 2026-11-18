@@ -164,7 +164,7 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
                 center.removeDeliveredNotifications(withIdentifiers: [notice.sessionID])
             } else if shouldShow(notice) {
                 let content = UNMutableNotificationContent()
-                content.title = notice.title
+                content.title = notice.displayTitle
                 content.body = notice.body
                 content.sound = notice.sound.isEmpty ? nil : .default
                 content.userInfo = ["session": notice.sessionID]

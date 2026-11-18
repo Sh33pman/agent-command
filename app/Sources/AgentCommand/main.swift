@@ -29,6 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let hookHealth = HookHealth()
     /// Hosting, its clients and requests: alive with the app, so a request badges and notifies.
     private let remote = RemoteSettingsModel()
+    /// The Remote hosts this Mac connects to, for Settings.
+    private let knownHosts = KnownHostsModel()
+    /// The Remote Hosts browser, while it's open.
+    private var browser: RemoteBrowserModel?
+    /// Reads who's attached to Remote sessions while anyone is connected.
+    private var attachedTimer: Timer?
     private var inbox: InboxModel?
     private var scheduled: ScheduledModel?
     private lazy var popupWindow = PopupController(store: store)
@@ -78,7 +84,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 moveOut: { [weak self] session in self?.pane?.moveOut(sessionID: session.id) },
                 openSet: { [weak self] session in self?.pane?.showSet(containing: session.id) },
                 clickRow: { [weak self] session in self?.clickSidebarRow(session) },
-                openRow: { [weak self] session in self?.openSidebarRow(session.id) }
+                openRow: { [weak self] session in self?.openSidebarRow(session.id) },
+                remote: remote,
+                setRemote: { [weak self] session, on in
+                    guard let self else { return }
+                    self.store.setRemote(self.store.actionTargets(forRow: session), on)
+                },
+                removeAdded: { [weak self] session in
+                    guard let self else { return }
+                    self.store.removeAdded(self.store.actionTargets(forRow: session).filter(\.isHostGone))
+                }
             ))
         let split = NSSplitViewController()
         split.splitView = ThemedSplitView()
@@ -138,6 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     actionTitle: advice.actionTitle, action: { self?.turnWakeOn(advice.args) }))
             }
             if let self { list += hookHealth.warnings(setUp: { [weak self] in self?.setUpHooks() }) }
+            if let store, let hosting = RemoteWarning.check(
+                sessions: store.sessions, hosting: store.remote, turnOn: { self?.remote.setHosting(true) }) {
+                list.append(hosting)
+            }
             return list
         }
         notifier.start()
@@ -146,6 +165,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         remote.onNewRequests = { [weak notifier] requests in notifier?.notify(requests) }
         remote.onChange = { [weak self] in self?.settingsModel?.load() }
         notifier.onRemoteRequest = { [weak self] answer in self?.answerRemoteRequest(answer) }
+        // A client attaching to a session doesn't change Hosting's status: while
+        // anyone's connected, read who's attached, for the sidebar's counts.
+        attachedTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            guard let self, (self.remote.status?.connected ?? 0) > 0, self.store.sessions.contains(where: \.isRemote) else { return }
+            self.remote.loadLists()
+        }
         setUpPopup()
         SpeechController.shared.checkSetup()
         let args = CommandLine.arguments
@@ -325,7 +350,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// A split starts a new terminal in the same folder, and joins it to the set.
     /// The pane opens once the terminal has started, so a failed start leaves none.
     private func splitPane(_ direction: SplitDirection) {
-        let folder = store.selected?.cwd ?? lastFolder?.path ?? NSHomeDirectory()
+        // A host's folder isn't on this Mac: the terminal starts here.
+        let here = store.selected.flatMap { $0.isOnHost ? nil : $0.cwd }
+        let folder = here ?? lastFolder?.path ?? NSHomeDirectory()
         store.newSession(harness: Harness.terminal.rawValue, in: folder) { [weak self] session in
             self?.pane?.split(direction, session: session.id)
         }
@@ -439,7 +466,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Activating a stopped session resumes it; anything else just shows.
     private func activate(_ session: Session?) {
         guard let session else { return }
-        guard session.isStopped else {
+        // A host resumes its own sessions; this Mac only attaches.
+        guard session.isStopped, !session.isOnHost else {
             pane?.select(sessionID: session.id)
             return
         }
@@ -458,25 +486,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    @objc private func newTerminal() { newSession(harness: .terminal) }
+    /// ⇧⌘T: a terminal, with the folder panel's Remote checkbox.
+    @objc private func newTerminal() { newSession(harness: .terminal, asksRemote: true) }
 
-    /// A popup asking which harness, then the folder panel.
+    /// A popup asking where and which harness, then the folder.
     @objc private func chooseHarness() { askHarness(firstTime: false) }
 
-    private func askHarness(firstTime: Bool) {
+    /// host chooses a Remote host to start with, as the browser's New Session does.
+    private func askHarness(firstTime: Bool, host: String? = nil) {
         closePopup()
         showMainWindow()
+        // ⌘N's first question is only about this Mac.
+        let hosts = firstTime ? [] : store.remoteHosts.map(\.name)
         showPopup(HarnessPickerView(
             title: firstTime ? "What should ⌘N start?" : "New session",
             makeDefault: firstTime,
+            picker: NewSessionPicker(hosts: hosts, host: host, client: store.remoteClient),
             close: { [weak self] in self?.closePopup() },
-            choose: { [weak self] harness, makeDefault in
+            choose: { [weak self] harness, makeDefault, host in
                 self?.closePopup()
                 if makeDefault { self?.setDefaultHarness(harness) }
-                // After closing, as the folder panel is modal.
-                DispatchQueue.main.async { self?.newSession(harness: harness) }
+                if let host {
+                    self?.chooseRemoteFolder(host: host, harness: harness)
+                } else {
+                    // After closing, as the folder panel is modal. ⌘N's first time doesn't ask about Remote.
+                    DispatchQueue.main.async { self?.newSession(harness: harness, asksRemote: !firstTime) }
+                }
             }
         ))
+    }
+
+    /// The host's folders, for a session on it. It's created there, Remote, and shown here.
+    private func chooseRemoteFolder(host: String, harness: Harness) {
+        let chooser = RemoteFolderChooser(host: host, client: store.remoteClient)
+        chooser.choose = { [weak self, weak chooser] dir in
+            self?.store.newRemoteSession(host: host, dir: dir, harness: harness) { failure in
+                if let failure, let chooser {
+                    chooser.fail(failure)
+                } else {
+                    self?.closePopup()
+                }
+            }
+        }
+        showPopup(RemoteFolderView(model: chooser, harness: harness, close: { [weak self] in self?.closePopup() }))
     }
 
     /// Saves what ⌘N starts in acmd's config, which `acmd new` reads too.
@@ -490,7 +542,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    private func newSession(harness: Harness) {
+    /// The folder panel, then the session. asksRemote adds the Remote checkbox, which
+    /// starts from `new_sessions_remote`; without it (⌘N) the daemon uses that setting.
+    private func newSession(harness: Harness, asksRemote: Bool = false) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -499,9 +553,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         panel.prompt = harness.panelPrompt
         panel.message = "Choose the folder for the new session"
         panel.directoryURL = lastFolder
+        let remoteBox = NSButton(
+            checkboxWithTitle: "Remote: other Agent Commands using this Mac's Hosting can see and use it", target: nil, action: nil)
+        if asksRemote {
+            remoteBox.state = RemoteDefaults.newSessionsRemote ? .on : .off
+            remoteBox.sizeToFit()
+            let box = NSView(frame: NSRect(x: 0, y: 0, width: remoteBox.frame.width + 40, height: remoteBox.frame.height + 16))
+            remoteBox.frame.origin = NSPoint(x: 20, y: 8)
+            box.addSubview(remoteBox)
+            panel.accessoryView = box
+            panel.isAccessoryViewDisclosed = true
+        }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         lastFolder = url
-        store.newSession(harness: harness.rawValue, in: url.path)
+        store.newSession(harness: harness.rawValue, in: url.path, remote: asksRemote ? remoteBox.state == .on : nil)
     }
 
     /// A popup to pick an earlier Claude or Antigravity conversation, or enter its id.
@@ -729,6 +794,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         scheduled = model
     }
 
+    // MARK: Remote hosts
+
+    /// The Remote Hosts browser goes over the whole window, like Scheduled. host
+    /// chooses the host it starts on.
+    private func showRemoteHosts(host: String? = nil) {
+        closePopup()
+        popupWindow.close()
+        showMainWindow()
+        let model = RemoteBrowserModel(client: store.remoteClient, hosts: { [weak store] in store?.remoteHosts ?? [] }, host: host)
+        model.close = { [weak self] in self?.closePopup() }
+        model.handlesKey = { [weak self] event in event.window === self?.window }
+        model.adopt = { [weak self] session in self?.store.adopt(session) }
+        model.focus = { [weak self] id in
+            self?.closePopup()
+            self?.store.show(id)
+        }
+        model.newSession = { [weak self] host in self?.askHarness(firstTime: false, host: host) }
+        showPopup(RemoteBrowserView(model: model, settings: { [weak self] in self?.openSettings(at: .remote) }), aboveStatusBar: true)
+        window?.makeFirstResponder(nil)
+        model.start()
+        browser = model
+    }
+
     // MARK: Your editor
 
     @objc private func openSelectionInEditor() {
@@ -736,9 +824,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         openInEditor(session)
     }
 
-    /// The session's folder, in the editor chosen in Settings → Editor.
+    /// The session's folder, in the editor chosen in Settings → Editor. A host's
+    /// folder isn't on this Mac.
     private func openInEditor(_ session: Session) {
-        guard !session.cwd.isEmpty else { return NSSound.beep() }
+        guard !session.cwd.isEmpty, !session.isOnHost else { return NSSound.beep() }
         Acmd.run(["open", session.id]) { [weak self] ok, output in
             if !ok { self?.editorFailed(output) }
         }
@@ -883,7 +972,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             chooseTheme: { [weak self] in
                 self?.showMainWindow()
                 self?.showThemes()
-            })
+            },
+            knownHosts: knownHosts,
+            browseHosts: { [weak self] host in self?.showRemoteHosts(host: host) })
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -956,6 +1047,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             shortcuts.stop()
             self.shortcuts = nil
         }
+        if let browser {
+            browser.stop()
+            self.browser = nil
+        }
         if let state = popupReturn {
             window?.makeFirstResponder(sidebarKeys)
             store.restoreSidebar(state)
@@ -975,6 +1070,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             paneCount: pane?.tree.shownLeaves.count ?? 0, showsScreen: pane?.shown != nil,
             speechOn: speech.isEnabled, speaking: speech.isSpeaking, agentRemoteControl: AgentRemoteControlSetting.isOn,
             hostingOn: remote.hostingOn,
+            hosts: store.remoteHosts.map(\.name),
             defaultHarness: DefaultHarness.current,
             popupReads: popup.autoPlay, popupOn: popup.enabled, popupStyle: popup.style, popupOpens: popup.opens)
         return Palette.entries(state).map { entry in
@@ -1009,6 +1105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .toggleAgentRemoteControl: toggleAgentRemoteControl()
         case .toggleHosting: toggleHosting()
         case .remoteSettings: openSettings(at: .remote)
+        case .setRemote(let sessions, let on): store.setRemote(sessions, on)
+        case .removeAdded(let sessions): store.removeAdded(sessions)
+        case .remoteHosts: showRemoteHosts()
+        case .newOnHost(let host): askHarness(firstTime: false, host: host)
         case .togglePopupReading: PopupSettings.shared.autoPlay.toggle()
         case .togglePopup: PopupSettings.shared.enabled.toggle()
         case .popupStyle(let style): PopupSettings.shared.style = style

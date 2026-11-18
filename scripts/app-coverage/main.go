@@ -36,7 +36,12 @@ var minimums = map[string]float64{
 	"Palette.swift":             95,
 	"PaneSets.swift":            95,
 	"PaneTree.swift":            95,
+	"KnownHosts.swift":          90,
 	"Remote.swift":              90,
+	"RemoteBrowserModel.swift":  90,
+	"RemoteFolderChooser.swift": 90,
+	"RemoteHosts.swift":         90,
+	"RemoteHostsClient.swift":   90,
 	"RemoteSettingsModel.swift": 90,
 	"Report.swift":              95,
 	// The rest opens panels and runs timers.

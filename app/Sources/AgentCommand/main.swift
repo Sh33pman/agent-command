@@ -3,7 +3,8 @@ import SwiftUI
 
 // Usage: AgentCommand [--session <id>], selecting that session at launch.
 
-/// Writes why the app is going away, to find unexpected exits.
+/// Writes why the app is going away, to find unexpected exits. Started from Finder or
+/// the Dock, it lands in app.log in the state folder (see AppLog).
 func trace(_ what: String) {
     let stack = Thread.callStackSymbols.prefix(14).joined(separator: "\n")
     FileHandle.standardError.write(Data("[\(Date())] \(what)\n\(stack)\n\n".utf8))
@@ -1199,6 +1200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 }
 
+AppLog.start()
 GhosttyAppearance.locateResources()
 
 // One app at a time, unless asked for another: opening it again shows the window.

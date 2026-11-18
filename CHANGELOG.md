@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.0](https://github.com/brettmostert/agent-command/compare/v0.59.0...v0.60.0) (2026-11-18)
+
+
+### Features
+
+* a clock on sessions a scheduled job started (PAN-129) ([#87](https://github.com/brettmostert/agent-command/issues/87)) ([09fb7e1](https://github.com/brettmostert/agent-command/commit/09fb7e1f4ea50a26828d39d3fe8637c646449e9a))
+
 ## [0.59.0](https://github.com/brettmostert/agent-command/compare/v0.58.0...v0.59.0) (2026-11-18)
 
 

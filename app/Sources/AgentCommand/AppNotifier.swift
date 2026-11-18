@@ -34,7 +34,42 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     func start() {
         guard let center else { return }
         center.delegate = self
+        center.setNotificationCategories([Self.remoteRequestCategory])
         refreshPermission()
+    }
+
+    /// A pending request's notification: Approve, or Show it in Settings.
+    static let remoteRequestCategory = UNNotificationCategory(
+        identifier: RemoteRequestResponse.category,
+        actions: [
+            UNNotificationAction(identifier: RemoteRequestResponse.approveAction, title: "Approve", options: [.authenticationRequired]),
+            UNNotificationAction(identifier: "remote-request.show", title: "Show in Settings", options: [.foreground]),
+        ],
+        intentIdentifiers: [])
+
+    /// Called when a pending request's notification is clicked, or approved.
+    @ObservationIgnored var onRemoteRequest: ((RemoteRequestResponse) -> Void)?
+
+    /// Tells you about clients waiting for approval, one notification each.
+    func notify(_ requests: [RemoteRequest]) {
+        guard let center else { return }
+        for request in requests {
+            let content = Self.content(for: request)
+            center.add(UNNotificationRequest(identifier: "remote-request-\(request.id)", content: content, trigger: nil)) { error in
+                if let error { NSLog("notification: %@", error.localizedDescription) }
+            }
+        }
+    }
+
+    static func content(for request: RemoteRequest) -> UNNotificationContent {
+        let text = RemoteSettingsModel.notification(for: request)
+        let content = UNMutableNotificationContent()
+        content.title = text.title
+        content.body = text.body
+        content.sound = .default
+        content.categoryIdentifier = RemoteRequestResponse.category
+        content.userInfo = [RemoteRequestResponse.userInfoKey: request.id]
+        return content
     }
 
     /// Asks if macOS hasn't asked yet, which it does only once, and otherwise notes
@@ -172,8 +207,12 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let session = response.notification.request.content.userInfo["session"] as? String {
+        let info = response.notification.request.content.userInfo
+        if let session = info["session"] as? String {
             DispatchQueue.main.async { self.onOpen?(session) }
+        } else if let id = info[RemoteRequestResponse.userInfoKey] as? String {
+            let answer = RemoteRequestResponse(action: response.actionIdentifier, request: id)
+            DispatchQueue.main.async { self.onRemoteRequest?(answer) }
         }
         completionHandler()
     }

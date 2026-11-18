@@ -26,11 +26,15 @@ type setting struct {
 	key   string // as shown: "notify.cooldown"
 	parse func(string) (any, error)
 	get   func(config.Config) any
+	// setWith is the command that sets a setting that's only shown here.
+	setWith string
 }
 
+// section splits the key at its last dot: "remote.host.port" is port in
+// [remote.host].
 func (s setting) section() (string, string) {
-	if section, name, ok := strings.Cut(s.key, "."); ok {
-		return section, name
+	if i := strings.LastIndex(s.key, "."); i >= 0 {
+		return s.key[:i], s.key[i+1:]
 	}
 	return "", s.key
 }
@@ -113,14 +117,30 @@ var settings = []setting{
 		}
 		return f, nil
 	}},
+	boolSetting("remote.new_sessions_remote", func(c config.Config) bool { return c.Remote.NewSessionsRemote }),
+	boolSetting("remote.host.enabled", func(c config.Config) bool { return c.Remote.Host.Enabled }),
+	choiceSetting("remote.host.listen", []string{config.ListenLocalhost, config.ListenAll}, func(c config.Config) string { return c.Remote.Host.Listen }),
+	{key: "remote.host.port", get: func(c config.Config) any { return c.Remote.Host.Port }, parse: func(v string) (any, error) {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("remote.host.port is a port from 1 to 65535, not %q", v)
+		}
+		return n, nil
+	}},
+	boolSetting("remote.host.port_fallback", func(c config.Config) bool { return c.Remote.Host.PortFallback }),
 	choiceSetting("editor.run_in", []string{"background", "tab"}, func(c config.Config) string { return c.Editor.RunIn }),
 	choiceSetting("editor.target", []string{"cwd", "git_root"}, func(c config.Config) string { return c.Editor.Target }),
 }
 
 // shownOnly are shown with the settings, but set elsewhere.
 var shownOnly = []setting{
-	{key: "editor.preset", get: func(c config.Config) any { return c.Editor.Preset }},
-	{key: "editor.command", get: func(c config.Config) any { return orEmpty(c.Editor.Command) }},
+	{key: "editor.preset", get: func(c config.Config) any { return c.Editor.Preset }, setWith: "acmd editor set"},
+	{key: "editor.command", get: func(c config.Config) any { return orEmpty(c.Editor.Command) }, setWith: "acmd editor set"},
+	// A cert and its key change together, once they're checked.
+	{key: "remote.host.cert", get: func(c config.Config) any { return c.Remote.Host.Cert }, setWith: "acmd remote cert host"},
+	{key: "remote.host.key", get: func(c config.Config) any { return c.Remote.Host.Key }, setWith: "acmd remote cert host"},
+	{key: "remote.client.cert", get: func(c config.Config) any { return c.Remote.Client.Cert }, setWith: "acmd remote cert client"},
+	{key: "remote.client.key", get: func(c config.Config) any { return c.Remote.Client.Key }, setWith: "acmd remote cert client"},
 }
 
 func orEmpty(list []string) []string {
@@ -165,7 +185,7 @@ func findSetting(key string) (setting, error) {
 	}
 	for _, s := range shownOnly {
 		if s.key == key {
-			return setting{}, fmt.Errorf("%s is set with: acmd editor set", key)
+			return setting{}, fmt.Errorf("%s is set with: %s", key, s.setWith)
 		}
 	}
 	return setting{}, fmt.Errorf("no setting %q (acmd config show lists them)", key)
@@ -245,6 +265,9 @@ func newConfigCmd() *cobra.Command {
 			section, name := s.section()
 			if err := setup.SaveSetting(p.Config(), section, name, value); err != nil {
 				return err
+			}
+			if strings.HasPrefix(s.key, "remote.") {
+				reloadHosting(cmd.Context(), p) // so Hosting follows it now, not at the daemon's next look
 			}
 			b, _ := json.Marshal(value)
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s = %s\n", s.key, b)

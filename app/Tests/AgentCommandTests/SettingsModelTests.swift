@@ -93,6 +93,34 @@ private func model(_ acmd: FakeAcmd) -> SettingsModel {
     #expect(m.error == "Couldn't change notify.cooldown.")
 }
 
+@MainActor @Test func remoteSettingsReadAndChangeInTurn() {
+    let acmd = FakeAcmd()
+    let m = model(acmd)
+    m.load()
+    #expect(!m.values.newSessionsRemote && m.values.hostListen == "localhost" && m.values.hostPort == 7433)
+    #expect(m.values.hostPortFallback && !m.values.hostEnabled && m.values.hostCert.isEmpty && m.values.clientCert.isEmpty)
+    acmd.show = """
+        {"path": "p", "voices": [], "settings": {"remote.new_sessions_remote": true, "remote.host.enabled": true,
+          "remote.host.listen": "all", "remote.host.port": 7500, "remote.host.port_fallback": false,
+          "remote.host.cert": "/h.pem", "remote.client.cert": "/c.pem"}}
+        """
+    m.load()
+    let v = m.values
+    #expect(v.newSessionsRemote && v.hostEnabled && v.hostListen == "all" && v.hostPort == 7500 && !v.hostPortFallback)
+    #expect(v.hostCert == "/h.pem" && v.clientCert == "/c.pem")
+
+    acmd.calls = []
+    m.setAll([("remote.host.port", "7500"), ("remote.host.port_fallback", "off")])
+    #expect(acmd.changes == [
+        ["config", "set", "--", "remote.host.port", "7500"], ["config", "set", "--", "remote.host.port_fallback", "off"],
+    ], "one after the other")
+    acmd.calls = []
+    acmd.fail = ["config"]
+    m.setAll([("remote.host.port", "1"), ("remote.host.port_fallback", "off")])
+    #expect(acmd.changes == [["config", "set", "--", "remote.host.port", "1"]], "stops at the first that fails")
+    m.setAll([])
+}
+
 @MainActor @Test func aNewVoiceIsDownloadedOnceSaved() {
     let acmd = FakeAcmd()
     let m = model(acmd)

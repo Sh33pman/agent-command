@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The parts of the Settings window, in its sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, claude, antigravity, notifications, popup, speech, scheduled, appearance, keyboard, editor, advanced
+    case general, claude, antigravity, notifications, popup, speech, scheduled, remote, appearance, keyboard, editor, advanced
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .popup: "Reply Popup"
         case .speech: "Read Aloud"
         case .scheduled: "Scheduled Jobs"
+        case .remote: "Remote"
         case .appearance: "Appearance"
         case .keyboard: "Keyboard"
         case .editor: "Editor"
@@ -33,6 +34,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .popup: "rectangle.on.rectangle"
         case .speech: "speaker.wave.2"
         case .scheduled: "calendar.badge.clock"
+        case .remote: "network"
         case .appearance: "paintpalette"
         case .keyboard: "keyboard"
         case .editor: "chevron.left.forwardslash.chevron.right"
@@ -44,6 +46,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 /// Everything that can be set, in one window.
 struct SettingsView: View {
     @Bindable var model: SettingsModel
+    let remote: RemoteSettingsModel
     let store: SessionStore
     let notifier: AppNotifier
     let shortcuts: ShortcutsModel
@@ -53,6 +56,7 @@ struct SettingsView: View {
         NavigationSplitView {
             List(SettingsSection.allCases, selection: $model.section) { section in
                 Label(section.title, systemImage: section.icon).tag(section)
+                    .badge(section == .remote ? remote.pendingCount : 0)
             }
             .navigationSplitViewColumnWidth(190)
         } detail: {
@@ -85,7 +89,7 @@ struct SettingsView: View {
     }
 
     private var needsAcmd: Bool {
-        [.claude, .antigravity, .notifications, .speech, .editor].contains(section)
+        [.claude, .antigravity, .notifications, .speech, .editor, .remote].contains(section)
     }
 
     @ViewBuilder private var form: some View {
@@ -97,6 +101,7 @@ struct SettingsView: View {
         case .popup: PopupSettingsForm()
         case .speech: SpeechSettings(model: model)
         case .scheduled: ScheduledSettings(model: model, store: store)
+        case .remote: RemoteSettings(model: model, remote: remote, store: store)
         case .appearance: AppearanceSettings(model: model, chooseTheme: chooseTheme)
         case .editor: EditorSettings(model: model)
         case .advanced: AdvancedSettings(model: model)
@@ -106,7 +111,7 @@ struct SettingsView: View {
 }
 
 /// A toggle for one of acmd's settings: it shows the saved value, and saves a change.
-private struct AcmdToggle: View {
+struct AcmdToggle: View {
     let title: String
     var note = ""
     let key: String
@@ -154,7 +159,7 @@ private struct GeneralSettings: View {
         Section {
             AcmdToggle(
                 title: "Agent Remote Control for new sessions",
-                note: "Use Claude sessions from claude.ai and the Claude app, and Antigravity sessions from Antigravity's Remote Control. Applies to sessions started or resumed after the change.",
+                note: "Use Claude sessions from claude.ai and the Claude app, and Antigravity sessions from Antigravity's Remote Control. Applies to sessions started or resumed after the change. Remote sessions, between Agent Commands, are under Remote.",
                 key: "agent_remote_control", model: model, value: model.values.agentRemoteControl)
         }
         Section("Warnings") {

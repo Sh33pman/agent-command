@@ -338,6 +338,44 @@ func SaveSetting(configFile, section, key string, value any) error {
 	return writeConfig(configFile, orig, text)
 }
 
+// SaveSettings sets several values in one section of config.toml with one
+// write, so a cert and its key never disagree in between.
+func SaveSettings(configFile, section string, kv ...config.KeyValue) error {
+	orig, text, err := readConfig(configFile)
+	if err != nil {
+		return err
+	}
+	for _, p := range kv {
+		if text, err = config.Set(text, section, p.Key, p.Value); err != nil {
+			return err
+		}
+	}
+	return writeConfig(configFile, orig, text)
+}
+
+// RenameAuthorizedClient gives the authorized client with this fingerprint a
+// new name, with one write. Its entry moves to the end of the list. It says
+// whether there was one.
+func RenameAuthorizedClient(configFile, fingerprint, name string) (bool, error) {
+	orig, text, err := readConfig(configFile)
+	if err != nil {
+		return false, err
+	}
+	text, n, err := config.RemoveTables(text, "remote.authorized_clients", func(t map[string]any) bool {
+		fp, _ := t["fingerprint"].(string)
+		return fp == fingerprint
+	})
+	if err != nil || n == 0 {
+		return false, err
+	}
+	text, err = config.AppendTable(text, "remote.authorized_clients",
+		config.KeyValue{Key: "name", Value: name}, config.KeyValue{Key: "fingerprint", Value: fingerprint})
+	if err != nil {
+		return false, err
+	}
+	return true, writeConfig(configFile, orig, text)
+}
+
 // AddAuthorizedClient adds a [[remote.authorized_clients]] entry to the end of
 // config.toml, keeping the rest of the file as SaveSetting does.
 func AddAuthorizedClient(configFile string, c config.AuthorizedClient) error {

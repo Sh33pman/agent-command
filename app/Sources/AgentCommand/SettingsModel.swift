@@ -24,6 +24,13 @@ struct AcmdSettings: Decodable, Equatable {
         var editorCommand: [String] = []
         var editorRunIn = "background"
         var editorTarget = "cwd"
+        var newSessionsRemote = false
+        var hostEnabled = false
+        var hostListen = "localhost"
+        var hostPort = 7433
+        var hostPortFallback = true
+        var hostCert = ""
+        var clientCert = ""
 
         enum CodingKeys: String, CodingKey {
             case claudeCommand = "claude_command", claudeArgs = "claude_args", agentRemoteControl = "agent_remote_control"
@@ -33,6 +40,9 @@ struct AcmdSettings: Decodable, Equatable {
             case cooldown = "notify.cooldown", sound = "notify.sound", voice = "speech.voice", speed = "speech.speed"
             case editorPreset = "editor.preset", editorCommand = "editor.command", editorRunIn = "editor.run_in"
             case editorTarget = "editor.target"
+            case newSessionsRemote = "remote.new_sessions_remote", hostEnabled = "remote.host.enabled"
+            case hostListen = "remote.host.listen", hostPort = "remote.host.port", hostPortFallback = "remote.host.port_fallback"
+            case hostCert = "remote.host.cert", clientCert = "remote.client.cert"
         }
 
         init() {}
@@ -60,6 +70,13 @@ struct AcmdSettings: Decodable, Equatable {
             editorCommand = try c.decodeIfPresent([String].self, forKey: .editorCommand) ?? d.editorCommand
             editorRunIn = try c.decodeIfPresent(String.self, forKey: .editorRunIn) ?? d.editorRunIn
             editorTarget = try c.decodeIfPresent(String.self, forKey: .editorTarget) ?? d.editorTarget
+            newSessionsRemote = try c.decodeIfPresent(Bool.self, forKey: .newSessionsRemote) ?? d.newSessionsRemote
+            hostEnabled = try c.decodeIfPresent(Bool.self, forKey: .hostEnabled) ?? d.hostEnabled
+            hostListen = try c.decodeIfPresent(String.self, forKey: .hostListen) ?? d.hostListen
+            hostPort = try c.decodeIfPresent(Int.self, forKey: .hostPort) ?? d.hostPort
+            hostPortFallback = try c.decodeIfPresent(Bool.self, forKey: .hostPortFallback) ?? d.hostPortFallback
+            hostCert = try c.decodeIfPresent(String.self, forKey: .hostCert) ?? d.hostCert
+            clientCert = try c.decodeIfPresent(String.self, forKey: .clientCert) ?? d.clientCert
         }
     }
 
@@ -186,6 +203,12 @@ enum ShellWords {
     /// Sets one of acmd's settings, then reads them all back.
     func set(_ key: String, _ value: String, then: @escaping () -> Void = {}) {
         command(["config", "set", "--", key, value], key: key, then: then)
+    }
+
+    /// Sets several, one after another: two writes at once could lose one.
+    func setAll(_ changes: [(String, String)]) {
+        guard let (key, value) = changes.first else { return }
+        set(key, value) { [weak self] in self?.setAll(Array(changes.dropFirst())) }
     }
 
     func set(_ key: String, _ on: Bool) {

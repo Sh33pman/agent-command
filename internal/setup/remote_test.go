@@ -51,8 +51,40 @@ func TestAuthorizedClients(t *testing.T) {
 		t.Errorf("mode %v", st.Mode())
 	}
 
+	must(t, AddAuthorizedClient(file, laptop))
+	ok, err := RenameAuthorizedClient(file, desk.Fingerprint, "office")
+	if !ok || err != nil {
+		t.Fatal(ok, err)
+	}
+	c, err = config.Load(file)
+	must(t, err)
+	office := config.AuthorizedClient{Name: "office", Fingerprint: desk.Fingerprint}
+	if len(c.Remote.AuthorizedClients) != 2 || c.Remote.AuthorizedClients[0] != laptop || c.Remote.AuthorizedClients[1] != office {
+		t.Errorf("renamed: %+v", c.Remote.AuthorizedClients)
+	}
+	if ok, err := RenameAuthorizedClient(file, "SHA256:none", "x"); ok || err != nil {
+		t.Errorf("renamed one that isn't there: %v %v", ok, err)
+	}
+
 	must(t, os.WriteFile(file, []byte("x = "), 0o600))
 	if err := AddAuthorizedClient(file, desk); err == nil {
 		t.Error("added to a file that doesn't parse")
+	}
+	if _, err := RenameAuthorizedClient(file, desk.Fingerprint, "x"); err == nil {
+		t.Error("renamed in a file that doesn't parse")
+	}
+}
+
+func TestSaveSettings(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "config.toml")
+	must(t, SaveSettings(file, "remote.client", config.KeyValue{Key: "cert", Value: "/c.pem"}, config.KeyValue{Key: "key", Value: "/k.pem"}))
+	c, err := config.Load(file)
+	must(t, err)
+	if c.Remote.Client.Cert != "/c.pem" || c.Remote.Client.Key != "/k.pem" {
+		t.Errorf("client = %+v", c.Remote.Client)
+	}
+	must(t, os.WriteFile(file, []byte("x = "), 0o600))
+	if err := SaveSettings(file, "remote.client", config.KeyValue{Key: "cert", Value: ""}); err == nil {
+		t.Error("saved to a file that doesn't parse")
 	}
 }

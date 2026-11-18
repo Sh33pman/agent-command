@@ -30,7 +30,8 @@ func newRemoteCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newRemoteIdentityCmd(), newRemoteHostingCmd(), newRemoteStatusCmd(), newRemoteClientsCmd(),
-		newRemoteAuthorizeCmd(), newRemoteRevokeCmd(), newRemoteDisconnectCmd(), newRemoteRequestsCmd())
+		newRemoteAuthorizeCmd(), newRemoteRevokeCmd(), newRemoteDisconnectCmd(), newRemoteRequestsCmd(),
+		newRemoteRenameCmd(), newRemoteCertCmd())
 	cmd.AddCommand(remoteSessionCmds()...)
 	return cmd
 }
@@ -69,6 +70,7 @@ func newRemoteIdentityCmd() *cobra.Command {
 				if _, err := identity.Regenerate(dir); err != nil {
 					return err
 				}
+				reloadHosting(cmd.Context(), p) // Hosting shows the new one from now on
 				fmt.Fprintln(out, "Made a new identity. Give its fingerprint to your hosts and clients.")
 			}
 			ids, err := roleIdentities(p)

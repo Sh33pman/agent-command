@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private let sidebarKeys = SidebarKeyView()
     private let notifier = AppNotifier()
     private let hookHealth = HookHealth()
+    /// Hosting, its clients and requests: alive with the app, so a request badges and notifies.
+    private let remote = RemoteSettingsModel()
     private var inbox: InboxModel?
     private var scheduled: ScheduledModel?
     private lazy var popupWindow = PopupController(store: store)
@@ -140,6 +142,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         notifier.start()
         store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
+        store.onRemote = { [weak remote] status in remote?.update(status) }
+        remote.onNewRequests = { [weak notifier] requests in notifier?.notify(requests) }
+        remote.onChange = { [weak self] in self?.settingsModel?.load() }
+        notifier.onRemoteRequest = { [weak self] answer in self?.answerRemoteRequest(answer) }
         setUpPopup()
         SpeechController.shared.checkSetup()
         let args = CommandLine.arguments
@@ -842,6 +848,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         openSettings(at: nil)
     }
 
+    /// Hosting on or off, from the palette.
+    private func toggleHosting() {
+        remote.setHosting(!remote.hostingOn)
+    }
+
+    /// A pending request's notification: approve it, or open Settings at it.
+    private func answerRemoteRequest(_ answer: RemoteRequestResponse) {
+        switch answer {
+        case .approve(let id): remote.approve(id: id)
+        case .show(let id):
+            remote.highlighted = id
+            openSettings(at: .remote)
+        }
+    }
+
     private func openSettings(at section: SettingsSection?) {
         NSApp.activate(ignoringOtherApps: true)
         if let settingsWindow {
@@ -858,7 +879,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         keys.embedded = true
         keys.start()
         let view = SettingsView(
-            model: model, store: store, notifier: notifier, shortcuts: keys,
+            model: model, remote: remote, store: store, notifier: notifier, shortcuts: keys,
             chooseTheme: { [weak self] in
                 self?.showMainWindow()
                 self?.showThemes()
@@ -953,6 +974,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             targets: targets, sessions: store.sessions, needsYou: store.nextAttentionID != nil, setMembers: store.setMembers,
             paneCount: pane?.tree.shownLeaves.count ?? 0, showsScreen: pane?.shown != nil,
             speechOn: speech.isEnabled, speaking: speech.isSpeaking, agentRemoteControl: AgentRemoteControlSetting.isOn,
+            hostingOn: remote.hostingOn,
             defaultHarness: DefaultHarness.current,
             popupReads: popup.autoPlay, popupOn: popup.enabled, popupStyle: popup.style, popupOpens: popup.opens)
         return Palette.entries(state).map { entry in
@@ -985,6 +1007,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .toggleSpeech: SpeechController.shared.setEnabled(!SpeechController.shared.isEnabled)
         case .toggleReading: store.toggleReadingSelected()
         case .toggleAgentRemoteControl: toggleAgentRemoteControl()
+        case .toggleHosting: toggleHosting()
+        case .remoteSettings: openSettings(at: .remote)
         case .togglePopupReading: PopupSettings.shared.autoPlay.toggle()
         case .togglePopup: PopupSettings.shared.enabled.toggle()
         case .popupStyle(let style): PopupSettings.shared.style = style

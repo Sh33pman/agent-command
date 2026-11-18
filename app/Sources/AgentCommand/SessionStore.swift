@@ -31,6 +31,10 @@ final class SessionStore {
     var wake: WakeState?
     /// The groups sessions can go in, Default last.
     var groups: [SessionGroup] = []
+    /// Hosting, for Remote sessions; nil when the daemon has none.
+    private(set) var remote: RemoteStatus?
+    /// Called with Hosting's status, from each snapshot.
+    @ObservationIgnored var onRemote: ((RemoteStatus?) -> Void)?
 
     /// Whether the sidebar has the keyboard, and its cursor and marks while it does.
     private(set) var sidebarFocused = false
@@ -381,6 +385,8 @@ final class SessionStore {
             if snapshot.wake != self.wake { self.wake = snapshot.wake }
             let groups = (snapshot.groups ?? []).filter { !$0.isArchived }
             if groups != self.groups { self.groups = groups }
+            if snapshot.remote != self.remote { self.remote = snapshot.remote }
+            self.onRemote?(snapshot.remote)
             let queue = snapshot.inbox ?? []
             if queue != self.queue {
                 self.queue = queue

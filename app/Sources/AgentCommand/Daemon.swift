@@ -8,6 +8,8 @@ struct Snapshot: Decodable {
     let jobs: [Job]?
     let groups: [SessionGroup]?
     let wake: WakeState?
+    /// Hosting, for Remote sessions; nil from a daemon without it.
+    var remote: RemoteStatus? = nil
 }
 
 /// Waking the Mac for jobs (internal/ipc.WakeState): whether acmd may (its

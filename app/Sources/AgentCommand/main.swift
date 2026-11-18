@@ -176,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let args = CommandLine.arguments
         offerSetup()
         hookHealth.start()
+        UpdateChecker.shared.start(current: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
         store.start()
 
         NSApp.mainMenu = makeMenu()

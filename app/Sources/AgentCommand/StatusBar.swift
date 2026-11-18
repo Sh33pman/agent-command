@@ -94,6 +94,9 @@ struct StatusBarView: View {
                 .font(AppFont.ui(11))
                 .lineLimit(1)
                 .help(Keymap.shared.tip("Open the Inbox", .inbox))
+                if let latest = UpdateChecker.shared.available {
+                    updateIndicator(latest)
+                }
                 Text(version)
                     .font(AppFont.ui(11))
                     .foregroundStyle(theme.dim)
@@ -104,6 +107,18 @@ struct StatusBarView: View {
         }
         .frame(height: Self.height)
         .background(theme.bg)
+    }
+
+    /// A dot beside the version while a newer one is out. Clicking opens its release.
+    private func updateIndicator(_ latest: String) -> some View {
+        Button {
+            if let url = UpdateChecker.shared.releaseURL { NSWorkspace.shared.open(url) }
+        } label: {
+            Image(systemName: "arrow.up.circle.fill").foregroundStyle(theme.blue)
+        }
+        .buttonStyle(.plain)
+        .font(AppFont.ui(11))
+        .help("v\(latest) is available. Upgrade with brew upgrade --cask agent-command")
     }
 
     /// Downloading the model has a percentage. Before and after that, a spinner.

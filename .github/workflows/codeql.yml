@@ -3,7 +3,7 @@
 # the speech helper's dependencies instead: about 40 minutes a PR, and none of
 # it the app's code.
 #
-# Here Swift builds the app on the cached Ghostty build, and the speech helper's
+# Here Swift builds the app on the prebuilt Ghostty libraries, and the speech helper's
 # own code (SpeechCore, which has no dependencies). The helper's executable needs
 # MLX, a long build of other people's code, so it's scanned on main and weekly.
 # Go is analyzed twice, once as macOS builds it (GOOS=darwin) and once as Linux
@@ -100,11 +100,13 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # Before CodeQL starts watching: the Ghostty build is Zig, not ours to scan.
+      # Before CodeQL starts watching: the Ghostty libraries aren't ours to scan.
+      # The pinned, hash-checked prebuilt ones, as CI and the release use: building
+      # them took 10 minutes whenever their cache had been evicted.
       - if: matrix.language == 'swift'
         uses: ./.github/actions/macos-tools
         with:
-          ghostty: "true"
+          ghostty: "prebuilt"
       - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           languages: ${{ matrix.language }}

@@ -177,9 +177,13 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # No Zig cache: it saves about 400 MB under a new key every run, which filled
+      # the repo's 10 GB of caches and pushed out the ones that matter (Ghostty's,
+      # cached below). The Ghostty build is what Zig's cache would have saved.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
+          use-cache: false
       - name: name the Ghostty cache
         id: ghostty
         run: echo "key=ghostty-linux-$(zig version)-${{ hashFiles('scripts/build-ghostty.sh') }}" >> "$GITHUB_OUTPUT"
@@ -248,9 +252,13 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # No Zig cache: it saves about 400 MB under a new key every run, which filled
+      # the repo's 10 GB of caches and pushed out the ones that matter (Ghostty's,
+      # cached below). The Ghostty build is what Zig's cache would have saved.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.0
+          use-cache: false
       # A cache of its own: a library built on one distribution isn't the test
       # of another.
       - name: name the Ghostty cache

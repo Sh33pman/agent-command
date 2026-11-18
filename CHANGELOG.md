@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.1](https://github.com/brettmostert/agent-command/compare/v0.60.0...v0.60.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* offer Remove from This Mac for any session added from a host, in the menu, palette, a shortcut and the Remote Hosts browser ([#89](https://github.com/brettmostert/agent-command/issues/89)) ([c01bc75](https://github.com/brettmostert/agent-command/commit/c01bc757f33d5f550aa33cfbad45a2c4d6674445))
+
 ## [0.60.0](https://github.com/brettmostert/agent-command/compare/v0.59.0...v0.60.0) (2026-11-18)
 
 

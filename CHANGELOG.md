@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.0](https://github.com/brettmostert/agent-command/compare/v0.57.0...v0.58.0) (2026-11-18)
+
+
+### Features
+
+* choose the default harness, and ⌘N asks until one is chosen ([#70](https://github.com/brettmostert/agent-command/issues/70)) ([006f19c](https://github.com/brettmostert/agent-command/commit/006f19c28b6d3c9e1e6e8941d936460dfb9c1055))
+
 ## [0.57.0](https://github.com/brettmostert/agent-command/compare/v0.56.0...v0.57.0) (2026-11-17)
 
 

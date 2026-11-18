@@ -135,9 +135,12 @@ type Session struct {
 	// session on this machine), and RemoteID its id there. HostGone: the host
 	// no longer offers it (ended there, or no longer Remote), so it can only
 	// be removed.
-	Host        string
-	RemoteID    string
-	HostGone    bool
+	Host     string
+	RemoteID string
+	HostGone bool
+	// JobID is the scheduled job that started it ("" if none did). A job that
+	// continues an existing session leaves it as it was.
+	JobID       string
 	External    *PaneLoc
 	CreatedAt   time.Time
 	LastEventAt time.Time

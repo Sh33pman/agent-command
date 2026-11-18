@@ -130,6 +130,21 @@ struct Job: Codable, Identifiable, Equatable {
 }
 
 /// One time a job was due (internal/core.JobRun).
+extension Session {
+    /// The scheduled job behind it, for the clock beside its name: the job that
+    /// started it, or one that continues it on a schedule. nil for neither.
+    func scheduledNote(jobs: [Job]) -> String? {
+        if let jobID, !jobID.isEmpty {
+            guard let job = jobs.first(where: { $0.id == jobID }) else { return "Started by a scheduled job" }
+            return "Started by the scheduled job \u{201C}\(job.name)\u{201D}"
+        }
+        guard !isOnHost else { return nil } // a host's sessions aren't this Mac's jobs'
+        let names = jobs.filter { JobPlace(rawValue: $0.place) == .session && $0.sessionID == id }.map { "\u{201C}\($0.name)\u{201D}" }
+        guard !names.isEmpty else { return nil }
+        return names.count == 1 ? "Continued by the scheduled job \(names[0])" : "Continued by the scheduled jobs \(names.joined(separator: ", "))"
+    }
+}
+
 struct JobRun: Codable, Identifiable, Equatable {
     let id: Int64
     let jobID: String

@@ -150,7 +150,8 @@ struct InboxView: View {
         return VStack(alignment: .leading, spacing: 0) {
             SessionRow(
                 session: session, link: link, isSelected: isSelected, isVisible: false, isClosed: false,
-                isCursor: isCursor(.session(session.id)), isMarked: model.markedSessions.contains(session.id), unread: 0)
+                isCursor: isCursor(.session(session.id)), isMarked: model.markedSessions.contains(session.id), unread: 0,
+                scheduled: model.scheduledNote(session))
             if unread > 0 || open != nil {
                 HStack(spacing: 6) {
                     // Keeps a set's line running past this row's icons.

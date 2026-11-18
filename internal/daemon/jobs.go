@@ -176,7 +176,7 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 			args = append(args, "--worktree", worktreeName(j, due.In(d.cfg.Location)))
 		}
 		s, err := d.hostSession(ctx, ipc.NewRequest{GroupID: d.jobGroup(ctx, j), Cwd: j.Cwd, Harness: cmp.Or(j.Harness, core.HarnessClaude),
-			Name: j.Name, Description: j.Description, Prompt: prompt, Args: args})
+			Name: j.Name, Description: j.Description, Prompt: prompt, Args: args, JobID: j.ID})
 		if err != nil {
 			return fail("Couldn't start the session: %s.", err)
 		}

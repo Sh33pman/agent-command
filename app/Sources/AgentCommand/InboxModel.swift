@@ -142,6 +142,9 @@ final class InboxModel {
         store.setMembers.first { $0.contains(sessionID) } ?? []
     }
 
+    /// The scheduled job behind a session, for its clock (Session.scheduledNote).
+    func scheduledNote(_ session: Session) -> String? { session.scheduledNote(jobs: store.jobs) }
+
     func unreadCount(set members: [String]) -> Int {
         allItems.filter { !$0.read && members.contains($0.sessionID) }.count
     }

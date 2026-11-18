@@ -293,6 +293,9 @@ type NewRequest struct {
 	// Remote makes it a Remote session, or not. nil (as from ⌘N) is the
 	// config's [remote] new_sessions_remote.
 	Remote *bool `json:"remote,omitempty"`
+	// JobID is the scheduled job starting it. The daemon sets it for its own
+	// runs; it isn't taken from clients.
+	JobID string `json:"-"`
 }
 
 // Layout is the app's pane layout. It belongs to the app: the daemon only keeps

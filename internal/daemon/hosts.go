@@ -50,7 +50,7 @@ func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Ses
 	remote := d.newSessionsRemote(req.Remote)
 	d.mu.Lock()
 	s := &core.Session{Kind: core.KindHosted, Cwd: req.Cwd, Harness: req.Harness, CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto,
-		Remote: remote}
+		Remote: remote, JobID: req.JobID}
 	switch {
 	case req.Resume != "":
 		s.ClaudeSessionID = req.Resume

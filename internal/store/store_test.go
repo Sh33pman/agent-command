@@ -161,7 +161,7 @@ func TestSessionRoundTrip(t *testing.T) {
 		Name: "fix flaky e2e", Description: "PROJ-123", Cwd: "/w/api",
 		ClaudeSessionID: "c3", ClaudeHistory: []string{"c1", "c2"}, TranscriptPath: "/t/c3.jsonl",
 		Status: core.StatusWaiting, StatusDetail: "question", Unseen: true,
-		Kind: core.KindExternal, BgID: "", Pid: 4242, Remote: true,
+		Kind: core.KindExternal, BgID: "", Pid: 4242, Remote: true, JobID: "job-1",
 		External:    &core.PaneLoc{Terminal: "kitty", KittySocket: "/tmp/k", KittyWindow: 7, TTY: "ttys010"},
 		LastEventAt: time.UnixMilli(1793380000123).UTC(),
 	}
@@ -635,5 +635,65 @@ func TestRemoteMigration(t *testing.T) {
 	}
 	if got, err := s.Session(ctx, "old"); err != nil || !got.Remote {
 		t.Errorf("made Remote: %+v, %v", got, err)
+	}
+}
+
+// The migration gives the sessions a job started that job, and leaves the rest.
+func TestSessionJobMigration(t *testing.T) {
+	orig := migrations
+	t.Cleanup(func() { migrations = orig })
+	migrations = func() ([]migration, error) {
+		ms, err := orig()
+		var before []migration
+		for _, m := range ms {
+			if m.name < "0010" {
+				before = append(before, m)
+			}
+		}
+		return before, err
+	}
+	p := filepath.Join(t.TempDir(), "state.db")
+	old, err := Open(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"started", "continued", "skipped", "mine"} {
+		if _, err := old.db.ExecContext(ctx, `INSERT INTO sessions (id, name, description, group_id, name_source, cwd,
+			claude_session_id, claude_history, transcript_path, status, status_detail, unseen, kind, bg_id, pid, external,
+			created_at, last_event_at, archived_at, harness) VALUES (?, ?, '', ?, 'auto', '/w', '', '[]', '',
+			'done', '', 0, 'hosted', '', 0, '', 1, 0, 0, 'claude')`, id, id, DefaultGroupID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, j := range []struct{ id, spec string }{
+		{"folder-job", `{"name":"a","schedule":"daily","where":"folder"}`},
+		{"session-job", `{"name":"b","schedule":"daily","where":"session","session_id":"continued"}`},
+	} {
+		if _, err := old.db.ExecContext(ctx, `INSERT INTO jobs (id, spec, created_at, updated_at) VALUES (?, ?, 1, 1)`, j.id, j.spec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []struct{ job, result, session string }{
+		{"folder-job", "started", "started"},
+		{"folder-job", "skipped", "skipped"},
+		{"session-job", "started", "continued"},
+	} {
+		if _, err := old.db.ExecContext(ctx, `INSERT INTO job_runs (job_id, due, at, result, session_id) VALUES (?, 1, 1, ?, ?)`,
+			r.job, r.result, r.session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old.Close()
+
+	migrations = orig
+	s, err := Open(ctx, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for id, want := range map[string]string{"started": "folder-job", "continued": "", "skipped": "", "mine": ""} {
+		if got, err := s.Session(ctx, id); err != nil || got.JobID != want {
+			t.Errorf("%s: JobID %+v, want %q (%v)", id, got, want, err)
+		}
 	}
 }

@@ -13,7 +13,7 @@ import (
 
 const sessionCols = `id, name, description, group_id, name_source, cwd, claude_session_id,
 	claude_history, transcript_path, status, status_detail, unseen, kind, bg_id, pid,
-	external, created_at, last_event_at, archived_at, harness, remote, host, remote_id, host_gone`
+	external, created_at, last_event_at, archived_at, harness, remote, host, remote_id, host_gone, job_id`
 
 // CreateSession inserts a new session. An empty ID gets a new ULID, an empty
 // GroupID the Default group, and a zero CreatedAt the current time.
@@ -41,7 +41,7 @@ func (s *Store) CreateSession(ctx context.Context, sess *core.Session) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args...); err != nil {
 			return fmt.Errorf("create session: %w", err)
 		}
 		return syncClaudeIDs(ctx, tx, sess)
@@ -57,7 +57,7 @@ func (s *Store) UpdateSession(ctx context.Context, sess *core.Session) error {
 		}
 		res, err := tx.ExecContext(ctx, `UPDATE sessions SET name=?, description=?, group_id=?, name_source=?, cwd=?,
 			claude_session_id=?, claude_history=?, transcript_path=?, status=?, status_detail=?, unseen=?, kind=?,
-			bg_id=?, pid=?, external=?, created_at=?, last_event_at=?, archived_at=?, harness=?, remote=?, host=?, remote_id=?, host_gone=? WHERE id=?`,
+			bg_id=?, pid=?, external=?, created_at=?, last_event_at=?, archived_at=?, harness=?, remote=?, host=?, remote_id=?, host_gone=?, job_id=? WHERE id=?`,
 			append(args[1:], args[0])...)
 		if err != nil {
 			return fmt.Errorf("update session: %w", err)
@@ -191,7 +191,7 @@ func sessionArgs(sess *core.Session) ([]any, error) {
 	return []any{sess.ID, sess.Name, sess.Description, sess.GroupID, string(sess.NameSource), sess.Cwd,
 		sess.ClaudeSessionID, string(hist), sess.TranscriptPath, string(sess.Status), sess.StatusDetail,
 		b2i(sess.Unseen), string(sess.Kind), sess.BgID, sess.Pid, ext,
-		ms(sess.CreatedAt), ms(sess.LastEventAt), ms(sess.ArchivedAt), sess.Harness, b2i(sess.Remote), sess.Host, sess.RemoteID, b2i(sess.HostGone)}, nil
+		ms(sess.CreatedAt), ms(sess.LastEventAt), ms(sess.ArchivedAt), sess.Harness, b2i(sess.Remote), sess.Host, sess.RemoteID, b2i(sess.HostGone), sess.JobID}, nil
 }
 
 type scanner interface{ Scan(...any) error }
@@ -206,7 +206,7 @@ func scanSession(row scanner) (*core.Session, error) {
 	)
 	err := row.Scan(&sess.ID, &sess.Name, &sess.Description, &sess.GroupID, &nameSource, &sess.Cwd,
 		&sess.ClaudeSessionID, &hist, &sess.TranscriptPath, &status, &sess.StatusDetail, &unseen, &kind,
-		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived, &sess.Harness, &remote, &sess.Host, &sess.RemoteID, &gone)
+		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived, &sess.Harness, &remote, &sess.Host, &sess.RemoteID, &gone, &sess.JobID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

@@ -164,6 +164,8 @@ type jsonRow struct {
 	BgID            string `json:"bg_id,omitempty"`
 	ClaudeSessionID string `json:"claude_session_id,omitempty"`
 	LastEventAt     string `json:"last_event_at,omitempty"`
+	// JobID is the scheduled job that started it.
+	JobID string `json:"job_id,omitempty"`
 }
 
 func writeListJSON(w io.Writer, rows []listRow) error {
@@ -172,7 +174,7 @@ func writeListJSON(w io.Writer, rows []listRow) error {
 		s := r.Session
 		j := jsonRow{Number: r.Number, ID: s.ID, Name: s.Name, Description: s.Description, Status: string(s.Status),
 			StatusDetail: s.StatusDetail, Unseen: s.Unseen, Remote: s.Remote, Group: r.Group.Name, Cwd: s.Cwd, Kind: string(s.Kind),
-			Where: where(s), Host: s.Host, RemoteID: s.RemoteID, HostGone: s.HostGone, BgID: s.BgID, ClaudeSessionID: s.ClaudeSessionID}
+			Where: where(s), Host: s.Host, RemoteID: s.RemoteID, HostGone: s.HostGone, BgID: s.BgID, ClaudeSessionID: s.ClaudeSessionID, JobID: s.JobID}
 		if !s.LastEventAt.IsZero() {
 			j.LastEventAt = s.LastEventAt.UTC().Format(time.RFC3339)
 		}

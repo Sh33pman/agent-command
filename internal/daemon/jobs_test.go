@@ -247,7 +247,7 @@ func TestScheduledRuns(t *testing.T) {
 	}
 	s, err := d.store.Session(ctx, run.SessionID)
 	must(t, err)
-	if s.GroupID != g.ID || s.Description != "every morning" || s.Name != "Morning brief" {
+	if s.GroupID != g.ID || s.Description != "every morning" || s.Name != "Morning brief" || s.JobID != job.ID {
 		t.Errorf("session: %+v", s)
 	}
 	if n := d.runDueJobs(ctx); n != 0 {
@@ -402,6 +402,9 @@ func TestRunInSession(t *testing.T) {
 
 	// Running and done with its turn: type the prompt in, pasted, then Enter.
 	s, _ = d.store.Session(ctx, s.ID)
+	if s.JobID != "" {
+		t.Errorf("a job that continues a session didn't start it: JobID %q", s.JobID)
+	}
 	s.Status = core.StatusDone
 	must(t, d.store.UpdateSession(ctx, s))
 	clk.set("2026-11-13 08:00:00")

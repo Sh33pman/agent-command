@@ -112,7 +112,8 @@ struct SidebarView: View {
                             unread: store.unreadCount(session: session.id),
                             number: store.sidebarFocused ? numbers[session.id] : nil,
                             showsFolder: true,
-                            place: place)
+                            place: place,
+                            scheduled: session.scheduledNote(jobs: store.jobs))
                             .id(session.id)
                             .contentShape(Rectangle())
                             .simultaneousGesture(TapGesture().onEnded { clickRow(session) })
@@ -189,7 +190,8 @@ struct SidebarView: View {
             if showArchived {
                 ForEach(store.archived) { session in
                     SessionRow(session: session, link: .none, isSelected: false, isVisible: false, isClosed: false,
-                        isCursor: false, isMarked: false, unread: 0, showsFolder: true)
+                        isCursor: false, isMarked: false, unread: 0, showsFolder: true,
+                        scheduled: session.scheduledNote(jobs: store.jobs))
                         .contextMenu {
                             if !session.isTerminal {
                                 Button("Unarchive") { store.unarchive(session.id) }
@@ -260,11 +262,18 @@ struct SessionRow: View {
     var showsFolder = false
     /// Where it runs: a host's badge, or shared from this Mac.
     var place: SessionPlace? = nil
+    /// A scheduled job started or continues it (Session.scheduledNote): a clock
+    /// beside its name, with this as its tooltip.
+    var scheduled: String? = nil
 
     private var theme: AppTheme { .shared }
 
     private var help: String {
-        [session.details, place?.help].compactMap { $0 }.joined(separator: "\n")
+        [session.details, scheduled, place?.help].compactMap { $0 }.joined(separator: "\n")
+    }
+
+    private var accessibilityName: String {
+        [session.displayName, scheduled == nil ? nil : "scheduled", place?.hostBadge].compactMap { $0 }.joined(separator: ", ")
     }
 
     /// A host's folder is as it gave it: this Mac's home means nothing there.
@@ -289,6 +298,13 @@ struct SessionRow: View {
                         .foregroundStyle(isSelected ? theme.bg : theme.fg)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if let scheduled {
+                        Image(systemName: "clock")
+                            .font(AppFont.ui(11))
+                            .foregroundStyle(isSelected ? theme.bg : theme.magenta)
+                            .help(scheduled)
+                            .accessibilityHidden(true)
+                    }
                     Spacer(minLength: 4)
                     if unread > 0 {
                         Text("\(unread)").fontWeight(.bold).foregroundStyle(isSelected ? theme.bg : theme.blue)
@@ -334,7 +350,7 @@ struct SessionRow: View {
             .opacity(isClosed || place?.dimmed == true ? 0.4 : 1)
         }
         .help(help)
-        .accessibilityLabel(place?.hostBadge.map { "\(session.displayName), \($0)" } ?? session.displayName)
+        .accessibilityLabel(accessibilityName)
         .padding(.horizontal, 12)
         .frame(height: folder == nil ? 22 : 38)
         .background(isSelected ? theme.yellow : (isVisible ? Color(nsColor: theme.line) : Color.clear))

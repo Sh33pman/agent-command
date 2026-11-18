@@ -219,12 +219,14 @@ struct Session: Decodable, Identifiable, Equatable {
     var remoteID: String?
     /// The host no longer has it: it can only be removed here.
     var hostGone: Bool?
+    /// The scheduled job that started it; nil or "" if none did.
+    var jobID: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
         case harness = "Harness", claudeSessionID = "ClaudeSessionID"
         case statusDetail = "StatusDetail", description = "Description", remote = "Remote"
-        case host = "Host", remoteID = "RemoteID", hostGone = "HostGone"
+        case host = "Host", remoteID = "RemoteID", hostGone = "HostGone", jobID = "JobID"
     }
 
     var isRemote: Bool { remote == true }

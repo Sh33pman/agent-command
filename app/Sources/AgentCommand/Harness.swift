@@ -6,9 +6,6 @@ enum Harness: String, CaseIterable, Identifiable {
     case antigravity
     case terminal
 
-    /// What a plain new session starts (⌘N). Named so it could become a setting.
-    static let defaultForNew = Harness.claude
-
     /// The agents: what keeps a conversation, runs scheduled jobs and can be resumed.
     static let agents: [Harness] = [.claude, .antigravity]
 

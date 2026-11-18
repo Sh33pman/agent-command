@@ -62,6 +62,8 @@ struct PaletteState {
     var speechOn = false
     var speaking = false
     var remoteControl = false
+    /// What ⌘N starts, whose entry shows the shortcut; nil asks first.
+    var defaultHarness: Harness? = .claude
     var popupReads = false
     var popupOn = true
     var popupStyle = ReplyPopupStyle.window
@@ -120,8 +122,12 @@ enum Palette {
                 section: "Go to", title: session.displayName, shortcut: session.status, key: session.id,
                 action: .select(sessionID: session.id)))
         }
-        list.append(PaletteEntry(section: "New", title: "Claude session", shortcut: keys.label(.newClaude), action: .newSession(harness: Harness.claude.rawValue)))
-        list.append(PaletteEntry(section: "New", title: "Antigravity session", action: .newSession(harness: Harness.antigravity.rawValue)))
+        for agent in Harness.agents {
+            list.append(PaletteEntry(
+                section: "New", title: "\(agent.title) session",
+                shortcut: agent == state.defaultHarness ? keys.label(.newClaude) : "",
+                action: .newSession(harness: agent.rawValue)))
+        }
         list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: Harness.terminal.rawValue)))
         list.append(PaletteEntry(section: "New", title: "New session…", shortcut: keys.label(.newSession), action: .chooseHarness))
         list.append(PaletteEntry(section: "New", title: "Resume a session…", shortcut: keys.label(.resume), action: .resume))

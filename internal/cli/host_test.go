@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -275,5 +277,23 @@ func TestAgyCommandAndAgentHelp(t *testing.T) {
 	if err := (execHosts{paths: p}).Start(context.Background(), daemon.HostRequest{ID: "x", Dir: dir}); err == nil ||
 		!strings.Contains(err.Error(), "claude not found") {
 		t.Errorf("starting without claude: %v", err)
+	}
+}
+
+func TestHarnessForNewSessions(t *testing.T) {
+	none, agy := config.Config{}, config.Config{DefaultHarness: core.HarnessAntigravity}
+	for _, c := range []struct {
+		flag string
+		cfg  config.Config
+		want string
+	}{
+		{"", none, core.HarnessClaude},
+		{"", agy, core.HarnessAntigravity},
+		{core.HarnessTerminal, agy, core.HarnessTerminal},
+		{core.HarnessClaude, agy, core.HarnessClaude},
+	} {
+		if got := harnessFor(c.flag, c.cfg); got != c.want {
+			t.Errorf("harnessFor(%q, %q) = %q, want %q", c.flag, c.cfg.DefaultHarness, got, c.want)
+		}
 	}
 }

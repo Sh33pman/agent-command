@@ -20,6 +20,7 @@ func TestConfigShowAndSet(t *testing.T) {
 	var view configView
 	must(t, json.Unmarshal([]byte(mustRun(t, "config", "show", "--json")), &view))
 	if view.Path != file || view.Settings["notify.cooldown"] != "20s" || view.Settings["remote_control"] != false ||
+		view.Settings["default_harness"] != "" ||
 		len(view.Voices) != 20 || view.Settings["editor.preset"] != "" {
 		t.Fatalf("defaults: %+v", view)
 	}
@@ -31,7 +32,7 @@ func TestConfigShowAndSet(t *testing.T) {
 		{"notify.cooldown", "90s"}, {"notify.on_paused", "on"}, {"notify.sound", ""}, {"remote_control", "true"},
 		{"claude_args", `["--model", "opus"]`}, {"speech.voice", "am_adam:0.5,af_sky:0.5"}, {"speech.speed", "1.25"},
 		{"editor.target", "git_root"}, {"claude_command", " /usr/local/bin/claude "},
-		{"agy_command", "/opt/agy/bin/agy"}, {"agy_args", `["--mode", "plan"]`},
+		{"agy_command", "/opt/agy/bin/agy"}, {"agy_args", `["--mode", "plan"]`}, {"default_harness", "antigravity"},
 	} {
 		mustRun(t, "config", "set", c[0], c[1])
 	}
@@ -41,7 +42,8 @@ func TestConfigShowAndSet(t *testing.T) {
 		DoneMinDuration: "10s", Cooldown: "1m30s", Sound: ""}
 	if cfg.Notify != want || !cfg.RemoteControl || strings.Join(cfg.ClaudeArgs, " ") != "--model opus" ||
 		cfg.Speech.Voice != "am_adam:0.5,af_sky:0.5" || cfg.Speech.Speed != 1.25 || cfg.Editor.Target != "git_root" ||
-		cfg.ClaudeCommand != "/usr/local/bin/claude" || cfg.AgyCommand != "/opt/agy/bin/agy" || strings.Join(cfg.AgyArgs, " ") != "--mode plan" {
+		cfg.ClaudeCommand != "/usr/local/bin/claude" || cfg.AgyCommand != "/opt/agy/bin/agy" || strings.Join(cfg.AgyArgs, " ") != "--mode plan" ||
+		cfg.DefaultHarness != "antigravity" {
 		t.Errorf("saved: %+v", cfg)
 	}
 	mustRun(t, "config", "set", "--", "claude_args", "--verbose  --x")
@@ -59,6 +61,7 @@ func TestConfigShowAndSet(t *testing.T) {
 		{"notify.cooldown", "soon"}, {"notify.cooldown", "-1s"}, {"notify.enabled", "maybe"}, {"speech.voice", "bf_emma"},
 		{"speech.voice", " "}, {"speech.speed", "3"}, {"editor.run_in", "window"}, {"claude_command", ""},
 		{"claude_args", "[1"}, {"agy_args", "[1"}, {"agy_command", " "}, {"editor.preset", "zed"}, {"nope", "1"}, {"notify.sound", "ping"},
+		{"default_harness", "terminal"}, {"default_harness", "copilot"},
 	} {
 		if _, err := acmd(t, "config", "set", bad[0], bad[1]); err == nil {
 			t.Errorf("%s = %q accepted", bad[0], bad[1])

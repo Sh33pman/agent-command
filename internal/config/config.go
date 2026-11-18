@@ -29,10 +29,14 @@ type Config struct {
 	// RemoteControl starts agent sessions with --remote-control, so they can be
 	// used remotely: Claude's from claude.ai and the Claude app, Antigravity's
 	// from its Remote Control browser view. Off by default.
-	RemoteControl bool   `toml:"remote_control"`
-	Editor        Editor `toml:"editor"`
-	Notify        Notify `toml:"notify"`
-	Speech        Speech `toml:"speech"`
+	RemoteControl bool `toml:"remote_control"`
+	// DefaultHarness is what a plain new session runs (⌘N, `acmd new` without
+	// --harness): "claude" or "antigravity". "" isn't chosen yet: the app asks,
+	// and `acmd new` starts Claude.
+	DefaultHarness string `toml:"default_harness"`
+	Editor         Editor `toml:"editor"`
+	Notify         Notify `toml:"notify"`
+	Speech         Speech `toml:"speech"`
 }
 
 // Retired are what acmd v1 kept in config.toml and nothing reads any more: its
@@ -138,6 +142,9 @@ agy_args = []
 # Claude's from claude.ai and the Claude app, Antigravity's from its Remote
 # Control in a browser. Applies to sessions started or resumed after a change.
 remote_control = false
+# What a new session runs (⌘N, and acmd new without --harness): claude or
+# antigravity. "" asks in the app the first time, and acmd new starts Claude.
+default_harness = ""
 
 [editor]
 # vscode | cursor | zed | idea | custom; "" asks on first use. Change with: acmd editor set

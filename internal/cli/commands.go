@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -39,9 +40,10 @@ func newNewCmd() *cobra.Command {
 	var o newOptions
 	cmd := &cobra.Command{
 		Use:   "new [-- <first prompt>]",
-		Short: "Start a new session hosted by acmd (Claude, unless --harness says otherwise)",
+		Short: "Start a new session hosted by acmd (default_harness, else Claude, unless --harness says otherwise)",
 		Long: "Starts an interactive `claude` in a folder (default: this one), hosted by acmd, and lists it in the app.\n" +
 			"A folder Claude hasn't trusted yet shows Claude's trust prompt in the session.\n" +
+			"Without --harness it starts default_harness from acmd's config, or Claude when that isn't set.\n" +
 			"--harness antigravity starts Antigravity's CLI (agy) instead, and --harness terminal a shell.\n" +
 			"claude_args (or agy_args) in acmd's config are added to the agent's arguments.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -68,7 +70,7 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&o.cwd, "cwd", "", "folder to start in (default: the current folder)")
 	f.StringVar(&o.name, "name", "", "session name (default: the agent's)")
 	f.StringVar(&o.description, "description", "", "session description")
-	f.StringVar(&o.harness, "harness", core.HarnessClaude, "what runs in it: claude, antigravity or terminal")
+	f.StringVar(&o.harness, "harness", "", "what runs in it: claude, antigravity or terminal (default: default_harness, else claude)")
 	return cmd
 }
 
@@ -78,9 +80,11 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 		return nil, err
 	}
 	// A broken config.toml stops here, before a session that would fail to start.
-	if _, err := config.Load(p.Config()); err != nil {
+	cfg, err := config.Load(p.Config())
+	if err != nil {
 		return nil, err
 	}
+	o.harness = harnessFor(o.harness, cfg)
 	dir, err := filepath.Abs(o.cwd)
 	if err != nil {
 		return nil, err
@@ -108,6 +112,12 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 		return c.conn.Call(ipc.OpNew, req, &s)
 	})
 	return &s, err
+}
+
+// harnessFor is what a new session runs: --harness, else default_harness, else
+// Claude (the command line can't ask).
+func harnessFor(flag string, cfg config.Config) string {
+	return cmp.Or(flag, cfg.DefaultHarness, core.HarnessClaude)
 }
 
 // newSessionArgs are the extra arguments every session gets, which its host adds:

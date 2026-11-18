@@ -7,7 +7,6 @@ import Testing
     #expect(Harness.allCases.map(\.rawValue) == ["claude", "antigravity", "terminal"])
     #expect(Harness.allCases.map(\.title) == ["Claude", "Antigravity", "Terminal"])
     #expect(Harness.allCases.map(\.id) == ["claude", "antigravity", "terminal"])
-    #expect(Harness.defaultForNew == .claude, "⌘N starts Claude")
     #expect(Harness.terminal.panelPrompt == "Open Terminal")
     #expect(Harness.antigravity.panelPrompt == "Start Session" && Harness.claude.panelPrompt == "Start Session")
     #expect(Harness(session: "") == .claude && Harness(session: "antigravity") == .antigravity)

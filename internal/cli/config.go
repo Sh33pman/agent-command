@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/speech"
@@ -89,6 +90,7 @@ var settings = []setting{
 	}},
 	listSetting("agy_args", func(c config.Config) []string { return c.AgyArgs }),
 	boolSetting("remote_control", func(c config.Config) bool { return c.RemoteControl }),
+	choiceSetting("default_harness", []string{core.HarnessClaude, core.HarnessAntigravity, ""}, func(c config.Config) string { return c.DefaultHarness }),
 	boolSetting("notify.enabled", func(c config.Config) bool { return c.Notify.Enabled }),
 	boolSetting("notify.on_waiting", func(c config.Config) bool { return c.Notify.OnWaiting }),
 	boolSetting("notify.on_error", func(c config.Config) bool { return c.Notify.OnError }),

@@ -314,7 +314,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
         switch self {
         case .popupAnywhere: "Open the popup, or the Inbox in the app"
         case .appAnywhere: "Bring the app forward, or hide it"
-        case .newClaude: "New Claude session"
+        case .newClaude: "New session (the default harness)"
         case .newTerminal: "New terminal"
         case .newSession: "New session: choose Claude, Antigravity or a terminal"
         case .resume: "Resume a session"

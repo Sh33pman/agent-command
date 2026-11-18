@@ -441,23 +441,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    /// ⌘N: a session with the default harness, Claude.
-    @objc private func newDefaultSession() { newSession(harness: Harness.defaultForNew) }
+    /// ⌘N: a session with the default harness. With none chosen yet, it asks which,
+    /// with "make it the default" ticked.
+    @objc private func newDefaultSession() {
+        if let harness = DefaultHarness.current {
+            newSession(harness: harness)
+        } else {
+            askHarness(firstTime: true)
+        }
+    }
 
     @objc private func newTerminal() { newSession(harness: .terminal) }
 
     /// A popup asking which harness, then the folder panel.
-    @objc private func chooseHarness() {
+    @objc private func chooseHarness() { askHarness(firstTime: false) }
+
+    private func askHarness(firstTime: Bool) {
         closePopup()
         showMainWindow()
         showPopup(HarnessPickerView(
+            title: firstTime ? "What should ⌘N start?" : "New session",
+            makeDefault: firstTime,
             close: { [weak self] in self?.closePopup() },
-            choose: { [weak self] harness in
+            choose: { [weak self] harness, makeDefault in
                 self?.closePopup()
+                if makeDefault { self?.setDefaultHarness(harness) }
                 // After closing, as the folder panel is modal.
                 DispatchQueue.main.async { self?.newSession(harness: harness) }
             }
         ))
+    }
+
+    /// Saves what ⌘N starts in acmd's config, which `acmd new` reads too.
+    private func setDefaultHarness(_ harness: Harness?) {
+        Acmd.run(DefaultHarness.arguments(harness)) { ok, output in
+            guard !ok else { return }
+            let failed = NSAlert()
+            failed.messageText = "The default couldn't be saved"
+            failed.informativeText = output.isEmpty ? "Run acmd config set default_harness in a terminal to see why." : output
+            failed.runModal()
+        }
     }
 
     private func newSession(harness: Harness) {
@@ -776,7 +799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         add("Open Agent Command", #selector(menuBarOpen))
         add(waiting > 0 ? "Inbox (\(waiting) waiting)" : "Inbox", #selector(menuBarInbox))
         add("Scheduled Jobs", #selector(menuBarScheduled))
-        add("New \(Harness.defaultForNew.title) Session", #selector(menuBarNewSession))
+        add(DefaultHarness.menuTitle(DefaultHarness.current), #selector(menuBarNewSession))
         add("New Session…", #selector(menuBarChooseHarness))
         menu.addItem(.separator())
         add("Reply Popup", #selector(togglePopupEnabled)).state = PopupSettings.shared.enabled ? .on : .off
@@ -929,6 +952,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             targets: targets, sessions: store.sessions, needsYou: store.nextAttentionID != nil, setMembers: store.setMembers,
             paneCount: pane?.tree.shownLeaves.count ?? 0, showsScreen: pane?.shown != nil,
             speechOn: speech.isEnabled, speaking: speech.isSpeaking, remoteControl: RemoteControlSetting.isOn,
+            defaultHarness: DefaultHarness.current,
             popupReads: popup.autoPlay, popupOn: popup.enabled, popupStyle: popup.style, popupOpens: popup.opens)
         return Palette.entries(state).map { entry in
             PopupCommand(section: entry.section, title: entry.title, shortcut: entry.shortcut, key: entry.key) {
@@ -1060,7 +1084,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let file = NSMenuItem()
         file.submenu = NSMenu(title: "File")
         for (title, action, key) in [
-            ("New \(Harness.defaultForNew.title) Session", #selector(newDefaultSession), KeyAction.newClaude),
+            (DefaultHarness.menuTitle(DefaultHarness.current), #selector(newDefaultSession), KeyAction.newClaude),
             ("New Terminal", #selector(newTerminal), .newTerminal),
             ("New Session…", #selector(chooseHarness), .newSession),
             ("Resume Session…", #selector(resumeSession), .resume),
@@ -1206,6 +1230,9 @@ app.run()
 extension AppDelegate: NSMenuItemValidation {
     /// Each time a menu opens: the Remote Control checkmark, and the Go menu's names.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(newDefaultSession) {
+            item.title = DefaultHarness.menuTitle(DefaultHarness.current)
+        }
         if item.action == #selector(toggleRemoteControl) {
             item.state = RemoteControlSetting.isOn ? .on : .off
         }

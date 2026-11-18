@@ -1,29 +1,49 @@
 import SwiftUI
 
 /// Asks what a new session runs: Claude, Antigravity or a terminal. The folder
-/// panel comes after.
+/// panel comes after. Its checkbox makes the agent picked what ⌘N starts.
 struct HarnessPickerView: View {
+    var title = "New session"
     let close: () -> Void
-    let choose: (Harness) -> Void
+    /// The harness picked, and whether to make it the default.
+    let choose: (Harness, Bool) -> Void
 
     @State private var choice = HarnessChoice()
+    @State private var makeDefault: Bool
+
+    init(title: String = "New session", makeDefault: Bool = false,
+         close: @escaping () -> Void, choose: @escaping (Harness, Bool) -> Void) {
+        self.title = title
+        self.close = close
+        self.choose = choose
+        _makeDefault = State(initialValue: makeDefault)
+    }
+
+    /// Whether the checkbox counts for this pick: only an agent can be the default.
+    static func makesDefault(_ harness: Harness, checked: Bool) -> Bool {
+        checked && DefaultHarness.choices.contains(harness)
+    }
+
+    private func pick(_ harness: Harness) {
+        choose(harness, Self.makesDefault(harness, checked: makeDefault))
+    }
 
     private var theme: AppTheme { .shared }
 
     var body: some View {
         let list = choice.matches
         PopupBox(
-            title: "New session",
+            title: title,
             placeholder: "Search, or press a number",
             search: Binding(
                 get: { choice.search },
                 set: { text in
-                    if let picked = choice.setSearch(text) { choose(picked) }
+                    if let picked = choice.setSearch(text) { pick(picked) }
                 }),
             close: close,
             onMove: { choice.move($0) },
             onSubmit: {
-                if let picked = choice.chosen { choose(picked) }
+                if let picked = choice.chosen { pick(picked) }
             }
         ) {
             VStack(alignment: .leading, spacing: 0) {
@@ -36,8 +56,15 @@ struct HarnessPickerView: View {
                     row(harness, isSelected: harness == choice.chosen)
                         .contentShape(Rectangle())
                         .onHover { if $0 { choice.select(harness) } }
-                        .onTapGesture { choose(harness) }
+                        .onTapGesture { pick(harness) }
                 }
+                Toggle("Make it the default for ⌘N", isOn: $makeDefault)
+                    .toggleStyle(.checkbox)
+                    .disabled(choice.chosen.map { !DefaultHarness.choices.contains($0) } ?? true)
+                    .help("Claude or Antigravity: ⌘N starts it without asking. Change it in Settings.")
+                    .foregroundStyle(theme.dim)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
             }
         }
     }

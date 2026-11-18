@@ -9,6 +9,7 @@ struct AcmdSettings: Decodable, Equatable {
         var agyCommand = "agy"
         var agyArgs: [String] = []
         var remoteControl = false
+        var defaultHarness = ""
         var notify = true
         var onWaiting = true
         var onError = true
@@ -26,7 +27,7 @@ struct AcmdSettings: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey {
             case claudeCommand = "claude_command", claudeArgs = "claude_args", remoteControl = "remote_control"
-            case agyCommand = "agy_command", agyArgs = "agy_args"
+            case agyCommand = "agy_command", agyArgs = "agy_args", defaultHarness = "default_harness"
             case notify = "notify.enabled", onWaiting = "notify.on_waiting", onError = "notify.on_error"
             case onDone = "notify.on_done", onPaused = "notify.on_paused", doneMin = "notify.done_min_duration"
             case cooldown = "notify.cooldown", sound = "notify.sound", voice = "speech.voice", speed = "speech.speed"
@@ -44,6 +45,7 @@ struct AcmdSettings: Decodable, Equatable {
             agyCommand = try c.decodeIfPresent(String.self, forKey: .agyCommand) ?? d.agyCommand
             agyArgs = try c.decodeIfPresent([String].self, forKey: .agyArgs) ?? d.agyArgs
             remoteControl = try c.decodeIfPresent(Bool.self, forKey: .remoteControl) ?? d.remoteControl
+            defaultHarness = try c.decodeIfPresent(String.self, forKey: .defaultHarness) ?? d.defaultHarness
             notify = try c.decodeIfPresent(Bool.self, forKey: .notify) ?? d.notify
             onWaiting = try c.decodeIfPresent(Bool.self, forKey: .onWaiting) ?? d.onWaiting
             onError = try c.decodeIfPresent(Bool.self, forKey: .onError) ?? d.onError

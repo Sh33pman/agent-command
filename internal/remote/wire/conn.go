@@ -359,3 +359,7 @@ func (s *Stream) abort() {
 
 // SetDeadline bounds reads and writes on the stream.
 func (s *Stream) SetDeadline(t time.Time) error { return s.s.SetDeadline(t) }
+
+// SetWriteDeadline bounds writes only: a peer that stops reading can't hold
+// a writer forever.
+func (s *Stream) SetWriteDeadline(t time.Time) error { return s.s.SetWriteDeadline(t) }

@@ -91,6 +91,11 @@ type Config struct {
 	Waker wake.Waker
 	// OnRemoteChanged, when set, is subscribed to Daemon.OnRemoteChanged from the start.
 	OnRemoteChanged func(RemoteChange)
+	// Harnesses are the harnesses installed here ("claude", "antigravity",
+	// "terminal"), which Hosting's clients may start sessions with. nil: all.
+	Harnesses func() []string
+	// Home is where the host API's folders start (default: $HOME).
+	Home string
 }
 
 // Daemon is a running daemon.

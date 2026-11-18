@@ -89,7 +89,7 @@ func newRemoteSessionsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
 				if snap.Remote != nil && snap.Remote.Listening {
 					host.Port = snap.Remote.Port // the one in use: the fallback may have picked another
 				}
@@ -101,10 +101,15 @@ func newRemoteSessionsCmd() *cobra.Command {
 						rows = append(rows, r)
 					}
 				}
-				if asJSON {
-					return writeRemoteJSON(cmd.OutOrStdout(), host, rows)
+				var clients []ipc.RemoteClient
+				if err := c.conn.Call(ipc.OpRemoteClients, nil, &clients); err != nil {
+					return err
 				}
-				return writeRemoteTable(cmd.OutOrStdout(), host, rows)
+				attached := attachedCounts(clients)
+				if asJSON {
+					return writeRemoteJSON(cmd.OutOrStdout(), host, rows, attached)
+				}
+				return writeRemoteTable(cmd.OutOrStdout(), host, rows, attached)
 			})
 		},
 	}
@@ -120,9 +125,23 @@ func hostingLine(h config.RemoteHost) string {
 	return "Hosting: on, at " + h.BindAddress()
 }
 
-// Clients attached to a session aren't known until Hosting runs: the table
-// shows "-" for them.
-func writeRemoteTable(w io.Writer, host config.RemoteHost, rows []listRow) error {
+// attachedCounts is how many client connections are attached to each
+// session.
+func attachedCounts(clients []ipc.RemoteClient) map[string]int {
+	out := map[string]int{}
+	for _, c := range clients {
+		for _, conn := range c.Connections {
+			for _, id := range conn.Sessions {
+				out[id]++
+			}
+		}
+	}
+	return out
+}
+
+// writeRemoteTable lists the Remote sessions, with the clients attached to
+// each.
+func writeRemoteTable(w io.Writer, host config.RemoteHost, rows []listRow, attached map[string]int) error {
 	fmt.Fprintln(w, hostingLine(host))
 	if len(rows) == 0 {
 		_, err := fmt.Fprintln(w, "No Remote sessions. Make one with acmd remote on <session>.")
@@ -139,7 +158,8 @@ func writeRemoteTable(w io.Writer, host config.RemoteHost, rows []listRow) error
 		if r.Number > 0 {
 			num = fmt.Sprint(r.Number)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t-\n", num, r.Session.Status, display(r.Session.Name, 40), filepath.Base(r.Session.Cwd))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\n", num, r.Session.Status, display(r.Session.Name, 40), filepath.Base(r.Session.Cwd),
+			attached[r.Session.ID])
 	}
 	return tw.Flush()
 }
@@ -156,18 +176,19 @@ type remoteSession struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Cwd    string `json:"cwd"`
-	// Clients attached to it: 0 until Hosting runs.
+	// Clients is how many client connections are attached to it.
 	Clients int `json:"clients"`
 }
 
-func writeRemoteJSON(w io.Writer, host config.RemoteHost, rows []listRow) error {
+func writeRemoteJSON(w io.Writer, host config.RemoteHost, rows []listRow, attached map[string]int) error {
 	out := remoteJSON{Hosting: host.Enabled, Sessions: []remoteSession{}}
 	if host.Enabled {
 		out.Address = host.BindAddress()
 	}
 	for _, r := range rows {
 		s := r.Session
-		out.Sessions = append(out.Sessions, remoteSession{Number: r.Number, ID: s.ID, Name: s.Name, Status: string(s.Status), Cwd: s.Cwd})
+		out.Sessions = append(out.Sessions, remoteSession{Number: r.Number, ID: s.ID, Name: s.Name, Status: string(s.Status), Cwd: s.Cwd,
+			Clients: attached[s.ID]})
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

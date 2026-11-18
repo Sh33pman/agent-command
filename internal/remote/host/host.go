@@ -27,6 +27,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
 )
@@ -158,7 +159,8 @@ func (h *Host) info(context.Context, *wire.Call) (any, error) {
 	if id == nil {
 		return nil, errors.New("hosting is off")
 	}
-	return wire.Info{Name: id.CommonName, Fingerprint: id.Fingerprint(), Version: h.o.Version, Proto: wire.Proto, Ops: h.mux.Ops()}, nil
+	return wire.Info{Name: id.CommonName, Fingerprint: id.Fingerprint(), Version: h.o.Version, Proto: wire.Proto,
+		API: api.Version, Ops: h.mux.Ops()}, nil
 }
 
 // Close stops Hosting, ends every connection and waits for them.

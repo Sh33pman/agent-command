@@ -79,6 +79,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			// Sessions run Claude or agy, whichever is there: starting a host checks
 			// for the one it runs.
 			cfg.Hosts = execHosts{paths: p}
+			cfg.Harnesses = installedHarnesses(p)
 			cfg.AgentHelp = agentHelp(p)
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)
@@ -203,6 +204,21 @@ func claudeCommand(p paths.Paths) (string, []string, error) {
 	env := loginEnv(p)
 	claude, err := findCommand(cfg.ClaudeCommand, env)
 	return claude, env, err
+}
+
+// installedHarnesses says which harnesses this machine can run, for Hosting's
+// clients: an agent when its CLI is found, and always a terminal.
+func installedHarnesses(p paths.Paths) func() []string {
+	return func() []string {
+		var out []string
+		if _, _, err := claudeCommand(p); err == nil {
+			out = append(out, core.HarnessClaude)
+		}
+		if _, _, err := agyCommand(p); err == nil {
+			out = append(out, core.HarnessAntigravity)
+		}
+		return append(out, core.HarnessTerminal)
+	}
 }
 
 // errNoAgy is what starting an Antigravity session says when agy can't be found.

@@ -4,8 +4,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/paths"
 )
 
 func TestRemoteSessionsCommands(t *testing.T) {
@@ -104,5 +110,42 @@ func TestRemoteFlag(t *testing.T) {
 	}
 	if _, err := acmd(t, "new", "--remote", "--no-remote"); err == nil || !strings.Contains(err.Error(), "not both") {
 		t.Errorf("acmd new --remote --no-remote: %v", err)
+	}
+}
+
+func TestRemoteSessionsClients(t *testing.T) {
+	clients := []ipc.RemoteClient{
+		{Name: "laptop", Connections: []ipc.RemoteConnection{{ID: "c1", Sessions: []string{"a", "b"}}, {ID: "c2", Sessions: []string{"a"}}}},
+		{Name: "desk"},
+	}
+	attached := attachedCounts(clients)
+	if attached["a"] != 2 || attached["b"] != 1 || attached["c"] != 0 {
+		t.Errorf("counts = %v", attached)
+	}
+	rows := []listRow{{Number: 1, Session: &core.Session{ID: "a", Name: "api", Status: core.StatusBusy, Cwd: "/w/api"}},
+		{Session: &core.Session{ID: "c", Name: "web", Status: core.StatusDone, Cwd: "/w/web"}}}
+	host := config.RemoteHost{Enabled: true, Listen: "localhost", Port: 7433}
+	var b strings.Builder
+	must(t, writeRemoteTable(&b, host, rows, attached))
+	for _, want := range []string{"1  busy    api   api  2", "-  done    web   web  0"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("table lacks %q:\n%s", want, b.String())
+		}
+	}
+	b.Reset()
+	must(t, writeRemoteJSON(&b, host, rows, attached))
+	var got remoteJSON
+	must(t, json.Unmarshal([]byte(b.String()), &got))
+	if got.Sessions[0].Clients != 2 || got.Sessions[1].Clients != 0 {
+		t.Errorf("--json: %+v", got)
+	}
+}
+
+func TestInstalledHarnesses(t *testing.T) {
+	dir := t.TempDir()
+	p := paths.Paths{ConfigDir: dir, StateDir: dir, RuntimeDir: dir}
+	must(t, os.WriteFile(p.Config(), []byte("claude_command = \"/usr/bin/true\"\nagy_command = \"acmd-test-no-such-agy\"\n"), 0o600))
+	if got := installedHarnesses(p)(); !slices.Equal(got, []string{core.HarnessClaude, core.HarnessTerminal}) {
+		t.Errorf("installed = %v", got)
 	}
 }

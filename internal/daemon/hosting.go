@@ -6,6 +6,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/host"
+	"github.com/brettmostert/agent-command/internal/remote/hostapi"
 )
 
 // Remote sessions: Hosting runs alongside the unix socket, and follows
@@ -22,6 +23,8 @@ func (d *Daemon) startRemote() {
 		Now:         d.cfg.Now,
 		OnChange:    d.changes.bump,
 	})
+	// What clients may do: the host API, on Remote sessions only.
+	hostapi.Register(d.remote, hostBackend{d}, hostapi.Options{Home: d.cfg.Home})
 	_ = d.remote.Reload() // it logs what's wrong
 	// A session turned local drops the clients attached to it at once.
 	d.OnRemoteChanged(func(c RemoteChange) {

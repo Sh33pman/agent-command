@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.0](https://github.com/brettmostert/agent-command/compare/v0.60.1...v0.61.0) (2026-11-18)
+
+
+### Features
+
+* show when an update is available, beside the version in the status bar ([#91](https://github.com/brettmostert/agent-command/issues/91)) ([23146bb](https://github.com/brettmostert/agent-command/commit/23146bb3e696c978550752c8cdb6d44107c9e413))
+
 ## [0.60.1](https://github.com/brettmostert/agent-command/compare/v0.60.0...v0.60.1) (2026-11-18)
 
 

@@ -25,6 +25,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/peer"
 	"github.com/brettmostert/agent-command/internal/reconcile"
+	"github.com/brettmostert/agent-command/internal/remote/client"
 	"github.com/brettmostert/agent-command/internal/remote/host"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
@@ -120,8 +121,9 @@ type Daemon struct {
 
 	wake waking // wake.go
 
-	remoteHooks remoteHooks // remote.go
-	remote      *host.Host  // Hosting (hosting.go)
+	remoteHooks remoteHooks    // remote.go
+	remote      *host.Host     // Hosting (hosting.go)
+	client      *client.Client // Remote hosts: sessions added from them (remotehosts.go)
 }
 
 // Run starts the daemon and blocks until ctx is canceled or a client asks
@@ -210,6 +212,8 @@ func Run(ctx context.Context, cfg Config) error {
 	defer os.Remove(sock)
 	d.startRemote()
 	defer d.remote.Close()
+	d.startRemoteHosts(ctx)
+	defer d.client.Close()
 
 	if err := d.drainSpool(ctx); err != nil {
 		cfg.Log.Printf("drain spool: %v", err)
@@ -326,6 +330,9 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	if isJobOp(req.Op) {
 		return d.handleJob(ctx, req)
 	}
+	if isRemoteHostsOp(req.Op) {
+		return d.handleRemoteHosts(ctx, req)
+	}
 	if isRemoteOp(req.Op) {
 		return d.handleRemote(req)
 	}
@@ -366,6 +373,9 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		r, err := decode[ipc.InboxRequest](req.Data)
 		if err != nil {
 			return nil, err
+		}
+		if d.client.Is(r.SessionID) {
+			return d.client.SessionInbox(r.SessionID), nil
 		}
 		return d.inboxHistory(ctx, r.SessionID)
 	case ipc.OpInboxAnswer:
@@ -530,6 +540,7 @@ func (d *Daemon) background(ctx context.Context) {
 			}
 			// Hosting follows config.toml, edited by hand or in Settings.
 			_ = d.remote.ReloadIfChanged()
+			_ = d.client.ReloadIfChanged()
 			if rec != nil {
 				d.reconcile(ctx, rec)
 			}
@@ -597,7 +608,7 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 	}
 	changed := false
 	for _, s := range sessions {
-		if s.Status != core.StatusBusy && s.Status != core.StatusWaiting {
+		if s.OnHost() || (s.Status != core.StatusBusy && s.Status != core.StatusWaiting) {
 			tail.Forget(s.TranscriptPath)
 			continue
 		}

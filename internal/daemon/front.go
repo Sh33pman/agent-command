@@ -28,7 +28,7 @@ func (d *Daemon) frontOnce(ctx context.Context) (bool, error) {
 	}
 	fronts := map[string]term.Front{}
 	for _, s := range sessions {
-		if s.IsTerminal() && s.Kind == core.KindHosted && !s.Stopped() && s.Status != core.StatusArchived {
+		if s.IsTerminal() && s.Kind == core.KindHosted && !s.OnHost() && !s.Stopped() && s.Status != core.StatusArchived {
 			if f, ok := d.cfg.HostFront(s.ID); ok {
 				fronts[s.ID] = f
 			}

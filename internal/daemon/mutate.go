@@ -53,11 +53,15 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 		st := d.remote.Status()
 		remote = &st
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Notices: d.notices(), Inbox: queue, Jobs: jobs, Wake: d.wakeState(ctx), Remote: remote}, nil
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Notices: d.notices(), Inbox: d.withHostInbox(queue),
+		Jobs: jobs, Wake: d.wakeState(ctx), Remote: remote, RemoteHosts: d.remoteHosts()}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.
 func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
+	if done, err := d.mutateOnHost(ctx, m); done { // goes to the host, without d.mu held
+		return nil, err
+	}
 	if m.Kind == ipc.MutRemote { // takes d.mu itself: its subscribers run without it
 		return nil, d.setRemote(ctx, m.ID, m.Flag)
 	}
@@ -172,6 +176,9 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 				return n, err
 			}
 			d.forget(id)
+			if sess.OnHost() {
+				d.client.Forget(id)
+			}
 			n++
 		}
 		return n, nil
@@ -194,9 +201,17 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	case ipc.MutViewFocus:
 		return nil, d.focus(ctx, m.GroupID)
 	case ipc.MutInboxRead:
-		return nil, d.store.SetInboxRead(ctx, m.ItemIDs, m.Flag)
+		local, hosts := splitInboxIDs(m.ItemIDs)
+		if len(hosts) > 0 {
+			d.client.SetInboxRead(hosts, m.Flag)
+		}
+		return nil, d.store.SetInboxRead(ctx, local, m.Flag)
 	case ipc.MutInboxDismiss:
-		for _, id := range m.ItemIDs {
+		local, hosts := splitInboxIDs(m.ItemIDs)
+		if len(hosts) > 0 {
+			d.client.HandleInbox(hosts)
+		}
+		for _, id := range local {
 			if err := d.store.HandleInboxItem(ctx, id, core.InboxDismissed); err != nil && !errors.Is(err, store.ErrNotFound) {
 				return nil, err
 			}
@@ -284,6 +299,9 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 		}
 	}
 	core.Apply(s, core.Event{Kind: core.EventArchived, Time: d.eventTime(s)})
+	if s.OnHost() { // no socket, and it no longer keeps its host connected
+		d.client.SetArchived(s.ID, true)
+	}
 	if err := d.store.CloseInboxItems(ctx, s.ID); err != nil {
 		return err
 	}

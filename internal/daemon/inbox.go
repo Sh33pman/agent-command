@@ -59,28 +59,24 @@ func (d *Daemon) inboxHistory(ctx context.Context, sessionID string) ([]core.Inb
 // waiting for one first, because text sent at the wrong moment lands somewhere you
 // didn't choose: in a prompt you haven't seen, or in a plain shell.
 func (d *Daemon) answerInbox(ctx context.Context, a ipc.InboxAnswer) error {
+	if a.ID < 0 { // from a host
+		return d.answerOnHost(ctx, a)
+	}
 	d.mu.Lock()
-	keys, err := d.answerKeys(ctx, a)
-	var sessionID string
+	var keys [][]byte
+	it, err := d.store.InboxItem(ctx, a.ID)
 	if err == nil {
-		var it *core.InboxItem
-		if it, err = d.store.InboxItem(ctx, a.ID); err == nil {
-			sessionID = it.SessionID
+		var s *core.Session
+		if s, err = d.store.Session(ctx, it.SessionID); err == nil {
+			keys, err = answerKeys(it, s, a)
 		}
 	}
 	d.mu.Unlock()
 	if err != nil {
 		return err
 	}
-
-	// Not while holding d.mu: this waits between the text and its Enter.
-	for i, k := range keys {
-		if i > 0 {
-			time.Sleep(pasteEnterDelay)
-		}
-		if err := d.sendToHost(sessionID, k); err != nil {
-			return fmt.Errorf("couldn't reach the session: %w", err)
-		}
+	if err := d.typeKeys(it.SessionID, keys); err != nil {
+		return err
 	}
 
 	d.mu.Lock()
@@ -92,24 +88,31 @@ func (d *Daemon) answerInbox(ctx context.Context, a ipc.InboxAnswer) error {
 	return err
 }
 
-// answerKeys is what to type for an answer, or why it can't be sent (d.mu is held).
-func (d *Daemon) answerKeys(ctx context.Context, a ipc.InboxAnswer) ([][]byte, error) {
-	it, err := d.store.InboxItem(ctx, a.ID)
-	if err != nil {
-		return nil, err
+// typeKeys types an answer into a session, without d.mu held: it waits
+// between the text and its Enter.
+func (d *Daemon) typeKeys(sessionID string, keys [][]byte) error {
+	for i, k := range keys {
+		if i > 0 {
+			time.Sleep(pasteEnterDelay)
+		}
+		if err := d.sendToHost(sessionID, k); err != nil {
+			return fmt.Errorf("couldn't reach the session: %w", err)
+		}
 	}
+	return nil
+}
+
+// answerKeys is what to type for an answer to item it of session s, or why
+// it can't be sent.
+func answerKeys(it *core.InboxItem, s *core.Session, a ipc.InboxAnswer) ([][]byte, error) {
 	if it.State != core.InboxOpen {
 		return nil, errors.New("this is no longer waiting for an answer")
-	}
-	s, err := d.store.Session(ctx, it.SessionID)
-	if err != nil {
-		return nil, err
 	}
 	// An answer is typed into the session's pane. For Claude, a conversation id
 	// says Claude runs there. agy's comes only with its first hook, after its
 	// sign-in and folder trust prompts, which it reports anyway: its host running
-	// is enough.
-	if s.Stopped() || (s.ClaudeSessionID == "" && !s.IsAntigravity()) {
+	// is enough. A session on a host says through its status.
+	if s.Stopped() || (s.ClaudeSessionID == "" && !s.IsAntigravity() && !s.OnHost()) {
 		return nil, fmt.Errorf("no %s is running in this session", core.AgentName(s.Harness))
 	}
 	switch it.Kind {

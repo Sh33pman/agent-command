@@ -88,3 +88,55 @@ func TestSaveSettings(t *testing.T) {
 		t.Error("saved to a file that doesn't parse")
 	}
 }
+
+func TestKnownHosts(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "config.toml")
+	studio := config.KnownHost{Name: "studio", Address: "10.0.0.2:7433", Fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+	box := config.KnownHost{Name: "box", Address: "localhost:17433", Fingerprint: "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA", Cert: "/certs/box.pem"}
+
+	must(t, SetKnownHost(file, "", studio))
+	b, _ := os.ReadFile(file)
+	must(t, os.WriteFile(file, append([]byte("# mine\n"), b...), 0o600))
+	must(t, SetKnownHost(file, "", box))
+	c, err := config.Load(file)
+	must(t, err)
+	if len(c.Remote.Hosts) != 2 || c.Remote.Hosts[0] != studio || c.Remote.Hosts[1] != box {
+		t.Fatalf("hosts = %+v", c.Remote.Hosts)
+	}
+
+	// An edit replaces the entry in one write.
+	moved := studio
+	moved.Name, moved.Address = "mac", "10.0.0.3:7433"
+	must(t, SetKnownHost(file, "studio", moved))
+	c, err = config.Load(file)
+	must(t, err)
+	if len(c.Remote.Hosts) != 2 || c.Remote.Hosts[0] != box || c.Remote.Hosts[1] != moved {
+		t.Fatalf("after the edit: %+v", c.Remote.Hosts)
+	}
+
+	n, err := RemoveKnownHost(file, "box")
+	if n != 1 || err != nil {
+		t.Fatal(n, err)
+	}
+	c, err = config.Load(file)
+	must(t, err)
+	if len(c.Remote.Hosts) != 1 || c.Remote.Hosts[0] != moved {
+		t.Errorf("after the remove: %+v", c.Remote.Hosts)
+	}
+	b, _ = os.ReadFile(file)
+	if !strings.HasPrefix(string(b), "# mine\n# agent-command (acmd) configuration.") {
+		t.Errorf("comments lost:\n%s", b)
+	}
+
+	must(t, os.WriteFile(file, []byte("x = "), 0o600))
+	if err := SetKnownHost(file, "", box); err == nil {
+		t.Error("added to a file that doesn't parse")
+	}
+	if _, err := RemoveKnownHost(file, "box"); err == nil {
+		t.Error("removed from a file that doesn't parse")
+	}
+	must(t, os.WriteFile(file, []byte("[[remote.hosts]]\nname = \"a\"\n"), 0o600))
+	if err := SetKnownHost(file, "a", box); err != nil {
+		t.Error(err)
+	}
+}

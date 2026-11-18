@@ -40,6 +40,8 @@ type InboxItem struct {
 	Read      bool      `json:"read"`
 	State     string    `json:"state"`
 	HandledAt time.Time `json:"handled_at"`
+	// Host is the Remote host of an item from a session added from one.
+	Host string `json:"host,omitempty"`
 }
 
 // PermissionOptions are the answers to a permission prompt, in Claude's

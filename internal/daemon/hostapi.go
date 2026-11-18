@@ -28,6 +28,8 @@ func (b hostBackend) State(ctx context.Context) (hostapi.State, error) {
 	if err != nil {
 		return hostapi.State{}, err
 	}
+	// Sessions added from other hosts are theirs to offer.
+	sessions = slices.DeleteFunc(sessions, (*core.Session).OnHost)
 	return hostapi.State{Sessions: sessions, Inbox: inbox, Notices: d.notices()}, nil
 }
 

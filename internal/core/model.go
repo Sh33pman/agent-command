@@ -130,7 +130,14 @@ type Session struct {
 	BgID            string
 	Pid             int
 	// Remote: clients of this acmd's Hosting may see and use it (Remote sessions).
-	Remote      bool
+	Remote bool
+	// Host is the Remote host a session added from one runs on ("" for a
+	// session on this machine), and RemoteID its id there. HostGone: the host
+	// no longer offers it (ended there, or no longer Remote), so it can only
+	// be removed.
+	Host        string
+	RemoteID    string
+	HostGone    bool
 	External    *PaneLoc
 	CreatedAt   time.Time
 	LastEventAt time.Time
@@ -241,6 +248,10 @@ func (s *Session) NeedsResume() bool {
 
 // Stopped reports whether s's Claude process isn't running by design:
 // paused (reboot, idle stop, claude stop) or finished by the user.
+// OnHost reports whether s runs on a Remote host: added here from one, and
+// used through it. Nothing on this machine runs it.
+func (s *Session) OnHost() bool { return s.Host != "" }
+
 func (s *Session) Stopped() bool { return s.Status == StatusPaused || s.Status == StatusFinished }
 
 // Ref names s on a command line (`acmd go <ref>`): the Claude background

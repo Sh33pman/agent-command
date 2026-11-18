@@ -117,6 +117,9 @@ func (d *Daemon) startHost(ctx context.Context, r HostRequest) error {
 // host, with a prompt to send and extra flags if given (a scheduled run). A
 // terminal that a reboot ended gets a new shell in its folder.
 func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session, prompt string, args []string) (*core.Session, error) {
+	if s.OnHost() {
+		return nil, fmt.Errorf("this session runs on %s: resume it there", s.Host)
+	}
 	if !term.Running(d.cfg.Paths.HostSocket(s.ID)) {
 		r := HostRequest{ID: s.ID, Harness: s.Harness, Dir: s.Cwd, Resume: s.ClaudeSessionID, Prompt: prompt, Args: args}
 		if err := d.startHost(ctx, r); err != nil {
@@ -143,7 +146,7 @@ func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session, prompt strin
 // stopHost ends a hosted session's host (its CLI is hung up); the
 // conversation is kept by the CLI.
 func (d *Daemon) stopHost(s *core.Session) {
-	if s.Kind == core.KindHosted {
+	if s.Kind == core.KindHosted && !s.OnHost() { // a host's session is its own
 		_ = term.Kill(d.cfg.Paths.HostSocket(s.ID)) // not running: fine
 	}
 }

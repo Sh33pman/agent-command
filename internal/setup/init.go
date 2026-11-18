@@ -410,6 +410,49 @@ func RemoveAuthorizedClients(configFile string, match func(config.AuthorizedClie
 	return n, writeConfig(configFile, orig, text)
 }
 
+// SetKnownHost writes a [[remote.hosts]] entry to config.toml, keeping the
+// rest of the file: it takes out the entry named replace first (when not ""),
+// then adds h at the end, in one write.
+func SetKnownHost(configFile, replace string, h config.KnownHost) error {
+	orig, text, err := readConfig(configFile)
+	if err != nil {
+		return err
+	}
+	if replace != "" {
+		if text, _, err = config.RemoveTables(text, "remote.hosts", func(t map[string]any) bool {
+			name, _ := t["name"].(string)
+			return name == replace
+		}); err != nil {
+			return err
+		}
+	}
+	kv := []config.KeyValue{{Key: "name", Value: h.Name}, {Key: "address", Value: h.Address}, {Key: "fingerprint", Value: h.Fingerprint}}
+	if h.Cert != "" {
+		kv = append(kv, config.KeyValue{Key: "cert", Value: h.Cert})
+	}
+	if text, err = config.AppendTable(text, "remote.hosts", kv...); err != nil {
+		return err
+	}
+	return writeConfig(configFile, orig, text)
+}
+
+// RemoveKnownHost takes the [[remote.hosts]] entries named name out of
+// config.toml, keeping the rest of the file, and says how many it took.
+func RemoveKnownHost(configFile, name string) (int, error) {
+	orig, text, err := readConfig(configFile)
+	if err != nil {
+		return 0, err
+	}
+	text, n, err := config.RemoveTables(text, "remote.hosts", func(t map[string]any) bool {
+		v, _ := t["name"].(string)
+		return v == name
+	})
+	if err != nil {
+		return 0, err
+	}
+	return n, writeConfig(configFile, orig, text)
+}
+
 // readConfig reads config.toml as it is, and as config.Retire makes it. A
 // missing file is the template.
 func readConfig(configFile string) (orig, text string, err error) {

@@ -78,7 +78,7 @@ func (r *Reconciler) NeedsListing(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	for _, s := range sessions {
-		if !s.IsTerminal() && !s.IsAntigravity() && !s.Stopped() {
+		if !s.IsTerminal() && !s.IsAntigravity() && !s.Stopped() && !s.OnHost() {
 			return true, nil
 		}
 	}
@@ -119,6 +119,9 @@ func (r *Reconciler) Apply(ctx context.Context, l Listing) (Result, error) {
 		return res, err
 	}
 	for _, s := range sessions {
+		if s.OnHost() { // its host says how it is
+			continue
+		}
 		if s.ClaudeSessionID == "" && s.BgID != "" {
 			// Started by acmd, no hook yet: link it by the short id.
 			if a, ok := byShortID[s.BgID]; ok && a.SessionID != "" {
@@ -153,6 +156,7 @@ func (r *Reconciler) PauseDeadHosts(ctx context.Context) (int, error) {
 	for _, s := range sessions {
 		var gone bool
 		switch {
+		case s.OnHost(): // its host says how it is
 		case s.IsTerminal():
 			gone = r.terminal(s)
 		case s.Kind == core.KindHosted:

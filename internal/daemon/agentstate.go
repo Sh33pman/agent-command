@@ -26,7 +26,7 @@ func (d *Daemon) agentStateOnce(ctx context.Context) (bool, error) {
 	}
 	reports, screens := map[string]term.AgentState{}, map[string]string{}
 	for _, s := range sessions {
-		if s.IsAntigravity() && s.Kind == core.KindHosted && !s.Stopped() && s.Status != core.StatusArchived {
+		if s.IsAntigravity() && s.Kind == core.KindHosted && !s.OnHost() && !s.Stopped() && s.Status != core.StatusArchived {
 			if st, ok := d.cfg.HostAgent(s.ID); ok && st.Seq > 0 {
 				reports[s.ID] = st
 				if st.Seq != seen[s.ID] && st.State == "blocked" && d.cfg.HostScreen != nil {

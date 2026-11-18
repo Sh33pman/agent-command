@@ -87,12 +87,18 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 // and becomes a hosted session; so does one that ended in the user's own
 // pane (acmd adopt).
 func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
-	if d.cfg.Hosts == nil {
-		return nil, errors.New("acmd can't start sessions: run `acmd doctor`")
-	}
 	d.mu.Lock()
 	s, err := d.store.Session(ctx, id)
 	d.mu.Unlock()
+	if err == nil && s.OnHost() {
+		if !s.Stopped() && s.Status != core.StatusArchived {
+			return s, nil // its host runs it
+		}
+		return nil, fmt.Errorf("this session runs on %s: resume it there", s.Host)
+	}
+	if d.cfg.Hosts == nil {
+		return nil, errors.New("acmd can't start sessions: run `acmd doctor`")
+	}
 	if err != nil {
 		return nil, err
 	}

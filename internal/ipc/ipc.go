@@ -181,6 +181,10 @@ type Snapshot struct {
 	Wake *WakeState `json:"wake,omitempty"`
 	// Remote is Hosting (nil: this daemon has none).
 	Remote *RemoteStatus `json:"remote,omitempty"`
+	// RemoteHosts are the known hosts this machine uses Remote sessions on,
+	// with their connections' state. Sessions added from them are in
+	// Sessions, with Host set.
+	RemoteHosts []RemoteHost `json:"remote_hosts,omitempty"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view
@@ -195,6 +199,7 @@ type Notice struct {
 	Urgent    bool   `json:"urgent,omitempty"`
 	Sound     string `json:"sound,omitempty"`
 	Emitter   string `json:"emitter,omitempty"` // a view's id, or EmitterApp
+	Host      string `json:"host,omitempty"`    // the Remote host, for a session added from one
 }
 
 // EmitterApp in a Notice means the app shows it.

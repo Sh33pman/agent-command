@@ -1,83 +1,51 @@
 # CodeQL code scanning, in place of GitHub's default setup. That one's Swift
 # autobuild couldn't build the app (it has no Ghostty library), so it scanned
-# the speech helper's dependencies instead: about 40 minutes a PR, and none of
-# it the app's code.
+# the speech helper's dependencies instead.
 #
-# Here Swift builds the app on the prebuilt Ghostty libraries, and the speech helper's
-# own code (SpeechCore, which has no dependencies). The helper's executable needs
-# MLX, a long build of other people's code, so it's scanned on main and weekly.
-# Go is analyzed twice, once as macOS builds it (GOOS=darwin) and once as Linux
-# does, so the files only one of them compiles are scanned too. Both run on a
-# Linux runner, which keeps the Mac runners free.
+# It runs once a day, at 01:00 South African time (23:00 UTC), and when started
+# by hand: not on PRs or pushes. The Swift scan holds a Mac runner for 25 to 60
+# minutes, most of it the build under CodeQL's tracer (which runs it under
+# Rosetta), and a scan on every PR took Mac runners from CI and the release.
+# A finding shows the morning after the merge instead of on the PR.
 #
-# The release PR (from a release-please-- branch of this repo, opened by the
-# release App) and the release commit are not scanned: they only change the
-# version and changelog. A PR that merely uses such a branch name is scanned.
-#
-# The Swift scan holds a Mac runner for 17 to 34 minutes. A PR gets it only when
-# it changes Swift code or how Swift is scanned: a PR with no Swift changes has
-# no Swift to scan, and main and the weekly run still scan everything.
+# Swift builds the app on the prebuilt Ghostty libraries and the speech helper
+# with MLX. Go is analyzed twice, once as macOS builds it (GOOS=darwin) and once
+# as Linux does, so the files only one of them compiles are scanned too. Both
+# run on a Linux runner, which keeps the Mac runners free.
 name: codeql
 
 on:
-  pull_request:
-  push:
-    branches: [main]
   schedule:
-    - cron: "17 4 * * 1" # Mondays
+    - cron: "0 23 * * *" # 01:00 in South Africa (UTC+2, no daylight saving)
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A new push to a PR replaces the scan before it. On main, and for the weekly
-# and manual runs, a scan that has started is left to finish: a cancelled one
-# leaves the code scanning baseline out of date.
+# A scan that has started is left to finish: a cancelled one leaves the code
+# scanning baseline out of date.
 concurrency:
   group: codeql-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
-  # Chooses what to scan. When it is skipped, so is analyze.
+  # What to scan: each scan needs its own category, or one would replace the other.
   plan:
-    # Release PRs and commits only change the version and changelog. As in ci.yml,
-    # only the real release PR skips: not any PR from a branch with that name.
-    if: >-
-      !(startsWith(github.head_ref, 'release-please--')
-        && github.event.pull_request.head.repo.full_name == github.repository
-        && github.event.pull_request.user.login == 'brettmostert-release[bot]')
-      && !startsWith(github.event.head_commit.message, 'chore(main): release')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
-      - name: choose the languages to scan
+      - name: list the languages to scan
         id: plan
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
         run: |
-          swift=true
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            # Renames count under both names. If the list can't be read, Swift is scanned.
-            if files="$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" \
-                --jq '.[] | .filename, (.previous_filename // empty)')"; then
-              if ! grep -qE '^(app/|helpers/|\.github/workflows/codeql\.yml$|\.github/actions/macos-tools/)' <<<"$files"; then
-                swift=false
-              fi
-            fi
-          fi
-          echo "scan Swift: $swift"
-          # name is what the job is called, and category is where its results go:
-          # each scan needs its own, or one would replace the other.
-          matrix="$(jq -cn --argjson swift "$swift" '{include: ([
+          # name is what the job is called, and category is where its results go.
+          matrix="$(jq -cn '{include: [
               {name: "actions", language: "actions", category: "/language:actions", "build-mode": "none", runner: "ubuntu-latest"},
               {name: "go", language: "go", goos: "darwin", category: "/language:go", "build-mode": "autobuild", runner: "ubuntu-latest"},
-              {name: "go, Linux", language: "go", goos: "linux", category: "/language:go-linux", "build-mode": "autobuild", runner: "ubuntu-latest"}
-            ] + (if $swift then [{name: "swift", language: "swift", category: "/language:swift", "build-mode": "manual", runner: "macos-26"}] else [] end))}')"
+              {name: "go, Linux", language: "go", goos: "linux", category: "/language:go-linux", "build-mode": "autobuild", runner: "ubuntu-latest"},
+              {name: "swift", language: "swift", category: "/language:swift", "build-mode": "manual", runner: "macos-26"}
+            ]}')"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   analyze:
@@ -123,8 +91,8 @@ jobs:
           # library is arm64 only, so the target is said.
           swift build --package-path app --triple arm64-apple-macosx26.0
           swift build --package-path helpers/acmd-speech --target SpeechCore --triple arm64-apple-macosx26.0
-      - name: build the speech helper with MLX (main and weekly)
-        if: matrix.language == 'swift' && github.event_name != 'pull_request'
+      - name: build the speech helper with MLX
+        if: matrix.language == 'swift'
         run: swift build --package-path helpers/acmd-speech --triple arm64-apple-macosx26.0
       - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:

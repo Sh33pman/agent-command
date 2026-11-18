@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.59.0](https://github.com/brettmostert/agent-command/compare/v0.58.0...v0.59.0) (2026-11-18)
+
+
+### Features
+
+* a Remote flag on every session, with acmd remote on|off|sessions ([#77](https://github.com/brettmostert/agent-command/issues/77)) ([47297d0](https://github.com/brettmostert/agent-command/commit/47297d042b5dbc03c3bd65dbbf983b7ad420c0d4))
+* a Remote section in Settings, for Hosting, identity, clients and requests ([#81](https://github.com/brettmostert/agent-command/issues/81)) ([412a881](https://github.com/brettmostert/agent-command/commit/412a8819043be6b44494b1ada2064b750d837610))
+* hosting for Remote sessions: mTLS listener, authorized clients and pending requests ([#78](https://github.com/brettmostert/agent-command/issues/78)) ([bc4b16e](https://github.com/brettmostert/agent-command/commit/bc4b16e8f6c92618b8745e3c63d3726bd7c8f732))
+* machine identity for Remote sessions, and acmd remote identity ([#74](https://github.com/brettmostert/agent-command/issues/74)) ([3762211](https://github.com/brettmostert/agent-command/commit/376221118ddb7cb9f5d58f6f4d1baeaf9a4bd117))
+* rename Remote Control to Agent Remote Control, and add the [remote] config schema ([#75](https://github.com/brettmostert/agent-command/issues/75)) ([4a044a7](https://github.com/brettmostert/agent-command/commit/4a044a7130a9f6da82d258346846856c39456250))
+* the acmd remote CLI for Remote hosts: add, list, browse, open, attach, drop and new --on ([#84](https://github.com/brettmostert/agent-command/issues/84)) ([8b8336b](https://github.com/brettmostert/agent-command/commit/8b8336b079d4e832ba1d0dc6c5629185782f1e4c))
+* the app's client UI for Remote sessions: Remote checkbox and toggle, host badges and filter, Remote Hosts browser, Where picker and Known hosts ([#85](https://github.com/brettmostert/agent-command/issues/85)) ([08c2811](https://github.com/brettmostert/agent-command/commit/08c2811d2e229399a13e43fa9c6a1f0365957e9b))
+* the client daemon for Remote hosts: known hosts, connections, added sessions and their local sockets ([#82](https://github.com/brettmostert/agent-command/issues/82)) ([d31fc57](https://github.com/brettmostert/agent-command/commit/d31fc57ec5c0637ff8cf52521b1b3b64ac7173b9))
+* the host API for Remote sessions: list, attach, create, rename/end, folders, harnesses and events ([#80](https://github.com/brettmostert/agent-command/issues/80)) ([6323253](https://github.com/brettmostert/agent-command/commit/63232533fe175143b5378374cd15aa1716af6978))
+
+
+### Bug Fixes
+
+* end-to-end tests for Remote sessions, and a disconnected client stops counting as connected at once ([#83](https://github.com/brettmostert/agent-command/issues/83)) ([ed4df1f](https://github.com/brettmostert/agent-command/commit/ed4df1fc420f056722268cec0f74ed0c9d591b4f))
+* keep the app's output in app.log, so an unexpected exit leaves a record ([#79](https://github.com/brettmostert/agent-command/issues/79)) ([c587638](https://github.com/brettmostert/agent-command/commit/c58763872d14a1b334c6847e26f4165792b8bce9))
+
 ## [0.58.0](https://github.com/brettmostert/agent-command/compare/v0.57.0...v0.58.0) (2026-11-18)
 
 

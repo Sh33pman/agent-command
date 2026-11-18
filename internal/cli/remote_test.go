@@ -112,11 +112,11 @@ func TestAgentRemoteControlMigrates(t *testing.T) {
 	}
 }
 
-func TestRemoteNameIsFree(t *testing.T) {
+func TestRemoteIsRemoteSessions(t *testing.T) {
 	root := NewRootCmd("acmd", &bytes.Buffer{}, &bytes.Buffer{})
 	for _, c := range root.Commands() {
-		if c.Name() == "remote" {
-			t.Fatal("acmd remote is left for Remote sessions")
+		if c.Name() == "remote" && !strings.HasPrefix(c.Short, "Remote sessions") {
+			t.Errorf("acmd remote is for Remote sessions, not %q", c.Short)
 		}
 		if c.Name() == "remote-control" && !c.Hidden {
 			t.Error("acmd remote-control should be hidden")

@@ -12,6 +12,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
@@ -300,5 +301,39 @@ func TestAntigravity(t *testing.T) {
 	must(t, os.Mkdir(hooks, 0o700))
 	if _, out := f.run(); !strings.Contains(out, "✗ ~/.gemini/config/hooks.json:") {
 		t.Errorf("unreadable:\n%s", out)
+	}
+}
+
+func TestRemoteIdentity(t *testing.T) {
+	f := newFake(t)
+	// No identity yet: nothing to check.
+	if _, out := f.run(); strings.Contains(out, "Remote sessions") {
+		t.Errorf("checked an identity that doesn't exist:\n%s", out)
+	}
+	dir := f.paths().RemoteIdentityDir()
+	id, err := identity.Ensure(dir)
+	must(t, err)
+	r, out := f.run()
+	if want := "Remote sessions\n  ✓ identity " + id.Fingerprint(); !strings.Contains(out, want) || r.Count(Fail) != 0 {
+		t.Errorf("report lacks %q:\n%s", want, out)
+	}
+
+	must(t, os.Chmod(id.KeyPath, 0o644))
+	_, out = f.run()
+	if want := "✗ identity key ~/config/identity/key.pem is readable by others\n      fix: chmod 600 ~/config/identity/key.pem"; !strings.Contains(out, want) {
+		t.Errorf("report lacks %q:\n%s", want, out)
+	}
+
+	// A cert from another identity: the pair no longer matches.
+	must(t, os.Chmod(id.KeyPath, 0o600))
+	other, err := identity.Ensure(filepath.Join(f.home, "other"))
+	must(t, err)
+	b, err := os.ReadFile(other.CertPath)
+	must(t, err)
+	must(t, os.WriteFile(id.CertPath, b, 0o644))
+	_, out = f.run()
+	if !strings.Contains(out, "✗ identity unusable: ") || !strings.Contains(out, "doesn't belong to the cert") ||
+		!strings.Contains(out, "fix: acmd remote identity --regenerate") {
+		t.Errorf("report lacks the mismatch:\n%s", out)
 	}
 }

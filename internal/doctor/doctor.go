@@ -19,6 +19,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
@@ -147,6 +148,7 @@ func Run(ctx context.Context, e Env) *Report {
 	checkClaude(ctx, r, e, rec, initDone)
 	checkAntigravity(r, e, initDone)
 	checkDaemon(ctx, r, e)
+	checkIdentity(r, e)
 	if initDone {
 		checkPlan(ctx, r, e)
 	}
@@ -158,6 +160,7 @@ const (
 	secClaude = "Claude Code"
 	secAgy    = "Antigravity"
 	secDaemon = "Daemon"
+	secRemote = "Remote sessions"
 	fixInit   = "acmd doctor --fix"
 )
 
@@ -469,6 +472,26 @@ func checkDaemon(ctx context.Context, r *Report, e Env) {
 		r.add(secDaemon, Info, "", "not running (it starts with the first session or command)")
 	default:
 		r.add(secDaemon, OK, "", "running (pid %d): %s, %s recorded", d.Status.Pid, plural(d.Status.Sessions, "session"), plural(d.Status.Events, "event"))
+	}
+}
+
+// checkIdentity checks the generated identity for Remote sessions, once there
+// is one: that others can't read its key, and that the cert and key belong
+// together.
+func checkIdentity(r *Report, e Env) {
+	dir := e.Paths.RemoteIdentityDir()
+	if !identity.Exists(dir) {
+		return
+	}
+	cert, key := identity.Files(dir)
+	id, err := identity.Load(cert, key)
+	switch {
+	case errors.Is(err, identity.ErrKeyPermissions):
+		r.add(secRemote, Fail, "chmod 600 "+setup.Tilde(key, e.Home), "identity key %s is readable by others", setup.Tilde(key, e.Home))
+	case err != nil:
+		r.add(secRemote, Fail, "acmd remote identity --regenerate (peers must then trust the new fingerprint)", "identity unusable: %v", err)
+	default:
+		r.add(secRemote, OK, "", "identity %s (%s)", id.Fingerprint(), id.CommonName)
 	}
 }
 

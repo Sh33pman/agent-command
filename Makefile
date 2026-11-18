@@ -32,9 +32,10 @@ export PATH := $(BIN):$(PATH)
 # full-screen programs need a redraw after attach. `acmd version` says which.
 BUILD_TAGS := $(if $(wildcard build/ghostty/vt/include/ghostty/vt.h),libghostty,)
 
-# Coverage gates.
-COVER_MIN_TOTAL := 60
-COVER_MIN_CORE  := 80
+# Coverage gates: all code, internal/core and internal/remote.
+COVER_MIN_TOTAL  := 60
+COVER_MIN_CORE   := 80
+COVER_MIN_REMOTE := 80
 
 GIT_SHA   := $(shell git rev-parse HEAD 2>/dev/null)
 GIT_SHORT := $(shell git rev-parse --short HEAD 2>/dev/null)
@@ -133,7 +134,7 @@ lint: fmt tidy-check workflow-check $(BIN)/golangci-lint ## gofmt, go vet, go mo
 .PHONY: test
 test: ## Run tests with -race and enforce coverage gates
 	go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
-	scripts/coverage-gate.sh coverage.out $(COVER_MIN_TOTAL) $(COVER_MIN_CORE)
+	scripts/coverage-gate.sh coverage.out $(COVER_MIN_TOTAL) $(COVER_MIN_CORE) $(COVER_MIN_REMOTE)
 
 .PHONY: fuzz
 fuzz: ## Run each fuzz target briefly (FUZZTIME=30s)

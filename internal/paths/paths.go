@@ -181,6 +181,10 @@ func (p Paths) DaemonLog() string { return filepath.Join(p.StateDir, "daemon.log
 // Config is the user's config.toml.
 func (p Paths) Config() string { return filepath.Join(p.ConfigDir, "config.toml") }
 
+// RemoteIdentityDir holds the cert and key acmd generates for Remote sessions:
+// this machine's identity, unless the config names other files.
+func (p Paths) RemoteIdentityDir() string { return filepath.Join(p.ConfigDir, "identity") }
+
 // Env is the captured login-shell environment.
 func (p Paths) Env() string { return filepath.Join(p.StateDir, "env.json") }
 

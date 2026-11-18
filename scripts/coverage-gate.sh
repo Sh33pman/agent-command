@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Enforce coverage gates from a Go cover profile.
-#   coverage-gate.sh <profile> <min-total-%> <min-core-%>
-# The core gate applies to packages under internal/core once they exist.
+#   coverage-gate.sh <profile> <min-total-%> <min-core-%> [<min-remote-%>]
+# The core gate applies to packages under internal/core, and the remote gate
+# to packages under internal/remote, once they exist. The remote minimum
+# defaults to the core one.
 # Writes a summary to $GITHUB_STEP_SUMMARY when running in GitHub Actions.
 set -euo pipefail
 
-profile=$1 min_total=$2 min_core=$3
+profile=$1 min_total=$2 min_core=$3 min_remote=${4:-$3}
 module=$(go list -m)
 
 pct() { # pct <profile> -> total statement coverage as a number
@@ -21,18 +23,25 @@ if awk -v a="$total" -v b="$min_total" 'BEGIN {exit !(a < b)}'; then
   status=1
 fi
 
-core_lines=$(grep -E "^${module}/internal/core/" "$profile" || true)
-if [[ -n "$core_lines" ]]; then
-  core_profile=$(mktemp)
-  trap 'rm -f "$core_profile"' EXIT
-  { head -1 "$profile"; echo "$core_lines"; } >"$core_profile"
-  core=$(pct "$core_profile")
-  summary+="\n| internal/core | ${core}% | ${min_core}% |"
-  if awk -v a="$core" -v b="$min_core" 'BEGIN {exit !(a < b)}'; then
-    echo "FAIL: internal/core coverage ${core}% < ${min_core}%"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+
+gate() { # gate <dir under the module> <min-%>: checks the packages under dir
+  local dir=$1 min=$2 lines part cov
+  lines=$(grep -E "^${module}/${dir}/" "$profile" || true)
+  [[ -n "$lines" ]] || return 0
+  part="$scratch/${dir//\//_}.out"
+  { head -1 "$profile"; echo "$lines"; } >"$part"
+  cov=$(pct "$part")
+  summary+="\n| ${dir} | ${cov}% | ${min}% |"
+  if awk -v a="$cov" -v b="$min" 'BEGIN {exit !(a < b)}'; then
+    echo "FAIL: ${dir} coverage ${cov}% < ${min}%"
     status=1
   fi
-fi
+}
+
+gate internal/core "$min_core"
+gate internal/remote "$min_remote"
 
 echo -e "$summary"
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then

@@ -33,7 +33,7 @@ func TestDefault(t *testing.T) {
 	if p.Config() != filepath.Join(home, ".config", "agent-command", "config.toml") {
 		t.Errorf("Config = %s", p.Config())
 	}
-	for _, f := range []string{p.Socket(), p.Lock(), p.DB(), p.Spool(), p.DaemonLog(), p.Env(), p.Setup(), p.Backups()} {
+	for _, f := range []string{p.Socket(), p.Lock(), p.DB(), p.Spool(), p.DaemonLog(), p.Env(), p.Setup(), p.Backups(), p.RemoteIdentityDir()} {
 		if !filepath.IsAbs(f) {
 			t.Errorf("%s is not absolute", f)
 		}

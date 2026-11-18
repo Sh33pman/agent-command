@@ -10,19 +10,37 @@ import (
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
-// `acmd remote-control [on|off]`: whether sessions start with Remote Control.
+// `acmd agent-remote-control [on|off]`: whether agent sessions start with
+// --remote-control. `acmd remote-control` is its old name, hidden, for one
+// release. (`acmd remote` is left for Remote sessions, a different feature.)
 
+func newAgentRemoteControlCmd() *cobra.Command {
+	return agentRemoteControlCmd("agent-remote-control", false)
+}
+
+// newRemoteControlCmd is the old name: it still works, and says to use the new one.
 func newRemoteControlCmd() *cobra.Command {
+	return agentRemoteControlCmd("remote-control", true)
+}
+
+func agentRemoteControlCmd(name string, deprecated bool) *cobra.Command {
 	return &cobra.Command{
-		Use:   "remote-control [on|off]",
-		Short: "Show or set whether sessions start with Remote Control (off by default)",
-		Long: "With Remote Control on, agent sessions start with --remote-control, so you can use them\n" +
-			"remotely: Claude sessions from claude.ai and the Claude app, Antigravity sessions from\n" +
+		Use:   name + " [on|off]",
+		Short: "Show or set whether agent sessions start with Agent Remote Control (off by default)",
+		Long: "With Agent Remote Control on, agent sessions start with --remote-control, so you can use\n" +
+			"them remotely: Claude sessions from claude.ai and the Claude app, Antigravity sessions from\n" +
 			"Antigravity's Remote Control in a browser. It applies to sessions started or resumed after\n" +
 			"the change; running sessions keep what they started with.",
 		Args:      cobra.MaximumNArgs(1),
 		ValidArgs: []string{"on", "off"},
+		Hidden:    deprecated,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if deprecated {
+				if _, err := fmt.Fprintln(cmd.ErrOrStderr(),
+					"Note: acmd remote-control is now acmd agent-remote-control; the old name goes in a later release."); err != nil {
+					return err
+				}
+			}
 			p, err := paths.Default()
 			if err != nil {
 				return err
@@ -33,7 +51,7 @@ func newRemoteControlCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(out, onOff(cfg.RemoteControl))
+				_, err = fmt.Fprintln(out, onOff(cfg.AgentRemoteControl))
 				return err
 			}
 			var on bool
@@ -44,10 +62,10 @@ func newRemoteControlCmd() *cobra.Command {
 			default:
 				return fmt.Errorf("use on or off, not %q", args[0])
 			}
-			if err := setup.SaveSetting(p.Config(), "", "remote_control", on); err != nil {
+			if err := setup.SaveSetting(p.Config(), "", "agent_remote_control", on); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(out, "Remote Control is %s for sessions started or resumed from now on.\n", onOff(on))
+			_, err = fmt.Fprintf(out, "Agent Remote Control is %s for sessions started or resumed from now on.\n", onOff(on))
 			return err
 		},
 	}

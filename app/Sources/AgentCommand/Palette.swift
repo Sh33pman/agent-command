@@ -24,7 +24,7 @@ enum PaletteAction: Equatable {
     case scheduled
     case toggleSpeech
     case toggleReading
-    case toggleRemoteControl
+    case toggleAgentRemoteControl
     case togglePopupReading
     case togglePopup
     case popupStyle(ReplyPopupStyle)
@@ -61,7 +61,7 @@ struct PaletteState {
     var showsScreen = false
     var speechOn = false
     var speaking = false
-    var remoteControl = false
+    var agentRemoteControl = false
     /// What ⌘N starts, whose entry shows the shortcut; nil asks first.
     var defaultHarness: Harness? = .claude
     var popupReads = false
@@ -157,7 +157,7 @@ enum Palette {
             list.append(PaletteEntry(section: "App", title: title, shortcut: keys.label(.readAloud), action: .toggleReading))
         }
         list.append(PaletteEntry(
-            section: "Sessions", title: RemoteControlSetting.paletteTitle(isOn: state.remoteControl), action: .toggleRemoteControl))
+            section: "Sessions", title: AgentRemoteControlSetting.paletteTitle(isOn: state.agentRemoteControl), action: .toggleAgentRemoteControl))
         list.append(PaletteEntry(
             section: "App", title: state.popupReads ? "Stop reading aloud in the popup" : "Read aloud in the popup",
             action: .togglePopupReading))

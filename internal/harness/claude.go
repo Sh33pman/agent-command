@@ -12,7 +12,7 @@ const remoteControlFlag = "--remote-control"
 // background auto-mode classifier (which blocks `gh pr merge`).
 type Claude struct {
 	Path string // absolute path to claude
-	// RemoteControl starts sessions with --remote-control (the remote_control
+	// RemoteControl starts sessions with --remote-control (the agent_remote_control
 	// setting). --remote-control in the user's args turns it on regardless.
 	RemoteControl bool
 }

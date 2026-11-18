@@ -4,7 +4,7 @@ package harness
 // its own conversation id, which acmd learns from its first hook.
 type Antigravity struct {
 	Path string // absolute path to agy
-	// RemoteControl starts sessions with --remote-control (the remote_control
+	// RemoteControl starts sessions with --remote-control (the agent_remote_control
 	// setting), so they can be used from Antigravity's Remote Control in a
 	// browser. --remote-control in the user's args turns it on regardless.
 	RemoteControl bool

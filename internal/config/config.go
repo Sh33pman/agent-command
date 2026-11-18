@@ -26,10 +26,11 @@ type Config struct {
 	// arguments for its new sessions, as claude_command and claude_args are Claude's.
 	AgyCommand string   `toml:"agy_command"`
 	AgyArgs    []string `toml:"agy_args"`
-	// RemoteControl starts agent sessions with --remote-control, so they can be
-	// used remotely: Claude's from claude.ai and the Claude app, Antigravity's
-	// from its Remote Control browser view. Off by default.
-	RemoteControl bool `toml:"remote_control"`
+	// AgentRemoteControl starts agent sessions with --remote-control, so they
+	// can be used remotely: Claude's from claude.ai and the Claude app,
+	// Antigravity's from its Remote Control browser view. Off by default. It was
+	// remote_control, which is still read when agent_remote_control is missing.
+	AgentRemoteControl bool `toml:"agent_remote_control"`
 	// DefaultHarness is what a plain new session runs (⌘N, `acmd new` without
 	// --harness): "claude" or "antigravity". "" isn't chosen yet: the app asks,
 	// and `acmd new` starts Claude.
@@ -37,17 +38,19 @@ type Config struct {
 	Editor         Editor `toml:"editor"`
 	Notify         Notify `toml:"notify"`
 	Speech         Speech `toml:"speech"`
+	Remote         Remote `toml:"remote"`
 }
 
-// Retired are what acmd v1 kept in config.toml and nothing reads any more: its
-// terminal shortcuts and popup (the app keeps its own) and the sidebar's width.
-// `acmd init` takes them out.
+// Retired are what config.toml may still have and nothing reads any more: acmd
+// v1's terminal shortcuts and popup (the app keeps its own) and the sidebar's
+// width, and remote_control once it's renamed (see Migrate). `acmd init` takes
+// them out.
 var Retired = struct {
 	Sections []string
 	Keys     []string // top-level keys
 }{
 	Sections: []string{"keys", "popup", "popup.keys"},
-	Keys:     []string{"sidebar_width"},
+	Keys:     []string{"sidebar_width", oldAgentRemoteControlKey},
 }
 
 // Speech is the [speech] section: text to speech.
@@ -100,14 +103,26 @@ func Default() Config {
 			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default"},
 		Editor: Editor{RunIn: "background", Target: "cwd"},
 		Speech: Speech{Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
+		Remote: DefaultRemote(),
 	}
 }
 
-// Parse decodes config.toml over the defaults.
+// Parse decodes config.toml over the defaults. The old remote_control counts
+// when agent_remote_control is missing.
 func Parse(b []byte) (Config, error) {
 	c := Default()
-	if _, err := toml.Decode(string(b), &c); err != nil {
+	md, err := toml.Decode(string(b), &c)
+	if err != nil {
 		return Config{}, fmt.Errorf("config.toml: %w", err)
+	}
+	if !md.IsDefined(agentRemoteControlKey) && md.IsDefined(oldAgentRemoteControlKey) {
+		var old struct {
+			On bool `toml:"remote_control"`
+		}
+		if _, err := toml.Decode(string(b), &old); err != nil {
+			return Config{}, fmt.Errorf("config.toml: %w", err)
+		}
+		c.AgentRemoteControl = old.On
 	}
 	return c, nil
 }
@@ -138,10 +153,11 @@ claude_args = []
 agy_command = "agy"
 # Extra arguments for new Antigravity sessions (passed to ` + "`agy`" + `).
 agy_args = []
-# Start agent sessions with Remote Control, so you can use them remotely:
-# Claude's from claude.ai and the Claude app, Antigravity's from its Remote
-# Control in a browser. Applies to sessions started or resumed after a change.
-remote_control = false
+# Agent Remote Control: start agent sessions with --remote-control, so you can
+# use them remotely: Claude's from claude.ai and the Claude app, Antigravity's
+# from its Remote Control in a browser. Applies to sessions started or resumed
+# after a change. (It was remote_control.)
+agent_remote_control = false
 # What a new session runs (⌘N, and acmd new without --harness): claude or
 # antigravity. "" asks in the app the first time, and acmd new starts Claude.
 default_harness = ""
@@ -178,6 +194,31 @@ sound = "default"
 # voices only (af_, am_). Run "acmd speech install" after changing it.
 voice = "af_heart:0.6,af_bella:0.4"
 speed = 1.0
+
+# Remote sessions: use sessions on another acmd. Not in use yet.
+# [remote]
+# new_sessions_remote = false
+#
+# [remote.host]
+# enabled = false        # Hosting
+# listen = "localhost"   # "localhost" (127.0.0.1) or "all" (0.0.0.0)
+# port = 7433
+# port_fallback = true   # use another port if this one is taken
+# cert = ""              # "" is acmd's generated identity
+# key = ""
+#
+# [remote.client]
+# cert = ""              # "" is acmd's generated identity
+# key = ""
+#
+# [[remote.authorized_clients]]
+# name = "laptop"
+# fingerprint = "SHA256:..."
+#
+# [[remote.hosts]]
+# name = "studio-mac"
+# address = "192.168.1.20:7433"
+# fingerprint = "SHA256:..."   # or cert = "/path/to/host-cert.pem"
 `
 
 var sectionRe = regexp.MustCompile(`^\s*\[\s*([A-Za-z0-9_.-]+)\s*\]\s*(#.*)?$`)
@@ -309,10 +350,11 @@ func renderValue(v any) (string, error) {
 
 var retiredKeyRe = regexp.MustCompile(`^\s*(` + strings.Join(Retired.Keys, "|") + `)\s*=`)
 
-// Retire takes the Retired sections and top-level keys out of text, and keeps the
-// rest as it is. A text without them comes back unchanged. The result is checked
+// Retire migrates text (Migrate), then takes the Retired sections and top-level
+// keys out of it, and keeps the rest as it is. A text without them comes back unchanged. The result is checked
 // to parse.
 func Retire(text string) (string, error) {
+	text = Migrate(text)
 	lines := strings.SplitAfter(text, "\n")
 	if lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
@@ -360,4 +402,38 @@ func Retire(text string) (string, error) {
 		return "", fmt.Errorf("config.toml: retiring v1 settings: %w", err)
 	}
 	return result, nil
+}
+
+const (
+	agentRemoteControlKey    = "agent_remote_control"
+	oldAgentRemoteControlKey = "remote_control"
+)
+
+var (
+	agentRemoteControlRe    = regexp.MustCompile(`^\s*` + agentRemoteControlKey + `\s*=`)
+	oldAgentRemoteControlRe = regexp.MustCompile(`^(\s*)` + oldAgentRemoteControlKey + `(\s*=)`)
+)
+
+// Migrate renames the top-level remote_control to agent_remote_control in
+// place, keeping its value and comments, when agent_remote_control isn't there
+// yet. With both, it leaves the text alone: Retire then drops the old key.
+func Migrate(text string) string {
+	lines := strings.SplitAfter(text, "\n")
+	old := -1
+	for i, l := range lines {
+		if sectionRe.MatchString(strings.TrimRight(l, "\r\n")) || strings.HasPrefix(strings.TrimSpace(l), "[[") {
+			break // past the top level
+		}
+		if agentRemoteControlRe.MatchString(l) {
+			return text
+		}
+		if old < 0 && oldAgentRemoteControlRe.MatchString(l) {
+			old = i
+		}
+	}
+	if old < 0 {
+		return text
+	}
+	lines[old] = oldAgentRemoteControlRe.ReplaceAllString(lines[old], "${1}"+agentRemoteControlKey+"${2}")
+	return strings.Join(lines, "")
 }

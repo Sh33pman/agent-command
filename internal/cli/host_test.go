@@ -74,7 +74,7 @@ func TestHostServe(t *testing.T) {
 	}
 	script := filepath.Join(dir, "claude")
 	must(t, os.WriteFile(script, []byte("#!/bin/sh\necho \"ARGS:$*\"\necho \"CLAUDECODE:${CLAUDECODE:-unset}\"\nread line\necho \"GOT:$line\"\n"), 0o700))
-	// remote_control is read by the host, as a session starts.
+	// The old remote_control is still read by the host, as a session starts.
 	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+script+"\"\nremote_control = true\n"), 0o600))
 
 	id := "01HZZZZZZZZZZZZZZZZZZZZZZZ"

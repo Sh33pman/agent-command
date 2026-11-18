@@ -325,7 +325,8 @@ func SaveEditor(configFile string, e config.Editor) error {
 }
 
 // SaveSetting sets one value in config.toml, keeping the rest of the file as it
-// is. A missing file starts from the template.
+// is, apart from what config.Retire migrates or takes out. A missing file
+// starts from the template.
 func SaveSetting(configFile, section, key string, value any) error {
 	b, err := os.ReadFile(configFile) // #nosec G304 -- acmd's own config file
 	switch {
@@ -334,8 +335,11 @@ func SaveSetting(configFile, section, key string, value any) error {
 	case err != nil:
 		return err
 	}
-	text, err := config.Set(string(b), section, key, value)
+	text, err := config.Retire(string(b))
 	if err != nil {
+		return err
+	}
+	if text, err = config.Set(text, section, key, value); err != nil {
 		return err
 	}
 	if text == string(b) {

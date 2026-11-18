@@ -427,3 +427,51 @@ func TestRetireOldOnStart(t *testing.T) {
 		t.Error("a folder read as a file")
 	}
 }
+
+// acmd init and a saved setting rename remote_control to agent_remote_control,
+// keeping its value and the file's comments.
+func TestInitAndSaveMigrateAgentRemoteControl(t *testing.T) {
+	const old = "# mine\nremote_control = true # on\n\n[speech]\nspeed = 1.5\n"
+	const want = "# mine\nagent_remote_control = true # on\n\n[speech]\nspeed = 1.5\n"
+
+	in, _ := fakeHome(t)
+	must(t, os.MkdirAll(filepath.Dir(in.ConfigFile), 0o755))
+	must(t, os.WriteFile(in.ConfigFile, []byte(old), 0o600))
+	plan, err := PlanInit(in)
+	must(t, err)
+	found := false
+	for _, c := range plan.Changes {
+		if filepath.Base(c.Path) == "config.toml" {
+			found = true
+			if got := string(c.New); !strings.Contains(got, "agent_remote_control = true # on") ||
+				strings.Contains(got, "\nremote_control") || !strings.Contains(got, "# mine") {
+				t.Errorf("init:\n%s", got)
+			}
+		}
+	}
+	if !found {
+		t.Error("init doesn't change config.toml")
+	}
+
+	file := filepath.Join(t.TempDir(), "config.toml")
+	must(t, os.WriteFile(file, []byte(old), 0o600))
+	must(t, SaveSetting(file, "speech", "speed", 1.5)) // nothing else changes, but it migrates
+	if b, _ := os.ReadFile(file); string(b) != want {
+		t.Errorf("save:\n%s\nwant:\n%s", b, want)
+	}
+	must(t, SaveSetting(file, "", "agent_remote_control", false))
+	if c, _ := config.Load(file); c.AgentRemoteControl {
+		t.Error("not turned off")
+	}
+
+	// A missing file starts from the template, which has the new key.
+	fresh := filepath.Join(t.TempDir(), "config.toml")
+	must(t, SaveSetting(fresh, "", "agent_remote_control", true))
+	if c, _ := config.Load(fresh); !c.AgentRemoteControl {
+		t.Error("fresh: not on")
+	}
+	must(t, os.WriteFile(fresh, []byte("[x\n"), 0o600))
+	if err := SaveSetting(fresh, "", "agent_remote_control", true); err == nil {
+		t.Error("a broken file was rewritten")
+	}
+}

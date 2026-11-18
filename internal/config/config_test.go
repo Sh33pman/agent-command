@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -15,7 +16,8 @@ func TestTemplateIsDefault(t *testing.T) {
 	d := Default()
 	if c.ClaudeCommand != d.ClaudeCommand || c.AgyCommand != "agy" || c.AgyCommand != d.AgyCommand || len(c.AgyArgs) != 0 ||
 		c.Editor.RunIn != d.Editor.RunIn || c.Editor.Target != d.Editor.Target ||
-		c.Editor.Preset != "" || len(c.Editor.Command) != 0 || c.Notify != d.Notify || c.Speech != d.Speech {
+		c.Editor.Preset != "" || len(c.Editor.Command) != 0 || c.Notify != d.Notify || c.Speech != d.Speech ||
+		c.AgentRemoteControl || !reflect.DeepEqual(c.Remote, d.Remote) {
 		t.Errorf("template %+v differs from defaults %+v", c, d)
 	}
 }

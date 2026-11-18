@@ -89,7 +89,7 @@ var settings = []setting{
 		return strings.TrimSpace(v), nil
 	}},
 	listSetting("agy_args", func(c config.Config) []string { return c.AgyArgs }),
-	boolSetting("remote_control", func(c config.Config) bool { return c.RemoteControl }),
+	boolSetting("agent_remote_control", func(c config.Config) bool { return c.AgentRemoteControl }),
 	choiceSetting("default_harness", []string{core.HarnessClaude, core.HarnessAntigravity, ""}, func(c config.Config) string { return c.DefaultHarness }),
 	boolSetting("notify.enabled", func(c config.Config) bool { return c.Notify.Enabled }),
 	boolSetting("notify.on_waiting", func(c config.Config) bool { return c.Notify.OnWaiting }),
@@ -155,6 +155,9 @@ func parseList(v string) ([]string, error) {
 }
 
 func findSetting(key string) (setting, error) {
+	if key == "remote_control" { // its old name
+		key = "agent_remote_control"
+	}
 	for _, s := range settings {
 		if s.key == key {
 			return s, nil

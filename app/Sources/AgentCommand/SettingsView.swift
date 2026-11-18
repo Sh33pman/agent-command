@@ -153,9 +153,9 @@ private struct GeneralSettings: View {
         }
         Section {
             AcmdToggle(
-                title: "Remote Control for new sessions",
+                title: "Agent Remote Control for new sessions",
                 note: "Use Claude sessions from claude.ai and the Claude app, and Antigravity sessions from Antigravity's Remote Control. Applies to sessions started or resumed after the change.",
-                key: "remote_control", model: model, value: model.values.remoteControl)
+                key: "agent_remote_control", model: model, value: model.values.agentRemoteControl)
         }
         Section("Warnings") {
             LabeledContent("Warnings you've dismissed") {

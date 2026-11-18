@@ -7,7 +7,7 @@ enum DefaultHarness {
     static let choices = Harness.agents
 
     static var current: Harness? {
-        value(inConfig: (try? String(contentsOfFile: RemoteControlSetting.configPath, encoding: .utf8)) ?? "")
+        value(inConfig: (try? String(contentsOfFile: AgentRemoteControlSetting.configPath, encoding: .utf8)) ?? "")
     }
 
     /// Reads the top-level `default_harness`; missing, empty or unknown is unset.

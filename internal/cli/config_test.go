@@ -19,7 +19,7 @@ func TestConfigShowAndSet(t *testing.T) {
 
 	var view configView
 	must(t, json.Unmarshal([]byte(mustRun(t, "config", "show", "--json")), &view))
-	if view.Path != file || view.Settings["notify.cooldown"] != "20s" || view.Settings["remote_control"] != false ||
+	if view.Path != file || view.Settings["notify.cooldown"] != "20s" || view.Settings["agent_remote_control"] != false ||
 		view.Settings["default_harness"] != "" ||
 		len(view.Voices) != 20 || view.Settings["editor.preset"] != "" {
 		t.Fatalf("defaults: %+v", view)
@@ -29,7 +29,7 @@ func TestConfigShowAndSet(t *testing.T) {
 	}
 
 	for _, c := range [][2]string{
-		{"notify.cooldown", "90s"}, {"notify.on_paused", "on"}, {"notify.sound", ""}, {"remote_control", "true"},
+		{"notify.cooldown", "90s"}, {"notify.on_paused", "on"}, {"notify.sound", ""}, {"agent_remote_control", "true"},
 		{"claude_args", `["--model", "opus"]`}, {"speech.voice", "am_adam:0.5,af_sky:0.5"}, {"speech.speed", "1.25"},
 		{"editor.target", "git_root"}, {"claude_command", " /usr/local/bin/claude "},
 		{"agy_command", "/opt/agy/bin/agy"}, {"agy_args", `["--mode", "plan"]`}, {"default_harness", "antigravity"},
@@ -40,7 +40,7 @@ func TestConfigShowAndSet(t *testing.T) {
 	must(t, err)
 	want := config.Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true, OnPaused: true,
 		DoneMinDuration: "10s", Cooldown: "1m30s", Sound: ""}
-	if cfg.Notify != want || !cfg.RemoteControl || strings.Join(cfg.ClaudeArgs, " ") != "--model opus" ||
+	if cfg.Notify != want || !cfg.AgentRemoteControl || strings.Join(cfg.ClaudeArgs, " ") != "--model opus" ||
 		cfg.Speech.Voice != "am_adam:0.5,af_sky:0.5" || cfg.Speech.Speed != 1.25 || cfg.Editor.Target != "git_root" ||
 		cfg.ClaudeCommand != "/usr/local/bin/claude" || cfg.AgyCommand != "/opt/agy/bin/agy" || strings.Join(cfg.AgyArgs, " ") != "--mode plan" ||
 		cfg.DefaultHarness != "antigravity" {

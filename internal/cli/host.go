@@ -89,7 +89,7 @@ func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) 
 		if err != nil {
 			return nil, nil, err
 		}
-		return harness.Claude{Path: claude, RemoteControl: cfg.RemoteControl}, env, nil
+		return harness.Claude{Path: claude, RemoteControl: cfg.AgentRemoteControl}, env, nil
 	case core.HarnessAntigravity:
 		agy, env, err := agyCommand(p)
 		if err != nil {
@@ -104,7 +104,7 @@ func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) 
 		// thinks the terminal supports it. The host reads it, whatever the pane
 		// attached to it can show, so it is always on.
 		env = append(env, "AGY_CLI_OSC7501=on")
-		return harness.Antigravity{Path: agy, RemoteControl: cfg.RemoteControl}, env, nil
+		return harness.Antigravity{Path: agy, RemoteControl: cfg.AgentRemoteControl}, env, nil
 	case core.HarnessTerminal:
 		env := loginEnv(p)
 		shell := setup.DefaultShell() // zsh on macOS; bash, or sh, on Linux

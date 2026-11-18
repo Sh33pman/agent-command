@@ -665,18 +665,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     /// Applies to sessions started or resumed after the change.
-    @objc func toggleRemoteControl() {
+    @objc func toggleAgentRemoteControl() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: DaemonPaths.acmd)
-        process.arguments = RemoteControlSetting.arguments(on: !RemoteControlSetting.isOn)
+        process.arguments = AgentRemoteControlSetting.arguments(on: !AgentRemoteControlSetting.isOn)
         do {
             try process.run()
             process.waitUntilExit()
             if process.terminationStatus == 0 { return }
         } catch {}
         let alert = NSAlert()
-        alert.messageText = "Couldn't change Remote Control"
-        alert.informativeText = "Run \(DaemonPaths.acmd) remote-control on (or off) in a terminal to see why."
+        alert.messageText = "Couldn't change Agent Remote Control"
+        alert.informativeText = "Run \(DaemonPaths.acmd) agent-remote-control on (or off) in a terminal to see why."
         alert.runModal()
     }
 
@@ -951,7 +951,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let state = PaletteState(
             targets: targets, sessions: store.sessions, needsYou: store.nextAttentionID != nil, setMembers: store.setMembers,
             paneCount: pane?.tree.shownLeaves.count ?? 0, showsScreen: pane?.shown != nil,
-            speechOn: speech.isEnabled, speaking: speech.isSpeaking, remoteControl: RemoteControlSetting.isOn,
+            speechOn: speech.isEnabled, speaking: speech.isSpeaking, agentRemoteControl: AgentRemoteControlSetting.isOn,
             defaultHarness: DefaultHarness.current,
             popupReads: popup.autoPlay, popupOn: popup.enabled, popupStyle: popup.style, popupOpens: popup.opens)
         return Palette.entries(state).map { entry in
@@ -983,7 +983,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .inboxFor(let session): showInbox(.session(session.id))
         case .toggleSpeech: SpeechController.shared.setEnabled(!SpeechController.shared.isEnabled)
         case .toggleReading: store.toggleReadingSelected()
-        case .toggleRemoteControl: toggleRemoteControl()
+        case .toggleAgentRemoteControl: toggleAgentRemoteControl()
         case .togglePopupReading: PopupSettings.shared.autoPlay.toggle()
         case .togglePopup: PopupSettings.shared.enabled.toggle()
         case .popupStyle(let style): PopupSettings.shared.style = style
@@ -1100,7 +1100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         ] {
             file.submenu?.addItem(menuItem(title, action, key))
         }
-        let remoteItem = NSMenuItem(title: "Remote Control for New Sessions", action: #selector(toggleRemoteControl), keyEquivalent: "")
+        let remoteItem = NSMenuItem(title: "Agent Remote Control for New Sessions", action: #selector(toggleAgentRemoteControl), keyEquivalent: "")
         remoteItem.target = self
         file.submenu?.addItem(remoteItem)
         file.submenu?.addItem(menuItem("Archive…", #selector(archiveSelection), .archive))
@@ -1228,13 +1228,13 @@ app.delegate = delegate
 app.run()
 
 extension AppDelegate: NSMenuItemValidation {
-    /// Each time a menu opens: the Remote Control checkmark, and the Go menu's names.
+    /// Each time a menu opens: the Agent Remote Control checkmark, and the Go menu's names.
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(newDefaultSession) {
             item.title = DefaultHarness.menuTitle(DefaultHarness.current)
         }
-        if item.action == #selector(toggleRemoteControl) {
-            item.state = RemoteControlSetting.isOn ? .on : .off
+        if item.action == #selector(toggleAgentRemoteControl) {
+            item.state = AgentRemoteControlSetting.isOn ? .on : .off
         }
         if item.action == #selector(goToNumber(_:)) {
             let session = store.sessionID(number: item.tag).flatMap { id in store.sessions.first { $0.id == id } }

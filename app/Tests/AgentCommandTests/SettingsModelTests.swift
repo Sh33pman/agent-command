@@ -12,7 +12,7 @@ private final class FakeAcmd {
     var fail: Set<String> = []
     var show = """
         {"path": "/tmp/x/config.toml", "voices": ["af_heart", "am_adam"], "settings": {
-          "claude_command": "/bin/claude", "claude_args": ["--model", "opus"], "remote_control": true,
+          "claude_command": "/bin/claude", "claude_args": ["--model", "opus"], "agent_remote_control": true,
           "agy_command": "/bin/agy", "agy_args": ["--x"],
           "notify.enabled": true, "notify.on_waiting": true, "notify.on_error": false, "notify.on_done": true,
           "notify.on_paused": false, "notify.done_min_duration": "1m0s", "notify.cooldown": "20s", "notify.sound": "",
@@ -47,7 +47,7 @@ private func model(_ acmd: FakeAcmd) -> SettingsModel {
     m.load()
     let v = m.values
     #expect(m.loaded && m.acmd.path == "/tmp/x/config.toml" && m.acmd.voices == ["af_heart", "am_adam"])
-    #expect(v.claudeCommand == "/bin/claude" && v.claudeArgs == ["--model", "opus"] && v.remoteControl)
+    #expect(v.claudeCommand == "/bin/claude" && v.claudeArgs == ["--model", "opus"] && v.agentRemoteControl)
     #expect(v.agyCommand == "/bin/agy" && v.agyArgs == ["--x"])
     #expect(!v.onError && v.doneMin == "1m0s" && v.sound.isEmpty && v.speed == 1.25 && v.editorTarget == "git_root")
 

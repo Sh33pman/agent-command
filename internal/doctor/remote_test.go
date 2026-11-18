@@ -4,7 +4,41 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/brettmostert/agent-command/internal/ipc"
 )
+
+func TestRemoteHostsThatNeedYou(t *testing.T) {
+	f := newFake(t)
+	f.daemon.RemoteHosts = []ipc.RemoteHost{
+		{Name: "ok", State: ipc.HostConnected},
+		{Name: "away", State: ipc.HostUnreachable, Error: "no route"},
+		{Name: "new", State: ipc.HostPending},
+		{Name: "moved", State: ipc.HostFingerprint, Fingerprint: "SHA256:pinned", Seen: "SHA256:seen"},
+		{Name: "strict", State: ipc.HostUnauthorized, OurFingerprint: "SHA256:me"},
+		{Name: "old", State: ipc.HostVersion, Error: "the host's API is version 0"},
+	}
+	r, out := f.run()
+	if r.Count(Warn) != 3 {
+		t.Errorf("want 3 warnings:\n%s", out)
+	}
+	for _, want := range []string{
+		"! Remote host moved: fingerprint mismatch (it shows SHA256:seen, you pinned SHA256:pinned)\n" +
+			"      fix: if its identity changed on purpose: acmd remote edit moved --fingerprint SHA256:seen",
+		"! Remote host strict refused this machine\n      fix: on strict: acmd remote authorize SHA256:me",
+		"! Remote host old speaks another protocol version: the host's API is version 0\n" +
+			"      fix: update acmd on both machines to the same version",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("lacks %q:\n%s", want, out)
+		}
+	}
+	for _, not := range []string{"Remote host ok", "Remote host away", "Remote host new"} {
+		if strings.Contains(out, not) {
+			t.Errorf("%q shouldn't be reported:\n%s", not, out)
+		}
+	}
+}
 
 func TestRemoteSessionsWithHostingOff(t *testing.T) {
 	f := newFake(t)

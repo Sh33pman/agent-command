@@ -72,9 +72,15 @@ func newRemoteHostingCmd() *cobra.Command {
 				return err
 			}
 			if asJSON {
-				return printJSON(cmd.OutOrStdout(), st)
+				if err := printJSON(cmd.OutOrStdout(), st); err != nil {
+					return err
+				}
+			} else {
+				writeRemoteStatus(cmd.OutOrStdout(), st)
 			}
-			writeRemoteStatus(cmd.OutOrStdout(), st)
+			if on && !st.Listening {
+				return &ExitError{Code: exitPortTaken, Err: fmt.Errorf("hosting can't listen: %s", cmpOr(st.Error, "port taken"))}
+			}
 			return nil
 		},
 	}

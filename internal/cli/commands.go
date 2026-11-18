@@ -41,9 +41,10 @@ func newNewCmd() *cobra.Command {
 	var (
 		o                newOptions
 		remote, noRemote bool
+		on               remoteNewOptions
 	)
 	cmd := &cobra.Command{
-		Use:   "new [-- <first prompt>]",
+		Use:   "new [--on <host> [--dir <folder there>]] [-- <first prompt>]",
 		Short: "Start a new session hosted by acmd (default_harness, else Claude, unless --harness says otherwise)",
 		Long: "Starts an interactive `claude` in a folder (default: this one), hosted by acmd, and lists it in the app.\n" +
 			"A folder Claude hasn't trusted yet shows Claude's trust prompt in the session.\n" +
@@ -51,18 +52,34 @@ func newNewCmd() *cobra.Command {
 			"--harness antigravity starts Antigravity's CLI (agy) instead, and --harness terminal a shell.\n" +
 			"claude_args (or agy_args) in acmd's config are added to the agent's arguments.\n" +
 			"--remote makes it a Remote session (clients of Hosting can use it), --no-remote a local one;\n" +
-			"without either, [remote] new_sessions_remote in acmd's config decides.",
+			"without either, [remote] new_sessions_remote in acmd's config decides.\n\n" +
+			"--on <host> starts it on a Remote host instead (see acmd remote list), in --dir there\n" +
+			"(default: the host's home), and adds it here. It's a Remote session on the host; the\n" +
+			"host's own default_harness and claude_args apply. See acmd remote --help for exit codes.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
-			if o.remote, err = remoteFlag(remote, noRemote); err != nil {
-				return err
-			}
 			switch o.harness {
 			case "", core.HarnessClaude, core.HarnessAntigravity, core.HarnessTerminal:
 			default:
 				return fmt.Errorf("--harness is claude, antigravity or terminal, not %q", o.harness)
 			}
-			o.prompt = strings.TrimSpace(strings.Join(args, " "))
+			if o.prompt, err = promptOf(o.prompt, args); err != nil {
+				return err
+			}
+			if on.host != "" {
+				for _, f := range []string{"cwd", "description", "remote", "no-remote"} {
+					if cmd.Flags().Changed(f) {
+						return fmt.Errorf("--%s isn't for a session on a Remote host (--on); use --dir for its folder there", f)
+					}
+				}
+				return startRemoteSession(cmd, o, on)
+			}
+			if on.dir != "" {
+				return errors.New("--dir is the folder on a Remote host, with --on; use --cwd here")
+			}
+			if o.remote, err = remoteFlag(remote, noRemote); err != nil {
+				return err
+			}
 			if o.cwd == "" {
 				o.cwd, _ = os.Getwd()
 			}
@@ -83,7 +100,55 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&o.harness, "harness", "", "what runs in it: claude, antigravity or terminal (default: default_harness, else claude)")
 	f.BoolVar(&remote, "remote", false, "make it a Remote session (default: [remote] new_sessions_remote)")
 	f.BoolVar(&noRemote, "no-remote", false, "make it a local session, not Remote")
+	f.StringVar(&o.prompt, "prompt", "", "the first prompt (or give it after --)")
+	f.StringVar(&on.host, "on", "", "start it on this Remote host, and add it here")
+	f.StringVar(&on.dir, "dir", "", "with --on: the folder on the host (default: its home)")
+	_ = cmd.RegisterFlagCompletionFunc("on", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return hostNames(), cobra.ShellCompDirectiveNoFileComp
+	})
 	return cmd
+}
+
+// promptOf is the first prompt: --prompt, or the words after --.
+func promptOf(flag string, args []string) (string, error) {
+	words := strings.TrimSpace(strings.Join(args, " "))
+	if flag != "" && words != "" {
+		return "", errors.New("give the first prompt with --prompt or after --, not both")
+	}
+	return strings.TrimSpace(flag + words), nil
+}
+
+// remoteNewOptions are acmd new --on's: the Remote host, and the folder there.
+type remoteNewOptions struct{ host, dir string }
+
+// startRemoteSession starts a session on a Remote host, and adds it here.
+func startRemoteSession(cmd *cobra.Command, o newOptions, on remoteNewOptions) error {
+	req := ipc.RemoteNewRequest{Host: on.host, Dir: cmp.Or(on.dir, "~"), Harness: o.harness, Name: o.name, Prompt: o.prompt}
+	var s core.Session
+	err := withDaemon(cmd, func(c *client) error {
+		if o.group != "" {
+			snap, err := c.snapshot()
+			if err != nil {
+				return err
+			}
+			g, err := resolveGroup(snap, o.group)
+			if err != nil && o.noCreate {
+				return err
+			}
+			if err != nil {
+				if g, err = createGroup(c, o.group, ""); err != nil {
+					return err
+				}
+			}
+			req.GroupID = g.ID
+		}
+		return c.hostCall(on.host, ipc.OpRemoteNew, req, &s)
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Started %s on %s in %s (%s).\n", nameOf(&s), on.host, cmp.Or(s.Cwd, req.Dir), s.Ref())
+	return nil
 }
 
 func startSession(ctx context.Context, o newOptions) (*core.Session, error) {

@@ -115,6 +115,8 @@ type DaemonState struct {
 	Status   ipc.Status // when running this version
 	Mismatch string     // version of a daemon of another version
 	Binary   string     // the program it runs ("" = unknown)
+	// RemoteHosts are the Remote hosts it knows, and their connections.
+	RemoteHosts []ipc.RemoteHost
 }
 
 // Env is everything the checks read.
@@ -473,6 +475,27 @@ func checkDaemon(ctx context.Context, r *Report, e Env) {
 	default:
 		r.add(secDaemon, OK, "", "running (pid %d): %s, %s recorded", d.Status.Pid, plural(d.Status.Sessions, "session"), plural(d.Status.Events, "event"))
 		checkRemote(r, e, d.Status.RemoteSessions)
+		checkRemoteHosts(r, d.RemoteHosts)
+	}
+}
+
+// checkRemoteHosts warns about Remote hosts that can't be used until someone
+// acts: one whose fingerprint doesn't match, one that refused this machine,
+// and one of another protocol version. (Unreachable and pending ones may
+// sort themselves out.)
+func checkRemoteHosts(r *Report, hosts []ipc.RemoteHost) {
+	for _, h := range hosts {
+		switch h.State {
+		case ipc.HostFingerprint:
+			r.add(secRemote, Warn, "if its identity changed on purpose: acmd remote edit "+h.Name+" --fingerprint "+h.Seen,
+				"Remote host %s: fingerprint mismatch (it shows %s, you pinned %s)", h.Name, h.Seen, h.Fingerprint)
+		case ipc.HostUnauthorized:
+			r.add(secRemote, Warn, "on "+h.Name+": acmd remote authorize "+h.OurFingerprint,
+				"Remote host %s refused this machine", h.Name)
+		case ipc.HostVersion:
+			r.add(secRemote, Warn, "update acmd on both machines to the same version",
+				"Remote host %s speaks another protocol version: %s", h.Name, h.Error)
+		}
 	}
 }
 

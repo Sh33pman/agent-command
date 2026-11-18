@@ -170,7 +170,7 @@ func TestAttachHost(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "h.sock")
-	if err := attachHost(context.Background(), sock); err == nil {
+	if err := attachHost(context.Background(), sock, 0); err == nil {
 		t.Error("attach without a host should fail")
 	}
 	// The CLI exits while attached: attach returns without an error.
@@ -178,7 +178,7 @@ func TestAttachHost(t *testing.T) {
 	go func() { _ = srv.Serve(context.Background()) }()
 	waitUntil(t, "host socket", func() bool { return term.Running(sock) })
 	done := make(chan error, 1)
-	go func() { done <- attachHost(context.Background(), sock) }()
+	go func() { done <- attachHost(context.Background(), sock, 0) }()
 	select {
 	case err := <-done:
 		if err != nil {

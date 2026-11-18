@@ -144,18 +144,23 @@ func writeListTable(w io.Writer, rows []listRow) error {
 }
 
 type jsonRow struct {
-	Number          int    `json:"number,omitempty"`
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Description     string `json:"description,omitempty"`
-	Status          string `json:"status"`
-	StatusDetail    string `json:"status_detail,omitempty"`
-	Unseen          bool   `json:"unseen,omitempty"`
-	Remote          bool   `json:"remote,omitempty"`
-	Group           string `json:"group"`
-	Cwd             string `json:"cwd"`
-	Kind            string `json:"kind"`
-	Where           string `json:"where"`
+	Number       int    `json:"number,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	Status       string `json:"status"`
+	StatusDetail string `json:"status_detail,omitempty"`
+	Unseen       bool   `json:"unseen,omitempty"`
+	Remote       bool   `json:"remote,omitempty"`
+	Group        string `json:"group"`
+	Cwd          string `json:"cwd"`
+	Kind         string `json:"kind"`
+	Where        string `json:"where"`
+	// Host is the Remote host a session added from one runs on, and RemoteID
+	// its id there. HostGone: the host no longer offers it.
+	Host            string `json:"host,omitempty"`
+	RemoteID        string `json:"remote_id,omitempty"`
+	HostGone        bool   `json:"host_gone,omitempty"`
 	BgID            string `json:"bg_id,omitempty"`
 	ClaudeSessionID string `json:"claude_session_id,omitempty"`
 	LastEventAt     string `json:"last_event_at,omitempty"`
@@ -167,7 +172,7 @@ func writeListJSON(w io.Writer, rows []listRow) error {
 		s := r.Session
 		j := jsonRow{Number: r.Number, ID: s.ID, Name: s.Name, Description: s.Description, Status: string(s.Status),
 			StatusDetail: s.StatusDetail, Unseen: s.Unseen, Remote: s.Remote, Group: r.Group.Name, Cwd: s.Cwd, Kind: string(s.Kind),
-			Where: where(s), BgID: s.BgID, ClaudeSessionID: s.ClaudeSessionID}
+			Where: where(s), Host: s.Host, RemoteID: s.RemoteID, HostGone: s.HostGone, BgID: s.BgID, ClaudeSessionID: s.ClaudeSessionID}
 		if !s.LastEventAt.IsZero() {
 			j.LastEventAt = s.LastEventAt.UTC().Format(time.RFC3339)
 		}
@@ -178,8 +183,14 @@ func writeListJSON(w io.Writer, rows []listRow) error {
 	return enc.Encode(out)
 }
 
-// where says where a session runs.
+// where says where a session runs: "↗ <host>" on a Remote host.
 func where(s *core.Session) string {
+	if s.OnHost() {
+		if s.HostGone {
+			return "↗ " + s.Host + " (gone)"
+		}
+		return "↗ " + s.Host
+	}
 	if s.Kind == core.KindExternal {
 		t := "unknown"
 		if s.External != nil && s.External.Terminal != "" {

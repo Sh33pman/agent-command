@@ -26,13 +26,19 @@ func newRemoteCmd() *cobra.Command {
 			"Hosting on and marks the sessions clients may use as Remote. A client adds the host and\n" +
 			"works in its Remote sessions as if they were local. Both sides prove who they are with\n" +
 			"a cert and key (mutual TLS), and each knows the other by its cert's fingerprint.\n\n" +
-			"This is separate from Agent Remote Control, which starts agents with --remote-control.",
+			"On a host: acmd remote hosting, status, clients, authorize and requests, and acmd remote on\n" +
+			"<session> to make a session Remote. On a client: acmd remote add a Remote host, then\n" +
+			"acmd remote browse it, and open or attach to its Remote sessions; acmd new --on <host>\n" +
+			"starts one there.\n\n" +
+			"This is separate from Agent Remote Control, which starts agents with --remote-control.\n\n" +
+			exitCodesHelp,
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newRemoteIdentityCmd(), newRemoteHostingCmd(), newRemoteStatusCmd(), newRemoteClientsCmd(),
 		newRemoteAuthorizeCmd(), newRemoteRevokeCmd(), newRemoteDisconnectCmd(), newRemoteRequestsCmd(),
 		newRemoteRenameCmd(), newRemoteCertCmd())
 	cmd.AddCommand(remoteSessionCmds()...)
+	cmd.AddCommand(remoteClientCmds()...)
 	return cmd
 }
 

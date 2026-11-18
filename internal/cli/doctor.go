@@ -154,7 +154,9 @@ func daemonState(ctx context.Context, p paths.Paths) (doctor.DaemonState, error)
 	if err := conn.Call(ipc.OpStatus, nil, &st); err != nil {
 		return doctor.DaemonState{}, err
 	}
-	return doctor.DaemonState{Running: true, Status: st, Binary: processBinary(st.Pid)}, nil
+	var hosts []ipc.RemoteHost
+	_ = conn.Call(ipc.OpRemoteHosts, nil, &hosts) // none, when it can't say
+	return doctor.DaemonState{Running: true, Status: st, Binary: processBinary(st.Pid), RemoteHosts: hosts}, nil
 }
 
 // processBinary is the program a process runs, even if its file is gone.

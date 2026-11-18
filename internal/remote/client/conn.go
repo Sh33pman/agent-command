@@ -187,8 +187,9 @@ func (h *hostConn) run() {
 			}
 			h.setLocked(state, msg, at)
 			c.o.Log.Printf("remote host %s: %s", kh.Name, msg)
+			blocked := h.blocked // read under the lock: Retry clears it
 			c.mu.Unlock()
-			if h.blocked {
+			if blocked {
 				continue
 			}
 			select {

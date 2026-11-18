@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -287,15 +288,20 @@ func attachOrLeave(ctx context.Context, socket string, wait time.Duration) error
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	if err := attachHost(ctx, socket); !errors.Is(err, errNoHost) {
+	if err := attachHost(ctx, socket, 0); !errors.Is(err, errNoHost) {
 		return err
 	}
 	return nil
 }
 
-// attachHost attaches the terminal to socket. A detach (SIGTERM) or the
-// CLI exiting end it without an error; no host listening is an error.
-func attachHost(parent context.Context, socket string) error {
+// detachKey is what detaches `acmd remote open|attach` from a session: Ctrl+]
+// (as in telnet), which agents and shells leave alone.
+const detachKey = 0x1d
+
+// attachHost attaches the terminal to socket. A detach (SIGTERM, or typing
+// detach when it isn't 0) or the CLI exiting end it without an error; no host
+// listening is an error.
+func attachHost(parent context.Context, socket string, detach byte) error {
 	if !term.Running(socket) {
 		return errNoHost
 	}
@@ -311,7 +317,14 @@ func attachHost(parent context.Context, socket string) error {
 		for {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
-				in <- append([]byte(nil), buf[:n]...)
+				b, detached := beforeDetach(buf[:n], detach)
+				if len(b) > 0 {
+					in <- b
+				}
+				if detached {
+					cancel()
+					return
+				}
 			}
 			if err != nil {
 				return
@@ -353,6 +366,17 @@ func attachHost(parent context.Context, socket string) error {
 		return nil // the session's CLI exited
 	}
 	return err
+}
+
+// beforeDetach is a copy of the input up to the detach key, and whether the
+// key was in it (never, when detach is 0).
+func beforeDetach(b []byte, detach byte) ([]byte, bool) {
+	if detach != 0 {
+		if i := bytes.IndexByte(b, detach); i >= 0 {
+			return append([]byte(nil), b[:i]...), true
+		}
+	}
+	return append([]byte(nil), b...), false
 }
 
 func splitEnv(kv string) (string, string, bool) {

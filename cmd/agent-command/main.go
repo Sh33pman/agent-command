@@ -12,10 +12,9 @@ import (
 
 func main() {
 	if err := cli.Execute(os.Args[0], os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		if errors.Is(err, cli.ErrSilent) {
-			os.Exit(1)
+		if !errors.Is(err, cli.ErrSilent) {
+			fmt.Fprintln(os.Stderr, "error:", err)
 		}
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		os.Exit(cli.ExitCode(err)) // acmd remote --help lists the codes
 	}
 }

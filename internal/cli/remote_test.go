@@ -118,6 +118,10 @@ func TestRemoteIsRemoteSessions(t *testing.T) {
 		if c.Name() == "remote" && !strings.HasPrefix(c.Short, "Remote sessions") {
 			t.Errorf("acmd remote is for Remote sessions, not %q", c.Short)
 		}
+		// The help names the exit codes and links the guide in docs/.
+		if c.Name() == "remote" && (!strings.Contains(c.Long, "8  port taken") || !strings.Contains(c.Long, "docs/remote-sessions.md")) {
+			t.Errorf("acmd remote --help should list the exit codes and link docs/remote-sessions.md:\n%s", c.Long)
+		}
 		if c.Name() == "remote-control" && !c.Hidden {
 			t.Error("acmd remote-control should be hidden")
 		}

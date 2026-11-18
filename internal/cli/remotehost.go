@@ -53,9 +53,10 @@ func newRemoteHostingCmd() *cobra.Command {
 		Use:   "hosting on|off",
 		Short: "Turn Hosting on or off: whether other acmds can connect to this one",
 		Long: "Hosting is this machine's listener for other acmds (clients). It's off by default, and\n" +
-			"listens on localhost:7433 unless [remote.host] in config.toml says otherwise. Only\n" +
-			"authorized clients get in: see acmd remote clients and acmd remote requests.\n" +
-			"Turning it off drops every connection.",
+			"listens on localhost:7433 unless [remote.host] in config.toml says otherwise. When the\n" +
+			"port is taken, it uses another (port_fallback) or fails with exit code 8: acmd remote\n" +
+			"status shows the port in use. Only authorized clients get in: see acmd remote clients\n" +
+			"and acmd remote requests. Turning it off drops every connection.",
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"on", "off"},
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -31,7 +31,9 @@ func newRemoteCmd() *cobra.Command {
 			"acmd remote browse it, and open or attach to its Remote sessions; acmd new --on <host>\n" +
 			"starts one there.\n\n" +
 			"This is separate from Agent Remote Control, which starts agents with --remote-control.\n\n" +
-			exitCodesHelp,
+			exitCodesHelp + "\n\n" +
+			"The guide, for a local network, Cloudflare Tunnel and your own certs:\n" +
+			"  https://github.com/brettmostert/agent-command/blob/main/docs/remote-sessions.md",
 		Args: cobra.NoArgs,
 	}
 	cmd.AddCommand(newRemoteIdentityCmd(), newRemoteHostingCmd(), newRemoteStatusCmd(), newRemoteClientsCmd(),

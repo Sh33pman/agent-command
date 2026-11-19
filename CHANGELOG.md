@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.61.1](https://github.com/brettmostert/agent-command/compare/v0.61.0...v0.61.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* make the Settings sidebar selectable again ([#93](https://github.com/brettmostert/agent-command/issues/93)) ([42549ce](https://github.com/brettmostert/agent-command/commit/42549ce7595654e02c9bd820411d4664eb48172f))
+
 ## [0.61.0](https://github.com/brettmostert/agent-command/compare/v0.60.1...v0.61.0) (2026-11-18)
 
 

@@ -58,8 +58,11 @@ struct SettingsView: View {
     var body: some View {
         NavigationSplitView {
             List(SettingsSection.allCases, selection: $model.section) { section in
-                Label(section.title, systemImage: section.icon).tag(section)
+                // The tag goes last: anything after it hides it from the List, which then
+                // selects by `id` (a String) and nothing matches the SettingsSection selection.
+                Label(section.title, systemImage: section.icon)
                     .badge(section == .remote ? remote.pendingCount : 0)
+                    .tag(section)
             }
             .navigationSplitViewColumnWidth(190)
         } detail: {

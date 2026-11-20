@@ -16,8 +16,12 @@ final class SessionStore {
     @ObservationIgnored private var reflecting = false
     /// Sessions showing in panes, the selected one among them.
     private(set) var visibleIDs: Set<String> = []
-    /// Each set's sessions, in pane order.
-    private(set) var setMembers: [[String]] = []
+    /// The daemon's sets: each set's id and its listed sessions, in order.
+    var sets: [String: [String]] = [:]
+    /// Each set's sessions, in order.
+    var setMembers: [[String]] { sets.keys.sorted().compactMap { sets[$0] } }
+    /// Called with the daemon's sets when they change, so the panes follow.
+    @ObservationIgnored var onSetsChanged: (([String: [String]]) -> Void)?
     /// Sessions in a set whose pane is closed.
     private(set) var closedIDs: Set<String> = []
     private(set) var problem: String?
@@ -71,12 +75,11 @@ final class SessionStore {
     var selected: Session? { sessions.first { $0.id == selectedID } }
 
     /// Shows what the panes show, without asking them to change.
-    func reflect(selected id: String?, visible: Set<String>, sets: [[String]], closed: Set<String>) {
+    func reflect(selected id: String?, visible: Set<String>, closed: Set<String>) {
         reflecting = true
         selectedID = id
         reflecting = false
         if visible != visibleIDs { visibleIDs = visible }
-        if sets != setMembers { setMembers = sets }
         markLookedAtSeen()
         if closed != closedIDs { closedIDs = closed }
     }
@@ -372,10 +375,14 @@ final class SessionStore {
                 let first: Snapshot = try conn.call("snapshot")
                 publish(first)
                 if !loadedLayout {
-                    struct Layout: Decodable {
-                        let json: String
+                    struct Layout: Codable {
+                        var client_id: String?
+                        var json: String = ""
                     }
-                    let layout: Layout = try conn.call("layout")
+                    var layout: Layout = try conn.call("layout", Layout(client_id: clientID))
+                    if layout.json.isEmpty { // first start with an id: the one layout from before
+                        layout = try conn.call("layout", Layout())
+                    }
                     loadedLayout = true
                     DispatchQueue.main.async { self.onLayoutLoaded?(layout.json) }
                 }
@@ -409,6 +416,11 @@ final class SessionStore {
                 self.sessions = visible
                 self.onListChanged?(Set(visible.map(\.id)))
             }
+            let sets = Self.sets(of: visible, known: snapshot.sets ?? [])
+            if sets != self.sets {
+                self.sets = sets
+                self.onSetsChanged?(sets)
+            }
             if archived != self.archived { self.archived = archived }
             let jobs = snapshot.jobs ?? []
             if jobs != self.jobs { self.jobs = jobs }
@@ -438,6 +450,53 @@ final class SessionStore {
         }
     }
 
+    /// Each set's listed sessions, in order, from the sessions that name it as
+    /// their parent. A set with fewer than two listed is left out.
+    static func sets(of sessions: [Session], known: [SessionSetEntity]) -> [String: [String]] {
+        let ids = Set(known.map(\.id))
+        var members: [String: [(order: Int, id: String)]] = [:]
+        for session in sessions {
+            guard let parent = session.parent, ids.contains(parent) else { continue }
+            members[parent, default: []].append((session.order ?? 0, session.id))
+        }
+        return members.compactMapValues { list in
+            list.count < 2 ? nil : list.sorted { ($0.order, $0.id) < ($1.order, $1.id) }.map(\.id)
+        }
+    }
+
+    /// This app's id with the daemon, so it keeps a layout of its own. Made once.
+    var clientID: String {
+        let key = "clientID"
+        if let id = defaults.string(forKey: key), !id.isEmpty { return id }
+        let id = UUID().uuidString
+        defaults.set(id, forKey: key)
+        return id
+    }
+
+    /// Makes sets in the daemon: the one-off move of sets from panes saved
+    /// before it kept them. One that can't be made is left out.
+    func createSets(_ sets: [(id: String, members: [String])]) {
+        struct Create: Encodable {
+            let kind = "set.create"
+            let set_id: String
+            let ids: [String]
+        }
+        guard !sets.isEmpty else { return }
+        calls.async {
+            guard let conn = try? DaemonConnection(socket: DaemonPaths.socket) else { return }
+            for set in sets {
+                do {
+                    try conn.send("mutate", Create(set_id: set.id, ids: set.members))
+                } catch {
+                    NSLog("couldn't move set %@ to the daemon: %@", set.id, error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// Takes a session out of its set. It keeps running, on its own.
+    func removeFromSet(_ id: String) { mutate("set.remove", id, failure: "Couldn't move the session out of its set") }
+
     /// The daemon takes a single-instance lock, so a spare start is harmless.
     /// It runs through a shell so it outlives the app.
     private static func startDaemon() {
@@ -452,14 +511,17 @@ final class SessionStore {
     /// selected, unless placed puts it somewhere itself.
     /// remote makes it a Remote session or not; nil, as from ⌘N, is the config's
     /// `new_sessions_remote`.
-    func newSession(harness: String, in folder: String, remote: Bool? = nil, placed: ((Session) -> Void)? = nil) {
+    /// setWith puts it in a set with that session, for a split.
+    func newSession(harness: String, in folder: String, remote: Bool? = nil, setWith: String? = nil,
+                    placed: ((Session) -> Void)? = nil) {
         struct New: Encodable {
             let cwd: String
             let harness: String
             let remote: Bool?
+            let set_with: String?
         }
         run(failure: "Couldn't start the session") { conn in
-            let session: Session = try conn.call("new", New(cwd: folder, harness: harness, remote: remote))
+            let session: Session = try conn.call("new", New(cwd: folder, harness: harness, remote: remote, set_with: setWith))
             return session
         } done: { session in
             self.adopt(session)
@@ -511,11 +573,19 @@ final class SessionStore {
     }
 
     /// Starts a session on a host, then shows it here. done gets why it couldn't, if it couldn't.
-    func newRemoteSession(host: String, dir: String, harness: Harness?, done: @escaping (String?) -> Void = { _ in }) {
-        remoteClient.newSession(host: host, dir: dir, harness: harness?.rawValue) { [weak self] result in
+    /// setWith puts it in a set with that session from the same host, and placed
+    /// then puts it in the panes instead of selecting it: a split.
+    func newRemoteSession(host: String, dir: String, harness: Harness?, setWith: String? = nil,
+                          placed: ((Session) -> Void)? = nil, done: @escaping (String?) -> Void = { _ in }) {
+        remoteClient.newSession(host: host, dir: dir, harness: harness?.rawValue, setWith: setWith) { [weak self] result in
             switch result {
             case .success(let session):
-                self?.focus(session)
+                if let placed {
+                    self?.adopt(session)
+                    placed(session)
+                } else {
+                    self?.focus(session)
+                }
                 done(nil)
             case .failure(let failure):
                 done(errorText(failure))
@@ -540,10 +610,12 @@ final class SessionStore {
     /// Keeps the pane layout in the daemon, so it comes back after a restart.
     func saveLayout(_ json: String) {
         struct Layout: Encodable {
+            let client_id: String
             let json: String
         }
+        let id = clientID
         run(failure: "Couldn't save the layout") { conn in
-            try conn.send("layout.set", Layout(json: json))
+            try conn.send("layout.set", Layout(client_id: id, json: json))
         } done: { _ in }
     }
 

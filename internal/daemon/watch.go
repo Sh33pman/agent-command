@@ -72,13 +72,22 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 	if d.cfg.Hosts == nil {
 		return nil, fmt.Errorf("%s isn't available: run `acmd doctor`", core.AgentApp(req.Harness))
 	}
-	if req.Resume != "" {
-		return d.resumeConversation(ctx, req)
-	}
-	if req.Cwd == "" {
+	var (
+		s   *core.Session
+		err error
+	)
+	switch {
+	case req.Resume != "":
+		s, err = d.resumeConversation(ctx, req)
+	case req.Cwd == "":
 		return nil, errors.New("no folder for the new session")
+	default:
+		s, err = d.hostSession(ctx, req)
 	}
-	return d.hostSession(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return d.joinSet(ctx, s, req.SetWith), nil
 }
 
 // resume starts a stopped session again in a new host with `claude

@@ -385,10 +385,16 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		}
 		return nil, d.answerInbox(ctx, a)
 	case ipc.OpLayout:
+		var l ipc.Layout
+		if len(req.Data) > 0 {
+			if err := json.Unmarshal(req.Data, &l); err != nil {
+				return nil, fmt.Errorf("bad layout request: %w", err)
+			}
+		}
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		value, err := d.store.AppState(ctx, layoutKey)
-		return ipc.Layout{JSON: value}, err
+		value, err := d.store.AppState(ctx, layoutKeyFor(l.ClientID))
+		return ipc.Layout{ClientID: l.ClientID, JSON: value}, err
 	case ipc.OpSetLayout:
 		l, err := decode[ipc.Layout](req.Data)
 		if err != nil {
@@ -396,7 +402,7 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		}
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		return nil, d.store.SetAppState(ctx, layoutKey, l.JSON)
+		return nil, d.store.SetAppState(ctx, layoutKeyFor(l.ClientID), l.JSON)
 	case ipc.OpResume:
 		m, err := decode[ipc.Mutation](req.Data)
 		if err != nil {

@@ -66,8 +66,8 @@ func localOps() []Op {
 		// State.
 		read(ipc.OpSnapshot, "Returns the sessions, groups, view state, notices, Inbox, jobs, wake state and Remote state.", entities, nil, ipc.Snapshot{}),
 		read(ipc.OpWatch, "Waits until something changes, or a timeout passes. A view's heartbeat while it's open.", entities, ipc.WatchRequest{}, ipc.WatchResponse{}),
-		read(ipc.OpLayout, "Returns the app's saved pane layout.", host, nil, ipc.Layout{}),
-		act(ipc.OpSetLayout, "Saves the app's pane layout.", host, ipc.Layout{}, nil),
+		read(ipc.OpLayout, "Returns a client's saved pane layout.", host, ipc.Layout{}, ipc.Layout{}),
+		act(ipc.OpSetLayout, "Saves a client's pane layout.", host, ipc.Layout{}, nil),
 
 		// Sessions.
 		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, core.Session{}).runsCode(),
@@ -93,6 +93,12 @@ func localOps() []Op {
 		mut(act(ipc.MutGroupUnarchive, "Unarchives a group, and optionally its sessions.", entities, nil, nil)),
 		mut(act(ipc.MutGroupCollapse, "Collapses or expands a group, or every group.", entities, nil, nil)),
 		mut(act(ipc.MutGroupMove, "Moves a group up or down in the order.", entities, nil, nil)),
+
+		// Sets: sessions made together by splitting panes.
+		mut(act(ipc.MutSetCreate, "Makes a set of sessions, in order. They move to the first one's group.", entities, nil, ipc.Set{})),
+		mut(act(ipc.MutSetAdd, "Adds a session to a set, after one of its members or at the end. It moves to the set's group.", entities, nil, nil)),
+		mut(act(ipc.MutSetRemove, "Takes a session out of its set. The set ends if one session is left.", entities, nil, nil)),
+		mut(act(ipc.MutSetEnd, "Ends a set. Its sessions stay where they are, on their own.", entities, nil, nil)),
 
 		// The CLI's view.
 		mut(act(ipc.MutViewMode, "Shows sessions in groups or as one list.", host, nil, nil)),

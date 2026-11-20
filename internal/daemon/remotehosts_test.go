@@ -277,11 +277,19 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	must(t, call(ipc.OpRemoteHosts, nil, &hosts))
 	must(t, call(ipc.OpRemoteHostRetry, ipc.RemoteHostRef{Host: "studio"}, &rh))
 	var fresh core.Session
-	must(t, call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: core.HarnessTerminal, Name: "fresh"}, &fresh))
+	// A split from the host's session starts the new one on that host, in a
+	// set with it.
+	must(t, call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: core.HarnessTerminal, Name: "fresh", SetWith: s.ID}, &fresh))
 	if fresh.Host != "studio" || fresh.RemoteID != "new1" {
 		t.Errorf("new = %+v", fresh)
 	}
+	if sets := snapshot().Sets; len(sets) != 1 || sets[0].Host != "studio" || fresh.Parent != sets[0].ID || fresh.Order != 2 {
+		t.Errorf("split on the host: sets %+v, fresh in %q at %d", sets, fresh.Parent, fresh.Order)
+	}
 	must(t, call(ipc.OpRemoteSessionRemove, ipc.RemoteHostRef{ID: fresh.ID}, nil))
+	if sets := snapshot().Sets; len(sets) != 0 {
+		t.Errorf("removing one of two left the set: %+v", sets)
+	}
 	if err := call(ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: "nope"}, nil); err == nil {
 		t.Error("browsed nothing")
 	}

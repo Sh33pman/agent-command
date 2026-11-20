@@ -117,6 +117,9 @@ type RemoteNewRequest struct {
 	Prompt  string   `json:"prompt,omitempty"`
 	Args    []string `json:"args,omitempty"`
 	GroupID string   `json:"group_id,omitempty"`
+	// SetWith puts it in a set with a session added from the same host, as
+	// NewRequest.SetWith.
+	SetWith string `json:"set_with,omitempty"`
 }
 
 // RemoteFolderRequest is a folder on a host (api.FolderPath).

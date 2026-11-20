@@ -11,9 +11,10 @@ enum SetLink: Equatable {
     case none, first, middle, last
 }
 
-/// What the panes show, and the sets that aren't showing. A session is in one set
-/// at most, and a set has at least two sessions. This has no dependencies, so it
-/// can be checked on its own.
+/// What the panes show, and the sets that aren't showing: each set's panes, kept
+/// by its id. Which sessions are in which set is the daemon's (reconcile); this
+/// keeps only where their panes are, which are open, and the focus. It has no
+/// dependencies, so it can be checked on its own.
 struct PaneSets: Codable, Equatable {
     /// The panes showing now: a set, one session alone, or one empty pane.
     private(set) var current = PaneTree()
@@ -71,15 +72,97 @@ struct PaneSets: Codable, Equatable {
         }
     }
 
-    /// Adds a new session next to the focused pane, creating a set if there isn't
-    /// one yet. With nothing showing, the session simply shows alone.
-    mutating func split(_ direction: SplitDirection, session: String, setID: String = UUID().uuidString) {
+    /// Adds a new session next to the focused pane, in the set the daemon put it
+    /// in. With nothing showing, the session simply shows alone. One already here
+    /// (the daemon's set reached us first) just gets the focus.
+    mutating func split(_ direction: SplitDirection, session: String, setID: String? = nil) {
+        if current.sessions.contains(session) {
+            current.show(session: session)
+            return
+        }
         guard current.focusedSession != nil else {
             current.show(session: session)
             return
         }
         current.split(direction, session: session)
-        if currentSetID == nil { currentSetID = setID }
+        if currentSetID == nil { currentSetID = setID ?? UUID().uuidString }
+    }
+
+    /// Follows the daemon's sets: each set's id and its sessions, in order. A
+    /// set that ended leaves its focused session showing alone; a member that
+    /// left loses its pane; one that joined gets a pane beside the member before
+    /// it; a set made elsewhere gets panes of its own, aside.
+    mutating func reconcile(sets: [String: [String]]) {
+        others.removeAll { sets[$0.id] == nil }
+        if let id = currentSetID, sets[id] == nil {
+            let keep = current.focusedSession ?? current.leaves.compactMap(\.session).first
+            current.keep(sessions: keep.map { [$0] } ?? [])
+            current.showAll()
+            currentSetID = nil
+        }
+        // A session showing alone that's now in a set: show that set.
+        if currentSetID == nil, let shown = current.sessions.first,
+            let (id, _) = sets.first(where: { $0.value.contains(shown) }) {
+            if let index = others.firstIndex(where: { $0.id == id }) {
+                current = others.remove(at: index).tree
+            }
+            currentSetID = id
+        }
+        if let id = currentSetID, let members = sets[id] { current.fit(members) }
+        for index in others.indices {
+            if let members = sets[others[index].id] { others[index].tree.fit(members) }
+        }
+        let known = Set(others.map(\.id) + [currentSetID].compactMap { $0 })
+        for id in sets.keys.sorted() where !known.contains(id) {
+            var tree = PaneTree()
+            tree.fit(sets[id] ?? [])
+            others.append(SessionSet(id: id, tree: tree))
+        }
+        settleCurrent()
+        removeOthersTooSmall()
+    }
+
+    /// The sets to make in the daemon from panes saved before it kept sets: each
+    /// set's sessions that are still listed, in pane order, one set per host.
+    /// hostOf gives a listed session's host ("" for this Mac), nil for one
+    /// that's gone. The first host's set keeps the set's id.
+    func setsToMove(hostOf: (String) -> String?) -> [(id: String, members: [String])] {
+        let showing = currentSetID.map { [SessionSet(id: $0, tree: current)] } ?? []
+        var out: [(id: String, members: [String])] = []
+        for set in showing + others {
+            var hosts: [String] = []
+            var byHost: [String: [String]] = [:]
+            for session in set.tree.leaves.compactMap(\.session) {
+                guard let host = hostOf(session) else { continue }
+                if byHost[host] == nil { hosts.append(host) }
+                byHost[host, default: []].append(session)
+            }
+            for (index, host) in hosts.enumerated() {
+                guard let members = byHost[host], members.count >= 2 else { continue }
+                out.append((index == 0 ? set.id : UUID().uuidString, members))
+            }
+        }
+        return out
+    }
+
+    /// The format the app saves now: panes only, with sets kept by the daemon.
+    static let savedVersion = 2
+
+    private struct Saved: Codable {
+        let version: Int
+        let panes: PaneSets
+    }
+
+    /// The panes as saved now.
+    func encodedForSaving() -> Data? { try? JSONEncoder().encode(Saved(version: Self.savedVersion, panes: self)) }
+
+    /// Reads saved panes. fromBefore says they were saved before the daemon
+    /// kept sets, so their sets still have to be moved there.
+    static func decodeSaved(_ data: Data) -> (panes: PaneSets, fromBefore: Bool)? {
+        if let saved = try? JSONDecoder().decode(Saved.self, from: data), saved.version >= savedVersion {
+            return saved.panes.isValid() ? (saved.panes, false) : nil
+        }
+        return decode(data).map { ($0, true) }
     }
 
     /// Changes the panes showing now, which can end the set.
@@ -157,5 +240,18 @@ struct PaneSets: Codable, Equatable {
 
     private mutating func removeOthersTooSmall() {
         others.removeAll { $0.tree.leaves.count < 2 }
+    }
+}
+
+extension PaneTree {
+    /// Makes the panes match a set's sessions: a pane for each, in order where
+    /// it's new, and none for others. Panes keep their places and sizes.
+    mutating func fit(_ members: [String]) {
+        let wanted = Set(members)
+        for session in sessions where !wanted.contains(session) { remove(session: session) }
+        for (index, session) in members.enumerated() where !sessions.contains(session) {
+            add(session: session, after: index > 0 ? members[index - 1] : nil)
+        }
+        if focusedSession == nil, let first = shownLeaves.first(where: { $0.session != nil }) { focus(first.id) }
     }
 }

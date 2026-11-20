@@ -15,6 +15,10 @@ const sessionCols = `id, name, description, group_id, name_source, cwd, claude_s
 	claude_history, transcript_path, status, status_detail, unseen, kind, bg_id, pid,
 	external, created_at, last_event_at, archived_at, harness, remote, host, remote_id, host_gone, job_id`
 
+// sessionReadCols are sessionCols and the set columns, which only the set
+// functions write.
+const sessionReadCols = sessionCols + `, set_id, set_order`
+
 // CreateSession inserts a new session. An empty ID gets a new ULID, an empty
 // GroupID the Default group, and a zero CreatedAt the current time.
 func (s *Store) CreateSession(ctx context.Context, sess *core.Session) error {
@@ -55,7 +59,10 @@ func (s *Store) UpdateSession(ctx context.Context, sess *core.Session) error {
 		if err != nil {
 			return err
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE sessions SET name=?, description=?, group_id=?, name_source=?, cwd=?,
+		// A set's sessions share one group, so a member's group only changes
+		// with its set (MoveSessions).
+		res, err := tx.ExecContext(ctx, `UPDATE sessions SET name=?, description=?,
+			group_id=CASE WHEN set_id != '' THEN group_id ELSE ? END, name_source=?, cwd=?,
 			claude_session_id=?, claude_history=?, transcript_path=?, status=?, status_detail=?, unseen=?, kind=?,
 			bg_id=?, pid=?, external=?, created_at=?, last_event_at=?, archived_at=?, harness=?, remote=?, host=?, remote_id=?, host_gone=?, job_id=? WHERE id=?`,
 			append(args[1:], args[0])...)
@@ -65,19 +72,31 @@ func (s *Store) UpdateSession(ctx context.Context, sess *core.Session) error {
 		if n, _ := res.RowsAffected(); n == 0 {
 			return ErrNotFound
 		}
+		if sess.Status == core.StatusArchived || !sess.ArchivedAt.IsZero() {
+			setID, err := sessionSet(ctx, tx, sess.ID)
+			if err != nil {
+				return err
+			}
+			if setID != "" {
+				if err := leaveSet(ctx, tx, sess.ID, setID); err != nil {
+					return err
+				}
+			}
+			sess.SetID, sess.SetOrder = "", 0
+		}
 		return syncClaudeIDs(ctx, tx, sess)
 	})
 }
 
 // Session returns the session with the given acmd id.
 func (s *Store) Session(ctx context.Context, id string) (*core.Session, error) {
-	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE id = ?`, id))
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+sessionReadCols+` FROM sessions WHERE id = ?`, id))
 }
 
 // SessionByClaudeID finds the session that has (or had) this Claude session
 // id, so hooks from a /clear'ed or forked session still land on it.
 func (s *Store) SessionByClaudeID(ctx context.Context, claudeID string) (*core.Session, error) {
-	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionCols)+`
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionReadCols)+`
 		FROM claude_ids c JOIN sessions s ON s.id = c.session_id WHERE c.claude_session_id = ?`, claudeID))
 }
 
@@ -85,7 +104,7 @@ func (s *Store) SessionByClaudeID(ctx context.Context, claudeID string) (*core.S
 // been linked to its Claude session id yet. Claude's short id is the first
 // 8 characters of the session id (M0 A3), which links the first hook.
 func (s *Store) SessionByBgID(ctx context.Context, bgID string) (*core.Session, error) {
-	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+sessionReadCols+` FROM sessions
 		WHERE bg_id = ? AND claude_session_id = '' ORDER BY created_at DESC LIMIT 1`, bgID))
 }
 
@@ -95,14 +114,14 @@ func (s *Store) SessionByClaudePrefix(ctx context.Context, prefix string) (*core
 	if prefix == "" {
 		return nil, ErrNotFound
 	}
-	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionCols)+`
+	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionReadCols)+`
 		FROM claude_ids c JOIN sessions s ON s.id = c.session_id
 		WHERE substr(c.claude_session_id, 1, length(?)) = ? ORDER BY s.created_at DESC LIMIT 1`, prefix, prefix))
 }
 
 // Sessions lists sessions in creation order; archived ones only if includeArchived.
 func (s *Store) Sessions(ctx context.Context, includeArchived bool) ([]*core.Session, error) {
-	q := `SELECT ` + sessionCols + ` FROM sessions`
+	q := `SELECT ` + sessionReadCols + ` FROM sessions`
 	if !includeArchived {
 		q += ` WHERE archived_at = 0`
 	}
@@ -123,21 +142,35 @@ func (s *Store) Sessions(ctx context.Context, includeArchived bool) ([]*core.Ses
 }
 
 // DeleteSession permanently removes a session (`acmd purge`).
+// Its set ends if one session is left.
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
-	res, err := s.q.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		setID, err := sessionSet(ctx, tx, id)
+		if errors.Is(err, ErrNotFound) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return err
+		}
+		if setID == "" {
+			return nil
+		}
+		return settleSet(ctx, tx, setID)
+	})
 }
 
-// MoveSessions puts sessions into a group (exactly one group each).
+// MoveSessions puts sessions into a group (exactly one group each). A
+// session in a set takes the whole set with it.
 func (s *Store) MoveSessions(ctx context.Context, groupID string, ids ...string) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		if err := liveGroupExists(ctx, tx, groupID); err != nil {
+			return err
+		}
+		ids, err := withSets(ctx, tx, ids)
+		if err != nil {
 			return err
 		}
 		for _, id := range ids {
@@ -206,7 +239,8 @@ func scanSession(row scanner) (*core.Session, error) {
 	)
 	err := row.Scan(&sess.ID, &sess.Name, &sess.Description, &sess.GroupID, &nameSource, &sess.Cwd,
 		&sess.ClaudeSessionID, &hist, &sess.TranscriptPath, &status, &sess.StatusDetail, &unseen, &kind,
-		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived, &sess.Harness, &remote, &sess.Host, &sess.RemoteID, &gone, &sess.JobID)
+		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived, &sess.Harness, &remote, &sess.Host, &sess.RemoteID, &gone, &sess.JobID,
+		&sess.SetID, &sess.SetOrder)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

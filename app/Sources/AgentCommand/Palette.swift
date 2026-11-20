@@ -2,6 +2,11 @@ import Foundation
 
 /// What a command palette entry does. The app carries it out; the list itself is
 /// worked out here, from what's showing, so it can be checked without a window.
+/// What a split starts: a terminal, the agent ⌘N starts, or what you pick.
+enum SplitKind: Equatable {
+    case terminal, agent, ask
+}
+
 enum PaletteAction: Equatable {
     case rename([Session])
     case archive([Session])
@@ -13,7 +18,7 @@ enum PaletteAction: Equatable {
     /// Asks which harness, then the folder.
     case chooseHarness
     case resume
-    case split(SplitDirection)
+    case split(SplitDirection, SplitKind)
     case closePane
     case focus(FocusDirection)
     case equalizePanes
@@ -151,8 +156,16 @@ enum Palette {
         for host in state.hosts {
             list.append(PaletteEntry(section: "New", title: "Session on \(host)…", key: host, action: .newOnHost(host)))
         }
-        list.append(PaletteEntry(section: "Panes", title: "Split right", shortcut: keys.label(.splitRight), action: .split(.right)))
-        list.append(PaletteEntry(section: "Panes", title: "Split down", shortcut: keys.label(.splitDown), action: .split(.down)))
+        for (title, action, direction, kind) in [
+            ("Split right", KeyAction.splitRight, SplitDirection.right, SplitKind.terminal),
+            ("Split down", .splitDown, .down, .terminal),
+            ("Split right with agent", .splitRightAgent, .right, .agent),
+            ("Split down with agent", .splitDownAgent, .down, .agent),
+            ("Split right…", .splitRightAsk, .right, .ask),
+            ("Split down…", .splitDownAsk, .down, .ask),
+        ] {
+            list.append(PaletteEntry(section: "Panes", title: title, shortcut: keys.label(action), action: .split(direction, kind)))
+        }
         list.append(PaletteEntry(section: "Panes", title: "Close pane", shortcut: keys.label(.closePane), action: .closePane))
         if state.paneCount > 1 {
             for (title, shortcut, direction) in [

@@ -93,6 +93,21 @@ struct PaneTree: Codable, Equatable {
         focused = newID
     }
 
+    /// Adds a pane for a session to the right of the pane showing another, or
+    /// of the last pane, keeping the focus where it is. An empty tree just
+    /// shows it. A session already here is left where it is.
+    mutating func add(session: String, after other: String?, newID: String = UUID().uuidString) {
+        if sessions.contains(session) { return }
+        if leaves.count == 1, let only = leaves.first, only.session == nil {
+            root = .leaf(id: only.id, session: session)
+            return
+        }
+        let target = other.flatMap { o in leaves.first { $0.session == o }?.id } ?? leaves.last?.id ?? focused
+        root = Self.replacing(target, in: root) { leaf in
+            .split(direction: .right, ratio: 0.5, first: leaf, second: .leaf(id: newID, session: session))
+        }
+    }
+
     /// Closes the focused pane, leaving its session running. The last pane
     /// stays, empty.
     mutating func closeFocused() {

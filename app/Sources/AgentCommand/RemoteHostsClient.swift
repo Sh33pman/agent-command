@@ -47,6 +47,8 @@ struct RemoteHostsClient {
         let host: String
         let dir: String
         var harness: String?
+        /// A session from the same host to put it in a set with, for a split.
+        var set_with: String?
     }
 
     private struct Nothing: Decodable {}
@@ -100,8 +102,10 @@ struct RemoteHostsClient {
     }
 
     /// Starts a session on a host, Remote there, and adds it here.
-    func newSession(host: String, dir: String, harness: String?, done: @escaping (Result<Session, Error>) -> Void) {
-        call("remote.new", NewRequest(host: host, dir: dir, harness: harness), done)
+    /// setWith is a session from the same host to put it in a set with (a split).
+    func newSession(host: String, dir: String, harness: String?, setWith: String? = nil,
+                    done: @escaping (Result<Session, Error>) -> Void) {
+        call("remote.new", NewRequest(host: host, dir: dir, harness: harness, set_with: setWith), done)
     }
 
     // MARK: Folders and harnesses

@@ -21,7 +21,9 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     #expect(entry(entries, "New", "Terminal")?.action == .newSession(harness: "terminal"))
     #expect(entry(entries, "New", "New session…")?.action == .chooseHarness)
     #expect(entry(entries, "New", "New session…")?.shortcut == "⇧⌘N")
-    #expect(titles(entries, in: "Panes") == ["Split right", "Split down", "Close pane"], "no focus commands for one pane")
+    #expect(titles(entries, in: "Panes") == [
+        "Split right", "Split down", "Split right with agent", "Split down with agent", "Split right…", "Split down…", "Close pane",
+    ], "no focus commands for one pane")
     #expect(titles(entries, in: "Screen").isEmpty, "no screen commands without a terminal")
     #expect(titles(entries, in: "Go to").isEmpty, "nothing needs you, and no sessions")
     #expect(entry(entries, "App", "Quit")?.action == .quit)
@@ -89,10 +91,12 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
 
 @Test func paletteListsPaneAndScreenCommandsWhenThereAreSome() {
     let entries = Palette.entries(PaletteState(paneCount: 2, showsScreen: true))
-    #expect(titles(entries, in: "Panes").count == 8)
+    #expect(titles(entries, in: "Panes").count == 12)
     #expect(entry(entries, "Panes", "Focus up")?.action == .focus(.up))
     #expect(entry(entries, "Panes", "Equalize panes")?.action == .equalizePanes)
-    #expect(entry(entries, "Panes", "Split down")?.action == .split(.down))
+    #expect(entry(entries, "Panes", "Split down")?.action == .split(.down, .terminal))
+    #expect(entry(entries, "Panes", "Split right with agent")?.action == .split(.right, .agent))
+    #expect(entry(entries, "Panes", "Split down…")?.action == .split(.down, .ask))
     #expect(titles(entries, in: "Screen").count == Palette.screenCommands.count)
     #expect(entry(entries, "Screen", "Paste")?.action == .screen(binding: "paste_from_clipboard"))
 }

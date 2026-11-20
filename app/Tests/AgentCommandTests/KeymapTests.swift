@@ -11,7 +11,17 @@ import Testing
         for combo in combos {
             #expect(action.problem(with: combo) == nil, "\(action): \(combo.display)")
         }
-        if !action.takesSeveral { #expect(combos.count == 1, "\(action) is a menu's, with one key") }
+        if !action.takesSeveral { #expect(combos.count <= 1, "\(action) is a menu's, with one key at most") }
+    }
+}
+
+@Test func splitsStartATerminalByDefaultAndTheOtherSplitsWaitToBeBound() {
+    let keys = Keymap()
+    #expect(keys.label(.splitRight) == "⌘↩" && keys.label(.splitDown) == "⇧⌘↩")
+    for action in [KeyAction.splitRightAgent, .splitDownAgent, .splitRightAsk, .splitDownAsk] {
+        #expect(action.defaults.isEmpty, "\(action) is unbound until you bind it")
+        #expect(KeyAction.paneActions.contains(action), "\(action) acts on the panes")
+        #expect(!action.title.isEmpty)
     }
 }
 

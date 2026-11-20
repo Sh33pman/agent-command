@@ -168,9 +168,11 @@ type JobCheck struct {
 // Snapshot is everything a client needs to render the list; clients
 // compute the layout themselves with core.Layout.
 type Snapshot struct {
-	Sessions  []*core.Session `json:"sessions"`
-	Groups    []*core.Group   `json:"groups"`
-	ViewState core.ViewState  `json:"view_state"`
+	Sessions []*core.Session `json:"sessions"`
+	Groups   []*core.Group   `json:"groups"`
+	// Sets are the sets, oldest first. Their sessions are in Sessions.
+	Sets      []Set          `json:"sets,omitempty"`
+	ViewState core.ViewState `json:"view_state"`
 	// Notices are the most recent notifications, oldest first.
 	Notices []Notice `json:"notices,omitempty"`
 	// Inbox is the queue: the items still to deal with, in arrival order.
@@ -232,7 +234,26 @@ const (
 	MutInboxDismiss   = "inbox.dismiss"     // ItemIDs: take them out of the queue
 	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
 	MutRemote         = "session.remote"    // ID, Flag = Remote: clients of Hosting may see and use it
+	// Sets: sessions made together by splitting panes (section 7 of the
+	// design). A session is in one set at most; a set has at least two
+	// sessions, all in one group and on one host, and ends when one is left.
+	MutSetCreate = "set.create" // IDs (in order), SetID ("" = a new id) -> returns the Set
+	MutSetAdd    = "set.add"    // SetID, ID, After (the member it goes after; "" = the end)
+	MutSetRemove = "set.remove" // ID: out of its set; it keeps running on its own
+	MutSetEnd    = "set.end"    // SetID: its sessions stay, on their own
 )
+
+// EntitySet is a Set's type.
+const EntitySet = "set"
+
+// Set is a set as clients see it. Its sessions name it as their parent, with
+// their place in it as their order.
+type Set struct {
+	Type   string `json:"type"`   // EntitySet
+	ID     string `json:"id"`     //
+	Parent string `json:"parent"` // its group
+	Host   string `json:"host,omitempty"`
+}
 
 // Mutation is one change requested by a client.
 type Mutation struct {
@@ -245,6 +266,8 @@ type Mutation struct {
 	Color   string        `json:"color,omitempty"`
 	Flag    bool          `json:"flag,omitempty"`
 	Pane    *core.PaneLoc `json:"pane,omitempty"`
+	SetID   string        `json:"set_id,omitempty"`
+	After   string        `json:"after,omitempty"`
 }
 
 // InboxRequest asks for one session's inbox items, or everyone's with no SessionID.
@@ -293,6 +316,9 @@ type NewRequest struct {
 	// Remote makes it a Remote session, or not. nil (as from ⌘N) is the
 	// config's [remote] new_sessions_remote.
 	Remote *bool `json:"remote,omitempty"`
+	// SetWith is a session to put it in a set with: that session's set, right
+	// after it, or a new set of the two. It goes in that session's group.
+	SetWith string `json:"set_with,omitempty"`
 	// JobID is the scheduled job starting it. The daemon sets it for its own
 	// runs; it isn't taken from clients.
 	JobID string `json:"-"`
@@ -301,7 +327,10 @@ type NewRequest struct {
 // Layout is the app's pane layout. It belongs to the app: the daemon only keeps
 // it, so it comes back after a restart.
 type Layout struct {
-	JSON string `json:"json"`
+	// ClientID is the client whose layout it is; each keeps its own. ""
+	// is the one layout from before clients had ids.
+	ClientID string `json:"client_id,omitempty"`
+	JSON     string `json:"json"`
 }
 
 // Conversation is an earlier Claude or Antigravity conversation that can be

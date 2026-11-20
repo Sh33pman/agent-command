@@ -255,6 +255,10 @@ enum KeyAction: String, CaseIterable, Identifiable {
 
     case splitRight = "panes.split-right"
     case splitDown = "panes.split-down"
+    case splitRightAgent = "panes.split-right-agent"
+    case splitDownAgent = "panes.split-down-agent"
+    case splitRightAsk = "panes.split-right-ask"
+    case splitDownAsk = "panes.split-down-ask"
     case closePane = "panes.close"
     case focusLeft = "panes.focus-left"
     case focusDown = "panes.focus-down"
@@ -296,7 +300,8 @@ enum KeyAction: String, CaseIterable, Identifiable {
     static let sessions: [KeyAction] = [.session1, .session2, .session3, .session4, .session5, .session6, .session7, .session8, .session9]
 
     /// What acts on the panes, which mean nothing while the Inbox or Scheduled covers them.
-    static let paneActions: [KeyAction] = [.splitRight, .splitDown, .focusLeft, .focusDown, .focusUp, .focusRight, .equalize]
+    static let paneActions: [KeyAction] = [.splitRight, .splitDown, .splitRightAgent, .splitDownAgent,
+                                           .splitRightAsk, .splitDownAsk, .focusLeft, .focusDown, .focusUp, .focusRight, .equalize]
 
     var section: KeySection {
         switch rawValue.split(separator: ".").first {
@@ -335,6 +340,10 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .quit: "Quit"
         case .splitRight: "Split right"
         case .splitDown: "Split down"
+        case .splitRightAgent: "Split right with an agent"
+        case .splitDownAgent: "Split down with an agent"
+        case .splitRightAsk: "Split right, choosing what starts"
+        case .splitDownAsk: "Split down, choosing what starts"
         case .closePane: "Close pane"
         case .focusLeft: "Focus the pane on the left"
         case .focusDown: "Focus the pane below"
@@ -382,6 +391,8 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .go: "From a message, or a job's last run."
         case .remove: "Dismisses a message, or deletes a job."
         case .left, .right: "While answering with an option."
+        case .splitRight, .splitDown: "A terminal, in the same folder: on its host, for a host's session."
+        case .splitRightAgent, .splitDownAgent: "The agent ⌘N starts, in the same folder."
         default: ""
         }
     }
@@ -410,6 +421,7 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .quit: ["cmd+q"]
         case .splitRight: ["cmd+return"]
         case .splitDown: ["shift+cmd+return"]
+        case .splitRightAgent, .splitDownAgent, .splitRightAsk, .splitDownAsk: []
         case .closePane: ["cmd+w"]
         case .focusLeft: ["ctrl+cmd+h"]
         case .focusDown: ["ctrl+cmd+j"]

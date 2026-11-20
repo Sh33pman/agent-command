@@ -81,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 },
                 openInbox: { [weak self] session in self?.showInbox(.session(session.id)) },
                 openInEditor: { [weak self] session in self?.openInEditor(session) },
-                moveOut: { [weak self] session in self?.pane?.moveOut(sessionID: session.id) },
+                moveOut: { [weak self] session in self?.moveOutOfSet(session.id) },
                 openSet: { [weak self] session in self?.pane?.showSet(containing: session.id) },
                 clickRow: { [weak self] session in self?.clickSidebarRow(session) },
                 openRow: { [weak self] session in self?.openSidebarRow(session.id) },
@@ -141,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         pane.onChange = { [weak self] sets in self?.panesChanged(sets) }
         store.onListChanged = { [weak pane] ids in pane?.sessionsChanged(listed: ids) }
+        store.onSetsChanged = { [weak pane] sets in pane?.reconcile(sets: sets) }
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }
         notifier.isLooking = { [weak store] id in store?.isInMainWindow == true && store?.visibleIDs.contains(id) == true }
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
@@ -302,9 +303,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func restorePanes(_ json: String) {
-        if let data = json.data(using: .utf8), var kept = PaneSets.decode(data) {
-            kept.keep(sessions: Set(store.sessions.map(\.id)))
+        if let data = json.data(using: .utf8), let (saved, fromBefore) = PaneSets.decodeSaved(data) {
+            var kept = saved
+            let listed = Dictionary(store.sessions.map { ($0.id, $0.hostName) }, uniquingKeysWith: { a, _ in a })
+            if fromBefore { // once: the sets saved here move to the daemon
+                store.createSets(kept.setsToMove { listed[$0] })
+            }
+            kept.keep(sessions: Set(listed.keys))
+            if !fromBefore { kept.reconcile(sets: store.sets) }
             pane?.restore(kept)
+            if fromBefore, let data = kept.encodedForSaving(), let json = String(data: data, encoding: .utf8) {
+                store.saveLayout(json) // saved in the new format, so the move isn't made again
+            }
         }
         restored = true
         let args = CommandLine.arguments
@@ -331,7 +341,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func reflect(_ sets: PaneSets) {
         store.reflect(
             selected: sets.current.focusedSession, visible: sets.current.visibleSessions,
-            sets: sets.members, closed: sets.closedSessions)
+            closed: sets.closedSessions)
+    }
+
+    /// Takes a session out of its set, in the daemon. Its pane goes now; the
+    /// session keeps running, on its own.
+    private func moveOutOfSet(_ id: String) {
+        pane?.moveOut(sessionID: id)
+        store.removeFromSet(id)
     }
 
     private func panesChanged(_ sets: PaneSets) {
@@ -340,7 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         guard restored else { return }
         pendingSave?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            if let data = try? JSONEncoder().encode(sets), let json = String(data: data, encoding: .utf8) {
+            if let data = sets.encodedForSaving(), let json = String(data: data, encoding: .utf8) {
                 self?.store.saveLayout(json)
             }
         }
@@ -348,19 +365,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
-    /// A split starts a new terminal in the same folder, and joins it to the set.
-    /// The pane opens once the terminal has started, so a failed start leaves none.
-    private func splitPane(_ direction: SplitDirection) {
-        // A host's folder isn't on this Mac: the terminal starts here.
-        let here = store.selected.flatMap { $0.isOnHost ? nil : $0.cwd }
-        let folder = here ?? lastFolder?.path ?? NSHomeDirectory()
-        store.newSession(harness: Harness.terminal.rawValue, in: folder) { [weak self] session in
-            self?.pane?.split(direction, session: session.id)
+    /// A split starts a new session in the same folder, where the focused session
+    /// runs (this Mac, or its host), and the daemon puts the two in a set. The pane
+    /// opens once the session has started, so a failed start leaves none.
+    private func splitPane(_ direction: SplitDirection, harness: Harness = .terminal) {
+        let from = store.selected
+        let placed: (Session) -> Void = { [weak self] session in
+            // order is only sent for a session in a set; parent is then the set.
+            self?.pane?.split(direction, session: session.id, setID: session.order == nil ? nil : session.parent)
         }
+        if let from, from.isOnHost {
+            store.newRemoteSession(host: from.hostName, dir: from.cwd, harness: harness, setWith: from.id, placed: placed)
+            return
+        }
+        let folder = from?.cwd ?? lastFolder?.path ?? NSHomeDirectory()
+        store.newSession(harness: harness.rawValue, in: folder, setWith: from?.id, placed: placed)
+    }
+
+    /// A split with the agent ⌘N starts.
+    private func splitWithAgent(_ direction: SplitDirection) {
+        splitPane(direction, harness: DefaultHarness.current ?? .claude)
+    }
+
+    /// A split that asks what to start first. A host's session offers that host's harnesses.
+    private func splitAsking(_ direction: SplitDirection) {
+        let host = store.selected.flatMap { $0.isOnHost ? $0.hostName : nil }
+        closePopup()
+        showMainWindow()
+        showPopup(HarnessPickerView(
+            title: direction == .right ? "Split right with" : "Split down with",
+            picker: NewSessionPicker(hosts: host.map { [$0] } ?? [], host: host, client: store.remoteClient),
+            close: { [weak self] in self?.closePopup() },
+            choose: { [weak self] harness, _, _ in
+                self?.closePopup()
+                self?.splitPane(direction, harness: harness)
+            }
+        ))
     }
 
     @objc private func splitRight() { splitPane(.right) }
     @objc private func splitDown() { splitPane(.down) }
+    @objc private func splitRightAgent() { splitWithAgent(.right) }
+    @objc private func splitDownAgent() { splitWithAgent(.down) }
+    @objc private func splitRightAsk() { splitAsking(.right) }
+    @objc private func splitDownAsk() { splitAsking(.down) }
     /// Gives the sidebar the keyboard, or gives it back to the terminal.
     @objc private func toggleSidebarFocus() {
         if store.sidebarFocused {
@@ -691,7 +739,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 self?.showMainWindow()
                 self?.archive(sessions)
             }
-            model.moveOut = { session in self?.pane?.moveOut(sessionID: session.id) }
+            model.moveOut = { session in self?.moveOutOfSet(session.id) }
         }
         store.onNewItems = { [weak self] items in self?.popupWindow.itemsArrived(items) }
         notifier.popupShows = { [weak self] kind in self?.popupWindow.replacesBanner(noticeKind: kind) ?? false }
@@ -772,7 +820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         model.goToSession = { [weak self] id in self?.openSidebarRow(id) }
         model.rename = { [weak self] sessions in self?.showRename(sessions) }
         model.archive = { [weak self] sessions in self?.archive(sessions) }
-        model.moveOut = { [weak self] session in self?.pane?.moveOut(sessionID: session.id) }
+        model.moveOut = { [weak self] session in self?.moveOutOfSet(session.id) }
         showPopup(InboxView(model: model), aboveStatusBar: true)
         window?.makeFirstResponder(nil)
         store.inboxOpen = true
@@ -1092,14 +1140,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         switch action {
         case .rename(let sessions): showRename(sessions)
         case .archive(let sessions): archive(sessions)
-        case .moveOut(let id): pane?.moveOut(sessionID: id)
+        case .moveOut(let id): moveOutOfSet(id)
         case .copy(let text): Self.copyToPasteboard(text)
         case .select(let id): store.selectedID = id
         case .nextAttention: showNextAttention()
         case .newSession(let name): if let harness = Harness(rawValue: name) { newSession(harness: harness) }
         case .chooseHarness: chooseHarness()
         case .resume: resumeSession()
-        case .split(let direction): splitPane(direction)
+        case .split(let direction, let how):
+            switch how {
+            case .terminal: splitPane(direction)
+            case .agent: splitWithAgent(direction)
+            case .ask: splitAsking(direction)
+            }
         case .closePane: closePane()
         case .focus(let direction): pane?.focus(direction)
         case .equalizePanes: equalizePanes()
@@ -1243,6 +1296,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let items: [(String, Selector, KeyAction)] = [
             ("Split Right", #selector(splitRight), .splitRight),
             ("Split Down", #selector(splitDown), .splitDown),
+            ("Split Right with Agent", #selector(splitRightAgent), .splitRightAgent),
+            ("Split Down with Agent", #selector(splitDownAgent), .splitDownAgent),
+            ("Split Right…", #selector(splitRightAsk), .splitRightAsk),
+            ("Split Down…", #selector(splitDownAsk), .splitDownAsk),
             ("Close Pane", #selector(closePane), .closePane),
             ("Focus Left", #selector(focusLeft), .focusLeft),
             ("Focus Down", #selector(focusDown), .focusDown),

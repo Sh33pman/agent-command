@@ -12,9 +12,12 @@ struct Snapshot: Decodable {
     var remote: RemoteStatus? = nil
     /// The Remote hosts this Mac uses sessions on, and their connections.
     var remoteHosts: [RemoteHost]? = nil
+    /// The sets: sessions made together by splitting. Their sessions name them
+    /// as their parent.
+    var sets: [SessionSetEntity]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case sessions, notices, inbox, jobs, groups, wake, remote
+        case sessions, notices, inbox, jobs, groups, wake, remote, sets
         case remoteHosts = "remote_hosts"
     }
 }
@@ -198,6 +201,15 @@ struct Notice: Decodable {
     }
 }
 
+/// A set as the daemon sends it: sessions made together by splitting, all in
+/// one group (its parent) and on one host.
+struct SessionSetEntity: Decodable, Equatable {
+    let type: String
+    let id: String
+    let parent: String
+    var host: String?
+}
+
 struct Session: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
@@ -221,12 +233,17 @@ struct Session: Decodable, Identifiable, Equatable {
     var hostGone: Bool?
     /// The scheduled job that started it; nil or "" if none did.
     var jobID: String?
+    /// What contains it: its set if it's in one, else its group. order is its
+    /// place in its set, from 1.
+    var parent: String?
+    var order: Int?
 
     enum CodingKeys: String, CodingKey {
         case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
         case harness = "Harness", claudeSessionID = "ClaudeSessionID"
         case statusDetail = "StatusDetail", description = "Description", remote = "Remote"
         case host = "Host", remoteID = "RemoteID", hostGone = "HostGone", jobID = "JobID"
+        case parent, order
     }
 
     var isRemote: Bool { remote == true }

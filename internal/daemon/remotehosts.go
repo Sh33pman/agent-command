@@ -105,7 +105,11 @@ func (d *Daemon) handleRemoteHosts(ctx context.Context, req ipc.Request) (any, e
 		if err != nil {
 			return nil, err
 		}
-		return d.sessionByID(ctx, id)
+		s, err := d.sessionByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		return d.joinSet(ctx, s, r.SetWith), nil
 	case ipc.OpRemoteFoldersRecent:
 		return c.RecentFolders(ctx, ref.Host)
 	case ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir:

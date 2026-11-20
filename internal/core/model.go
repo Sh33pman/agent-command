@@ -5,6 +5,7 @@
 package core
 
 import (
+	"encoding/json"
 	"slices"
 	"time"
 )
@@ -145,6 +146,35 @@ type Session struct {
 	CreatedAt   time.Time
 	LastEventAt time.Time
 	ArchivedAt  time.Time
+	// SetID is the set it's in ("" for none), and SetOrder its place there
+	// (from 1). Only the store's set functions change them.
+	SetID    string `json:"-"`
+	SetOrder int    `json:"-"`
+	// Parent and Order are how clients see the above (section 7 of the
+	// design): the set it's in, else its group, and its place in a set.
+	// MarshalJSON fills them in; nothing else sets them.
+	Parent string `json:"parent,omitempty"`
+	Order  int    `json:"order,omitempty"`
+}
+
+// MarshalJSON writes the session with Parent and Order filled in.
+func (s Session) MarshalJSON() ([]byte, error) {
+	type plain Session // without this method
+	p := plain(s)
+	p.Parent, p.Order = s.GroupID, 0
+	if s.SetID != "" {
+		p.Parent, p.Order = s.SetID, s.SetOrder
+	}
+	return json.Marshal(p)
+}
+
+// Set is sessions made together by splitting panes. Its group and host are
+// its sessions': they are all in one group, on one host.
+type Set struct {
+	ID        string
+	GroupID   string
+	Host      string // "" for this machine
+	CreatedAt time.Time
 }
 
 // Group is a session group.

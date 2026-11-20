@@ -36,6 +36,10 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
+	sets, err := d.store.Sets(ctx)
+	if err != nil {
+		return ipc.Snapshot{}, err
+	}
 	vs, err := d.store.ViewState(ctx)
 	if err != nil {
 		return ipc.Snapshot{}, err
@@ -53,7 +57,7 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 		st := d.remote.Status()
 		remote = &st
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, ViewState: vs, Notices: d.notices(), Inbox: d.withHostInbox(queue),
+	return ipc.Snapshot{Sessions: sessions, Groups: groups, Sets: wireSets(sets), ViewState: vs, Notices: d.notices(), Inbox: d.withHostInbox(queue),
 		Jobs: jobs, Wake: d.wakeState(ctx), Remote: remote, RemoteHosts: d.remoteHosts()}, nil
 }
 
@@ -68,6 +72,9 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	st := d.store
+	if isSetMutation(m.Kind) {
+		return d.mutateSet(ctx, st, m)
+	}
 	switch m.Kind {
 	case ipc.MutSeen:
 		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {

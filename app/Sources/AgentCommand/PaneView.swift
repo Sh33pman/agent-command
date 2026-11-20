@@ -50,8 +50,15 @@ final class PaneView: NSView {
         change { $0.showSet(containing: id) }
     }
 
-    func split(_ direction: SplitDirection, session: String) {
-        change { $0.split(direction, session: session) }
+    func split(_ direction: SplitDirection, session: String, setID: String?) {
+        change { $0.split(direction, session: session, setID: setID) }
+    }
+
+    /// Follows the daemon's sets, without taking the keyboard.
+    func reconcile(sets: [String: [String]]) {
+        var next = self.sets
+        next.reconcile(sets: sets)
+        apply(next, takeFocus: false)
     }
 
     /// Takes a session out of its set. It keeps running.

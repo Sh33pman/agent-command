@@ -344,12 +344,15 @@
     },
     {
       "name": "layout",
-      "description": "Returns the app's saved pane layout.",
+      "description": "Returns a client's saved pane layout.",
       "scope": "read",
       "kind": "read",
       "grant": "host",
       "transport": {
         "op": "layout"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Layout"
       },
       "output": {
         "$ref": "#/$defs/ipc.Layout"
@@ -357,7 +360,7 @@
     },
     {
       "name": "layout.set",
-      "description": "Saves the app's pane layout.",
+      "description": "Saves a client's pane layout.",
       "scope": "act",
       "kind": "change",
       "grant": "host",
@@ -890,6 +893,65 @@
       "transport": {
         "op": "mutate",
         "kind": "session.unarchive"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "set.add",
+      "description": "Adds a session to a set, after one of its members or at the end. It moves to the set's group.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "set.add"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "set.create",
+      "description": "Makes a set of sessions, in order. They move to the first one's group.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "set.create"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Set"
+      }
+    },
+    {
+      "name": "set.end",
+      "description": "Ends a set. Its sessions stay where they are, on their own.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "set.end"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "set.remove",
+      "description": "Takes a session out of its set. The set ends if one session is left.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "set.remove"
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
@@ -1466,6 +1528,12 @@
         "ArchivedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
         }
       },
       "type": "object",
@@ -1721,6 +1789,9 @@
     },
     "ipc.Layout": {
       "properties": {
+        "client_id": {
+          "type": "string"
+        },
         "json": {
           "type": "string"
         }
@@ -1764,6 +1835,12 @@
         },
         "pane": {
           "$ref": "#/$defs/core.PaneLoc"
+        },
+        "set_id": {
+          "type": "string"
+        },
+        "after": {
+          "type": "string"
         }
       },
       "type": "object",
@@ -1805,6 +1882,9 @@
         },
         "remote": {
           "type": "boolean"
+        },
+        "set_with": {
+          "type": "string"
         }
       },
       "type": "object",
@@ -2126,6 +2206,9 @@
         },
         "group_id": {
           "type": "string"
+        },
+        "set_with": {
+          "type": "string"
         }
       },
       "type": "object",
@@ -2256,6 +2339,28 @@
         "pending"
       ]
     },
+    "ipc.Set": {
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "type",
+        "id",
+        "parent"
+      ]
+    },
     "ipc.Snapshot": {
       "properties": {
         "sessions": {
@@ -2267,6 +2372,12 @@
         "groups": {
           "items": {
             "$ref": "#/$defs/core.Group"
+          },
+          "type": "array"
+        },
+        "sets": {
+          "items": {
+            "$ref": "#/$defs/ipc.Set"
           },
           "type": "array"
         },

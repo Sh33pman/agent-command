@@ -30,7 +30,7 @@ extension UsesSharedSpeech {
 
         @Test func theCursorStartsOnTheSelectedSessionAndStopsAtTheEnds() throws {
             let s = try store()
-            s.reflect(selected: "b", visible: ["b"], sets: [], closed: [])
+            s.reflect(selected: "b", visible: ["b"], closed: [])
             s.setSidebarFocused(true)
             #expect(s.cursorID == "b")
             s.moveCursor(by: -1)
@@ -54,7 +54,8 @@ extension UsesSharedSpeech {
 
         @Test func aSetsRowsStayTogether() throws {
             let s = try store()
-            s.reflect(selected: nil, visible: [], sets: [["a", "d"]], closed: ["d"])
+            s.sets = ["s1": ["a", "d"]]
+            s.reflect(selected: nil, visible: [], closed: ["d"])
             #expect(s.sidebarIDs == ["a", "d", "b", "c"])
             #expect(s.closedIDs == ["d"] && s.setMembers == [["a", "d"]])
         }
@@ -63,7 +64,8 @@ extension UsesSharedSpeech {
 
         @Test func numbersCountDownTheSidebar() throws {
             let s = try store()
-            s.reflect(selected: nil, visible: [], sets: [["a", "d"]], closed: [])
+            s.sets = ["s1": ["a", "d"]]
+            s.reflect(selected: nil, visible: [], closed: [])
             #expect(s.sessionID(number: 1) == "a")
             #expect(s.sessionID(number: 2) == "d", "a set's sessions are numbered together")
             #expect(s.sessionID(number: 4) == "c")
@@ -95,29 +97,30 @@ extension UsesSharedSpeech {
             ]
             #expect(s.attentionIDs == ["wait1", "wait2", "error", "done-new"])
             #expect(s.nextAttentionID == "wait1", "with nothing selected, the most urgent")
-            s.reflect(selected: "busy", visible: [], sets: [], closed: [])
+            s.reflect(selected: "busy", visible: [], closed: [])
             #expect(s.nextAttentionID == "wait1", "from a session that doesn't need you too")
-            s.reflect(selected: "wait1", visible: [], sets: [], closed: [])
+            s.reflect(selected: "wait1", visible: [], closed: [])
             #expect(s.nextAttentionID == "wait2")
-            s.reflect(selected: "done-new", visible: [], sets: [], closed: [])
+            s.reflect(selected: "done-new", visible: [], closed: [])
             #expect(s.nextAttentionID == "wait1", "it goes round")
         }
 
         @Test func attentionFollowsTheSidebarAndHasNothingWhenAllIsWell() throws {
             let s = try store([])
             s.sessions = try [makeSession(id: "w1", status: "waiting"), makeSession(id: "w2", status: "waiting")]
-            s.reflect(selected: nil, visible: [], sets: [["w2", "w1"]], closed: [])
+            s.sets = ["s1": ["w2", "w1"]]
+            s.reflect(selected: nil, visible: [], closed: [])
             #expect(s.attentionIDs == ["w2", "w1"])
             s.sessions = try [makeSession(id: "a", status: "busy"), makeSession(id: "b", status: "done")]
             #expect(s.nextAttentionID == nil)
             s.sessions = try [makeSession(id: "only", status: "error")]
-            s.reflect(selected: "only", visible: [], sets: [], closed: [])
+            s.reflect(selected: "only", visible: [], closed: [])
             #expect(s.nextAttentionID == "only", "the one that needs you, even when it's showing")
         }
 
         @Test func actionsApplyToMarksThenTheCursorThenTheSelection() throws {
             let s = try store()
-            s.reflect(selected: "c", visible: ["c"], sets: [], closed: [])
+            s.reflect(selected: "c", visible: ["c"], closed: [])
             #expect(s.actionTargets.map(\.id) == ["c"], "the selection, with the keyboard elsewhere")
             s.setSidebarFocused(true)
             s.setCursor("d")
@@ -292,7 +295,7 @@ extension UsesSharedSpeech {
             defer { daemon.stop() }
             daemon.reply("new", hosted("n"))
             let s = try store(["a"])
-            s.reflect(selected: "a", visible: [], sets: [], closed: [])
+            s.reflect(selected: "a", visible: [], closed: [])
             var placed: String?
             s.newSession(harness: "claude", in: "/work") { placed = $0.id }
             try await until { placed != nil }
@@ -363,7 +366,7 @@ extension UsesSharedSpeech {
             let s = try store([])
             s.publish(try snapshot(["sessions": [hosted("a"), hosted("b"), hosted("z", status: "archived")]]))
             try await until { s.archived.count == 1 }
-            s.reflect(selected: "b", visible: [], sets: [], closed: [])
+            s.reflect(selected: "b", visible: [], closed: [])
             #expect(s.selected?.id == "b")
             #expect(s.session(id: "a")?.id == "a" && s.session(id: "z")?.id == "z" && s.session(id: "q") == nil)
         }
@@ -375,7 +378,7 @@ extension UsesSharedSpeech {
             defer { daemon.stop() }
             daemon.reply("inbox", [] as [Any])
             let s = try store()
-            s.reflect(selected: "a", visible: [], sets: [], closed: [])
+            s.reflect(selected: "a", visible: [], closed: [])
             let speech = SpeechController.shared
             speech.stop()
             s.toggleReadingSelected()
@@ -389,7 +392,7 @@ extension UsesSharedSpeech {
             defer { daemon.stop() }
             daemon.reply("inbox", [item(2), item(1)])
             let s = try store()
-            s.reflect(selected: "a", visible: [], sets: [], closed: [])
+            s.reflect(selected: "a", visible: [], closed: [])
             let speech = SpeechController.shared
             speech.setEnabled(false)
             s.toggleReadingSelected()

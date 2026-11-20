@@ -1,0 +1,2403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "acmd daemon ops",
+  "proto": {
+    "min": 1,
+    "max": 1
+  },
+  "ops": [
+    {
+      "name": "agent.settings",
+      "description": "Lists an agent's settings for jobs.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "agent.settings"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.JobRef"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/harness.Setting"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "conversations",
+      "description": "Lists earlier Claude and Antigravity conversations that can be resumed.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "conversations"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/ipc.Conversation"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "event",
+      "description": "Delivers an agent's hook event from `acmd hook`.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "event"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.HookEvent"
+      }
+    },
+    {
+      "name": "group.archive",
+      "description": "Archives a group and its sessions.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.archive"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "group.collapse",
+      "description": "Collapses or expands a group, or every group.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.collapse"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "group.color",
+      "description": "Sets a group's color.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.color"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "group.create",
+      "description": "Creates a group, with a name and a color.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.create"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/core.Group"
+      }
+    },
+    {
+      "name": "group.delete",
+      "description": "Deletes a group. Its sessions move to the Default group.",
+      "scope": "act",
+      "kind": "destructive",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.delete"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "group.move",
+      "description": "Moves a group up or down in the order.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.move"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "group.rename",
+      "description": "Renames a group.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.rename"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "group.unarchive",
+      "description": "Unarchives a group, and optionally its sessions.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "group.unarchive"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "hello",
+      "description": "Exchanges protocol and binary versions. Sent first on every connection, in both directions.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "none",
+      "transport": {
+        "op": "hello"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Hello"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Hello"
+      }
+    },
+    {
+      "name": "inbox",
+      "description": "Lists Inbox items, newest first: one session's, or everyone's.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "entities",
+      "transport": {
+        "op": "inbox"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.InboxRequest"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/core.InboxItem"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "inbox.answer",
+      "description": "Answers an Inbox item by typing into its session.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "runs_code": true,
+      "transport": {
+        "op": "inbox.answer"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.InboxAnswer"
+      }
+    },
+    {
+      "name": "inbox.dismiss",
+      "description": "Takes Inbox items out of the queue.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "inbox.dismiss"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "inbox.read",
+      "description": "Marks Inbox items read or unread.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "inbox.read"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "job.check",
+      "description": "Checks a job without saving it: its schedule in words and its next runs.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "job.check"
+      },
+      "input": {
+        "$ref": "#/$defs/core.Job"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.JobCheck"
+      }
+    },
+    {
+      "name": "job.delete",
+      "description": "Deletes a scheduled job.",
+      "scope": "act",
+      "kind": "destructive",
+      "grant": "host",
+      "transport": {
+        "op": "job.delete"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.JobRef"
+      }
+    },
+    {
+      "name": "job.pause",
+      "description": "Pauses or resumes a scheduled job.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "job.pause"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.JobRef"
+      }
+    },
+    {
+      "name": "job.run",
+      "description": "Runs a scheduled job now.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "job.run"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.JobRef"
+      },
+      "output": {
+        "$ref": "#/$defs/core.JobRun"
+      }
+    },
+    {
+      "name": "job.runs",
+      "description": "Lists a job's runs, newest first.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "job.runs"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.JobRef"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/core.JobRun"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "job.save",
+      "description": "Adds or edits a scheduled job.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "job.save"
+      },
+      "input": {
+        "$ref": "#/$defs/core.Job"
+      },
+      "output": {
+        "$ref": "#/$defs/core.Job"
+      }
+    },
+    {
+      "name": "layout",
+      "description": "Returns the app's saved pane layout.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "layout"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Layout"
+      }
+    },
+    {
+      "name": "layout.set",
+      "description": "Saves the app's pane layout.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "layout.set"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Layout"
+      }
+    },
+    {
+      "name": "new",
+      "description": "Starts a session in the background, in a folder, with a harness.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "runs_code": true,
+      "transport": {
+        "op": "new"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.NewRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/core.Session"
+      }
+    },
+    {
+      "name": "ping",
+      "description": "Checks that the daemon is alive.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "none",
+      "transport": {
+        "op": "ping"
+      }
+    },
+    {
+      "name": "remote.approve",
+      "description": "Authorizes a pending request's client.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.approve"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteClient"
+      }
+    },
+    {
+      "name": "remote.authorize",
+      "description": "Authorizes a client by its fingerprint.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.authorize"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteClient"
+      }
+    },
+    {
+      "name": "remote.browse",
+      "description": "Lists a host's Remote sessions, and which are added here.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.browse"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteBrowse"
+      }
+    },
+    {
+      "name": "remote.clients",
+      "description": "Lists the authorized clients and their connections.",
+      "scope": "admin",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.clients"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/ipc.RemoteClient"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "remote.deny",
+      "description": "Drops a pending request.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.deny"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      }
+    },
+    {
+      "name": "remote.disconnect",
+      "description": "Drops a client's connections, or one connection.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.disconnect"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteDisconnected"
+      }
+    },
+    {
+      "name": "remote.folders.list",
+      "description": "Lists a folder on a host.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.folders.list"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteFolderRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/api.FolderList"
+      }
+    },
+    {
+      "name": "remote.folders.mkdir",
+      "description": "Makes a folder on a host.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.folders.mkdir"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteFolderRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/api.Folder"
+      }
+    },
+    {
+      "name": "remote.folders.recent",
+      "description": "Lists a host's recent folders.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.folders.recent"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      },
+      "output": {
+        "$ref": "#/$defs/api.FolderList"
+      }
+    },
+    {
+      "name": "remote.harnesses",
+      "description": "Lists the harnesses a host can start.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.harnesses"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      },
+      "output": {
+        "$ref": "#/$defs/api.Harnesses"
+      }
+    },
+    {
+      "name": "remote.hosting",
+      "description": "Turns Hosting on or off.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.hosting"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteStatus"
+      }
+    },
+    {
+      "name": "remote.hosts",
+      "description": "Lists the known hosts and their connections.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.hosts"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/ipc.RemoteHost"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "remote.hosts.add",
+      "description": "Adds a known host.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.hosts.add"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostEdit"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteHost"
+      }
+    },
+    {
+      "name": "remote.hosts.edit",
+      "description": "Changes a known host.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.hosts.edit"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostEdit"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteHost"
+      }
+    },
+    {
+      "name": "remote.hosts.remove",
+      "description": "Forgets a known host, and the sessions added from it here.",
+      "scope": "admin",
+      "kind": "destructive",
+      "grant": "host",
+      "transport": {
+        "op": "remote.hosts.remove"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      }
+    },
+    {
+      "name": "remote.hosts.retry",
+      "description": "Connects to a known host now, without waiting out the backoff.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.hosts.retry"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteHost"
+      }
+    },
+    {
+      "name": "remote.new",
+      "description": "Starts a session on a host and adds it here.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "remote.new"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteNewRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/core.Session"
+      }
+    },
+    {
+      "name": "remote.reload",
+      "description": "Reads the Hosting settings again after editing config.toml.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.reload"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteStatus"
+      }
+    },
+    {
+      "name": "remote.requests",
+      "description": "Lists requests from unknown clients waiting for approval.",
+      "scope": "admin",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.requests"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/ipc.RemoteRequest"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "remote.revoke",
+      "description": "Un-authorizes a client and drops its connections.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.revoke"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteClient"
+      }
+    },
+    {
+      "name": "remote.sessions.add",
+      "description": "Adds a host's session here.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.sessions.add"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      },
+      "output": {
+        "$ref": "#/$defs/core.Session"
+      }
+    },
+    {
+      "name": "remote.sessions.remove",
+      "description": "Removes a session added from a host. The session on the host isn't touched.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "remote.sessions.remove"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      }
+    },
+    {
+      "name": "remote.status",
+      "description": "Returns Hosting's state: whether it's on, where it listens, and why not.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.status"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteStatus"
+      }
+    },
+    {
+      "name": "resume",
+      "description": "Resumes a paused background session.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "runs_code": true,
+      "transport": {
+        "op": "resume"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/core.Session"
+      }
+    },
+    {
+      "name": "session.archive",
+      "description": "Archives a session, stopping its agent.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.archive"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "session.describe",
+      "description": "Sets a session's description.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.describe"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "session.finish",
+      "description": "Stops a session's agent and marks it finished.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.finish"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "session.move",
+      "description": "Moves sessions to a group.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.move"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "session.purge",
+      "description": "Deletes archived sessions for good, with their conversations. Returns how many.",
+      "scope": "admin",
+      "kind": "destructive",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.purge"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "type": "integer"
+      }
+    },
+    {
+      "name": "session.remote",
+      "description": "Turns a session's Remote switch on or off: whether clients of Hosting may see and use it.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.remote"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "session.rename",
+      "description": "Renames a session.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.rename"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "session.seen",
+      "description": "Marks a session as seen: you've looked at it.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.seen"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "session.unarchive",
+      "description": "Unarchives a session.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.unarchive"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "shutdown",
+      "description": "Asks the daemon to exit, so a newer acmd can replace one left over from before an upgrade.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "shutdown"
+      }
+    },
+    {
+      "name": "snapshot",
+      "description": "Returns the sessions, groups, view state, notices, Inbox, jobs, wake state and Remote state.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "entities",
+      "transport": {
+        "op": "snapshot"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Snapshot"
+      }
+    },
+    {
+      "name": "status",
+      "description": "Returns counts of sessions and connections, for doctor and tests.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "status"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Status"
+      }
+    },
+    {
+      "name": "view.archived",
+      "description": "Shows or hides archived sessions.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "mutate",
+        "kind": "view.archived"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "view.filter",
+      "description": "Sets the text filter.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "mutate",
+        "kind": "view.filter"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "view.focus",
+      "description": "Shows only one group, or every group again.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "mutate",
+        "kind": "view.focus"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "view.mode",
+      "description": "Shows sessions in groups or as one list.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "mutate",
+        "kind": "view.mode"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "view.sort",
+      "description": "Sets the sort key and direction.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "mutate",
+        "kind": "view.sort"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "wake.set",
+      "description": "Turns waking the Mac for jobs on or off, checking the sudoers rule again.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "wake.set"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.WakeRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.WakeState"
+      }
+    },
+    {
+      "name": "watch",
+      "description": "Waits until something changes, or a timeout passes. A view's heartbeat while it's open.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "entities",
+      "transport": {
+        "op": "watch"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.WatchRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.WatchResponse"
+      }
+    }
+  ],
+  "$defs": {
+    "api.Folder": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "path"
+      ]
+    },
+    "api.FolderList": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "home": {
+          "type": "string"
+        },
+        "folders": {
+          "items": {
+            "$ref": "#/$defs/api.Folder"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "home",
+        "folders"
+      ]
+    },
+    "api.Harness": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "title"
+      ]
+    },
+    "api.Harnesses": {
+      "properties": {
+        "harnesses": {
+          "items": {
+            "$ref": "#/$defs/api.Harness"
+          },
+          "type": "array"
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "harnesses"
+      ]
+    },
+    "core.Group": {
+      "properties": {
+        "ID": {
+          "type": "string"
+        },
+        "Name": {
+          "type": "string"
+        },
+        "Color": {
+          "type": "string"
+        },
+        "SortKey": {
+          "type": "integer"
+        },
+        "Collapsed": {
+          "type": "boolean"
+        },
+        "IsDefault": {
+          "type": "boolean"
+        },
+        "CreatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ArchivedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "ID",
+        "Name",
+        "Color",
+        "SortKey",
+        "Collapsed",
+        "IsDefault",
+        "CreatedAt",
+        "ArchivedAt"
+      ]
+    },
+    "core.InboxItem": {
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "multipart": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string"
+        },
+        "handled_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "host": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "session_id",
+        "kind",
+        "text",
+        "at",
+        "read",
+        "state",
+        "handled_at"
+      ]
+    },
+    "core.Job": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "schedule": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "prompt_file": {
+          "type": "string"
+        },
+        "where": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "run_missed": {
+          "type": "boolean"
+        },
+        "wake": {
+          "type": "boolean"
+        },
+        "cron": {
+          "type": "string"
+        },
+        "once": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "words": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_due": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "next_run": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_run": {
+          "$ref": "#/$defs/core.JobRun"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "schedule",
+        "where",
+        "once",
+        "created_at",
+        "updated_at",
+        "last_due",
+        "next_run"
+      ]
+    },
+    "core.JobRun": {
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "due": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "result": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "job_id",
+        "due",
+        "at",
+        "result"
+      ]
+    },
+    "core.PaneLoc": {
+      "properties": {
+        "Terminal": {
+          "type": "string"
+        },
+        "KittySocket": {
+          "type": "string"
+        },
+        "KittyWindow": {
+          "type": "integer"
+        },
+        "GhosttyTerm": {
+          "type": "string"
+        },
+        "TTY": {
+          "type": "string"
+        },
+        "RestoreLayout": {
+          "type": "string"
+        },
+        "BarWindow": {
+          "type": "integer"
+        },
+        "HeaderWindow": {
+          "type": "integer"
+        },
+        "HeaderTerm": {
+          "type": "string"
+        },
+        "TermWindow": {
+          "type": "integer"
+        },
+        "TermTerm": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "Terminal",
+        "KittySocket",
+        "KittyWindow",
+        "GhosttyTerm",
+        "TTY"
+      ]
+    },
+    "core.Session": {
+      "properties": {
+        "ID": {
+          "type": "string"
+        },
+        "Name": {
+          "type": "string"
+        },
+        "Description": {
+          "type": "string"
+        },
+        "GroupID": {
+          "type": "string"
+        },
+        "NameSource": {
+          "type": "string"
+        },
+        "Cwd": {
+          "type": "string"
+        },
+        "ClaudeSessionID": {
+          "type": "string"
+        },
+        "ClaudeHistory": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "TranscriptPath": {
+          "type": "string"
+        },
+        "Status": {
+          "type": "string"
+        },
+        "StatusDetail": {
+          "type": "string"
+        },
+        "Unseen": {
+          "type": "boolean"
+        },
+        "Kind": {
+          "type": "string"
+        },
+        "Harness": {
+          "type": "string"
+        },
+        "BgID": {
+          "type": "string"
+        },
+        "Pid": {
+          "type": "integer"
+        },
+        "Remote": {
+          "type": "boolean"
+        },
+        "Host": {
+          "type": "string"
+        },
+        "RemoteID": {
+          "type": "string"
+        },
+        "HostGone": {
+          "type": "boolean"
+        },
+        "JobID": {
+          "type": "string"
+        },
+        "External": {
+          "$ref": "#/$defs/core.PaneLoc"
+        },
+        "CreatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "LastEventAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ArchivedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "ID",
+        "Name",
+        "Description",
+        "GroupID",
+        "NameSource",
+        "Cwd",
+        "ClaudeSessionID",
+        "ClaudeHistory",
+        "TranscriptPath",
+        "Status",
+        "StatusDetail",
+        "Unseen",
+        "Kind",
+        "Harness",
+        "BgID",
+        "Pid",
+        "Remote",
+        "Host",
+        "RemoteID",
+        "HostGone",
+        "JobID",
+        "External",
+        "CreatedAt",
+        "LastEventAt",
+        "ArchivedAt"
+      ]
+    },
+    "core.ViewState": {
+      "properties": {
+        "Mode": {
+          "type": "string"
+        },
+        "Sort": {
+          "type": "string"
+        },
+        "Desc": {
+          "type": "boolean"
+        },
+        "Filter": {
+          "type": "string"
+        },
+        "FocusedGroup": {
+          "type": "string"
+        },
+        "PreFocus": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object"
+        },
+        "ShowArchived": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "Mode",
+        "Sort",
+        "Desc",
+        "Filter",
+        "FocusedGroup",
+        "PreFocus",
+        "ShowArchived"
+      ]
+    },
+    "harness.Setting": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "help": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "choices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "flag": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "key",
+        "label",
+        "kind",
+        "flag"
+      ]
+    },
+    "ipc.Conversation": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "cwd",
+        "updated_at"
+      ]
+    },
+    "ipc.Hello": {
+      "properties": {
+        "proto": {
+          "type": "integer"
+        },
+        "version": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "proto",
+        "version"
+      ]
+    },
+    "ipc.HookContext": {
+      "properties": {
+        "claude_pid": {
+          "type": "integer"
+        },
+        "host_session": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.HookEvent": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": true,
+        "context": {
+          "$ref": "#/$defs/ipc.HookContext"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "at",
+        "payload",
+        "context"
+      ]
+    },
+    "ipc.InboxAnswer": {
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "option": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
+    "ipc.InboxRequest": {
+      "properties": {
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.JobCheck": {
+      "properties": {
+        "cron": {
+          "type": "string"
+        },
+        "words": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "next": {
+          "items": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": "array"
+        },
+        "errors": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.JobRef": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "harness": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.Layout": {
+      "properties": {
+        "json": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "json"
+      ]
+    },
+    "ipc.Mutation": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "item_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "flag": {
+          "type": "boolean"
+        },
+        "pane": {
+          "$ref": "#/$defs/core.PaneLoc"
+        }
+      },
+      "type": "object",
+      "required": [
+        "kind"
+      ]
+    },
+    "ipc.NewRequest": {
+      "properties": {
+        "group_id": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "resume": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "show_in": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "cwd"
+      ]
+    },
+    "ipc.Notice": {
+      "properties": {
+        "seq": {
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "urgent": {
+          "type": "boolean"
+        },
+        "sound": {
+          "type": "string"
+        },
+        "emitter": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "seq",
+        "session_id",
+        "kind"
+      ]
+    },
+    "ipc.RemoteBrowse": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/ipc.RemoteBrowseSession"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "host",
+        "sessions"
+      ]
+    },
+    "ipc.RemoteBrowseSession": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "dir": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "status_detail": {
+          "type": "string"
+        },
+        "unseen": {
+          "type": "boolean"
+        },
+        "needs_you": {
+          "type": "integer"
+        },
+        "inbox": {
+          "type": "integer"
+        },
+        "last_activity": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "added": {
+          "type": "boolean"
+        },
+        "local_id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "harness",
+        "dir",
+        "status",
+        "needs_you",
+        "inbox",
+        "last_activity",
+        "created",
+        "added"
+      ]
+    },
+    "ipc.RemoteClient": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "connections": {
+          "items": {
+            "$ref": "#/$defs/ipc.RemoteConnection"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "fingerprint"
+      ]
+    },
+    "ipc.RemoteConnection": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "common_name": {
+          "type": "string"
+        },
+        "addr": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "sessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "fingerprint",
+        "addr",
+        "since"
+      ]
+    },
+    "ipc.RemoteDisconnected": {
+      "properties": {
+        "closed": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "closed"
+      ]
+    },
+    "ipc.RemoteFolderRequest": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "host",
+        "path"
+      ]
+    },
+    "ipc.RemoteHost": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "cert": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retry_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "our_fingerprint": {
+          "type": "string"
+        },
+        "seen": {
+          "type": "string"
+        },
+        "host_name": {
+          "type": "string"
+        },
+        "host_version": {
+          "type": "string"
+        },
+        "sessions": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "address",
+        "fingerprint",
+        "state",
+        "since",
+        "retry_at",
+        "sessions"
+      ]
+    },
+    "ipc.RemoteHostEdit": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "cert": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.RemoteHostRef": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.RemoteNewRequest": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "dir": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "group_id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "host",
+        "dir"
+      ]
+    },
+    "ipc.RemoteRef": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "client": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.RemoteRequest": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "common_name": {
+          "type": "string"
+        },
+        "addr": {
+          "type": "string"
+        },
+        "first_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "fingerprint",
+        "addr",
+        "first_seen",
+        "last_seen",
+        "count"
+      ]
+    },
+    "ipc.RemoteStatus": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "listening": {
+          "type": "boolean"
+        },
+        "listen": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "configured_port": {
+          "type": "integer"
+        },
+        "port_fallback": {
+          "type": "boolean"
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cert": {
+          "type": "string"
+        },
+        "proto": {
+          "type": "integer"
+        },
+        "authorized": {
+          "type": "integer"
+        },
+        "connected": {
+          "type": "integer"
+        },
+        "pending": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "enabled",
+        "listening",
+        "listen",
+        "configured_port",
+        "port_fallback",
+        "since",
+        "proto",
+        "authorized",
+        "connected",
+        "pending"
+      ]
+    },
+    "ipc.Snapshot": {
+      "properties": {
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/core.Session"
+          },
+          "type": "array"
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/core.Group"
+          },
+          "type": "array"
+        },
+        "view_state": {
+          "$ref": "#/$defs/core.ViewState"
+        },
+        "notices": {
+          "items": {
+            "$ref": "#/$defs/ipc.Notice"
+          },
+          "type": "array"
+        },
+        "inbox": {
+          "items": {
+            "$ref": "#/$defs/core.InboxItem"
+          },
+          "type": "array"
+        },
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/core.Job"
+          },
+          "type": "array"
+        },
+        "wake": {
+          "$ref": "#/$defs/ipc.WakeState"
+        },
+        "remote": {
+          "$ref": "#/$defs/ipc.RemoteStatus"
+        },
+        "remote_hosts": {
+          "items": {
+            "$ref": "#/$defs/ipc.RemoteHost"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "sessions",
+        "groups",
+        "view_state"
+      ]
+    },
+    "ipc.Status": {
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "sessions": {
+          "type": "integer"
+        },
+        "events": {
+          "type": "integer"
+        },
+        "remote_sessions": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "version",
+        "pid",
+        "sessions",
+        "events"
+      ]
+    },
+    "ipc.WakeRef": {
+      "properties": {
+        "all": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "all"
+      ]
+    },
+    "ipc.WakeState": {
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "all": {
+          "type": "boolean"
+        },
+        "next": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "allowed",
+        "all",
+        "next"
+      ]
+    },
+    "ipc.WatchRequest": {
+      "properties": {
+        "rev": {
+          "type": "integer"
+        },
+        "wait_ms": {
+          "type": "integer"
+        },
+        "app": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "rev"
+      ]
+    },
+    "ipc.WatchResponse": {
+      "properties": {
+        "rev": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "rev"
+      ]
+    }
+  }
+}

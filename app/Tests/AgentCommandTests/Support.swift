@@ -20,14 +20,22 @@ func isolateFromTheRealDaemon() throws {
     try #require(DaemonPaths.socket == dir + "/daemon.sock")
 }
 
+/// A session as the daemon sends it. Like the daemon, it says why the session
+/// needs you (internal/core Attention), waiting since `since`.
 func makeSession(
     id: String, name: String = "", cwd: String = "/tmp", harness: String = "claude",
-    status: String = "done", claude: String = "", unseen: Bool = false
+    status: String = "done", claude: String = "", unseen: Bool = false, since: String = "2026-11-20T09:00:00Z"
 ) throws -> Session {
-    let fields: [String: Any] = [
+    var fields: [String: Any] = [
         "ID": id, "Name": name.isEmpty && cwd == "/tmp" ? id : name, "Cwd": cwd, "Status": status, "Kind": "hosted",
         "Unseen": unseen, "Harness": harness, "ClaudeSessionID": claude,
     ]
+    switch (status, unseen) {
+    case ("waiting", _): fields["attention"] = ["rank": 1, "reason": "waiting", "since": since]
+    case ("error", _): fields["attention"] = ["rank": 2, "reason": "error", "since": since]
+    case ("done", true): fields["attention"] = ["rank": 3, "reason": "unseen_done", "since": since]
+    default: break
+    }
     return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
 }
 

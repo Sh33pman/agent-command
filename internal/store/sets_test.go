@@ -309,3 +309,33 @@ func TestSetsOfHostSessions(t *testing.T) {
 		t.Errorf("after renaming the host: %q", got.Host)
 	}
 }
+
+// "Next that needs you" goes by how long a session has been in its status,
+// so StatusSince moves only when the status does, not on every event.
+func TestStatusSinceMovesOnlyWithTheStatus(t *testing.T) {
+	clock := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+	s, err := Open(ctx, t.TempDir()+"/state.db", WithClock(func() time.Time { return clock }))
+	must(t, err)
+	t.Cleanup(func() { s.Close() })
+	sess := &core.Session{Name: "a", Status: core.StatusBusy}
+	must(t, s.CreateSession(ctx, sess))
+	if !sess.StatusSince.Equal(clock) {
+		t.Errorf("new session: since %v, want %v", sess.StatusSince, clock)
+	}
+
+	clock = clock.Add(time.Minute)
+	sess.Status = core.StatusWaiting
+	must(t, s.UpdateSession(ctx, sess))
+	waiting := clock
+	clock = clock.Add(time.Minute)
+	sess.StatusDetail, sess.LastEventAt = "question", clock // another event, same status
+	must(t, s.UpdateSession(ctx, sess))
+	got, err := s.Session(ctx, sess.ID)
+	must(t, err)
+	if !got.StatusSince.Equal(waiting) || !sess.StatusSince.Equal(waiting) {
+		t.Errorf("since %v (struct %v), want %v: it has waited since then", got.StatusSince, sess.StatusSince, waiting)
+	}
+	if err := s.UpdateSession(ctx, &core.Session{ID: "nope"}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("updating a missing session = %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package daemon
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -155,5 +156,24 @@ func TestEachClientKeepsItsOwnLayout(t *testing.T) {
 	must(t, c.Call(ipc.OpLayout, nil, &got))
 	if got.JSON != "old" {
 		t.Errorf("layout with no request = %q, want old", got.JSON)
+	}
+}
+
+// A session that asks you something says so in the snapshot, with when it
+// started asking: what "next that needs you" goes by.
+func TestTheSnapshotSaysWhatNeedsYou(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	for _, e := range []ipc.HookEvent{
+		hookEvent("SessionStart", `{"session_id":"c1","source":"startup","cwd":"/w"}`, t0, ipc.HookContext{}),
+		hookEvent("PermissionRequest", `{"session_id":"c1","tool_name":"Bash"}`, t0.Add(time.Second), ipc.HookContext{}),
+	} {
+		must(t, c.Call(ipc.OpEvent, e, nil))
+	}
+	s := byClaude(snapshot(t, c), "c1")
+	if s == nil || s.Needs == nil || s.Needs.Rank != 1 || s.Needs.Reason != core.NeedsWaiting || s.Needs.Since.IsZero() {
+		t.Fatalf("waiting session: %+v", s)
 	}
 }

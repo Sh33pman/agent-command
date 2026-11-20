@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -43,6 +44,12 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 	vs, err := d.store.ViewState(ctx)
 	if err != nil {
 		return ipc.Snapshot{}, err
+	}
+	vs.Collapsed = nil
+	for _, g := range groups {
+		if g.Collapsed {
+			vs.Collapsed = append(vs.Collapsed, g.ID)
+		}
 	}
 	queue, err := d.store.InboxQueue(ctx)
 	if err != nil {
@@ -190,7 +197,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		}
 		return n, nil
 	case ipc.MutGroupMove:
-		return nil, d.moveGroup(ctx, m.GroupID, m.Flag)
+		return nil, d.moveGroup(ctx, m.GroupID, m.After, m.Before)
 	case ipc.MutViewMode:
 		if m.Text != "groups" && m.Text != "list" {
 			return nil, fmt.Errorf("view mode must be groups or list, not %q", m.Text)
@@ -346,9 +353,13 @@ func (d *Daemon) focus(ctx context.Context, groupID string) error {
 	return d.store.PutViewState(ctx, vs)
 }
 
-// moveGroup swaps a group with its neighbor in the sidebar order (SPEC
-// §8.2 K/J). Default stays last.
-func (d *Daemon) moveGroup(ctx context.Context, id string, down bool) error {
+// moveGroup puts a group right after the group after, or right before the
+// group before (section 7.3 of the design: reorders name a neighbor).
+// Default stays last.
+func (d *Daemon) moveGroup(ctx context.Context, id, after, before string) error {
+	if (after == "") == (before == "") {
+		return errors.New("group.move needs the group it goes after, or before")
+	}
 	groups, err := d.store.Groups(ctx, false)
 	if err != nil {
 		return err
@@ -369,14 +380,16 @@ func (d *Daemon) moveGroup(ctx context.Context, id string, down bool) error {
 	if at < 0 {
 		return errors.New("that group can't be moved")
 	}
-	to := at - 1
-	if down {
-		to = at + 1
+	moving := order[at]
+	order = append(order[:at:at], order[at+1:]...)
+	next := slices.IndexFunc(order, func(g *core.Group) bool { return g.ID == after || g.ID == before })
+	if next < 0 {
+		return fmt.Errorf("group %s isn't one to move next to", after+before)
 	}
-	if to < 0 || to >= len(order) {
-		return nil // already at the edge
+	if after != "" {
+		next++
 	}
-	order[at], order[to] = order[to], order[at]
+	order = slices.Insert(order, next, moving)
 	for i, g := range order {
 		if g.SortKey != i+1 {
 			if err := d.store.SetGroupSortKey(ctx, g.ID, i+1); err != nil {

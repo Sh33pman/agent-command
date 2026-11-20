@@ -17,7 +17,7 @@ const sessionCols = `id, name, description, group_id, name_source, cwd, claude_s
 
 // sessionReadCols are sessionCols and the set columns, which only the set
 // functions write.
-const sessionReadCols = sessionCols + `, set_id, set_order`
+const sessionReadCols = sessionCols + `, set_id, set_order, status_since`
 
 // CreateSession inserts a new session. An empty ID gets a new ULID, an empty
 // GroupID the Default group, and a zero CreatedAt the current time.
@@ -40,24 +40,47 @@ func (s *Store) CreateSession(ctx context.Context, sess *core.Session) error {
 	if sess.CreatedAt.IsZero() {
 		sess.CreatedAt = s.now().UTC()
 	}
+	if sess.StatusSince.IsZero() {
+		sess.StatusSince = sess.CreatedAt
+	}
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		args, err := sessionArgs(sess)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`, status_since) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			append(args, ms(sess.StatusSince))...); err != nil {
 			return fmt.Errorf("create session: %w", err)
 		}
 		return syncClaudeIDs(ctx, tx, sess)
 	})
 }
 
-// UpdateSession writes all fields of an existing session.
+// UpdateSession writes all fields of an existing session. When its status
+// changes, StatusSince becomes now.
 func (s *Store) UpdateSession(ctx context.Context, sess *core.Session) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		args, err := sessionArgs(sess)
 		if err != nil {
 			return err
+		}
+		var (
+			was   string
+			since int64
+		)
+		err = tx.QueryRowContext(ctx, `SELECT status, status_since FROM sessions WHERE id = ?`, sess.ID).Scan(&was, &since)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		sess.StatusSince = fromMS(since)
+		if core.Status(was) != sess.Status {
+			sess.StatusSince = s.now().UTC()
+			if _, err := tx.ExecContext(ctx, `UPDATE sessions SET status_since = ? WHERE id = ?`, ms(sess.StatusSince), sess.ID); err != nil {
+				return err
+			}
 		}
 		// A set's sessions share one group, so a member's group only changes
 		// with its set (MoveSessions).
@@ -236,11 +259,12 @@ func scanSession(row scanner) (*core.Session, error) {
 		hist, ext                    string
 		unseen, remote, gone         int
 		created, lastEvent, archived int64
+		since                        int64
 	)
 	err := row.Scan(&sess.ID, &sess.Name, &sess.Description, &sess.GroupID, &nameSource, &sess.Cwd,
 		&sess.ClaudeSessionID, &hist, &sess.TranscriptPath, &status, &sess.StatusDetail, &unseen, &kind,
 		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived, &sess.Harness, &remote, &sess.Host, &sess.RemoteID, &gone, &sess.JobID,
-		&sess.SetID, &sess.SetOrder)
+		&sess.SetID, &sess.SetOrder, &since)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -250,6 +274,7 @@ func scanSession(row scanner) (*core.Session, error) {
 	sess.NameSource, sess.Status, sess.Kind = core.NameSource(nameSource), core.Status(status), core.Kind(kind)
 	sess.Unseen, sess.Remote, sess.HostGone = unseen != 0, remote != 0, gone != 0
 	sess.CreatedAt, sess.LastEventAt, sess.ArchivedAt = fromMS(created), fromMS(lastEvent), fromMS(archived)
+	sess.StatusSince = fromMS(since)
 	if err := json.Unmarshal([]byte(hist), &sess.ClaudeHistory); err != nil {
 		return nil, fmt.Errorf("session %s claude_history: %w", sess.ID, err)
 	}

@@ -92,7 +92,7 @@ func localOps() []Op {
 		mut(act(ipc.MutGroupArchive, "Archives a group and its sessions.", entities, nil, nil)),
 		mut(act(ipc.MutGroupUnarchive, "Unarchives a group, and optionally its sessions.", entities, nil, nil)),
 		mut(act(ipc.MutGroupCollapse, "Collapses or expands a group, or every group.", entities, nil, nil)),
-		mut(act(ipc.MutGroupMove, "Moves a group up or down in the order.", entities, nil, nil)),
+		mut(act(ipc.MutGroupMove, "Moves a group to just after or just before another one.", entities, nil, nil)),
 
 		// Sets: sessions made together by splitting panes.
 		mut(act(ipc.MutSetCreate, "Makes a set of sessions, in order. They move to the first one's group.", entities, nil, ipc.Set{})),

@@ -44,7 +44,7 @@ func newGroupListCmd() *cobra.Command {
 					switch {
 					case !g.ArchivedAt.IsZero():
 						state = "archived"
-					case g.Collapsed:
+					case snap.ViewState.IsCollapsed(g.ID):
 						state = "collapsed"
 					}
 					fmt.Fprintf(tw, "%s\t%s\t%d\t%s\n", g.Name, g.Color, counts[g.ID], state)

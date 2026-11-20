@@ -93,7 +93,7 @@ func TestMutations(t *testing.T) {
 			got = x
 		}
 	}
-	if got.Name != "PROJ-1 auth" || got.Color != "red" || !got.Collapsed || byClaude(snap, "bg").GroupID != g.ID {
+	if got.Name != "PROJ-1 auth" || got.Color != "red" || !snap.ViewState.IsCollapsed(got.ID) || byClaude(snap, "bg").GroupID != g.ID {
 		t.Errorf("group state: %+v", got)
 	}
 	vs := snap.ViewState
@@ -107,15 +107,13 @@ func TestMutations(t *testing.T) {
 		t.Errorf("focus: %+v", snap.ViewState)
 	}
 	for _, x := range snap.Groups {
-		if x.IsDefault && !x.Collapsed {
+		if x.IsDefault && !snap.ViewState.IsCollapsed(x.ID) {
 			t.Error("focus should collapse the other groups")
 		}
 	}
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewFocus})
-	for _, x := range snapshot(t, c).Groups {
-		if x.Collapsed {
-			t.Errorf("clear focus should restore %s", x.Name)
-		}
+	if got := snapshot(t, c).ViewState.Collapsed; len(got) != 0 {
+		t.Errorf("clear focus should restore every group, still collapsed: %v", got)
 	}
 
 	for _, bad := range []ipc.Mutation{

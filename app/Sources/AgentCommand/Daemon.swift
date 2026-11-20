@@ -45,19 +45,24 @@ struct WakeState: Decodable, Equatable {
     }
 }
 
-/// A group of sessions (internal/core.Group), for choosing a job's group.
+/// A group of sessions (internal/core.Group): a named, coloured container you arrange.
 struct SessionGroup: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
     let isDefault: Bool
     let archivedAt: String
+    /// One of the daemon's colour names (blue, magenta, cyan, yellow, green, red).
+    var color = ""
+    /// Its place among the groups you arranged; Default has none and comes last.
+    var order = 0
 
     enum CodingKeys: String, CodingKey {
-        case id = "ID", name = "Name", isDefault = "IsDefault", archivedAt = "ArchivedAt"
+        case id = "ID", name = "Name", isDefault = "IsDefault", archivedAt = "ArchivedAt", color = "Color", order
     }
 
-    init(id: String, name: String, isDefault: Bool = false, archivedAt: String = "") {
+    init(id: String, name: String, isDefault: Bool = false, archivedAt: String = "", color: String = "", order: Int = 0) {
         (self.id, self.name, self.isDefault, self.archivedAt) = (id, name, isDefault, archivedAt)
+        (self.color, self.order) = (color, order)
     }
 
     init(from decoder: Decoder) throws {
@@ -66,7 +71,12 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         isDefault = try c.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         archivedAt = try c.decodeIfPresent(String.self, forKey: .archivedAt) ?? ""
+        color = try c.decodeIfPresent(String.self, forKey: .color) ?? ""
+        order = try c.decodeIfPresent(Int.self, forKey: .order) ?? 0
     }
+
+    /// The colours a group can have, in the daemon's order.
+    static let colors = ["blue", "magenta", "cyan", "yellow", "green", "red"]
 
     /// Go's zero time is "0001-01-01T00:00:00Z".
     var isArchived: Bool { !archivedAt.isEmpty && !archivedAt.hasPrefix("0001-") }
@@ -201,6 +211,26 @@ struct Notice: Decodable {
     }
 }
 
+/// Why a session needs you, from the daemon: rank 1 is the most urgent, and
+/// since is when it started. A reason this app doesn't know still sorts by rank.
+struct SessionAttention: Decodable, Equatable {
+    let rank: Int
+    let reason: String
+    var since: String = ""
+
+    /// since as a date; the distant past when it can't be read.
+    var sinceDate: Date { Timestamps.date(since) ?? .distantPast }
+}
+
+/// Reads the daemon's RFC 3339 times, with or without fractional seconds.
+enum Timestamps {
+    static func date(_ text: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+}
+
 /// A set as the daemon sends it: sessions made together by splitting, all in
 /// one group (its parent) and on one host.
 struct SessionSetEntity: Decodable, Equatable {
@@ -237,13 +267,18 @@ struct Session: Decodable, Identifiable, Equatable {
     /// place in its set, from 1.
     var parent: String?
     var order: Int?
+    /// Its group, the time of its last activity, and why it needs you, if it does.
+    var groupID: String?
+    var lastEventAt: String?
+    var attention: SessionAttention?
 
     enum CodingKeys: String, CodingKey {
         case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
         case harness = "Harness", claudeSessionID = "ClaudeSessionID"
         case statusDetail = "StatusDetail", description = "Description", remote = "Remote"
         case host = "Host", remoteID = "RemoteID", hostGone = "HostGone", jobID = "JobID"
-        case parent, order
+        case parent, order, attention
+        case groupID = "GroupID", lastEventAt = "LastEventAt"
     }
 
     var isRemote: Bool { remote == true }

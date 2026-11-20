@@ -130,7 +130,7 @@
     },
     {
       "name": "group.move",
-      "description": "Moves a group up or down in the order.",
+      "description": "Moves a group to just after or just before another one.",
       "scope": "act",
       "kind": "change",
       "grant": "entities",
@@ -1173,6 +1173,26 @@
         "harnesses"
       ]
     },
+    "core.Attention": {
+      "properties": {
+        "rank": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "rank",
+        "reason",
+        "since"
+      ]
+    },
     "core.Group": {
       "properties": {
         "ID": {
@@ -1186,9 +1206,6 @@
         },
         "SortKey": {
           "type": "integer"
-        },
-        "Collapsed": {
-          "type": "boolean"
         },
         "IsDefault": {
           "type": "boolean"
@@ -1208,7 +1225,6 @@
         "Name",
         "Color",
         "SortKey",
-        "Collapsed",
         "IsDefault",
         "CreatedAt",
         "ArchivedAt"
@@ -1534,6 +1550,9 @@
         },
         "order": {
           "type": "integer"
+        },
+        "attention": {
+          "$ref": "#/$defs/core.Attention"
         }
       },
       "type": "object",
@@ -1590,6 +1609,12 @@
         },
         "ShowArchived": {
           "type": "boolean"
+        },
+        "Collapsed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object",
@@ -1840,6 +1865,9 @@
           "type": "string"
         },
         "after": {
+          "type": "string"
+        },
+        "before": {
           "type": "string"
         }
       },

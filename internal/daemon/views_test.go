@@ -59,15 +59,51 @@ func TestMoveGroup(t *testing.T) {
 		}
 		return strings.Join(names, ",")
 	}
-	_ = a
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: cc})            // up
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: b, Flag: true}) // down
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: b, Flag: true}) // edge: no-op
-	if got := order(); !strings.HasPrefix(got, "A,C,B") {
-		t.Errorf("order %s", got)
+	// Dragging C above A, then B after C.
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: cc, Before: a})
+	if got := order(); !strings.HasPrefix(got, "C,A,B") {
+		t.Errorf("C before A: order %s", got)
 	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: "default"}, nil); err == nil {
-		t.Error("moved Default")
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupMove, GroupID: b, After: cc})
+	if got := order(); !strings.HasPrefix(got, "C,B,A") {
+		t.Errorf("B after C: order %s", got)
+	}
+	// The snapshot says the order you arranged, for clients to sort by.
+	orders := map[string]int{}
+	for _, g := range snapshot(t, c).Groups {
+		orders[g.Name] = g.SortKey
+	}
+	if orders["C"] >= orders["B"] || orders["B"] >= orders["A"] {
+		t.Errorf("sort keys %v", orders)
+	}
+	for name, m := range map[string]ipc.Mutation{
+		"Default":               {Kind: ipc.MutGroupMove, GroupID: "default", After: a},
+		"no neighbor":           {Kind: ipc.MutGroupMove, GroupID: a},
+		"both neighbors":        {Kind: ipc.MutGroupMove, GroupID: a, After: b, Before: cc},
+		"next to Default":       {Kind: ipc.MutGroupMove, GroupID: a, Before: "default"},
+		"next to a missing one": {Kind: ipc.MutGroupMove, GroupID: a, After: "nope"},
+	} {
+		if err := c.Call(ipc.OpMutate, m, nil); err == nil {
+			t.Errorf("moved a group with %s", name)
+		}
+	}
+}
+
+// Collapse is the CLI's view: the snapshot says which groups it has
+// collapsed in the view, not on each group.
+func TestCollapseIsInTheView(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	g := groupNamed(t, c, "A")
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupCollapse, GroupID: g, Flag: true})
+	snap := snapshot(t, c)
+	if !snap.ViewState.IsCollapsed(g) || len(snap.ViewState.Collapsed) != 1 {
+		t.Errorf("view collapsed = %v, want [%s]", snap.ViewState.Collapsed, g)
+	}
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupCollapse, GroupID: g, Flag: false})
+	if got := snapshot(t, c).ViewState.Collapsed; len(got) != 0 {
+		t.Errorf("after expanding: %v", got)
 	}
 }
 

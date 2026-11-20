@@ -105,12 +105,16 @@ extension UsesSharedSpeech {
             #expect(s.nextAttentionID == "wait1", "it goes round")
         }
 
-        @Test func attentionFollowsTheSidebarAndHasNothingWhenAllIsWell() throws {
+        @Test func theOneWaitingLongestComesFirstAndNothingWhenAllIsWell() throws {
             let s = try store([])
-            s.sessions = try [makeSession(id: "w1", status: "waiting"), makeSession(id: "w2", status: "waiting")]
-            s.sets = ["s1": ["w2", "w1"]]
+            s.sessions = try [
+                makeSession(id: "w1", status: "waiting", since: "2026-11-20T09:05:00Z"),
+                makeSession(id: "w2", status: "waiting", since: "2026-11-20T09:00:00.500Z"),
+                makeSession(id: "e1", status: "error", since: "2026-11-20T08:00:00Z"),
+            ]
+            s.sets = ["s1": ["w1", "w2"]] // the sidebar's order doesn't count
             s.reflect(selected: nil, visible: [], closed: [])
-            #expect(s.attentionIDs == ["w2", "w1"])
+            #expect(s.attentionIDs == ["w2", "w1", "e1"], "waiting before an error, however old; then the longest waiting")
             s.sessions = try [makeSession(id: "a", status: "busy"), makeSession(id: "b", status: "done")]
             #expect(s.nextAttentionID == nil)
             s.sessions = try [makeSession(id: "only", status: "error")]

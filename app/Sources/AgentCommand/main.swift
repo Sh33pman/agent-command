@@ -93,7 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 removeAdded: { [weak self] session in
                     guard let self else { return }
                     self.store.removeAdded(self.store.actionTargets(forRow: session))
-                }
+                },
+                newGroup: { [weak self] sessions in self?.showNewGroup(sessions) },
+                renameGroup: { [weak self] group in self?.showRenameGroup(group) }
             ))
         let split = NSSplitViewController()
         split.splitView = ThemedSplitView()
@@ -496,6 +498,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // A terminal keeps the keyboard otherwise, and the form couldn't take it.
         window?.makeFirstResponder(nil)
         showPopup(ReportView(kind: kind, close: { [weak self] in self?.closePopup() }))
+    }
+
+    /// Asks for a new group's name, then makes it with these sessions in it.
+    private func showNewGroup(_ sessions: [Session]) {
+        closePopup()
+        showMainWindow()
+        let title = sessions.isEmpty ? "New group" : sessions.count == 1 ? "New group for \(sessions[0].displayName)"
+            : "New group for \(sessions.count) sessions"
+        showPopup(GroupNameView(title: title, close: { [weak self] in self?.closePopup() }) { [weak self] name in
+            self?.store.createGroup(name, moving: sessions.map(\.id))
+            self?.store.clearMarks()
+            self?.closePopup()
+        })
+    }
+
+    private func showRenameGroup(_ group: SessionGroup) {
+        closePopup()
+        showPopup(GroupNameView(title: "Rename \(group.name)", name: group.name, close: { [weak self] in self?.closePopup() }) {
+            [weak self] name in
+            self?.store.renameGroup(group.id, to: name)
+            self?.closePopup()
+        })
     }
 
     private func showRename(_ sessions: [Session]) {
@@ -1121,7 +1145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let speech = SpeechController.shared
         let popup = PopupSettings.shared
         let state = PaletteState(
-            targets: targets, sessions: store.sessions, needsYou: store.nextAttentionID != nil, setMembers: store.setMembers,
+            targets: targets, sessions: store.sessions, needsYou: store.nextAttentionID != nil, setMembers: store.setMembers, groups: store.groups,
             paneCount: pane?.tree.shownLeaves.count ?? 0, showsScreen: pane?.shown != nil,
             speechOn: speech.isEnabled, speaking: speech.isSpeaking, agentRemoteControl: AgentRemoteControlSetting.isOn,
             hostingOn: remote.hostingOn,
@@ -1147,6 +1171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .newSession(let name): if let harness = Harness(rawValue: name) { newSession(harness: harness) }
         case .chooseHarness: chooseHarness()
         case .resume: resumeSession()
+        case .newGroup(let sessions): showNewGroup(sessions)
+        case .moveToGroup(let sessions, let group):
+            store.moveSessions(sessions.map(\.id), to: group)
+            store.clearMarks()
         case .split(let direction, let how):
             switch how {
             case .terminal: splitPane(direction)

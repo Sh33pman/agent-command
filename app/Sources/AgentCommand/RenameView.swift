@@ -64,3 +64,36 @@ struct RenameView: View {
         }
     }
 }
+
+/// A popup to name a group: a new one, or one being renamed.
+struct GroupNameView: View {
+    let title: String
+    let close: () -> Void
+    let done: (String) -> Void
+
+    @State private var name: String
+
+    init(title: String, name: String = "", close: @escaping () -> Void, done: @escaping (String) -> Void) {
+        self.title = title
+        self.close = close
+        self.done = done
+        _name = State(initialValue: name)
+    }
+
+    var body: some View {
+        PopupBox(
+            title: title,
+            placeholder: "Group name",
+            hasList: false,
+            search: $name,
+            close: close,
+            onMove: { _ in },
+            onSubmit: {
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { done(trimmed) }
+            }
+        ) {
+            EmptyView()
+        }
+    }
+}

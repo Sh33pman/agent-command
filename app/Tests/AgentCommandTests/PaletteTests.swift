@@ -13,8 +13,9 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
 @Test func paletteWithNothingShowingHasTheAppWideCommands() {
     let entries = Palette.entries(PaletteState())
     #expect(titles(entries, in: "New") == [
-        "Claude session", "Antigravity session", "Terminal", "New session…", "Resume a session…",
+        "Claude session", "Antigravity session", "Terminal", "New session…", "Resume a session…", "Group…",
     ])
+    #expect(entry(entries, "New", "Group…")?.action == .newGroup([]))
     #expect(entry(entries, "New", "Claude session")?.action == .newSession(harness: "claude"))
     #expect(entry(entries, "New", "Claude session")?.shortcut == "⌘N")
     #expect(entry(entries, "New", "Antigravity session")?.action == .newSession(harness: "antigravity"))
@@ -49,7 +50,8 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     let other = try makeSession(id: "t1", name: "shell", harness: "terminal", status: "running")
     let entries = Palette.entries(PaletteState(targets: [claude], sessions: [claude, other], setMembers: [["c1", "t1"]]))
     #expect(titles(entries, in: "Claude session") == [
-        "Rename…", "Archive…", "Turn Remote on", "Move out of set", "Open in editor", "Copy folder path", "Copy Claude session ID",
+        "Rename…", "Archive…", "Turn Remote on", "Move to a new group…", "Move out of set", "Open in editor", "Copy folder path",
+        "Copy Claude session ID",
     ])
     #expect(entry(entries, "Claude session", "Copy folder path")?.action == .copy("/w/api"))
     #expect(entry(entries, "Claude session", "Copy Claude session ID")?.action == .copy("abc-123"))
@@ -65,7 +67,9 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
 @Test func paletteForATerminalHasNoClaudeID() throws {
     let terminal = try makeSession(id: "t1", harness: "terminal")
     let entries = Palette.entries(PaletteState(targets: [terminal], sessions: [terminal]))
-    #expect(titles(entries, in: "Terminal session") == ["Rename…", "Archive…", "Turn Remote on", "Open in editor", "Copy folder path"])
+    #expect(titles(entries, in: "Terminal session") == [
+        "Rename…", "Archive…", "Turn Remote on", "Move to a new group…", "Open in editor", "Copy folder path",
+    ])
     #expect(entry(entries, "Terminal session", "Open in editor")?.shortcut == "⇧⌘E")
     let nowhere = try makeSession(id: "n1", cwd: "", harness: "terminal")
     #expect(!titles(Palette.entries(PaletteState(targets: [nowhere])), in: "Terminal session").contains("Open in editor"))
@@ -74,7 +78,9 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
 @Test func paletteForAntigravityHasNoClaudeID() throws {
     let agent = try makeSession(id: "g1", harness: "antigravity")
     let entries = Palette.entries(PaletteState(targets: [agent], sessions: [agent]))
-    #expect(titles(entries, in: "Antigravity session") == ["Rename…", "Archive…", "Turn Remote on", "Open in editor", "Copy folder path"])
+    #expect(titles(entries, in: "Antigravity session") == [
+        "Rename…", "Archive…", "Turn Remote on", "Move to a new group…", "Open in editor", "Copy folder path",
+    ])
     let unnamed = try makeSession(id: "x1", harness: "codex")
     #expect(titles(Palette.entries(PaletteState(targets: [unnamed])), in: "Agent session").first == "Rename…")
     #expect(Palette.archivePrompt([agent])?.note.hasPrefix("Agents stop.") == true, "it can be unarchived, as Claude can")
@@ -165,4 +171,19 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     let entries = Palette.entries(PaletteState(sessions: [waiting], needsYou: true))
     #expect(entry(entries, "Go to", "Next needing attention")?.shortcut == "⇧⌘A")
     #expect(entries.first { $0.section == "Go to" }?.action == .nextAttention, "first in its section")
+}
+
+@Test func thePaletteMovesSessionsToGroupsTheyArentIn() throws {
+    var a = try makeSession(id: "a")
+    a.groupID = "api"
+    var b = try makeSession(id: "b")
+    b.groupID = "default"
+    let groups = [SessionGroup(id: "default", name: "Default", isDefault: true), SessionGroup(id: "api", name: "api", order: 10)]
+    let one = Palette.entries(PaletteState(targets: [a], sessions: [a], groups: groups))
+    let section = "Claude session"
+    #expect(entry(one, section, "Move to Default")?.action == .moveToGroup([a], group: "default"))
+    #expect(entry(one, section, "Move to api") == nil, "it's already there")
+    let both = Palette.entries(PaletteState(targets: [a, b], sessions: [a, b], groups: groups))
+    #expect(entry(both, "2 sessions", "Move to api")?.action == .moveToGroup([a, b], group: "api"), "b isn't in it yet")
+    #expect(entry(both, "2 sessions", "Move to a new group…")?.action == .newGroup([a, b]))
 }

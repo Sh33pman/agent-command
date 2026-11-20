@@ -45,6 +45,11 @@ final class SessionStore {
     var filter = SidebarFilter.load() {
         didSet { if filter != oldValue { filter.save(defaults) } }
     }
+    /// How the sidebar lists them: groups or a list, the sort, and what's
+    /// collapsed. This app's own view, kept for next time.
+    var options = SidebarOptions.load() {
+        didSet { if options != oldValue { options.save(defaults) } }
+    }
     @ObservationIgnored var defaults = UserDefaults.standard
     /// The daemon's Remote host ops; tests swap its calls.
     @ObservationIgnored var remoteClient = RemoteHostsClient()
@@ -84,15 +89,20 @@ final class SessionStore {
         if closed != closedIDs { closedIDs = closed }
     }
 
-    /// The sessions in sidebar order, with each set's together: those the filter lists.
-    var sidebarIDs: [String] {
+    /// The sidebar's rows: group headers and the sessions the filter lists.
+    var sidebarRows: [SidebarRow] {
         let filter = shownFilter
-        return PaneSets.rows(order: sessions.filter(filter.includes).map(\.id), sets: setMembers).map(\.id)
+        return SidebarLayout.rows(sessions: sessions.filter(filter.includes), groups: groups, sets: setMembers,
+                                  options: options, filtering: filter != .all)
     }
 
-    /// Every session in sidebar order, whatever the filter.
-    private var allSidebarIDs: [String] {
-        PaneSets.rows(order: sessions.map(\.id), sets: setMembers).map(\.id)
+    /// The sessions you can see in the sidebar, top to bottom: what the numbers and
+    /// the cursor go by. Those in a collapsed group aren't among them.
+    var sidebarIDs: [String] { SidebarLayout.sessionIDs(sidebarRows) }
+
+    /// Collapses a group to its header, or opens it again.
+    func toggleCollapsed(_ groupID: String) {
+        if options.collapsed.remove(groupID) == nil { options.collapsed.insert(groupID) }
     }
 
     /// The hosts the sidebar's filter offers.
@@ -125,18 +135,16 @@ final class SessionStore {
         return n >= 1 && n <= ids.count ? ids[n - 1] : nil
     }
 
-    /// Sessions that need you, most urgent first: waiting, then error, then a
-    /// finished turn you haven't seen. In sidebar order within each.
+    /// Sessions that need you, as the daemon ranks them: the most urgent first,
+    /// and within a rank the one waiting longest. Whatever the filter shows, so
+    /// nothing that needs you is missed.
     var attentionIDs: [String] {
-        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
-        // Whatever the filter shows: nothing that needs you is missed.
-        let ordered = allSidebarIDs.compactMap { byID[$0] }.filter { !$0.isArchived }
-        let tiers: [(Session) -> Bool] = [
-            { $0.status == "waiting" },
-            { $0.status == "error" },
-            { $0.status == "done" && $0.unseen },
-        ]
-        return tiers.flatMap { tier in ordered.filter(tier).map(\.id) }
+        sessions.filter { !$0.isArchived && $0.attention != nil }.sorted { a, b in
+            let (x, y) = (a.attention!, b.attention!)
+            if x.rank != y.rank { return x.rank < y.rank }
+            if x.sinceDate != y.sinceDate { return x.sinceDate < y.sinceDate }
+            return a.id < b.id
+        }.map(\.id)
     }
 
     /// The next session that needs you after the selected one, going round; nil when
@@ -491,6 +499,76 @@ final class SessionStore {
                     NSLog("couldn't move set %@ to the daemon: %@", set.id, error.localizedDescription)
                 }
             }
+        }
+    }
+
+    // MARK: Groups
+
+    private struct GroupMutation: Encodable {
+        let kind: String
+        var group_id: String?
+        var text: String?
+        var color: String?
+        var ids: [String]?
+        var after: String?
+        var before: String?
+    }
+
+    private func mutateGroup(_ m: GroupMutation, failure: String) {
+        run(failure: failure) { conn in
+            try conn.send("mutate", m)
+        } done: { _ in }
+    }
+
+    /// Makes a group, and moves sessions into it (with their sets).
+    func createGroup(_ name: String, moving ids: [String] = []) {
+        run(failure: "Couldn't make the group") { conn in
+            let group: SessionGroup = try conn.call("mutate", GroupMutation(kind: "group.create", text: name))
+            if !ids.isEmpty { try conn.send("mutate", GroupMutation(kind: "session.move", group_id: group.id, ids: ids)) }
+            return group
+        } done: { _ in }
+    }
+
+    func renameGroup(_ id: String, to name: String) {
+        mutateGroup(GroupMutation(kind: "group.rename", group_id: id, text: name), failure: "Couldn't rename the group")
+    }
+
+    func setGroupColor(_ id: String, _ color: String) {
+        mutateGroup(GroupMutation(kind: "group.color", group_id: id, color: color), failure: "Couldn't change the group's colour")
+    }
+
+    /// Deletes a group; its sessions move to Default.
+    func deleteGroup(_ id: String) {
+        mutateGroup(GroupMutation(kind: "group.delete", group_id: id), failure: "Couldn't delete the group")
+    }
+
+    /// Moves sessions to a group. A session in a set takes its set along.
+    func moveSessions(_ ids: [String], to group: String) {
+        mutateGroup(GroupMutation(kind: "session.move", group_id: group, ids: ids), failure: "Couldn't move the sessions")
+    }
+
+    /// Puts a group just before or just after another.
+    func moveGroup(_ id: String, before: String? = nil, after: String? = nil) {
+        mutateGroup(GroupMutation(kind: "group.move", group_id: id, after: after, before: before), failure: "Couldn't move the group")
+    }
+
+    /// Moves a group one place up or down among the groups you arranged.
+    func moveGroup(_ id: String, by step: Int) {
+        let ordered = SidebarLayout.orderedGroups(groups).filter { !$0.isDefault }
+        guard let at = ordered.firstIndex(where: { $0.id == id }) else { return }
+        let to = at + step
+        guard ordered.indices.contains(to) else { return }
+        if step < 0 { moveGroup(id, before: ordered[to].id) } else { moveGroup(id, after: ordered[to].id) }
+    }
+
+    /// Carries out a drop in the sidebar.
+    func perform(_ drop: SidebarDrop) {
+        switch drop {
+        case .moveSessions(let ids, let group):
+            moveSessions(ids, to: group)
+            clearMarks()
+        case .moveGroup(let id, let before, let after):
+            moveGroup(id, before: before, after: after)
         }
     }
 

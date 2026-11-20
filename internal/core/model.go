@@ -146,6 +146,8 @@ type Session struct {
 	CreatedAt   time.Time
 	LastEventAt time.Time
 	ArchivedAt  time.Time
+	// StatusSince is when Status last changed. The store keeps it.
+	StatusSince time.Time `json:"-"`
 	// SetID is the set it's in ("" for none), and SetOrder its place there
 	// (from 1). Only the store's set functions change them.
 	SetID    string `json:"-"`
@@ -155,9 +157,11 @@ type Session struct {
 	// MarshalJSON fills them in; nothing else sets them.
 	Parent string `json:"parent,omitempty"`
 	Order  int    `json:"order,omitempty"`
+	// Needs is Attention(), for clients. MarshalJSON fills it in.
+	Needs *Attention `json:"attention,omitempty"`
 }
 
-// MarshalJSON writes the session with Parent and Order filled in.
+// MarshalJSON writes the session with Parent, Order and Needs filled in.
 func (s Session) MarshalJSON() ([]byte, error) {
 	type plain Session // without this method
 	p := plain(s)
@@ -165,7 +169,57 @@ func (s Session) MarshalJSON() ([]byte, error) {
 	if s.SetID != "" {
 		p.Parent, p.Order = s.SetID, s.SetOrder
 	}
+	p.Needs = s.Attention()
 	return json.Marshal(p)
+}
+
+// Attention is why a session needs you, and how urgently: Rank 1 is the
+// most urgent. Reasons can be added; clients show one they don't know
+// generically, and still order it by Rank.
+type Attention struct {
+	Rank   int       `json:"rank"`
+	Reason string    `json:"reason"`
+	Since  time.Time `json:"since"` // when it started needing you
+}
+
+// Attention reasons.
+const (
+	NeedsWaiting    = "waiting"     // it asks you something
+	NeedsError      = "error"       // it stopped on an error
+	NeedsUnseenDone = "unseen_done" // it finished a turn you haven't looked at
+)
+
+// Attention says whether s needs you; nil when it doesn't.
+func (s *Session) Attention() *Attention {
+	since := s.StatusSince
+	if since.IsZero() {
+		since = s.LastEventAt
+	}
+	switch {
+	case s.Status == StatusWaiting:
+		return &Attention{Rank: 1, Reason: NeedsWaiting, Since: since}
+	case s.Status == StatusError:
+		return &Attention{Rank: 2, Reason: NeedsError, Since: since}
+	case s.Status == StatusDone && s.Unseen:
+		return &Attention{Rank: 3, Reason: NeedsUnseenDone, Since: since}
+	}
+	return nil
+}
+
+// AttentionBefore reports whether a should come before b in "next that needs
+// you": the lower rank, then the one waiting longest, then by id. Sessions
+// that don't need you come last.
+func AttentionBefore(a, b *Session) bool {
+	x, y := a.Attention(), b.Attention()
+	switch {
+	case x == nil || y == nil:
+		return x != nil && y == nil
+	case x.Rank != y.Rank:
+		return x.Rank < y.Rank
+	case !x.Since.Equal(y.Since):
+		return x.Since.Before(y.Since)
+	}
+	return a.ID < b.ID
 }
 
 // Set is sessions made together by splitting panes. Its group and host are
@@ -179,17 +233,35 @@ type Set struct {
 
 // Group is a session group.
 type Group struct {
-	ID         string
-	Name       string
-	Color      string
-	SortKey    int
-	Collapsed  bool
+	ID      string
+	Name    string
+	Color   string
+	SortKey int
+	// Collapsed is the CLI's view of the group; clients get it in
+	// ViewState.Collapsed, not with the group.
+	Collapsed  bool `json:"-"`
 	IsDefault  bool
 	CreatedAt  time.Time
 	ArchivedAt time.Time
 }
 
-// ViewState is the list presentation shared by every sidebar.
+// MarshalJSON writes the group with its type and, for one you arranged, its
+// order (section 7 of the design). Default has none: it always comes last.
+func (g Group) MarshalJSON() ([]byte, error) {
+	type plain Group // without this method
+	out := struct {
+		plain
+		Type  string `json:"type"`
+		Order int    `json:"order,omitempty"`
+	}{plain: plain(g), Type: "group"}
+	if !g.IsDefault {
+		out.Order = g.SortKey
+	}
+	return json.Marshal(out)
+}
+
+// ViewState is the CLI's list presentation, kept by the daemon. Each other
+// client keeps its own view.
 type ViewState struct {
 	Mode         string // "groups" | "list"
 	Sort         string // "created" | "name" | "activity" | "status" | "cwd"
@@ -198,7 +270,13 @@ type ViewState struct {
 	FocusedGroup string
 	PreFocus     map[string]bool
 	ShowArchived bool
+	// Collapsed are the collapsed groups' ids. The daemon fills it in from
+	// its groups when it sends the view.
+	Collapsed []string `json:",omitempty"`
 }
+
+// IsCollapsed reports whether group id is collapsed in this view.
+func (vs ViewState) IsCollapsed(id string) bool { return slices.Contains(vs.Collapsed, id) }
 
 // Managed reports whether acmd runs s, so a view can show it: a background
 // or a hosted session (not one in the user's own pane).

@@ -98,7 +98,7 @@ func Layout(sessions []*Session, groups []*Group, vs ViewState) []Row {
 		if f.active() && len(ms) == 0 {
 			continue // filtering hides groups without matches
 		}
-		collapsed := g.Collapsed && !f.active() // matches expand while filtering
+		collapsed := (g.Collapsed || vs.IsCollapsed(g.ID)) && !f.active() // matches expand while filtering
 		h := Row{Group: g, Count: len(ms), Urgent: mostUrgent(ms), Collapsed: collapsed, Focused: vs.FocusedGroup == g.ID}
 		rows = append(rows, h)
 		if collapsed {
@@ -377,27 +377,18 @@ func Resolve(rows []Row, all []*Session, sel string) (*Session, error) {
 	}
 }
 
-// NextAttention picks the most urgent session other than shown: waiting,
-// then error, then unseen done, each in sidebar order (filter and focus
-// ignored; sessions in collapsed groups count too).
-func NextAttention(sessions []*Session, groups []*Group, vs ViewState, shown string) *Session {
-	vs.Filter, vs.FocusedGroup = "", ""
-	order := Layout(sessions, groups, vs)
-	for _, want := range []func(*Session) bool{
-		func(s *Session) bool { return s.Status == StatusWaiting },
-		func(s *Session) bool { return s.Status == StatusError },
-		func(s *Session) bool { return s.Status == StatusDone && s.Unseen },
-	} {
-		for _, r := range order {
-			if r.Session != nil && r.Session.ID != shown && want(r.Session) {
-				return r.Session
-			}
+// NextAttention picks the session that most needs you, other than shown:
+// the lowest attention rank, then the one waiting longest (AttentionBefore).
+// Archived sessions are left out.
+func NextAttention(sessions []*Session, shown string) *Session {
+	var best *Session
+	for _, s := range sessions {
+		if s.ID == shown || s.Status == StatusArchived || s.Attention() == nil {
+			continue
 		}
-		for _, s := range sessions {
-			if s.ID != shown && s.Status != StatusArchived && want(s) {
-				return s
-			}
+		if best == nil || AttentionBefore(s, best) {
+			best = s
 		}
 	}
-	return nil
+	return best
 }

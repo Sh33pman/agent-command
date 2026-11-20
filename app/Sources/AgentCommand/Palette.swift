@@ -19,6 +19,10 @@ enum PaletteAction: Equatable {
     case chooseHarness
     case resume
     case split(SplitDirection, SplitKind)
+    /// Asks for a group's name, and makes it with these sessions in it.
+    case newGroup([Session])
+    /// Moves sessions (with their sets) to a group, by id.
+    case moveToGroup([Session], group: String)
     case closePane
     case focus(FocusDirection)
     case equalizePanes
@@ -72,6 +76,8 @@ struct PaletteState {
     /// Whether a session needs you, for the attention command.
     var needsYou = false
     var setMembers: [[String]] = []
+    /// The groups sessions can move to.
+    var groups: [SessionGroup] = []
     var paneCount = 0
     /// Whether a terminal is showing, for the Screen commands.
     var showsScreen = false
@@ -103,6 +109,17 @@ enum Palette {
         ("Reset font size", "⌘0", "reset_font_size"),
     ]
 
+    /// Moving sessions to each group none of them is in already, and to a new one.
+    static func groupEntries(_ sessions: [Session], section: String, groups: [SessionGroup]) -> [PaletteEntry] {
+        var list: [PaletteEntry] = []
+        for group in SidebarLayout.orderedGroups(groups) where !sessions.allSatisfy({ $0.groupID == group.id }) {
+            list.append(PaletteEntry(section: section, title: "Move to \(group.name)", key: group.id,
+                                     action: .moveToGroup(sessions, group: group.id)))
+        }
+        list.append(PaletteEntry(section: section, title: "Move to a new group…", action: .newGroup(sessions)))
+        return list
+    }
+
     /// What can be done right now: the list depends on what's showing.
     static func entries(_ state: PaletteState) -> [PaletteEntry] {
         let keys = state.keys
@@ -114,12 +131,14 @@ enum Palette {
             list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename(targets)))
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive(targets)))
             list += remoteEntries(targets, section: section, keys: keys)
+            list += groupEntries(targets, section: section, groups: state.groups)
         }
         if let session = current {
             let section = "\(session.harnessTitle) session"
             list.append(PaletteEntry(section: section, title: "Rename…", shortcut: keys.label(.rename), action: .rename([session])))
             list.append(PaletteEntry(section: section, title: "Archive…", shortcut: keys.label(.archive), action: .archive([session])))
             list += remoteEntries([session], section: section, keys: keys)
+            list += groupEntries([session], section: section, groups: state.groups)
             if state.setMembers.contains(where: { $0.contains(session.id) }) {
                 list.append(PaletteEntry(section: section, title: "Move out of set", action: .moveOut(sessionID: session.id)))
             }
@@ -153,6 +172,7 @@ enum Palette {
         list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: Harness.terminal.rawValue)))
         list.append(PaletteEntry(section: "New", title: "New session…", shortcut: keys.label(.newSession), action: .chooseHarness))
         list.append(PaletteEntry(section: "New", title: "Resume a session…", shortcut: keys.label(.resume), action: .resume))
+        list.append(PaletteEntry(section: "New", title: "Group…", action: .newGroup([])))
         for host in state.hosts {
             list.append(PaletteEntry(section: "New", title: "Session on \(host)…", key: host, action: .newOnHost(host)))
         }

@@ -216,23 +216,61 @@ func TestResolve(t *testing.T) {
 }
 
 func TestNextAttention(t *testing.T) {
-	mk := func(id string, st Status, unseen bool, n int, group string) *Session {
-		return &Session{ID: id, Status: st, Unseen: unseen, GroupID: group, CreatedAt: time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC)}
+	at := func(n int) time.Time { return time.Date(2026, 1, 1, 0, 0, n, 0, time.UTC) }
+	mk := func(id string, st Status, unseen bool, since int) *Session {
+		return &Session{ID: id, Status: st, Unseen: unseen, StatusSince: at(since)}
 	}
-	groups := []*Group{{ID: "default", Name: "Default", IsDefault: true}, {ID: "g", Name: "G", SortKey: 1, Collapsed: true}}
-	done, seen, errS, wait := mk("done", StatusDone, true, 1, "default"), mk("seen", StatusDone, false, 2, "default"),
-		mk("err", StatusError, false, 3, "default"), mk("wait", StatusWaiting, false, 4, "g")
-	ss := []*Session{done, seen, errS, wait}
-	vs := ViewState{Mode: "groups", Sort: "created", Filter: "nothing", FocusedGroup: "default"}
-	for shown, want := range map[string]string{"": "wait", "wait": "err", "err": "wait"} {
-		if got := NextAttention(ss, groups, vs, shown); got == nil || got.ID != want {
+	// Created in this order, but waiting since different times.
+	done, seen, errS := mk("done", StatusDone, true, 1), mk("seen", StatusDone, false, 2), mk("err", StatusError, false, 3)
+	newer, older := mk("wait-new", StatusWaiting, false, 9), mk("wait-old", StatusWaiting, false, 5)
+	archived := mk("gone", StatusArchived, false, 0)
+	ss := []*Session{done, seen, errS, newer, older, archived}
+	for shown, want := range map[string]string{
+		"":         "wait-old", // waiting comes first, the longest waiting first
+		"wait-old": "wait-new",
+		"wait-new": "wait-old",
+	} {
+		if got := NextAttention(ss, shown); got == nil || got.ID != want {
 			t.Errorf("shown %q: got %v, want %s", shown, got, want)
 		}
 	}
-	if got := NextAttention([]*Session{done, seen}, groups, vs, "done"); got != nil {
+	if got := NextAttention([]*Session{done, seen, errS}, ""); got == nil || got.ID != "err" {
+		t.Errorf("an error comes before an unseen finished turn: got %v", got)
+	}
+	if got := NextAttention([]*Session{done, seen}, "done"); got != nil {
 		t.Errorf("only the shown one needs attention: got %s", got.ID)
 	}
-	if got := NextAttention([]*Session{done}, groups, vs, ""); got == nil || got.ID != "done" {
-		t.Errorf("unseen done: %v", got)
+	if got := NextAttention([]*Session{seen, archived}, ""); got != nil {
+		t.Errorf("nothing needs you: got %s", got.ID)
+	}
+}
+
+func TestAttention(t *testing.T) {
+	last := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	since := last.Add(-time.Hour)
+	cases := []struct {
+		s    Session
+		want *Attention
+	}{
+		{Session{Status: StatusWaiting, StatusSince: since}, &Attention{1, NeedsWaiting, since}},
+		{Session{Status: StatusError, StatusSince: since}, &Attention{2, NeedsError, since}},
+		{Session{Status: StatusDone, Unseen: true, StatusSince: since}, &Attention{3, NeedsUnseenDone, since}},
+		{Session{Status: StatusDone, Unseen: true, LastEventAt: last}, &Attention{3, NeedsUnseenDone, last}}, // from before status_since
+		{Session{Status: StatusDone}, nil},
+		{Session{Status: StatusBusy, Unseen: true}, nil},
+		{Session{Status: StatusArchived}, nil},
+	}
+	for _, tc := range cases {
+		got := tc.s.Attention()
+		if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+			t.Errorf("%s unseen=%v: got %+v, want %+v", tc.s.Status, tc.s.Unseen, got, tc.want)
+		}
+	}
+	// Ties go by id, and sessions that don't need you come last.
+	a := &Session{ID: "a", Status: StatusWaiting, StatusSince: since}
+	b := &Session{ID: "b", Status: StatusWaiting, StatusSince: since}
+	idle := &Session{ID: "0", Status: StatusBusy}
+	if !AttentionBefore(a, b) || AttentionBefore(b, a) || !AttentionBefore(a, idle) || AttentionBefore(idle, a) || AttentionBefore(idle, idle) {
+		t.Error("AttentionBefore: want a < b < idle")
 	}
 }

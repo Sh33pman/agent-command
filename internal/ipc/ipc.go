@@ -224,7 +224,7 @@ const (
 	MutGroupArchive   = "group.archive"     // GroupID (archives its sessions too)
 	MutGroupUnarchive = "group.unarchive"   // GroupID, Flag = also unarchive sessions
 	MutGroupCollapse  = "group.collapse"    // GroupID ("" = all), Flag = collapsed
-	MutGroupMove      = "group.move"        // GroupID, Flag = down (else up)
+	MutGroupMove      = "group.move"        // GroupID, After or Before: the group it goes next to
 	MutViewMode       = "view.mode"         // Text: groups|list
 	MutViewSort       = "view.sort"         // Text: key, Flag = descending
 	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)
@@ -268,6 +268,7 @@ type Mutation struct {
 	Pane    *core.PaneLoc `json:"pane,omitempty"`
 	SetID   string        `json:"set_id,omitempty"`
 	After   string        `json:"after,omitempty"`
+	Before  string        `json:"before,omitempty"`
 }
 
 // InboxRequest asks for one session's inbox items, or everyone's with no SessionID.

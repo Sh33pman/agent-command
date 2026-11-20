@@ -112,7 +112,6 @@ pub const Group = struct {
     Name: []const u8 = "",
     Color: []const u8 = "",
     SortKey: i32 = 0,
-    Collapsed: bool = false,
     IsDefault: bool = false,
     CreatedAt: []const u8 = "",
     ArchivedAt: []const u8 = "",

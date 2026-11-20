@@ -85,8 +85,10 @@ func listRows(snap ipc.Snapshot, vs core.ViewState) []listRow {
 		cp.Collapsed = false
 		expanded[i] = &cp
 	}
+	open := vs
+	open.Collapsed = nil
 	var out []listRow
-	for _, r := range core.Layout(snap.Sessions, expanded, vs) {
+	for _, r := range core.Layout(snap.Sessions, expanded, open) {
 		if r.Session != nil {
 			out = append(out, listRow{Number: numbers[r.Session.ID], Session: r.Session, Group: r.Group})
 		}

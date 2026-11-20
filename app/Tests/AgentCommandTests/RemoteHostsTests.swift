@@ -19,6 +19,7 @@ func makeRemoteSession(
         "Harness": "claude", "ClaudeSessionID": "", "Remote": remote,
     ]
     if !host.isEmpty { fields["Host"] = host; fields["RemoteID"] = "r-\(id)"; fields["HostGone"] = gone }
+    if status == "waiting" { fields["attention"] = ["rank": 1, "reason": "waiting", "since": "2026-11-20T09:00:00Z"] }
     return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
 }
 

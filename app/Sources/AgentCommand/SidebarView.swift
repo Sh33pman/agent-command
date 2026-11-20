@@ -22,17 +22,45 @@ struct SidebarView: View {
     var setRemote: (Session, Bool) -> Void = { _, _ in }
     /// Removes a session added from a host, here only.
     var removeAdded: (Session) -> Void = { _ in }
+    /// Asks for a new group's name, then moves these sessions into it.
+    var newGroup: ([Session]) -> Void = { _ in }
+    /// Asks for a group's new name.
+    var renameGroup: (SessionGroup) -> Void = { _ in }
     @State private var showArchived = false
 
     private var theme: AppTheme { .shared }
 
-    /// The sessions the filter lists, with each set's together.
-    private var rows: [(session: Session, link: SetLink)] {
-        let filter = store.shownFilter
-        let listed = store.sessions.filter(filter.includes)
-        let byID = Dictionary(uniqueKeysWithValues: listed.map { ($0.id, $0) })
-        return PaneSets.rows(order: listed.map(\.id), sets: store.setMembers)
-            .compactMap { row in byID[row.id].map { ($0, row.link) } }
+    /// Group headers and the sessions the filter lists, with each set's together.
+    private var rows: [SidebarRow] { store.sidebarRows }
+
+    /// Groups or a list, and the sort: this app's own view.
+    private var viewMenu: some View {
+        Menu {
+            Picker("Show", selection: $store.options.mode) {
+                ForEach(SidebarOptions.Mode.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Picker("Sort by", selection: $store.options.sort) {
+                ForEach(SidebarOptions.Sort.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Toggle("Descending", isOn: $store.options.descending)
+            Divider()
+            Button("New Group…") { newGroup([]) }
+        } label: {
+            Text(store.options.mode == .groups ? "groups ▾" : "list ▾").font(AppFont.ui(11)).foregroundStyle(theme.dim)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Show groups or one list, and how sessions are sorted")
+    }
+
+    /// Takes sessions or a group dropped on a group.
+    private func drop(_ items: [String], onto group: String) -> Bool {
+        guard let action = SidebarDrop.action(items: items, onto: group, groups: store.groups, marked: store.markedIDs) else { return false }
+        store.perform(action)
+        return true
     }
 
     private var attached: [String: Int] { RemoteAttached.counts(remote?.clients ?? []) }
@@ -68,7 +96,7 @@ struct SidebarView: View {
     }
 
     private var numbers: [String: Int] {
-        Dictionary(uniqueKeysWithValues: rows.prefix(9).enumerated().map { ($1.session.id, $0 + 1) })
+        Dictionary(uniqueKeysWithValues: store.sidebarIDs.prefix(9).enumerated().map { ($1, $0 + 1) })
     }
 
     var body: some View {
@@ -79,6 +107,7 @@ struct SidebarView: View {
                     HStack {
                         heading("Sessions")
                         filterMenu.padding(.bottom, 2)
+                        viewMenu.padding(.bottom, 2)
                         Spacer()
                         if store.sidebarFocused {
                             Text(sidebarHint)
@@ -92,8 +121,74 @@ struct SidebarView: View {
                         Text(store.sessions.isEmpty ? "none" : "none here: \(store.sessions.count) in All")
                             .foregroundStyle(theme.dim).padding(.horizontal, 12)
                     }
-                    ForEach(rows, id: \.session.id) { row in
-                        let session = row.session
+                    ForEach(rows) { sidebarRow in
+                        switch sidebarRow {
+                        case .header(let header):
+                            groupHeader(header)
+                        case .session(let session, let link):
+                            sessionRow(session, link: link)
+                        }
+                    }
+                    if !store.archived.isEmpty {
+                        archivedSection
+                    }
+                }
+                .padding(.top, 4)
+            }
+            .onChange(of: store.cursorID) {
+                if let id = store.cursorID, store.sidebarFocused { scroll.scrollTo(id) }
+            }
+            }
+            Spacer(minLength: 0)
+            footer
+        }
+        .font(AppFont.ui(13))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(theme.bg)
+        .background(SidebarKeyHost(view: keys))
+    }
+
+    /// A group's header: click to collapse; drop sessions on it to move them in,
+    /// or another group to put that one here.
+    private func groupHeader(_ header: GroupHeader) -> some View {
+        let group = header.group
+        return GroupHeaderRow(header: header)
+            .contentShape(Rectangle())
+            .onTapGesture { store.toggleCollapsed(group.id) }
+            .draggable(SidebarDrop.groupItem(group.id))
+            .dropDestination(for: String.self) { items, _ in drop(items, onto: group.id) }
+            .contextMenu {
+                Button(header.collapsed ? "Expand" : "Collapse") { store.toggleCollapsed(group.id) }
+                if !group.isDefault {
+                    Button("Rename…") { renameGroup(group) }
+                    Menu("Colour") {
+                        ForEach(SessionGroup.colors, id: \.self) { color in
+                            Button(color.capitalized) { store.setGroupColor(group.id, color) }
+                        }
+                    }
+                    Button("Move Up") { store.moveGroup(group.id, by: -1) }
+                    Button("Move Down") { store.moveGroup(group.id, by: 1) }
+                    Divider()
+                    Button("Delete Group") { store.deleteGroup(group.id) }
+                }
+            }
+    }
+
+    /// The groups a session can move to, and a new one.
+    @ViewBuilder private func moveToGroupMenu(_ session: Session) -> some View {
+        Menu("Move to Group") {
+            ForEach(SidebarLayout.orderedGroups(store.groups)) { group in
+                if group.id != session.groupID {
+                    Button(group.name) { store.moveSessions(store.actionTargets(forRow: session).map(\.id), to: group.id) }
+                }
+            }
+            Divider()
+            Button("New Group…") { newGroup(store.actionTargets(forRow: session)) }
+        }
+    }
+
+    @ViewBuilder private func sessionRow(_ session: Session, link: SetLink) -> some View {
+                        let row = (session: session, link: link)
                         let place = store.place(of: session, clients: attached)
                         if row.link == .first {
                             SetLabelRow()
@@ -138,19 +233,16 @@ struct SidebarView: View {
                                 if place.canArchive {
                                     Button("Archive…") { archive(session) }
                                 }
+                                moveToGroupMenu(session)
                             }
-                    }
-                    if !store.archived.isEmpty {
-                        archivedSection
-                    }
-                }
-                .padding(.top, 4)
-            }
-            .onChange(of: store.cursorID) {
-                if let id = store.cursorID, store.sidebarFocused { scroll.scrollTo(id) }
-            }
-            }
-            Spacer(minLength: 0)
+                            .draggable(SidebarDrop.sessionItem(session.id))
+                            .dropDestination(for: String.self) { items, _ in
+                                drop(items, onto: session.groupID ?? "default")
+                            }
+    }
+
+    private var footer: some View {
+        VStack(spacing: 0) {
             if let problem = store.problem {
                 Text(problem)
                     .font(AppFont.ui(11))
@@ -169,10 +261,6 @@ struct SidebarView: View {
             .contentShape(Rectangle())
             .onTapGesture(perform: showCommands)
         }
-        .font(AppFont.ui(13))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(theme.bg)
-        .background(SidebarKeyHost(view: keys))
     }
 
     private var archivedSection: some View {
@@ -209,6 +297,43 @@ struct SidebarView: View {
             .foregroundStyle(theme.magenta)
             .padding(.horizontal, 12)
             .padding(.bottom, 2)
+    }
+}
+
+/// A group's line in the sidebar: open or collapsed, its colour and name, how
+/// many sessions it lists, and, collapsed, what in it needs you.
+struct GroupHeaderRow: View {
+    let header: GroupHeader
+
+    private var theme: AppTheme { .shared }
+
+    static func color(_ name: String, theme: AppTheme) -> Color {
+        switch name {
+        case "blue": theme.blue
+        case "magenta": theme.magenta
+        case "cyan": theme.cyan
+        case "yellow": theme.yellow
+        case "green": theme.green
+        case "red": theme.red
+        default: theme.fg
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(header.collapsed ? "▸" : "▾").foregroundStyle(theme.dim)
+            Text(header.group.name).fontWeight(.bold).foregroundStyle(Self.color(header.group.color, theme: theme)).lineLimit(1)
+            Spacer(minLength: 0)
+            if header.collapsed, let urgent = header.urgent {
+                Text(urgent.reason == "unseen_done" ? "done" : urgent.reason.replacingOccurrences(of: "_", with: " "))
+                    .font(AppFont.ui(11))
+                    .foregroundStyle(urgent.rank == 1 ? theme.yellow : urgent.rank == 2 ? theme.red : theme.green)
+            }
+            Text("\(header.count)").foregroundStyle(theme.dim)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
     }
 }
 

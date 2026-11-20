@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.63.0](https://github.com/brettmostert/agent-command/compare/v0.62.0...v0.63.0) (2026-11-20)
+
+
+### Features
+
+* show groups in the sidebar, and rank what needs you in the daemon ([#98](https://github.com/brettmostert/agent-command/issues/98)) ([b7a7c17](https://github.com/brettmostert/agent-command/commit/b7a7c174d8eb4ba092a61a9be01c52e3812b75ec))
+
 ## [0.62.0](https://github.com/brettmostert/agent-command/compare/v0.61.1...v0.62.0) (2026-11-20)
 
 

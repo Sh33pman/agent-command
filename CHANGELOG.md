@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.62.0](https://github.com/brettmostert/agent-command/compare/v0.61.1...v0.62.0) (2026-11-20)
+
+
+### Features
+
+* keep pane sets in the daemon, and split a host's session on its host ([#96](https://github.com/brettmostert/agent-command/issues/96)) ([5f9ccd6](https://github.com/brettmostert/agent-command/commit/5f9ccd6487ad7a58cbf66942b827d57b884fd512))
+
 ## [0.61.1](https://github.com/brettmostert/agent-command/compare/v0.61.0...v0.61.1) (2026-11-19)
 
 

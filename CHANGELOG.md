@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.71.0](https://github.com/brettmostert/agent-command/compare/v0.70.0...v0.71.0) (2026-11-21)
+
+
+### Features
+
+* explicit wire types for sessions, groups and the view ([#115](https://github.com/brettmostert/agent-command/issues/115)) ([cea0616](https://github.com/brettmostert/agent-command/commit/cea0616b79213600bad7af0d1ec51111a6075f90))
+
 ## [0.70.0](https://github.com/brettmostert/agent-command/compare/v0.69.0...v0.70.0) (2026-11-21)
 
 

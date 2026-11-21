@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.70.0](https://github.com/brettmostert/agent-command/compare/v0.69.0...v0.70.0) (2026-11-21)
+
+
+### Features
+
+* read a session's screen as text (session.screen, acmd screen) ([#113](https://github.com/brettmostert/agent-command/issues/113)) ([78490ef](https://github.com/brettmostert/agent-command/commit/78490efc2132f3f63bdc3691df71fee38e8b3050))
+* speech as device ops on this machine's daemon ([#111](https://github.com/brettmostert/agent-command/issues/111)) ([6d3110b](https://github.com/brettmostert/agent-command/commit/6d3110b4f07b9f6652178468d23b514c5c93e5ff))
+
 ## [0.69.0](https://github.com/brettmostert/agent-command/compare/v0.68.0...v0.69.0) (2026-11-21)
 
 

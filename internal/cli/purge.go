@@ -44,12 +44,11 @@ func newPurgeCmd() *cobra.Command {
 				if err := confirm(cmd.InOrStdin(), out, yes, q); err != nil {
 					return err
 				}
-				var n int
-				if err := c.mutate(ipc.Mutation{Kind: ipc.MutPurge, IDs: ids}, &n); err != nil {
+				var res ipc.Results
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutPurge, IDs: ids}, &res); err != nil {
 					return err
 				}
-				_, err := fmt.Fprintf(out, "Purged %d session(s).\n", n)
-				return err
+				return reportResults(out, res, "Purged %d session(s).\n")
 			})
 		},
 	}

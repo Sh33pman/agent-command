@@ -259,30 +259,31 @@ const EmitterApp = "app"
 // Mutation kinds (OpMutate). Selectors are resolved by the client; the
 // daemon gets ids.
 const (
-	MutRename         = "session.rename"    // ID, Text
-	MutSeen           = "session.seen"      // ID: you've looked at it
-	MutDescribe       = "session.describe"  // ID, Text
-	MutArchive        = "session.archive"   // ID
-	MutFinish         = "session.finish"    // ID: stop it (claude stop) and mark it finished
-	MutUnarchive      = "session.unarchive" // ID
-	MutMove           = "session.move"      // IDs, GroupID
-	MutGroupCreate    = "group.create"      // Text (name), Color -> returns the group
-	MutGroupRename    = "group.rename"      // GroupID, Text
-	MutGroupColor     = "group.color"       // GroupID, Color
-	MutGroupDelete    = "group.delete"      // GroupID
-	MutGroupArchive   = "group.archive"     // GroupID (archives its sessions too)
-	MutGroupUnarchive = "group.unarchive"   // GroupID, Flag = also unarchive sessions
-	MutGroupCollapse  = "group.collapse"    // GroupID ("" = all), Flag = collapsed
-	MutGroupMove      = "group.move"        // GroupID, After or Before: the group it goes next to
-	MutViewMode       = "view.mode"         // Text: groups|list
-	MutViewSort       = "view.sort"         // Text: key, Flag = descending
-	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)
-	MutViewFilter     = "view.filter"       // Text
-	MutViewArchived   = "view.archived"     // Flag = show archived
-	MutInboxRead      = "inbox.read"        // ItemIDs, Flag = read (else unread)
-	MutInboxDismiss   = "inbox.dismiss"     // ItemIDs: take them out of the queue
-	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
-	MutRemote         = "session.remote"    // ID, Flag = Remote: clients of Hosting may see and use it
+	MutRename         = "session.rename"       // ID, Text
+	MutSeen           = "session.seen"         // ID: you've looked at it
+	MutDescribe       = "session.describe"     // ID, Text
+	MutArchive        = "session.archive"      // ID
+	MutFinish         = "session.finish"       // ID: stop it (claude stop) and mark it finished
+	MutUnarchive      = "session.unarchive"    // ID
+	MutMove           = "session.move"         // IDs, GroupID
+	MutGroupCreate    = "group.create"         // Text (name), Color -> returns the group
+	MutGroupRename    = "group.rename"         // GroupID, Text
+	MutGroupColor     = "group.color"          // GroupID, Color
+	MutGroupDelete    = "group.delete"         // GroupID
+	MutGroupArchive   = "group.archive"        // GroupID (archives its sessions too)
+	MutGroupUnarchive = "group.unarchive"      // GroupID, Flag = also unarchive sessions
+	MutGroupCollapse  = "group.collapse"       // GroupID ("" = all), Flag = collapsed
+	MutGroupMove      = "group.move"           // GroupID, After or Before: the group it goes next to
+	MutViewMode       = "view.mode"            // Text: groups|list
+	MutViewSort       = "view.sort"            // Text: key, Flag = descending
+	MutViewFocus      = "view.focus"           // GroupID ("" = leave focus mode)
+	MutViewFilter     = "view.filter"          // Text
+	MutViewArchived   = "view.archived"        // Flag = show archived
+	MutInboxRead      = "inbox.read"           // ItemIDs, Flag = read (else unread)
+	MutInboxDismiss   = "inbox.dismiss"        // ItemIDs: take them out of the queue
+	MutPurge          = "session.purge"        // IDs: archived sessions to delete for good (claude rm) -> returns the count
+	MutRemote         = "session.remote"       // ID, Flag = Remote: clients of Hosting may see and use it
+	MutRemoveAdded    = "session.remove_added" // IDs: sessions added from a host, forgotten here (the host keeps them)
 	// Sets: sessions made together by splitting panes (section 7 of the
 	// design). A session is in one set at most; a set has at least two
 	// sessions, all in one group and on one host, and ends when one is left.
@@ -557,4 +558,41 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 			return buf, nil
 		}
 	}
+}
+
+// Many ids. rename (Text: the name, numbered "api - 1", "api - 2" for
+// several), archive, unarchive, remote (Flag), remove_added, move (GroupID)
+// and purge take IDs, of any session, and return Results: one for each id, in
+// order. Every id on this machine that can change does, and those that can't
+// say why; ids on Remote hosts are tried one by one, and once a host can't
+// be reached, its other ids say so without waiting for it again.
+type Results struct {
+	Results []Result `json:"results"`
+}
+
+// Result is what happened to one id: done, or an error with a code.
+type Result struct {
+	ID    string `json:"id"`
+	OK    bool   `json:"ok"`
+	Code  string `json:"code,omitempty"` // a Code*, or a host's own
+	Error string `json:"error,omitempty"`
+}
+
+// Error codes a Result can carry.
+const (
+	CodeNotFound        = "not_found"        // no such session
+	CodeInvalid         = "invalid"          // it can't be done to this one: unarchive a terminal, purge one not archived
+	CodeHostUnreachable = "host_unreachable" // its Remote host can't be reached now
+	CodeFailed          = "failed"           // anything else: Error says what
+)
+
+// Failed says how many results aren't OK.
+func (r Results) Failed() int {
+	n := 0
+	for _, x := range r.Results {
+		if !x.OK {
+			n++
+		}
+	}
+	return n
 }

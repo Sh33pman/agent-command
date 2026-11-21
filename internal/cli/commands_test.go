@@ -207,6 +207,31 @@ func TestRenameDescribeAndSelectors(t *testing.T) {
 	}
 }
 
+// Several sessions at once: renamed with numbers, as the app does, and
+// archived together.
+func TestRenameAndArchiveSeveral(t *testing.T) {
+	env(t)
+	mustRun(t, "rename", "1", "2", "--to", "api")
+	rows := listJSON(t)
+	names := []string{rows[0].Name, rows[1].Name}
+	if strings.Join(names, ",") != "api - 1,api - 2" {
+		t.Errorf("names = %v", names)
+	}
+	if _, err := acmd(t, "rename", "1"); err == nil {
+		t.Error("a rename with no name")
+	}
+	before := len(listJSON(t))
+	mustRun(t, "archive", "1", "2", "--yes")
+	if after := len(listJSON(t)); after != before-2 {
+		t.Errorf("archived %d", before-after)
+	}
+	var out bytes.Buffer
+	if err := reportResults(&out, ipc.Results{Results: []ipc.Result{{ID: "a", OK: true}, {ID: "b", Code: "not_found", Error: "gone"}}}, "Did %d.\n"); err == nil ||
+		out.String() != "b: gone (not_found)\nDid 1.\n" {
+		t.Errorf("report = %q, %v", out.String(), err)
+	}
+}
+
 func TestGroupsMoveViewAndFocus(t *testing.T) {
 	env(t)
 	if out := mustRun(t, "group", "create", "PROJ-123 auth"); !strings.Contains(out, `Created group "PROJ-123 auth" (blue)`) {

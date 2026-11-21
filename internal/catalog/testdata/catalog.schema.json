@@ -991,7 +991,7 @@
     },
     {
       "name": "session.archive",
-      "description": "Archives a session, stopping its agent.",
+      "description": "Archives sessions, stopping their agents.",
       "scope": "act",
       "kind": "change",
       "grant": "entities",
@@ -1001,6 +1001,9 @@
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Results"
       }
     },
     {
@@ -1043,11 +1046,14 @@
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Results"
       }
     },
     {
       "name": "session.purge",
-      "description": "Deletes archived sessions for good, with their conversations. Returns how many.",
+      "description": "Deletes archived sessions for good, with their conversations.",
       "scope": "admin",
       "kind": "destructive",
       "grant": "entities",
@@ -1059,12 +1065,12 @@
         "$ref": "#/$defs/ipc.Mutation"
       },
       "output": {
-        "type": "integer"
+        "$ref": "#/$defs/ipc.Results"
       }
     },
     {
       "name": "session.remote",
-      "description": "Turns a session's Remote switch on or off: whether clients of Hosting may see and use it.",
+      "description": "Turns sessions' Remote switch on or off: whether clients of Hosting may see and use them.",
       "scope": "admin",
       "kind": "change",
       "grant": "entities",
@@ -1074,11 +1080,31 @@
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Results"
+      }
+    },
+    {
+      "name": "session.remove_added",
+      "description": "Forgets sessions added from a host, here only: the host keeps them.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "transport": {
+        "op": "mutate",
+        "kind": "session.remove_added"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Results"
       }
     },
     {
       "name": "session.rename",
-      "description": "Renames a session.",
+      "description": "Renames sessions: the name for one, numbered (\"api - 1\", \"api - 2\") for several.",
       "scope": "act",
       "kind": "change",
       "grant": "entities",
@@ -1088,6 +1114,9 @@
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Results"
       }
     },
     {
@@ -1106,7 +1135,7 @@
     },
     {
       "name": "session.unarchive",
-      "description": "Unarchives a session.",
+      "description": "Unarchives sessions.",
       "scope": "act",
       "kind": "change",
       "grant": "entities",
@@ -1116,6 +1145,9 @@
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Results"
       }
     },
     {
@@ -3004,6 +3036,41 @@
       "type": "object",
       "required": [
         "kind"
+      ]
+    },
+    "ipc.Result": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "ok"
+      ]
+    },
+    "ipc.Results": {
+      "properties": {
+        "results": {
+          "items": {
+            "$ref": "#/$defs/ipc.Result"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "results"
       ]
     },
     "ipc.Set": {

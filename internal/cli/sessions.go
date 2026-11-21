@@ -2,9 +2,11 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -242,20 +244,68 @@ func display(s string, limit int) string {
 }
 
 func newRenameCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "rename <N|id|name-prefix> <new name>",
-		Short: "Rename a session",
-		Args:  cobra.MinimumNArgs(2),
+	var to string
+	cmd := &cobra.Command{
+		Use:     "rename <N|id|name-prefix>… --to <name> | rename <session> <new name>",
+		Short:   "Rename sessions (several are numbered: \"api - 1\", \"api - 2\")",
+		Example: "  acmd rename 2 api\n  acmd rename 1 2 3 --to api   # api - 1, api - 2, api - 3",
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			sel, name := args, to
+			if to == "" { // the old way: one session, then its name
+				if len(args) < 2 {
+					return errors.New("give the new name: acmd rename <session> <name>, or several sessions with --to <name>")
+				}
+				sel, name = args[:1], strings.Join(args[1:], " ")
+			}
 			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
-				s, err := resolveSession(snap, args[0])
+				ids, err := resolveSessions(snap, sel)
 				if err != nil {
 					return err
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutRename, ID: s.ID, Text: strings.Join(args[1:], " ")}, nil)
+				var res ipc.Results
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutRename, IDs: ids, Text: name}, &res); err != nil {
+					return err
+				}
+				return reportResults(cmd.OutOrStdout(), res, "")
 			})
 		},
 	}
+	cmd.Flags().StringVar(&to, "to", "", "the new name, for one or more sessions")
+	return cmd
+}
+
+// resolveSessions finds each selector's session, once each, in order.
+func resolveSessions(snap ipc.Snapshot, sels []string) ([]string, error) {
+	var ids []string
+	for _, sel := range sels {
+		s, err := resolveSession(snap, sel)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Contains(ids, s.ID) {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids, nil
+}
+
+// reportResults says what didn't work, one line each, and fails if any
+// didn't. done, when set, says how many did.
+func reportResults(w io.Writer, res ipc.Results, done string) error {
+	ok := len(res.Results) - res.Failed()
+	for _, r := range res.Results {
+		if !r.OK {
+			fmt.Fprintf(w, "%s: %s (%s)\n", r.ID, r.Error, r.Code)
+		}
+	}
+	if done != "" {
+		fmt.Fprintf(w, done, ok)
+	}
+	if n := res.Failed(); n > 0 {
+		return fmt.Errorf("%d of %d didn't change", n, len(res.Results))
+	}
+	return nil
 }
 
 func newDescribeCmd() *cobra.Command {
@@ -278,23 +328,31 @@ func newDescribeCmd() *cobra.Command {
 func newArchiveCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "archive <N|id|name-prefix>",
-		Short: "Archive a session (ends it; an agent's conversation is kept)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "archive <N|id|name-prefix>…",
+		Short: "Archive sessions (ends them; an agent's conversation is kept)",
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
-				s, err := resolveSession(snap, args[0])
+				ids, err := resolveSessions(snap, args)
 				if err != nil {
 					return err
 				}
-				q := fmt.Sprintf("Archive %q?", s.Name)
-				if s.Managed() && !s.Stopped() {
-					q = fmt.Sprintf("Archive %q? Its background session will be stopped (the conversation is kept).", s.Name)
+				q := fmt.Sprintf("Archive %d sessions?", len(ids))
+				if len(ids) == 1 {
+					s, _ := resolveSession(snap, args[0])
+					q = fmt.Sprintf("Archive %q?", s.Name)
+					if s.Managed() && !s.Stopped() {
+						q = fmt.Sprintf("Archive %q? Its background session will be stopped (the conversation is kept).", s.Name)
+					}
 				}
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil)
+				var res ipc.Results
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutArchive, IDs: ids}, &res); err != nil {
+					return err
+				}
+				return reportResults(cmd.OutOrStdout(), res, "")
 			})
 		},
 	}

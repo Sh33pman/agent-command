@@ -1,6 +1,10 @@
 package core
 
-import "path/filepath"
+import (
+	"path/filepath"
+	"strconv"
+	"strings"
+)
 
 // What a session is and what can be done with it, worked out here once for
 // every client (design 6.6). These lists grow: a client shows an agent it
@@ -92,6 +96,23 @@ func (s *Session) Capabilities() []string {
 	add(local && !archived, CanSetRemote)
 	if out == nil {
 		out = []string{}
+	}
+	return out
+}
+
+// RenameNames are the names for count sessions renamed together: base for
+// one, "base - 1", "base - 2" and so on for several. A blank base is none.
+func RenameNames(base string, count int) []string {
+	base = strings.TrimSpace(base)
+	if base == "" || count < 1 {
+		return nil
+	}
+	if count == 1 {
+		return []string{base}
+	}
+	out := make([]string, count)
+	for i := range out {
+		out[i] = base + " - " + strconv.Itoa(i+1)
 	}
 	return out
 }

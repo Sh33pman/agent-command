@@ -69,10 +69,10 @@ extension UsesSharedSpeech {
         @Test func removingIsForAddedSessionsOnly() throws {
             let s = try store()
             let fake = FakeCalls()
-            s.remoteClient = RemoteHostsClient(calls: fake)
+            s.mutations = fake
             s.restoreSidebar((cursor: "a", marks: ["a", "c"]))
             s.removeAdded(s.actionTargets(forRow: s.sessions[0]))
-            #expect(fake.asked.map { $0.input["id"] as? String } == ["c"], "the local one in the selection is left alone")
+            #expect(fake.last["ids"] as? [String] == ["c"], "the local one in the selection is left alone")
             #expect(s.markedIDs == ["a"])
             s.removeAdded([s.sessions[0], s.sessions[1]])
             #expect(fake.asked.count == 1, "nothing added from a host: nothing happens")
@@ -82,12 +82,14 @@ extension UsesSharedSpeech {
             let s = try store()
             let fake = FakeCalls()
             s.remoteClient = RemoteHostsClient(calls: fake)
+            s.mutations = fake
             s.removeAdded(s.sessions)
-            #expect(fake.ops == ["remote.sessions.remove", "remote.sessions.remove"], "only those from a host")
-            #expect(fake.asked.map { $0.input["id"] as? String } == ["c", "d"])
-            fake.failures["remote.sessions.remove"] = "no such session"
+            #expect(fake.ops == ["mutate"] && fake.last["kind"] as? String == "session.remove_added", "one call")
+            #expect(fake.last["ids"] as? [String] == ["c", "d"], "only those from a host")
+            fake.replies["mutate"] = ["results": [["id": "c", "ok": false, "code": "not_found", "error": "no such session"]]]
             s.removeAdded([s.sessions[2]])
             #expect(s.problem == "Couldn't remove the session: no such session")
+            fake.replies["mutate"] = nil
 
             fake.replies["remote.new"] = [
                 "ID": "N1", "Name": "fresh", "Cwd": "/w", "Status": "busy", "Kind": "hosted", "Unseen": false,
@@ -108,11 +110,11 @@ extension UsesSharedSpeech {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
             let s = try store()
+            let fake = FakeCalls()
+            s.mutations = fake
             s.setRemote(s.sessions, true)
-            try await until { daemon.received("mutate").count == 2 }
-            let flags = daemon.received("mutate")
-            #expect(flags.map { $0["kind"] as? String } == ["session.remote", "session.remote"])
-            #expect(flags.map { $0["id"] as? String } == ["a", "b"] && flags.allSatisfy { $0["flag"] as? Bool == true })
+            #expect(fake.ops == ["mutate"] && fake.last["kind"] as? String == "session.remote" && fake.last["flag"] as? Bool == true)
+            #expect(fake.last["ids"] as? [String] == ["a", "b"], "this Mac's only")
 
             daemon.reply("new", [
                 "ID": "Z", "Name": "z", "Cwd": "/tmp", "Status": "busy", "Kind": "hosted", "Unseen": false,

@@ -171,15 +171,29 @@ extension UsesSharedSpeech {
 
         // MARK: Asking the daemon
 
-        @Test func renamingSeveralNumbersThem() async throws {
-            let daemon = try FakeDaemon()
-            defer { daemon.stop() }
+        @Test func renamingSeveralIsOneCall() throws {
             let s = try store()
+            let fake = FakeCalls()
+            s.mutations = fake
             s.rename(Array(s.sessions.prefix(2)), to: "work")
-            try await until { daemon.received("mutate").count == 2 }
-            let sent = daemon.received("mutate")
-            #expect(sent.allSatisfy { $0["kind"] as? String == "session.rename" })
-            #expect(sent.compactMap { $0["text"] as? String } == ["work - 1", "work - 2"])
+            #expect(fake.ops == ["mutate"] && fake.last["kind"] as? String == "session.rename")
+            #expect(fake.last["ids"] as? [String] == ["a", "b"] && fake.last["text"] as? String == "work", "the daemon numbers them")
+        }
+
+        @Test func whatDidntChangeIsSaid() throws {
+            let s = try store()
+            let fake = FakeCalls()
+            s.mutations = fake
+            fake.replies["mutate"] = ["results": [["id": "a", "ok": true], ["id": "b", "ok": false, "code": "host_unreachable",
+                                                    "error": "studio can't be reached"]]]
+            s.archive(Array(s.sessions.prefix(2)))
+            #expect(s.problem == "Couldn't archive 1 of 2 sessions: studio can't be reached")
+            fake.failures["mutate"] = "daemon not reachable"
+            s.archive([s.sessions[0]])
+            #expect(s.problem == "Couldn't archive the sessions: daemon not reachable")
+            #expect(BatchResults(results: [.init(id: "x", ok: false, code: "invalid")]).problem("Couldn't move") == "Couldn't move the session: invalid")
+            s.rename([], to: "x")
+            #expect(fake.ops.count == 2, "nothing to change: no call")
         }
 
         @Test func archivingLeavesTheCursorOnTheNextRow() async throws {
@@ -189,10 +203,10 @@ extension UsesSharedSpeech {
             s.setSidebarFocused(true)
             s.setCursor("b")
             s.toggleMarkAtCursor()
+            s.mutations = FakeCalls()
             s.archive([try makeSession(id: "b"), try makeSession(id: "c")])
             #expect(s.cursorID == "d")
             #expect(s.markedIDs.isEmpty)
-            try await until { daemon.received("mutate").count == 2 }
             s.setCursor("d")
             s.archive([try makeSession(id: "d")])
             #expect(s.cursorID == "c", "the last row falls back to the one above")

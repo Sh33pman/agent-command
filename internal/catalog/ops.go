@@ -54,7 +54,6 @@ func localOps() []Op {
 		host     = GrantHost
 		entities = GrantEntities
 	)
-	var count int
 	return []Op{
 		// The connection.
 		read(ipc.OpHello, "Exchanges protocol and binary versions. Sent first on every connection, in both directions.", none, ipc.Hello{}, ipc.Hello{}),
@@ -74,16 +73,19 @@ func localOps() []Op {
 		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, core.Session{}).runsCode(),
 		act(ipc.OpResume, "Resumes a paused background session.", entities, ipc.Mutation{}, core.Session{}).runsCode(),
 		read(ipc.OpConversations, "Lists earlier Claude and Antigravity conversations that can be resumed.", host, nil, []ipc.Conversation{}),
-		mut(act(ipc.MutRename, "Renames a session.", entities, nil, nil)),
+		// rename, archive, unarchive, move, purge, remote and remove_added take
+		// many ids (IDs), and return a result for each.
+		mut(act(ipc.MutRename, "Renames sessions: the name for one, numbered (\"api - 1\", \"api - 2\") for several.", entities, nil, ipc.Results{})),
 		mut(act(ipc.MutSeen, "Marks a session as seen: you've looked at it.", entities, nil, nil)),
 		mut(act(ipc.MutDescribe, "Sets a session's description.", entities, nil, nil)),
-		mut(act(ipc.MutArchive, "Archives a session, stopping its agent.", entities, nil, nil)),
+		mut(act(ipc.MutArchive, "Archives sessions, stopping their agents.", entities, nil, ipc.Results{})),
 		mut(act(ipc.MutFinish, "Stops a session's agent and marks it finished.", entities, nil, nil)),
-		mut(act(ipc.MutUnarchive, "Unarchives a session.", entities, nil, nil)),
-		mut(act(ipc.MutMove, "Moves sessions to a group.", entities, nil, nil)),
-		mut(Op{Name: ipc.MutPurge, Description: "Deletes archived sessions for good, with their conversations. Returns how many.",
-			Scope: ScopeAdmin, Kind: KindDestructive, Grant: entities, Output: count}),
-		mut(admin(ipc.MutRemote, "Turns a session's Remote switch on or off: whether clients of Hosting may see and use it.", entities, nil, nil)),
+		mut(act(ipc.MutUnarchive, "Unarchives sessions.", entities, nil, ipc.Results{})),
+		mut(act(ipc.MutMove, "Moves sessions to a group.", entities, nil, ipc.Results{})),
+		mut(Op{Name: ipc.MutPurge, Description: "Deletes archived sessions for good, with their conversations.",
+			Scope: ScopeAdmin, Kind: KindDestructive, Grant: entities, Output: ipc.Results{}}),
+		mut(admin(ipc.MutRemote, "Turns sessions' Remote switch on or off: whether clients of Hosting may see and use them.", entities, nil, ipc.Results{})),
+		mut(act(ipc.MutRemoveAdded, "Forgets sessions added from a host, here only: the host keeps them.", entities, nil, ipc.Results{})),
 
 		// Groups.
 		mut(act(ipc.MutGroupCreate, "Creates a group, with a name and a color.", entities, nil, core.Group{})),

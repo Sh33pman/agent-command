@@ -121,17 +121,16 @@ func TestPurge(t *testing.T) {
 	c := dial(t, p)
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"beef0001-x","source":"startup","cwd":"/w"}`, time.Now(), ipc.HookContext{}), nil))
 	s := byClaude(snapshot(t, c), "beef0001-x")
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID}}, nil); err == nil {
-		t.Error("purged a live session")
+	var res ipc.Results
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID}}, &res))
+	if res.Failed() != 1 || res.Results[0].Code != ipc.CodeInvalid {
+		t.Errorf("purged a live session: %+v", res)
 	}
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID})
-	var n int
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID}}, &n))
-	if n != 1 || len(snapshot(t, c).Sessions) != 0 || len(rm.ids) != 0 {
-		t.Errorf("purge: n=%d removes=%v", n, rm.ids) // no BgID known (hook-only session): no claude rm
-	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{"nope"}}, nil); err == nil {
-		t.Error("purged an unknown session")
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID, "nope"}}, &res))
+	if len(res.Results) != 2 || !res.Results[0].OK || res.Results[1].Code != ipc.CodeNotFound ||
+		len(snapshot(t, c).Sessions) != 0 || len(rm.ids) != 0 {
+		t.Errorf("purge: %+v removes=%v", res, rm.ids) // no BgID known (hook-only session): no claude rm
 	}
 }
 

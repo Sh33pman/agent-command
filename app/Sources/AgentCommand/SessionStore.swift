@@ -54,6 +54,8 @@ final class SessionStore {
     @ObservationIgnored private var healthArrived = false
     /// The daemon's health, setup and report ops.
     @ObservationIgnored var healthClient = HealthClient()
+    /// Where changes to many sessions go (mutate with ids); tests swap it.
+    @ObservationIgnored var mutations: DaemonCalls = DaemonSocketCalls()
 
     /// Stops showing a warning in this app, or shows it again.
     func setDismissed(_ id: String, _ on: Bool) {
@@ -248,18 +250,9 @@ final class SessionStore {
         markedIDs = []
     }
 
-    /// Renames sessions: to the name for one, numbered in order for several.
+    /// Renames sessions: to the name for one; the daemon numbers several in order.
     func rename(_ targets: [Session], to base: String) {
-        struct Mutation: Encodable {
-            let kind: String
-            let id: String
-            let text: String
-        }
-        for (session, name) in zip(targets, RenameNames.names(base: base, count: targets.count)) {
-            run(failure: "Couldn't rename the session") { conn in
-                try conn.send("mutate", Mutation(kind: "session.rename", id: session.id, text: name))
-            } done: { _ in }
-        }
+        mutateMany("session.rename", targets.map(\.id), text: base, failure: "Couldn't rename")
     }
 
     /// Archives sessions, leaving the cursor on the next row.
@@ -271,7 +264,7 @@ final class SessionStore {
             self.cursorID = ids[index...].first { !gone.contains($0) } ?? ids[..<index].last { !gone.contains($0) }
         }
         markedIDs = []
-        targets.forEach { archive($0.id) }
+        mutateMany("session.archive", targets.map(\.id), failure: "Couldn't archive")
     }
 
     /// Clears the unseen mark on sessions you're looking at: on screen, with the app
@@ -673,27 +666,15 @@ final class SessionStore {
     /// Turns Remote on or off for this Mac's sessions: clients of its Hosting
     /// may see and use a Remote session. Sessions added from a host are skipped.
     func setRemote(_ targets: [Session], _ on: Bool) {
-        struct Flag: Encodable {
-            let kind: String
-            let id: String
-            let flag: Bool
-        }
-        for session in targets where !session.isOnHost {
-            run(failure: on ? "Couldn't make the session Remote" : "Couldn't turn Remote off") { conn in
-                try conn.send("mutate", Flag(kind: "session.remote", id: session.id, flag: on))
-            } done: { _ in }
-        }
+        let ids = targets.filter { $0.can(.setRemote) }.map(\.id)
+        mutateMany("session.remote", ids, flag: on, failure: on ? "Couldn't make Remote" : "Couldn't turn Remote off for")
     }
 
     /// Removes sessions added from a host, here only: the host keeps them.
     func removeAdded(_ targets: [Session]) {
-        for session in targets where session.isOnHost {
-            remoteClient.removeSession(session.id) { [weak self] failure in
-                if let failure { self?.problem = "Couldn't remove the session: \(errorText(failure))" }
-            }
-        }
-        let gone = Set(targets.filter(\.isOnHost).map(\.id))
-        markedIDs.subtract(gone)
+        let ids = targets.filter { $0.can(.removeAdded) }.map(\.id)
+        mutateMany("session.remove_added", ids, failure: "Couldn't remove")
+        markedIDs.subtract(ids)
     }
 
     /// Starts a session on a host, then shows it here. done gets why it couldn't, if it couldn't.
@@ -783,6 +764,28 @@ final class SessionStore {
 
     /// Lists an archived agent again. It starts when it's activated.
     func unarchive(_ id: String) { mutate("session.unarchive", id, failure: "Couldn't unarchive the session") }
+
+    /// One change to many sessions: the daemon answers for each, and what didn't
+    /// change is said, with why.
+    private func mutateMany(_ kind: String, _ ids: [String], text: String? = nil, flag: Bool? = nil, failure: String) {
+        guard !ids.isEmpty else { return }
+        struct Many: Encodable {
+            let kind: String
+            let ids: [String]
+            var text: String?
+            var flag: Bool?
+        }
+        let data = (try? JSONEncoder().encode(Many(kind: kind, ids: ids, text: text, flag: flag))) ?? Data()
+        mutations.call("mutate", data) { [weak self] result in
+            switch result {
+            case .success(let reply):
+                let results = (try? JSONDecoder().decode(BatchResults.self, from: reply)) ?? BatchResults()
+                if let why = results.problem(failure) { self?.problem = why }
+            case .failure(let error):
+                self?.problem = "\(failure) the sessions: \(errorText(error))"
+            }
+        }
+    }
 
     private func mutate(_ kind: String, _ id: String, failure: String) {
         run(failure: failure) { conn in
@@ -877,5 +880,34 @@ final class SessionStore {
                 DispatchQueue.main.async { self.problem = "\(failure): \(error.localizedDescription)" }
             }
         }
+    }
+}
+
+/// What a change to many sessions did, one result each (internal/ipc.Results).
+struct BatchResults: Decodable, Equatable {
+    struct Result: Decodable, Equatable {
+        let id: String
+        let ok: Bool
+        var code: String?
+        var error: String?
+    }
+
+    var results: [Result] = []
+
+    enum CodingKeys: String, CodingKey { case results }
+
+    init(results: [Result] = []) { self.results = results }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        results = try c.decodeIfPresent([Result].self, forKey: .results) ?? []
+    }
+
+    /// "Couldn't archive 1 of 5 sessions: studio can't be reached", or nil when all did.
+    func problem(_ failure: String) -> String? {
+        let failed = results.filter { !$0.ok }
+        guard let first = failed.first else { return nil }
+        let what = results.count == 1 ? "the session" : "\(failed.count) of \(results.count) sessions"
+        return "\(failure) \(what): \(first.error ?? first.code ?? "it failed")"
     }
 }

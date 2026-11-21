@@ -156,19 +156,19 @@ func (d *Daemon) mutateOnHost(ctx context.Context, m ipc.Mutation) (bool, error)
 		if name == "" {
 			return true, errors.New("name is empty")
 		}
-		return true, d.client.Rename(ctx, s.ID, name)
+		return true, unreachable(d.client.Rename(ctx, s.ID, name))
 	case ipc.MutFinish:
 		if s.HostGone {
 			return true, fmt.Errorf("%s no longer offers this session: remove it", s.Host)
 		}
-		return true, d.client.End(ctx, s.ID, true)
+		return true, unreachable(d.client.End(ctx, s.ID, true))
 	case ipc.MutArchive:
 		if s.Status == core.StatusArchived {
 			return true, nil
 		}
 		if !s.HostGone { // ended there, then here
 			if err := d.client.End(ctx, s.ID, false); err != nil {
-				return true, err
+				return true, unreachable(err)
 			}
 		}
 		d.mu.Lock()
@@ -176,7 +176,7 @@ func (d *Daemon) mutateOnHost(ctx context.Context, m ipc.Mutation) (bool, error)
 		return true, d.archive(ctx, s.ID)
 	case ipc.MutUnarchive:
 		if s.HostGone {
-			return true, fmt.Errorf("%s no longer offers this session: remove it", s.Host)
+			return true, invalid("%s no longer offers this session: remove it", s.Host)
 		}
 		d.mu.Lock()
 		err := d.updateSession(ctx, s.ID, func(s *core.Session) error {
@@ -189,7 +189,7 @@ func (d *Daemon) mutateOnHost(ctx context.Context, m ipc.Mutation) (bool, error)
 		}
 		return true, err
 	default: // MutRemote
-		return true, fmt.Errorf("this session runs on %s: only %s can make it Remote", s.Host, s.Host)
+		return true, invalid("this session runs on %s: only %s can make it Remote", s.Host, s.Host)
 	}
 }
 

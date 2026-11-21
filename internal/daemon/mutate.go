@@ -80,6 +80,9 @@ func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, e
 
 // mutate applies one client change. It returns a value for group.create.
 func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
+	if isBatch(m) {
+		return d.mutateMany(ctx, m)
+	}
 	if done, err := d.mutateOnHost(ctx, m); done { // goes to the host, without d.mu held
 		return nil, err
 	}
@@ -102,7 +105,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
 			name := strings.TrimSpace(m.Text)
 			if name == "" {
-				return errors.New("name is empty")
+				return invalid("name is empty")
 			}
 			s.Name, s.NameSource = name, core.NameUser
 			return nil
@@ -119,11 +122,13 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	case ipc.MutUnarchive:
 		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
 			if s.IsTerminal() {
-				return errors.New("an archived terminal's shell has ended: start a new one")
+				return invalid("an archived terminal's shell has ended: start a new one")
 			}
 			core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
 			return nil
 		})
+	case ipc.MutRemoveAdded:
+		return nil, invalid("remove_added takes ids")
 	case ipc.MutMove:
 		return nil, st.MoveSessions(ctx, m.GroupID, m.IDs...)
 	case ipc.MutGroupCreate:
@@ -182,30 +187,10 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		}
 		return nil, nil
 	case ipc.MutPurge:
-		n := 0
-		for _, id := range m.IDs {
-			sess, err := st.Session(ctx, id)
-			if err != nil {
-				return n, err
-			}
-			if sess.Status != core.StatusArchived {
-				return n, fmt.Errorf("%s isn't archived", id)
-			}
-			if sess.Kind == core.KindBackground && sess.BgID != "" && d.cfg.Remover != nil {
-				if err := d.cfg.Remover.Remove(ctx, sess.BgID); err != nil {
-					d.cfg.Log.Printf("purge: claude rm %s: %v", sess.BgID, err) // already gone: fine
-				}
-			}
-			if err := st.DeleteSession(ctx, id); err != nil {
-				return n, err
-			}
-			d.forget(id)
-			if sess.OnHost() {
-				d.client.Forget(id)
-			}
-			n++
+		if m.ID == "" {
+			return nil, invalid("purge takes ids")
 		}
-		return n, nil
+		return nil, d.purge(ctx, m.ID)
 	case ipc.MutGroupMove:
 		return nil, d.moveGroup(ctx, m.GroupID, m.After, m.Before)
 	case ipc.MutViewMode:

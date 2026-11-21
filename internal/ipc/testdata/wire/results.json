@@ -1,0 +1,20 @@
+{
+  "results": [
+    {
+      "id": "s1",
+      "ok": true
+    },
+    {
+      "id": "s4",
+      "ok": false,
+      "code": "host_unreachable",
+      "error": "studio isn't reachable"
+    },
+    {
+      "id": "nope",
+      "ok": false,
+      "code": "not_found",
+      "error": "no session \"nope\""
+    }
+  ]
+}

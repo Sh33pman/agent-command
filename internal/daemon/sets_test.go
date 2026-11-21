@@ -18,7 +18,7 @@ func setsDaemon(t *testing.T) *ipc.Conn {
 	return dial(t, p)
 }
 
-func terminal(t *testing.T, c *ipc.Conn, name, with string) *core.Session {
+func terminal(t *testing.T, c *ipc.Conn, name, with string) *ipc.Session {
 	t.Helper()
 	return newSess(t, c, ipc.NewRequest{Cwd: "/w", Harness: core.HarnessTerminal, Name: name, SetWith: with})
 }
@@ -125,7 +125,7 @@ func TestMovingOneMemberMovesItsSet(t *testing.T) {
 	c := setsDaemon(t)
 	a := terminal(t, c, "a", "")
 	b := terminal(t, c, "b", a.ID)
-	var g core.Group
+	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "api"}, &g))
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{b.ID}, GroupID: g.ID})
 	snap := snapshot(t, c)
@@ -173,7 +173,7 @@ func TestTheSnapshotSaysWhatNeedsYou(t *testing.T) {
 		must(t, c.Call(ipc.OpEvent, e, nil))
 	}
 	s := byClaude(snapshot(t, c), "c1")
-	if s == nil || s.Needs == nil || s.Needs.Rank != 1 || s.Needs.Reason != core.NeedsWaiting || s.Needs.Since.IsZero() {
+	if s == nil || s.Attention == nil || s.Attention.Rank != 1 || s.Attention.Reason != core.NeedsWaiting || s.Attention.Since.IsZero() {
 		t.Fatalf("waiting session: %+v", s)
 	}
 }

@@ -62,10 +62,23 @@ func connect(ctx context.Context) (*client, error) {
 
 func (c *client) close() { _ = c.conn.Close() }
 
-func (c *client) snapshot() (ipc.Snapshot, error) {
+func (c *client) snapshot() (snapshot, error) {
 	var s ipc.Snapshot
 	err := c.conn.Call(ipc.OpSnapshot, nil, &s)
-	return s, err
+	return snapshotOf(s), err
+}
+
+// snapshot is the daemon's snapshot with its sessions, groups and view as
+// internal/core has them, for the CLI's layout and lookups.
+type snapshot struct {
+	ipc.Snapshot
+	Sessions  []*core.Session `json:"-"`
+	Groups    []*core.Group   `json:"-"`
+	ViewState core.ViewState  `json:"-"`
+}
+
+func snapshotOf(s ipc.Snapshot) snapshot {
+	return snapshot{Snapshot: s, Sessions: s.CoreSessions(), Groups: s.CoreGroups(), ViewState: s.ViewState.Core()}
 }
 
 func (c *client) mutate(m ipc.Mutation, out any) error {
@@ -73,7 +86,7 @@ func (c *client) mutate(m ipc.Mutation, out any) error {
 }
 
 // withClient runs fn with a connected client and a fresh snapshot.
-func withClient(cmdCtx context.Context, fn func(*client, ipc.Snapshot) error) error {
+func withClient(cmdCtx context.Context, fn func(*client, snapshot) error) error {
 	ctx, cancel := context.WithTimeout(cmdCtx, 30*time.Second)
 	defer cancel()
 	c, err := connect(ctx)
@@ -107,13 +120,13 @@ func hostedSessions(sessions []*core.Session) []*core.Session {
 
 // resolveSession finds a session by number (current view), id, short id,
 // Claude id or unique name prefix.
-func resolveSession(snap ipc.Snapshot, sel string) (*core.Session, error) {
+func resolveSession(snap snapshot, sel string) (*core.Session, error) {
 	rows := core.Layout(snap.Sessions, snap.Groups, snap.ViewState)
 	return core.Resolve(rows, snap.Sessions, sel)
 }
 
 // resolveGroup finds a live group by id or case-insensitive name ("default" works).
-func resolveGroup(snap ipc.Snapshot, sel string) (*core.Group, error) {
+func resolveGroup(snap snapshot, sel string) (*core.Group, error) {
 	sel = strings.TrimSpace(sel)
 	for _, g := range snap.Groups {
 		if g.ID == sel {

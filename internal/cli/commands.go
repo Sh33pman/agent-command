@@ -124,7 +124,7 @@ type remoteNewOptions struct{ host, dir string }
 // startRemoteSession starts a session on a Remote host, and adds it here.
 func startRemoteSession(cmd *cobra.Command, o newOptions, on remoteNewOptions) error {
 	req := ipc.RemoteNewRequest{Host: on.host, Dir: cmp.Or(on.dir, "~"), Harness: o.harness, Name: o.name, Prompt: o.prompt}
-	var s core.Session
+	var w ipc.Session
 	err := withDaemon(cmd, func(c *client) error {
 		if o.group != "" {
 			snap, err := c.snapshot()
@@ -142,12 +142,13 @@ func startRemoteSession(cmd *cobra.Command, o newOptions, on remoteNewOptions) e
 			}
 			req.GroupID = g.ID
 		}
-		return c.hostCall(on.host, ipc.OpRemoteNew, req, &s)
+		return c.hostCall(on.host, ipc.OpRemoteNew, req, &w)
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Started %s on %s in %s (%s).\n", nameOf(&s), on.host, cmp.Or(s.Cwd, req.Dir), s.Ref())
+	s := w.Core()
+	fmt.Fprintf(cmd.OutOrStdout(), "Started %s on %s in %s (%s).\n", nameOf(s), on.host, cmp.Or(s.Cwd, req.Dir), s.Ref())
 	return nil
 }
 
@@ -169,8 +170,8 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("%s isn't a folder", dir)
 	}
-	var s core.Session
-	err = withClient(ctx, func(c *client, snap ipc.Snapshot) error {
+	var s ipc.Session
+	err = withClient(ctx, func(c *client, snap snapshot) error {
 		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Prompt: o.prompt, Harness: o.harness, Remote: o.remote}
 		if o.group != "" {
 			g, err := resolveGroup(snap, o.group)
@@ -178,17 +179,17 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 				return err
 			}
 			if err != nil {
-				var created core.Group
+				var created ipc.Group
 				if err := c.mutate(ipc.Mutation{Kind: ipc.MutGroupCreate, Text: o.group}, &created); err != nil {
 					return err
 				}
-				g = &created
+				g = created.Core(false)
 			}
 			req.GroupID = g.ID
 		}
 		return c.conn.Call(ipc.OpNew, req, &s)
 	})
-	return &s, err
+	return s.Core(), err
 }
 
 // harnessFor is what a new session runs: --harness, else default_harness, else
@@ -219,7 +220,7 @@ func newResumeCmd() *cobra.Command {
 			if all == (len(args) == 1) || len(args) > 1 {
 				return errors.New("give one session, or --all")
 			}
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				var targets []*core.Session
 				if all {
 					for _, s := range snap.Sessions {
@@ -240,12 +241,13 @@ func newResumeCmd() *cobra.Command {
 						fmt.Fprintf(cmd.OutOrStdout(), "%s is already running.\n", nameOf(s))
 						continue
 					}
-					var r core.Session
-					if err := c.conn.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r); err != nil {
+					var w ipc.Session
+					if err := c.conn.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &w); err != nil {
 						errs = append(errs, fmt.Errorf("%s: %w", nameOf(s), err))
 						continue
 					}
-					fmt.Fprintf(cmd.OutOrStdout(), "Resumed %s (%s).\n", nameOf(&r), r.Ref())
+					r := w.Core()
+					fmt.Fprintf(cmd.OutOrStdout(), "Resumed %s (%s).\n", nameOf(r), r.Ref())
 				}
 				if all && len(targets) == 0 {
 					fmt.Fprintln(cmd.OutOrStdout(), "No paused sessions.")
@@ -265,7 +267,7 @@ func newOpenCmd() *cobra.Command {
 		Short: "Open a session's folder in your editor",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(_ *client, snap snapshot) error {
 				s, err := resolveSession(snap, args[0])
 				if err != nil {
 					return err

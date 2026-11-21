@@ -125,7 +125,7 @@ func TestRenameManyIsNumbered(t *testing.T) {
 	if codes(res) != "ok,ok,ok" {
 		t.Errorf("remote = %+v", res)
 	}
-	var g core.Group
+	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "G"}, &g))
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{ids[0], "nope"}, GroupID: g.ID}, &res))
 	if codes(res) != "ok,not_found" {

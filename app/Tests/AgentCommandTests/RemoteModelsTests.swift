@@ -43,8 +43,8 @@ final class FakeCalls: DaemonCalls {
 private func client(_ fake: FakeCalls) -> RemoteHostsClient { RemoteHostsClient(calls: fake) }
 
 private let session: [String: Any] = [
-    "ID": "L9", "Name": "api", "Cwd": "/w/api", "Status": "busy", "Kind": "hosted", "Unseen": false,
-    "Harness": "claude", "ClaudeSessionID": "", "Host": "studio", "RemoteID": "s1",
+    "id": "L9", "name": "api", "cwd": "/w/api", "status": "busy", "kind": "hosted", "unseen": false,
+    "harness": "claude", "claude_session_id": "", "host": "studio", "remote_id": "s1",
 ]
 
 private func connected(_ names: String...) -> [RemoteHost] { names.map { RemoteHost(name: $0, state: .connected) } }

@@ -92,8 +92,8 @@ extension UsesSharedSpeech {
             fake.replies["mutate"] = nil
 
             fake.replies["remote.new"] = [
-                "ID": "N1", "Name": "fresh", "Cwd": "/w", "Status": "busy", "Kind": "hosted", "Unseen": false,
-                "Harness": "claude", "ClaudeSessionID": "", "Host": "studio", "RemoteID": "r1",
+                "id": "N1", "name": "fresh", "cwd": "/w", "status": "busy", "kind": "hosted", "unseen": false,
+                "harness": "claude", "claude_session_id": "", "host": "studio", "remote_id": "r1",
             ]
             var failure: String? = "unset"
             s.newRemoteSession(host: "studio", dir: "/w", harness: .claude) { failure = $0 }
@@ -117,8 +117,8 @@ extension UsesSharedSpeech {
             #expect(fake.last["ids"] as? [String] == ["a", "b"], "this Mac's only")
 
             daemon.reply("new", [
-                "ID": "Z", "Name": "z", "Cwd": "/tmp", "Status": "busy", "Kind": "hosted", "Unseen": false,
-                "Harness": "terminal", "ClaudeSessionID": "",
+                "id": "Z", "name": "z", "cwd": "/tmp", "status": "busy", "kind": "hosted", "unseen": false,
+                "harness": "terminal", "claude_session_id": "",
             ])
             s.newSession(harness: "terminal", in: "/tmp", remote: true)
             s.newSession(harness: "claude", in: "/tmp")

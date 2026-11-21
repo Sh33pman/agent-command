@@ -47,7 +47,7 @@ func newScheduleListCmd() *cobra.Command {
 		Short: "List scheduled jobs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(_ *client, snap snapshot) error {
 				out := cmd.OutOrStdout()
 				if len(snap.Jobs) == 0 {
 					fmt.Fprintln(out, "No scheduled jobs. Add one with `acmd schedule add`.")
@@ -70,7 +70,7 @@ func newScheduleShowCmd() *cobra.Command {
 		Short: "Show a job: its schedule, prompt, settings and latest runs",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				j, err := resolveJob(snap, args[0])
 				if err != nil {
 					return err
@@ -115,7 +115,7 @@ func (f *jobFlags) bind(cmd *cobra.Command) {
 }
 
 // apply sets the flags that were given on j.
-func (f *jobFlags) apply(cmd *cobra.Command, snap ipc.Snapshot, j *core.Job) error {
+func (f *jobFlags) apply(cmd *cobra.Command, snap snapshot, j *core.Job) error {
 	changed := cmd.Flags().Changed
 	switch {
 	case changed("cron"):
@@ -226,7 +226,7 @@ func newScheduleAddCmd() *cobra.Command {
 			if !cmd.Flags().Changed("prompt") && !cmd.Flags().Changed("prompt-file") {
 				return errors.New("give it a prompt: --prompt, or --prompt-file")
 			}
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				j := core.Job{JobSpec: core.JobSpec{Name: args[0], Where: core.WhereFolder}}
 				if err := f.apply(cmd, snap, &j); err != nil {
 					return err
@@ -254,7 +254,7 @@ func newScheduleEditCmd() *cobra.Command {
 		Short: "Change a scheduled job: only the flags given change",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				found, err := resolveJob(snap, args[0])
 				if err != nil {
 					return err
@@ -290,7 +290,7 @@ func maps(in map[string][]string) map[string][]string {
 }
 
 // saveJob checks and saves j, and says when it runs next.
-func saveJob(out io.Writer, c *client, snap ipc.Snapshot, j core.Job, verb string) error {
+func saveJob(out io.Writer, c *client, snap snapshot, j core.Job, verb string) error {
 	var saved core.Job
 	if err := c.conn.Call(ipc.OpJobSave, j, &saved); err != nil {
 		return err
@@ -314,7 +314,7 @@ func newSchedulePauseCmd(use string, pause bool) *cobra.Command {
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				j, err := resolveJob(snap, args[0])
 				if err != nil {
 					return err
@@ -339,7 +339,7 @@ func newScheduleRunCmd() *cobra.Command {
 		Short: "Run a job now, outside its schedule",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				j, err := resolveJob(snap, args[0])
 				if err != nil {
 					return err
@@ -367,7 +367,7 @@ func newScheduleRunsCmd() *cobra.Command {
 		Short: "List a job's runs, newest first",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				j, err := resolveJob(snap, args[0])
 				if err != nil {
 					return err
@@ -390,7 +390,7 @@ func newScheduleDeleteCmd() *cobra.Command {
 		Short: "Delete a job and its runs (its sessions stay)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				j, err := resolveJob(snap, args[0])
 				if err != nil {
 					return err
@@ -464,7 +464,7 @@ func newScheduleSettingsCmd() *cobra.Command {
 
 // resolveJob finds a job by id, or by name: exact, then a unique prefix,
 // ignoring case.
-func resolveJob(snap ipc.Snapshot, sel string) (*core.Job, error) {
+func resolveJob(snap snapshot, sel string) (*core.Job, error) {
 	sel = strings.TrimSpace(sel)
 	for _, j := range snap.Jobs {
 		if j.ID == sel {
@@ -553,7 +553,7 @@ func lastText(r *core.JobRun) string {
 }
 
 // sessionText names a session, after prefix ("" when there's none).
-func sessionText(snap ipc.Snapshot, id, prefix string) string {
+func sessionText(snap snapshot, id, prefix string) string {
 	if id == "" {
 		return ""
 	}
@@ -565,7 +565,7 @@ func sessionText(snap ipc.Snapshot, id, prefix string) string {
 	return prefix + id
 }
 
-func showJob(out io.Writer, j *core.Job, snap ipc.Snapshot, runs []core.JobRun) {
+func showJob(out io.Writer, j *core.Job, snap snapshot, runs []core.JobRun) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	row := func(k, v string) {
 		if v != "" {
@@ -613,7 +613,7 @@ func showJob(out io.Writer, j *core.Job, snap ipc.Snapshot, runs []core.JobRun) 
 	}
 }
 
-func writeRuns(out io.Writer, snap ipc.Snapshot, runs []core.JobRun) {
+func writeRuns(out io.Writer, snap snapshot, runs []core.JobRun) {
 	if len(runs) == 0 {
 		fmt.Fprintln(out, "No runs yet.")
 		return

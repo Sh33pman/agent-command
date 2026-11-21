@@ -22,7 +22,7 @@ func newScreenCmd() *cobra.Command {
 		Example: "  acmd screen 2\n  acmd screen api --lines 20\n  acmd screen 2 --json",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				s, err := resolveSession(snap, args[0])
 				if err != nil {
 					return err

@@ -155,7 +155,7 @@ type RemoteConnection struct {
 	CommonName  string    `json:"common_name,omitempty"` // its cert's
 	Addr        string    `json:"addr"`
 	Version     string    `json:"version,omitempty"` // its acmd
-	Since       time.Time `json:"since"`
+	Since       time.Time `json:"since,omitzero"`
 	Sessions    []string  `json:"sessions,omitempty"` // the sessions it's attached to
 }
 
@@ -166,8 +166,8 @@ type RemoteRequest struct {
 	Fingerprint string    `json:"fingerprint"`
 	CommonName  string    `json:"common_name,omitempty"`
 	Addr        string    `json:"addr"`
-	FirstSeen   time.Time `json:"first_seen"`
-	LastSeen    time.Time `json:"last_seen"`
+	FirstSeen   time.Time `json:"first_seen,omitzero"`
+	LastSeen    time.Time `json:"last_seen,omitzero"`
 	Count       int       `json:"count"`
 }
 
@@ -215,11 +215,11 @@ type JobCheck struct {
 // Snapshot is everything a client needs to render the list; clients
 // compute the layout themselves with core.Layout.
 type Snapshot struct {
-	Sessions []*core.Session `json:"sessions"`
-	Groups   []*core.Group   `json:"groups"`
+	Sessions []*Session `json:"sessions"`
+	Groups   []*Group   `json:"groups"`
 	// Sets are the sets, oldest first. Their sessions are in Sessions.
-	Sets      []Set          `json:"sets,omitempty"`
-	ViewState core.ViewState `json:"view_state"`
+	Sets      []Set     `json:"sets,omitempty"`
+	ViewState ViewState `json:"view_state"`
 	// Notices are the most recent notifications, oldest first.
 	Notices []Notice `json:"notices,omitempty"`
 	// Inbox is the queue: the items still to deal with, in arrival order.
@@ -319,18 +319,18 @@ type Set struct {
 
 // Mutation is one change requested by a client.
 type Mutation struct {
-	Kind    string        `json:"kind"`
-	ID      string        `json:"id,omitempty"`
-	IDs     []string      `json:"ids,omitempty"`
-	ItemIDs []int64       `json:"item_ids,omitempty"`
-	GroupID string        `json:"group_id,omitempty"`
-	Text    string        `json:"text,omitempty"`
-	Color   string        `json:"color,omitempty"`
-	Flag    bool          `json:"flag,omitempty"`
-	Pane    *core.PaneLoc `json:"pane,omitempty"`
-	SetID   string        `json:"set_id,omitempty"`
-	After   string        `json:"after,omitempty"`
-	Before  string        `json:"before,omitempty"`
+	Kind    string   `json:"kind"`
+	ID      string   `json:"id,omitempty"`
+	IDs     []string `json:"ids,omitempty"`
+	ItemIDs []int64  `json:"item_ids,omitempty"`
+	GroupID string   `json:"group_id,omitempty"`
+	Text    string   `json:"text,omitempty"`
+	Color   string   `json:"color,omitempty"`
+	Flag    bool     `json:"flag,omitempty"`
+	Pane    *PaneLoc `json:"pane,omitempty"`
+	SetID   string   `json:"set_id,omitempty"`
+	After   string   `json:"after,omitempty"`
+	Before  string   `json:"before,omitempty"`
 }
 
 // InboxRequest asks for one session's inbox items, or everyone's with no SessionID.
@@ -406,7 +406,7 @@ type Conversation struct {
 	Cwd       string    `json:"cwd"`
 	Title     string    `json:"title,omitempty"`
 	Branch    string    `json:"branch,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 	// Running: Claude reports it as live, possibly in another terminal (agy
 	// reports none).
 	Running bool `json:"running,omitempty"`
@@ -442,7 +442,7 @@ type Hello struct {
 // process can see.
 type HookEvent struct {
 	Name    string          `json:"name"`
-	At      time.Time       `json:"at"`
+	At      time.Time       `json:"at,omitzero"`
 	Payload json.RawMessage `json:"payload"`
 	Context HookContext     `json:"context"`
 }

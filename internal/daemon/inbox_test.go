@@ -30,7 +30,7 @@ func (s *sent) all() string {
 }
 
 // inboxSetup starts a daemon with two hosted sessions, and sends events to them.
-func inboxSetup(t *testing.T) (*ipc.Conn, *sent, *core.Session, *core.Session, func(*core.Session, string, string)) {
+func inboxSetup(t *testing.T) (*ipc.Conn, *sent, *ipc.Session, *ipc.Session, func(*ipc.Session, string, string)) {
 	t.Helper()
 	p := testPaths(t)
 	typed := &sent{}
@@ -42,7 +42,7 @@ func inboxSetup(t *testing.T) (*ipc.Conn, *sent, *core.Session, *core.Session, f
 	a := newSess(t, c, ipc.NewRequest{Cwd: "/w/a"})
 	b := newSess(t, c, ipc.NewRequest{Cwd: "/w/b"})
 	at := time.Now().Add(time.Hour)
-	send := func(s *core.Session, name, payload string) {
+	send := func(s *ipc.Session, name, payload string) {
 		t.Helper()
 		at = at.Add(time.Second)
 		payload = `{"session_id":"` + s.ClaudeSessionID + `",` + payload + `}`

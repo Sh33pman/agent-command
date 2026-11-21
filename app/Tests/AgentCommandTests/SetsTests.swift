@@ -141,8 +141,8 @@ private func panes(_ tree: PaneTree) -> [String] { tree.leaves.compactMap(\.sess
     var seen: [[String: [String]]] = []
     store.onSetsChanged = { seen.append($0) }
     func hosted(_ id: String, _ extra: [String: Any]) -> [String: Any] {
-        ["ID": id, "Name": id, "Cwd": "/", "Status": "done", "Kind": "hosted", "Unseen": false, "Harness": "terminal",
-         "ClaudeSessionID": ""].merging(extra) { $1 }
+        ["id": id, "name": id, "cwd": "/", "status": "done", "kind": "hosted", "unseen": false, "harness": "terminal",
+         "claude_session_id": ""].merging(extra) { $1 }
     }
     let fields: [String: Any] = [
         "sessions": [hosted("a", ["parent": "S", "order": 1]), hosted("b", ["parent": "S", "order": 2])],
@@ -172,8 +172,8 @@ extension UsesSharedSpeech {
     @Suite @MainActor
     struct SetCallsTests {
         private func session(_ id: String, _ extra: [String: Any] = [:]) -> [String: Any] {
-            ["ID": id, "Name": id, "Cwd": "/w", "Status": "running", "Kind": "hosted", "Unseen": false, "Harness": "terminal",
-             "ClaudeSessionID": ""].merging(extra) { $1 }
+            ["id": id, "name": id, "cwd": "/w", "status": "running", "kind": "hosted", "unseen": false, "harness": "terminal",
+             "claude_session_id": ""].merging(extra) { $1 }
         }
 
         @Test func aSplitAsksTheDaemonToSetTheNewSessionWithTheFocusedOne() async throws {
@@ -197,7 +197,7 @@ extension UsesSharedSpeech {
         @Test func aSplitFromAHostsSessionStartsOnThatHost() async throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
-            daemon.reply("remote.new", session("h2", ["Host": "studio", "parent": "S", "order": 2]))
+            daemon.reply("remote.new", session("h2", ["host": "studio", "parent": "S", "order": 2]))
             let store = SessionStore()
             var placed: Session?
             store.newRemoteSession(host: "studio", dir: "/srv/api", harness: .terminal, setWith: "h1", placed: { placed = $0 })

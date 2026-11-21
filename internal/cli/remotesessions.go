@@ -34,7 +34,7 @@ func newRemoteSetCmd(on bool) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			err := withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			err := withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				for _, sel := range args {
 					s, err := resolveSession(snap, sel)
 					if err != nil {
@@ -89,7 +89,7 @@ func newRemoteSessionsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				if snap.Remote != nil && snap.Remote.Listening {
 					host.Port = snap.Remote.Port // the one in use: the fallback may have picked another
 				}

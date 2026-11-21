@@ -89,7 +89,7 @@ func TestHostedSessionLifecycle(t *testing.T) {
 	}
 
 	// Showing a stopped hosted session resumes it in a new host.
-	var rs core.Session
+	var rs ipc.Session
 	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &rs))
 	waitHost(t, p, s.ID, true)
 	r = fh.requests()
@@ -136,7 +136,7 @@ func TestHostedSurvivesDaemonRestart(t *testing.T) {
 	c := dial(t, p)
 	live := newSess(t, c, ipc.NewRequest{Cwd: "/w/a", Name: "live"})
 	dead := newSess(t, c, ipc.NewRequest{Cwd: "/w/b", Name: "dead"})
-	for _, s := range []*core.Session{live, dead} {
+	for _, s := range []*ipc.Session{live, dead} {
 		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+s.ClaudeSessionID+`","source":"startup","cwd":"`+s.Cwd+`"}`, time.Now(), ipc.HookContext{}), nil))
 	}
 	// A leftover from a host that is long gone.
@@ -199,7 +199,7 @@ func TestResumeLegacyBackground(t *testing.T) {
 	if s.Kind != core.KindBackground {
 		t.Fatalf("kind %v", s.Kind)
 	}
-	var r core.Session
+	var r ipc.Session
 	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
 	reqs := fh.requests()
 	if len(reqs) != 1 || reqs[0].Resume != "cafe0001-x" || reqs[0].Dir != "/w" {
@@ -228,7 +228,7 @@ func TestTerminalSessionLifecycle(t *testing.T) {
 	c := dial(t, p)
 
 	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessTerminal})
-	if !s.IsTerminal() || s.Status != core.StatusRunning || s.ClaudeSessionID != "" {
+	if !s.Core().IsTerminal() || s.Status != core.StatusRunning || s.ClaudeSessionID != "" {
 		t.Fatalf("new terminal: %+v", s)
 	}
 	r := fh.requests()
@@ -280,7 +280,7 @@ func TestUnarchiveDoesNotStartAnAgent(t *testing.T) {
 	}
 }
 
-func sessionByID(t *testing.T, c *ipc.Conn, id string) *core.Session {
+func sessionByID(t *testing.T, c *ipc.Conn, id string) *ipc.Session {
 	t.Helper()
 	for _, s := range snapshot(t, c).Sessions {
 		if s.ID == id {
@@ -337,7 +337,7 @@ func TestResumeConversation(t *testing.T) {
 
 	// By id prefix: its folder and title come from the conversation.
 	s := newSess(t, c, ipc.NewRequest{Resume: "11111111"})
-	if s.ClaudeSessionID != idle || s.Cwd != "/w/idle" || s.Name != "idle work" || s.Kind != core.KindHosted || s.IsTerminal() {
+	if s.ClaudeSessionID != idle || s.Cwd != "/w/idle" || s.Name != "idle work" || s.Kind != core.KindHosted || s.Core().IsTerminal() {
 		t.Fatalf("resumed: %+v", s)
 	}
 	r := fh.requests()
@@ -397,7 +397,7 @@ func TestResumeAntigravityConversation(t *testing.T) {
 	}
 
 	s := newSess(t, c, ipc.NewRequest{Harness: core.HarnessAntigravity, Resume: "84B306A4"})
-	if s.ClaudeSessionID != newer || !s.IsAntigravity() || s.Cwd != "/w/agy" || s.Name != "Delete notes2.txt" {
+	if s.ClaudeSessionID != newer || !s.Core().IsAntigravity() || s.Cwd != "/w/agy" || s.Name != "Delete notes2.txt" {
 		t.Fatalf("resumed: %+v", s)
 	}
 	r := fh.requests()

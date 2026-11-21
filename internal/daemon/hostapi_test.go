@@ -78,7 +78,7 @@ func TestHostAPI(t *testing.T) {
 		t.Errorf("args = %v", r.Args)
 	}
 	snap := snapshot(t, c)
-	if i := slices.IndexFunc(snap.Sessions, func(x *core.Session) bool { return x.ID == s.ID }); i < 0 || !snap.Sessions[i].Remote {
+	if i := slices.IndexFunc(snap.Sessions, func(x *ipc.Session) bool { return x.ID == s.ID }); i < 0 || !snap.Sessions[i].Remote {
 		t.Errorf("the host's sidebar doesn't show it as Remote: %+v", snap.Sessions)
 	}
 	must(t, events.Receive(&ev))
@@ -143,7 +143,7 @@ func TestHostAPI(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the attach stream outlived the session")
 	}
-	if got := snapshot(t, c); got.Sessions[slices.IndexFunc(got.Sessions, func(x *core.Session) bool { return x.ID == s.ID })].Status != core.StatusArchived {
+	if got := snapshot(t, c); got.Sessions[slices.IndexFunc(got.Sessions, func(x *ipc.Session) bool { return x.ID == s.ID })].Status != core.StatusArchived {
 		t.Error("not archived")
 	}
 	var recent api.FolderList

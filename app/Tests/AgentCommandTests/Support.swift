@@ -28,8 +28,8 @@ func makeSession(
     agent: String? = nil, capabilities: [String]? = nil
 ) throws -> Session {
     var fields: [String: Any] = [
-        "ID": id, "Name": name.isEmpty && cwd == "/tmp" ? id : name, "Cwd": cwd, "Status": status, "Kind": "hosted",
-        "Unseen": unseen, "Harness": harness, "ClaudeSessionID": claude,
+        "id": id, "name": name.isEmpty && cwd == "/tmp" ? id : name, "cwd": cwd, "status": status, "kind": "hosted",
+        "unseen": unseen, "harness": harness, "claude_session_id": claude,
     ]
     switch (status, unseen) {
     case ("waiting", _): fields["attention"] = ["rank": 1, "reason": "waiting", "since": since]

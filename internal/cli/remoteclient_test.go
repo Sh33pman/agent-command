@@ -537,10 +537,10 @@ func TestRemoteDrop(t *testing.T) {
 	f := newFakeDaemon(t)
 	f.reply(ipc.OpRemoteBrowse, sampleBrowse)
 	f.reply(ipc.OpRemoteSessionRemove, nil)
-	f.reply(ipc.OpSnapshot, ipc.Snapshot{Sessions: []*core.Session{
+	f.reply(ipc.OpSnapshot, ipc.Snapshot{Sessions: ipc.SessionsOf([]*core.Session{
 		{ID: "L1", Name: "auth", Kind: core.KindHosted, Host: "studio", RemoteID: "r1"},
 		{ID: "loc", Name: "local", Kind: core.KindHosted},
-	}})
+	})})
 	out := mustRun(t, "remote", "drop", "studio", "1")
 	if !strings.Contains(out, `Removed "auth" on studio here; it keeps running on the host.`) || !f.calledWith(ipc.OpRemoteSessionRemove, `"id":"L1"`) {
 		t.Errorf("drop host session:\n%s", out)
@@ -570,7 +570,7 @@ func TestNewOn(t *testing.T) {
 		_ = json.Unmarshal(b, &r)
 		return core.Session{ID: "01HZZZZZZZZZZZZZZZZZZZZZZZ", Name: r.Name, Cwd: "/home/me/" + strings.TrimPrefix(r.Dir, "~/"), Host: r.Host}, nil
 	})
-	f.reply(ipc.OpSnapshot, ipc.Snapshot{Groups: []*core.Group{{ID: "g1", Name: "Work"}}})
+	f.reply(ipc.OpSnapshot, ipc.Snapshot{Groups: ipc.GroupsOf([]*core.Group{{ID: "g1", Name: "Work"}})})
 	f.reply(ipc.OpMutate, core.Group{ID: "g2", Name: "New"})
 
 	out := mustRun(t, "new", "--on", "studio", "--dir", "~/api", "--harness", "terminal", "--name", "api", "--prompt", "hi")
@@ -614,8 +614,8 @@ func TestRemoteCompletion(t *testing.T) {
 		"[[remote.hosts]]\nname = \"lab\"\naddress = \"l:7433\"\nfingerprint = \"SHA256:y\"\n"), 0o600))
 	f.reply(ipc.OpRemoteBrowse, ipc.RemoteBrowse{Host: "studio", Sessions: []ipc.RemoteBrowseSession{
 		{Session: api.Session{ID: "r1", Name: "auth"}}, {Session: api.Session{ID: "r2", Name: "two words"}}, {Session: api.Session{ID: "r3"}}}})
-	f.reply(ipc.OpSnapshot, ipc.Snapshot{Sessions: []*core.Session{
-		{ID: "L1", Name: "auth", Host: "studio"}, {ID: "loc", Name: "local"}, {ID: "L2", Host: "lab", ArchivedAt: time.Now()}}})
+	f.reply(ipc.OpSnapshot, ipc.Snapshot{Sessions: ipc.SessionsOf([]*core.Session{
+		{ID: "L1", Name: "auth", Host: "studio"}, {ID: "loc", Name: "local"}, {ID: "L2", Host: "lab", ArchivedAt: time.Now()}})})
 
 	complete := func(args ...string) string {
 		t.Helper()

@@ -337,7 +337,7 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 				resp.Code = r.Code
 			}
 		} else if data != nil {
-			b, merr := json.Marshal(data)
+			b, merr := json.Marshal(onTheWire(data))
 			if merr != nil {
 				resp = ipc.Response{Error: merr.Error()}
 			} else {
@@ -808,4 +808,22 @@ func Running(p paths.Paths) bool {
 	}
 	unlock()
 	return false
+}
+
+// onTheWire is what an op answers as clients see it: a session or group as
+// its wire type (internal/ipc/wire.go), never internal/core's.
+func onTheWire(data any) any {
+	switch v := data.(type) {
+	case *core.Session:
+		return ipc.SessionOf(v)
+	case core.Session:
+		return ipc.SessionOf(&v)
+	case []*core.Session:
+		return ipc.SessionsOf(v)
+	case *core.Group:
+		return ipc.GroupOf(v)
+	case core.Group:
+		return ipc.GroupOf(&v)
+	}
+	return data
 }

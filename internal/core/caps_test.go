@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -83,20 +82,5 @@ func TestCapabilities(t *testing.T) {
 	}
 	if got := (&Session{Status: StatusArchived, Host: "h", HostGone: true}).Capabilities(); got == nil {
 		t.Error("nil, not an empty list")
-	}
-}
-
-func TestClientsSeeWhatASessionIs(t *testing.T) {
-	b, err := json.Marshal(Session{Harness: HarnessTerminal, Status: StatusUnknown, StatusDetail: "codex", Cwd: "/w/api"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got struct {
-		Agent        string   `json:"agent"`
-		DisplayName  string   `json:"display_name"`
-		Capabilities []string `json:"capabilities"`
-	}
-	if err := json.Unmarshal(b, &got); err != nil || got.Agent != AgentOther || got.DisplayName != "api" || !slices.Contains(got.Capabilities, CanAttach) {
-		t.Errorf("json = %s", b)
 	}
 }

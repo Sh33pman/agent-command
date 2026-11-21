@@ -517,7 +517,7 @@ func (c *client) addRemoteSession(host string, s ipc.RemoteBrowseSession) (strin
 	if s.Added {
 		return s.LocalID, nil
 	}
-	var local core.Session
+	var local ipc.Session
 	if err := c.hostCall(host, ipc.OpRemoteSessionAdd, ipc.RemoteHostRef{Host: host, ID: s.ID}, &local); err != nil {
 		return "", err
 	}
@@ -780,10 +780,11 @@ func addedSessionNames(ctx context.Context) []string {
 		return nil
 	}
 	defer done()
-	var snap ipc.Snapshot
-	if conn.Call(ipc.OpSnapshot, nil, &snap) != nil {
+	var wire ipc.Snapshot
+	if conn.Call(ipc.OpSnapshot, nil, &wire) != nil {
 		return nil
 	}
+	snap := snapshotOf(wire)
 	var out []string
 	for _, s := range snap.Sessions {
 		if s.OnHost() && s.ArchivedAt.IsZero() {

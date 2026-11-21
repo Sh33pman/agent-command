@@ -31,7 +31,7 @@ func newListCmd() *cobra.Command {
 		Short: "List the sessions the app runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(_ *client, snap snapshot) error {
 				vs := snap.ViewState
 				if all {
 					vs.ShowArchived = true
@@ -74,7 +74,7 @@ type listRow struct {
 
 // listRows lays sessions out like the sidebar and also includes sessions in
 // collapsed groups (unnumbered), so `acmd list` shows everything.
-func listRows(snap ipc.Snapshot, vs core.ViewState) []listRow {
+func listRows(snap snapshot, vs core.ViewState) []listRow {
 	numbers := map[string]int{}
 	for _, r := range core.Layout(snap.Sessions, snap.Groups, vs) {
 		if r.Session != nil {
@@ -98,7 +98,7 @@ func listRows(snap ipc.Snapshot, vs core.ViewState) []listRow {
 	return out
 }
 
-func filterRows(rows []listRow, snap ipc.Snapshot, group, status string) []listRow {
+func filterRows(rows []listRow, snap snapshot, group, status string) []listRow {
 	var wantGroup *core.Group
 	if group != "" {
 		wantGroup, _ = resolveGroup(snap, group)
@@ -258,7 +258,7 @@ func newRenameCmd() *cobra.Command {
 				}
 				sel, name = args[:1], strings.Join(args[1:], " ")
 			}
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				ids, err := resolveSessions(snap, sel)
 				if err != nil {
 					return err
@@ -276,7 +276,7 @@ func newRenameCmd() *cobra.Command {
 }
 
 // resolveSessions finds each selector's session, once each, in order.
-func resolveSessions(snap ipc.Snapshot, sels []string) ([]string, error) {
+func resolveSessions(snap snapshot, sels []string) ([]string, error) {
 	var ids []string
 	for _, sel := range sels {
 		s, err := resolveSession(snap, sel)
@@ -314,7 +314,7 @@ func newDescribeCmd() *cobra.Command {
 		Short: "Set a session's description (empty text clears it)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				s, err := resolveSession(snap, args[0])
 				if err != nil {
 					return err
@@ -332,7 +332,7 @@ func newArchiveCmd() *cobra.Command {
 		Short: "Archive sessions (ends them; an agent's conversation is kept)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				ids, err := resolveSessions(snap, args)
 				if err != nil {
 					return err
@@ -367,7 +367,7 @@ func newFinishCmd() *cobra.Command {
 		Short: "Finish a session: its agent stops; it stays listed and showing it resumes it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				s, err := resolveSession(snap, args[0])
 				if err != nil {
 					return err
@@ -394,7 +394,7 @@ func newUnarchiveCmd() *cobra.Command {
 		Short: "Bring an archived session back (as paused)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				snap.ViewState.ShowArchived = true
 				s, err := resolveSession(snap, args[0])
 				if err != nil {
@@ -413,7 +413,7 @@ func newMoveCmd() *cobra.Command {
 		Short: "Move sessions to a group",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				groupName := args[len(args)-1]
 				var ids []string
 				for _, sel := range args[:len(args)-1] {
@@ -441,9 +441,9 @@ func newMoveCmd() *cobra.Command {
 }
 
 func createGroup(c *client, name, color string) (*core.Group, error) {
-	var g core.Group
+	var g ipc.Group
 	if err := c.mutate(ipc.Mutation{Kind: ipc.MutGroupCreate, Text: name, Color: color}, &g); err != nil {
 		return nil, err
 	}
-	return &g, nil
+	return g.Core(false), nil
 }

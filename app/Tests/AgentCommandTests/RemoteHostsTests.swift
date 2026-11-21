@@ -15,10 +15,10 @@ func makeRemoteSession(
     id: String, host: String = "", gone: Bool = false, remote: Bool = false, status: String = "done"
 ) throws -> Session {
     var fields: [String: Any] = [
-        "ID": id, "Name": id, "Cwd": "/w/\(id)", "Status": status, "Kind": "hosted", "Unseen": false,
-        "Harness": "claude", "ClaudeSessionID": "", "Remote": remote,
+        "id": id, "name": id, "cwd": "/w/\(id)", "status": status, "kind": "hosted", "unseen": false,
+        "harness": "claude", "claude_session_id": "", "remote": remote,
     ]
-    if !host.isEmpty { fields["Host"] = host; fields["RemoteID"] = "r-\(id)"; fields["HostGone"] = gone }
+    if !host.isEmpty { fields["host"] = host; fields["remote_id"] = "r-\(id)"; fields["host_gone"] = gone }
     if status == "waiting" { fields["attention"] = ["rank": 1, "reason": "waiting", "since": "2026-11-20T09:00:00Z"] }
     // As the daemon says (internal/core/caps.go).
     fields["agent"] = "claude"

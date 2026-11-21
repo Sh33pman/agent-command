@@ -37,7 +37,7 @@ func TestAntigravityStatusFromItsReports(t *testing.T) {
 	start(t, p, func(c *Config) { c.Hosts = fh; c.FrontEvery = 20 * time.Millisecond; c.HostAgent = fa.get })
 	c := dial(t, p)
 	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity})
-	get := func() *core.Session { return sessionByID(t, c, s.ID) }
+	get := func() *ipc.Session { return sessionByID(t, c, s.ID) }
 
 	fa.report("working", "", "")
 	waitFor(t, "busy", func() bool { return get().Status == core.StatusBusy })

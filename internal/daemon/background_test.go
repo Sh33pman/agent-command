@@ -24,7 +24,7 @@ func TestBackgroundWorkIsNotifiedWhenItFinishes(t *testing.T) {
 		*clock = t0.Add(after)
 		must(t, d.ApplyHook(ctx, hookEvent(name, payload, *clock, ipc.HookContext{})))
 	}
-	row := func() *core.Session {
+	row := func() *ipc.Session {
 		t.Helper()
 		snap, err := d.snapshot(ctx, "")
 		must(t, err)

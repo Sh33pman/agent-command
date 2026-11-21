@@ -18,9 +18,9 @@ import (
 )
 
 // addSession adds a host's session to this client, and returns the local one.
-func (m *machine) addSession(host, id string) *core.Session {
+func (m *machine) addSession(host, id string) *ipc.Session {
 	m.t.Helper()
-	var s core.Session
+	var s ipc.Session
 	m.call(ipc.OpRemoteSessionAdd, ipc.RemoteHostRef{Host: host, ID: id}, &s)
 	if s.Host != host || s.RemoteID != id || s.ID == id || s.Kind != core.KindHosted {
 		m.t.Fatalf("added = %+v", s)
@@ -89,7 +89,7 @@ func TestBrowseShowsOnlyRemoteSessions(t *testing.T) {
 		}
 	}
 	s := host.session(private.ID)
-	if s.Name != "private" || s.Status == core.StatusArchived || s.Stopped() || !term.Running(host.p.HostSocket(private.ID)) {
+	if s.Name != "private" || s.Status == core.StatusArchived || s.Core().Stopped() || !term.Running(host.p.HostSocket(private.ID)) {
 		t.Errorf("the private session changed: %+v", s)
 	}
 }
@@ -174,7 +174,7 @@ func TestCreateOnHost(t *testing.T) {
 		t.Fatalf("mkdir made %+v: %v", folder, err)
 	}
 
-	var local core.Session
+	var local ipc.Session
 	laptop.call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~/proj", Harness: core.HarnessTerminal, Name: "made"}, &local)
 	if local.Host != "studio" || local.RemoteID == "" || local.Name != "made" {
 		t.Fatalf("new = %+v", local)

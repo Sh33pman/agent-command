@@ -88,43 +88,48 @@ pub const Mutation = struct {
     flag: ?bool = null,
 };
 
-/// Mirrors Go `core.Session` (PascalCase JSON fields from `internal/core/model.go`).
+/// Mirrors Go `ipc.Session` (`internal/ipc/wire.go`): snake_case, and values
+/// that aren't set are left out.
 pub const Session = struct {
-    ID: []const u8,
-    Name: []const u8 = "",
-    Description: []const u8 = "",
-    GroupID: []const u8 = "",
-    Cwd: []const u8 = "",
-    Status: []const u8 = "",
-    StatusDetail: []const u8 = "",
-    Unseen: bool = false,
-    Kind: []const u8 = "",
-    Harness: []const u8 = "",
-    Pid: i32 = 0,
-    CreatedAt: []const u8 = "",
-    LastEventAt: []const u8 = "",
-    ArchivedAt: []const u8 = "",
+    id: []const u8,
+    name: []const u8 = "",
+    description: []const u8 = "",
+    group_id: []const u8 = "",
+    parent: []const u8 = "",
+    order: i32 = 0,
+    cwd: []const u8 = "",
+    status: []const u8 = "",
+    status_detail: []const u8 = "",
+    unseen: bool = false,
+    kind: []const u8 = "",
+    harness: []const u8 = "",
+    pid: i32 = 0,
+    host: []const u8 = "",
+    created_at: []const u8 = "",
+    last_event_at: []const u8 = "",
+    archived_at: []const u8 = "",
+    display_name: []const u8 = "",
 };
 
-/// Mirrors Go `core.Group` (PascalCase JSON fields).
+/// Mirrors Go `ipc.Group`.
 pub const Group = struct {
-    ID: []const u8,
-    Name: []const u8 = "",
-    Color: []const u8 = "",
-    SortKey: i32 = 0,
-    IsDefault: bool = false,
-    CreatedAt: []const u8 = "",
-    ArchivedAt: []const u8 = "",
+    id: []const u8,
+    name: []const u8 = "",
+    color: []const u8 = "",
+    order: i32 = 0,
+    is_default: bool = false,
+    created_at: []const u8 = "",
+    archived_at: []const u8 = "",
 };
 
-/// Mirrors Go `core.ViewState` (PascalCase JSON fields).
+/// Mirrors Go `ipc.ViewState`.
 pub const ViewState = struct {
-    Mode: []const u8 = "groups",
-    Sort: []const u8 = "created",
-    Desc: bool = false,
-    Filter: []const u8 = "",
-    FocusedGroup: []const u8 = "",
-    ShowArchived: bool = false,
+    mode: []const u8 = "groups",
+    sort: []const u8 = "created",
+    desc: bool = false,
+    filter: []const u8 = "",
+    focused_group: []const u8 = "",
+    show_archived: bool = false,
 };
 
 /// Mirrors Go `ipc.Snapshot` (`internal/ipc/ipc.go`).
@@ -718,7 +723,7 @@ test "encodeRequest and decodeResponse match internal/ipc/ipc.go schemas" {
     );
 
     const go_snapshot_resp =
-        \\{"ok":true,"data":{"sessions":[{"ID":"s1","Name":"api","Description":"fix bug","GroupID":"g1","Status":"waiting","Unseen":true,"Kind":"hosted","Harness":"claude","Pid":123}],"groups":[{"ID":"g1","Name":"Default","Color":"#4EA7FC","SortKey":0,"Collapsed":false,"IsDefault":true}],"view_state":{"Mode":"groups","Sort":"activity","Desc":true,"Filter":"","FocusedGroup":"","ShowArchived":false}}}
+        \\{"ok":true,"data":{"sessions":[{"id":"s1","name":"api","description":"fix bug","group_id":"g1","status":"waiting","unseen":true,"kind":"hosted","harness":"claude","pid":123}],"groups":[{"id":"g1","type":"group","name":"Default","color":"#4EA7FC","is_default":true}],"view_state":{"mode":"groups","sort":"activity","desc":true}}}
     ;
 
     var snap = try decodeResponse(Snapshot, allocator, go_snapshot_resp);
@@ -726,17 +731,47 @@ test "encodeRequest and decodeResponse match internal/ipc/ipc.go schemas" {
 
     const sessions = snap.value.sessions.?;
     try std.testing.expectEqual(@as(usize, 1), sessions.len);
-    try std.testing.expectEqualStrings("s1", sessions[0].ID);
-    try std.testing.expectEqualStrings("api", sessions[0].Name);
-    try std.testing.expectEqualStrings("waiting", sessions[0].Status);
-    try std.testing.expect(sessions[0].Unseen);
+    try std.testing.expectEqualStrings("s1", sessions[0].id);
+    try std.testing.expectEqualStrings("api", sessions[0].name);
+    try std.testing.expectEqualStrings("waiting", sessions[0].status);
+    try std.testing.expect(sessions[0].unseen);
 
     const groups = snap.value.groups.?;
     try std.testing.expectEqual(@as(usize, 1), groups.len);
-    try std.testing.expectEqualStrings("Default", groups[0].Name);
-    try std.testing.expect(groups[0].IsDefault);
+    try std.testing.expectEqualStrings("Default", groups[0].name);
+    try std.testing.expect(groups[0].is_default);
 
-    try std.testing.expectEqualStrings("groups", snap.value.view_state.Mode);
-    try std.testing.expectEqualStrings("activity", snap.value.view_state.Sort);
-    try std.testing.expect(snap.value.view_state.Desc);
+    try std.testing.expectEqualStrings("groups", snap.value.view_state.mode);
+    try std.testing.expectEqualStrings("activity", snap.value.view_state.sort);
+    try std.testing.expect(snap.value.view_state.desc);
+}
+
+// The snapshot as Go writes it (internal/ipc/testdata/wire): a field renamed
+// on either side fails here and in Go's tests. Run from app-linux.
+test "decodes the daemon's snapshot fixture" {
+    const allocator = std.testing.allocator;
+    const data = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../internal/ipc/testdata/wire/snapshot.json", allocator, .limited(1024 * 1024));
+    defer allocator.free(data);
+    var snap = try std.json.parseFromSlice(Snapshot, allocator, data, .{ .ignore_unknown_fields = true });
+    defer snap.deinit();
+
+    const sessions = snap.value.sessions.?;
+    try std.testing.expectEqual(@as(usize, 4), sessions.len);
+    try std.testing.expectEqualStrings("api", sessions[0].name);
+    try std.testing.expectEqualStrings("waiting", sessions[0].status);
+    try std.testing.expectEqualStrings("Allow Bash?", sessions[0].status_detail);
+    try std.testing.expect(sessions[0].unseen);
+    try std.testing.expectEqualStrings("set1", sessions[1].parent);
+    try std.testing.expectEqual(@as(i32, 2), sessions[1].order);
+    try std.testing.expectEqualStrings("", sessions[1].status_detail);
+    try std.testing.expectEqualStrings("studio", sessions[3].host);
+    try std.testing.expectEqualStrings("2026-11-20T09:00:00Z", sessions[0].created_at);
+    try std.testing.expectEqualStrings("", sessions[0].archived_at);
+
+    const groups = snap.value.groups.?;
+    try std.testing.expectEqualStrings("Backend", groups[0].name);
+    try std.testing.expectEqual(@as(i32, 10), groups[0].order);
+    try std.testing.expect(groups[1].is_default);
+    try std.testing.expectEqualStrings("activity", snap.value.view_state.sort);
+    try std.testing.expect(snap.value.view_state.desc);
 }

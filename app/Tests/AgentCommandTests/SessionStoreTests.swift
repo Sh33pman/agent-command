@@ -19,7 +19,7 @@ extension UsesSharedSpeech {
         }
 
         private func hosted(_ id: String, status: String = "done") -> [String: Any] {
-            ["ID": id, "Name": id, "Cwd": "/tmp", "Status": status, "Kind": "hosted", "Unseen": false, "Harness": "claude", "ClaudeSessionID": "c"]
+            ["id": id, "name": id, "cwd": "/tmp", "status": status, "kind": "hosted", "unseen": false, "harness": "claude", "claude_session_id": "c"]
         }
 
         private func item(_ id: Int) -> [String: Any] {
@@ -339,7 +339,7 @@ extension UsesSharedSpeech {
             s.onListChanged = { listed = $0 }
             s.publish(try snapshot(["sessions": [
                 hosted("b"), hosted("a"), hosted("z", status: "archived"),
-                ["ID": "x", "Name": "x", "Cwd": "/", "Status": "busy", "Kind": "external", "Unseen": false, "Harness": "claude", "ClaudeSessionID": "c"],
+                ["id": "x", "name": "x", "cwd": "/", "status": "busy", "kind": "external", "unseen": false, "harness": "claude", "claude_session_id": "c"],
             ]]))
             try await until { listed != nil }
             #expect(s.sessions.map(\.id) == ["a", "b"])

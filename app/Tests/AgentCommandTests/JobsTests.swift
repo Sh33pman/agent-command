@@ -155,7 +155,7 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
 }
 
 @Test func aGroupFromTheDaemon() throws {
-    let groups = try JSONDecoder().decode([SessionGroup].self, from: Data(#"[{"ID":"default","Name":"Default","IsDefault":true,"ArchivedAt":"0001-01-01T00:00:00Z"},{"ID":"G","Name":"Old","ArchivedAt":"2026-11-01T00:00:00Z"}]"#.utf8))
+    let groups = try JSONDecoder().decode([SessionGroup].self, from: Data(#"[{"id":"default","name":"Default","is_default":true},{"id":"G","name":"Old","archived_at":"2026-11-01T00:00:00Z"}]"#.utf8))
     #expect(groups[0].isDefault && !groups[0].isArchived)
     #expect(groups[1].isArchived)
     #expect(!SessionGroup(id: "x", name: "x").isArchived)
@@ -193,8 +193,8 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
 
 @Test func aSessionAJobStartedOrContinuesIsMarkedScheduled() throws {
     func session(_ id: String, _ extra: [String: Any] = [:]) throws -> Session {
-        var fields: [String: Any] = ["ID": id, "Name": id, "Cwd": "/", "Status": "done", "Kind": "hosted", "Unseen": false,
-                                     "Harness": "claude", "ClaudeSessionID": ""]
+        var fields: [String: Any] = ["id": id, "name": id, "cwd": "/", "status": "done", "kind": "hosted", "unseen": false,
+                                     "harness": "claude", "claude_session_id": ""]
         fields.merge(extra) { $1 }
         return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
     }
@@ -206,9 +206,9 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
 
     #expect(try session("s-plain").scheduledNote(jobs: jobs) == nil)
     #expect(try session("s-plain").jobID == nil, "older daemons don't send it")
-    #expect(try session("s-old", ["JobID": ""]).scheduledNote(jobs: jobs) == nil)
-    #expect(try session("s-run", ["JobID": "J1"]).scheduledNote(jobs: jobs) == "Started by the scheduled job \u{201C}Morning brief\u{201D}")
-    #expect(try session("s-run", ["JobID": "gone"]).scheduledNote(jobs: jobs) == "Started by a scheduled job")
+    #expect(try session("s-old", ["job_id": ""]).scheduledNote(jobs: jobs) == nil)
+    #expect(try session("s-run", ["job_id": "J1"]).scheduledNote(jobs: jobs) == "Started by the scheduled job \u{201C}Morning brief\u{201D}")
+    #expect(try session("s-run", ["job_id": "gone"]).scheduledNote(jobs: jobs) == "Started by a scheduled job")
     #expect(try session("s-continued").scheduledNote(jobs: jobs) == "Continued by the scheduled job \u{201C}Nightly\u{201D}")
-    #expect(try session("s-continued", ["Host": "studio"]).scheduledNote(jobs: jobs) == nil, "a host's session isn't this Mac's job's")
+    #expect(try session("s-continued", ["host": "studio"]).scheduledNote(jobs: jobs) == nil, "a host's session isn't this Mac's job's")
 }

@@ -11,9 +11,9 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
-func newSess(t *testing.T, c *ipc.Conn, req ipc.NewRequest) *core.Session {
+func newSess(t *testing.T, c *ipc.Conn, req ipc.NewRequest) *ipc.Session {
 	t.Helper()
-	var s core.Session
+	var s ipc.Session
 	if err := c.Call(ipc.OpNew, req, &s); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestWithoutClaude(t *testing.T) {
 
 func groupNamed(t *testing.T, c *ipc.Conn, name string) string {
 	t.Helper()
-	var g core.Group
+	var g ipc.Group
 	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: name}, &g); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestMoveGroup(t *testing.T) {
 	order := func() string {
 		snap := snapshot(t, c)
 		var names []string
-		for _, r := range core.Layout(nil, snap.Groups, core.ViewState{Mode: "groups"}) {
+		for _, r := range core.Layout(nil, snap.CoreGroups(), core.ViewState{Mode: "groups"}) {
 			names = append(names, r.Group.Name)
 		}
 		return strings.Join(names, ",")
@@ -71,7 +71,7 @@ func TestMoveGroup(t *testing.T) {
 	// The snapshot says the order you arranged, for clients to sort by.
 	orders := map[string]int{}
 	for _, g := range snapshot(t, c).Groups {
-		orders[g.Name] = g.SortKey
+		orders[g.Name] = g.Order
 	}
 	if orders["C"] >= orders["B"] || orders["B"] >= orders["A"] {
 		t.Errorf("sort keys %v", orders)

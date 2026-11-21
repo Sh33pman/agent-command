@@ -70,8 +70,8 @@ func localOps() []Op {
 		act(ipc.OpSetLayout, "Saves a client's pane layout.", host, ipc.Layout{}, nil),
 
 		// Sessions.
-		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, core.Session{}).runsCode(),
-		act(ipc.OpResume, "Resumes a paused background session.", entities, ipc.Mutation{}, core.Session{}).runsCode(),
+		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, ipc.Session{}).runsCode(),
+		act(ipc.OpResume, "Resumes a paused background session.", entities, ipc.Mutation{}, ipc.Session{}).runsCode(),
 		read(ipc.OpConversations, "Lists earlier Claude and Antigravity conversations that can be resumed.", host, nil, []ipc.Conversation{}),
 		// rename, archive, unarchive, move, purge, remote and remove_added take
 		// many ids (IDs), and return a result for each.
@@ -88,7 +88,7 @@ func localOps() []Op {
 		mut(act(ipc.MutRemoveAdded, "Forgets sessions added from a host, here only: the host keeps them.", entities, nil, ipc.Results{})),
 
 		// Groups.
-		mut(act(ipc.MutGroupCreate, "Creates a group, with a name and a color.", entities, nil, core.Group{})),
+		mut(act(ipc.MutGroupCreate, "Creates a group, with a name and a color.", entities, nil, ipc.Group{})),
 		mut(act(ipc.MutGroupRename, "Renames a group.", entities, nil, nil)),
 		mut(act(ipc.MutGroupColor, "Sets a group's color.", entities, nil, nil)),
 		mut(act(ipc.MutGroupDelete, "Deletes a group. Its sessions move to the Default group.", entities, nil, nil).destructive()),
@@ -160,9 +160,9 @@ func localOps() []Op {
 		admin(ipc.OpRemoteHostRemove, "Forgets a known host, and the sessions added from it here.", host, ipc.RemoteHostRef{}, nil).destructive(),
 		act(ipc.OpRemoteHostRetry, "Connects to a known host now, without waiting out the backoff.", host, ipc.RemoteHostRef{}, ipc.RemoteHost{}),
 		read(ipc.OpRemoteBrowse, "Lists a host's Remote sessions, and which are added here.", host, ipc.RemoteHostRef{}, ipc.RemoteBrowse{}),
-		act(ipc.OpRemoteSessionAdd, "Adds a host's session here.", host, ipc.RemoteHostRef{}, core.Session{}),
+		act(ipc.OpRemoteSessionAdd, "Adds a host's session here.", host, ipc.RemoteHostRef{}, ipc.Session{}),
 		act(ipc.OpRemoteSessionRemove, "Removes a session added from a host. The session on the host isn't touched.", entities, ipc.RemoteHostRef{}, nil),
-		act(ipc.OpRemoteNew, "Starts a session on a host and adds it here.", host, ipc.RemoteNewRequest{}, core.Session{}).runsCode(),
+		act(ipc.OpRemoteNew, "Starts a session on a host and adds it here.", host, ipc.RemoteNewRequest{}, ipc.Session{}).runsCode(),
 		read(ipc.OpRemoteFoldersRecent, "Lists a host's recent folders.", host, ipc.RemoteHostRef{}, api.FolderList{}),
 		read(ipc.OpRemoteFoldersList, "Lists a folder on a host.", host, ipc.RemoteFolderRequest{}, api.FolderList{}),
 		act(ipc.OpRemoteFoldersMkdir, "Makes a folder on a host.", host, ipc.RemoteFolderRequest{}, api.Folder{}),

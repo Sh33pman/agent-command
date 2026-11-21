@@ -197,7 +197,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	if len(browse.Sessions) != 1 || browse.Sessions[0].Added {
 		t.Fatalf("browse = %+v", browse)
 	}
-	var s core.Session
+	var s ipc.Session
 	must(t, call(ipc.OpRemoteSessionAdd, ipc.RemoteHostRef{Host: "studio", ID: "r1"}, &s))
 	if s.Host != "studio" || s.RemoteID != "r1" || s.Kind != core.KindHosted || s.Name != "api" || s.ID == "r1" {
 		t.Fatalf("added = %+v", s)
@@ -271,7 +271,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, ID: s.ID, Flag: true}, nil); err == nil {
 		t.Error("made a host's session Remote here")
 	}
-	var resumed core.Session
+	var resumed ipc.Session
 	must(t, call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &resumed))
 
 	// Other ops reach the host.
@@ -304,7 +304,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	var hosts []ipc.RemoteHost
 	must(t, call(ipc.OpRemoteHosts, nil, &hosts))
 	must(t, call(ipc.OpRemoteHostRetry, ipc.RemoteHostRef{Host: "studio"}, &rh))
-	var fresh core.Session
+	var fresh ipc.Session
 	// A split from the host's session starts the new one on that host, in a
 	// set with it.
 	must(t, call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: core.HarnessTerminal, Name: "fresh", SetWith: s.ID}, &fresh))

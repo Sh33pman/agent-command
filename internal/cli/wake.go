@@ -74,7 +74,7 @@ func newWakeStatusCmd() *cobra.Command {
 		Short: "Say whether acmd may wake the Mac, for which jobs, and when next",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(_ *client, snap snapshot) error {
 				writeWake(cmd.OutOrStdout(), snap)
 				return nil
 			})
@@ -82,7 +82,7 @@ func newWakeStatusCmd() *cobra.Command {
 	}
 }
 
-func writeWake(out io.Writer, snap ipc.Snapshot) {
+func writeWake(out io.Writer, snap snapshot) {
 	w := snap.Wake
 	if w == nil {
 		fmt.Fprintln(out, "This acmd can't wake the Mac.")
@@ -146,7 +146,7 @@ func newWakeOffCmd() *cobra.Command {
 			if err := removeWakeRule(ctx, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
 				return err
 			}
-			return withClient(ctx, func(c *client, _ ipc.Snapshot) error {
+			return withClient(ctx, func(c *client, _ snapshot) error {
 				if err := c.conn.Call(ipc.OpWakeSet, ipc.WakeRef{}, nil); err != nil {
 					return err
 				}
@@ -183,7 +183,7 @@ func wakeFlag(cmd *cobra.Command, val bool, current *bool) {
 }
 
 // wakeHint says, after saving a job that wakes the Mac, if waking is off.
-func wakeHint(out io.Writer, snap ipc.Snapshot, wakes bool) {
+func wakeHint(out io.Writer, snap snapshot, wakes bool) {
 	if wakes && (snap.Wake == nil || !snap.Wake.Allowed) {
 		fmt.Fprintln(out, "It can't wake the Mac yet: turn that on with `acmd schedule wake on`.")
 	}
@@ -218,7 +218,7 @@ func turnWakeOn(ctx context.Context, in io.Reader, out io.Writer, all *bool) err
 	if err := addWakeRule(ctx, in, out); err != nil {
 		return err
 	}
-	return withClient(ctx, func(c *client, snap ipc.Snapshot) error {
+	return withClient(ctx, func(c *client, snap snapshot) error {
 		var ref ipc.WakeRef
 		switch {
 		case all != nil:

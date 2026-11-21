@@ -72,7 +72,7 @@ func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, e
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	return ipc.Snapshot{Sessions: sessions, Groups: groups, Sets: wireSets(sets), ViewState: vs, Notices: d.notices(), Inbox: d.withHostInbox(queue),
+	return ipc.Snapshot{Sessions: ipc.SessionsOf(sessions), Groups: ipc.GroupsOf(groups), Sets: wireSets(sets), ViewState: ipc.ViewStateOf(vs), Notices: d.notices(), Inbox: d.withHostInbox(queue),
 		Jobs: jobs, Wake: wake, Remote: remote, RemoteHosts: d.remoteHosts(),
 		Settings: config.Values(d.config()), Health: d.health(sessions, jobs, wake, remote), Dismissed: dismissed,
 		Features: d.features(), Update: d.update(), Speech: d.speechStatus()}, nil

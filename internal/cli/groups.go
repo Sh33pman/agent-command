@@ -27,7 +27,7 @@ func newGroupListCmd() *cobra.Command {
 		Short: "List groups",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return withClient(cmd.Context(), func(_ *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(_ *client, snap snapshot) error {
 				counts := map[string]int{}
 				for _, s := range snap.Sessions {
 					if s.Status != core.StatusArchived {
@@ -77,7 +77,7 @@ func newGroupCreateCmd() *cobra.Command {
 		Short: "Create a group",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, _ ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, _ snapshot) error {
 				g, err := createGroup(c, args[0], color)
 				if err != nil {
 					return err
@@ -97,7 +97,7 @@ func groupMutation(use, short string, nargs int, build func(g *core.Group, args 
 		Short: short,
 		Args:  cobra.ExactArgs(nargs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				g, err := resolveGroup(snap, args[0])
 				if err != nil {
 					return err
@@ -127,7 +127,7 @@ func newGroupDeleteCmd() *cobra.Command {
 		Short: "Delete a group; its sessions move to Default (nothing is archived)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				g, err := resolveGroup(snap, args[0])
 				if err != nil {
 					return err
@@ -150,7 +150,7 @@ func newGroupArchiveCmd() *cobra.Command {
 		Short: "Archive a group and all its sessions",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				g, err := resolveGroup(snap, args[0])
 				if err != nil {
 					return err
@@ -186,7 +186,7 @@ func newGroupUnarchiveCmd() *cobra.Command {
 		Short: "Bring an archived group back",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				var g *core.Group
 				for _, x := range snap.Groups {
 					if !x.ArchivedAt.IsZero() && (x.ID == args[0] || strings.EqualFold(x.Name, args[0])) {
@@ -214,7 +214,7 @@ func newGroupCollapseCmd(use string, collapsed bool) *cobra.Command {
 			if all == (len(args) == 1) {
 				return errors.New("give a group name or --all")
 			}
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				id := ""
 				if !all {
 					g, err := resolveGroup(snap, args[0])
@@ -238,7 +238,7 @@ func newViewModeCmd() *cobra.Command {
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"groups", "list"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, _ ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, _ snapshot) error {
 				return c.mutate(ipc.Mutation{Kind: ipc.MutViewMode, Text: args[0]}, nil)
 			})
 		},
@@ -253,7 +253,7 @@ func newSortCmd() *cobra.Command {
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"created", "name", "activity", "status", "cwd"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withClient(cmd.Context(), func(c *client, _ ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, _ snapshot) error {
 				return c.mutate(ipc.Mutation{Kind: ipc.MutViewSort, Text: args[0], Flag: desc}, nil)
 			})
 		},
@@ -272,7 +272,7 @@ func newFocusGroupCmd() *cobra.Command {
 			if leave == (len(args) == 1) {
 				return errors.New("give a group name or --clear")
 			}
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				id := ""
 				if !leave {
 					g, err := resolveGroup(snap, args[0])

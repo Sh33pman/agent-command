@@ -56,8 +56,8 @@ type Job struct {
 	// account of cron that has none.
 	Summary   string    `json:"summary,omitempty"`
 	Paused    bool      `json:"paused,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at,omitzero"`
+	UpdatedAt time.Time `json:"updated_at,omitzero"`
 	// LastDue is the latest run time dealt with (run, skipped or missed): the
 	// next run is the first one after it.
 	LastDue time.Time `json:"last_due,omitzero"`
@@ -81,8 +81,8 @@ const (
 type JobRun struct {
 	ID        int64     `json:"id"`
 	JobID     string    `json:"job_id"`
-	Due       time.Time `json:"due"`
-	At        time.Time `json:"at"`
+	Due       time.Time `json:"due,omitzero"`
+	At        time.Time `json:"at,omitzero"`
 	Result    string    `json:"result"`
 	SessionID string    `json:"session_id,omitempty"`
 	Detail    string    `json:"detail,omitempty"`

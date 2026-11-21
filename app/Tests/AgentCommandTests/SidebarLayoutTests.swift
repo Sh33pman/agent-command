@@ -140,15 +140,15 @@ private func render(_ rows: [SidebarRow]) -> String {
 
 @Test func attentionAndGroupsDecodeFromTheDaemon() throws {
     let s: Session = try JSONDecoder().decode(Session.self, from: Data("""
-        {"ID":"a","Name":"a","Cwd":"/","Status":"waiting","Kind":"hosted","Unseen":false,"Harness":"claude",
-         "ClaudeSessionID":"","GroupID":"api","LastEventAt":"2026-11-20T09:00:00Z",
+        {"id":"a","name":"a","cwd":"/","status":"waiting","kind":"hosted","unseen":false,"harness":"claude",
+         "claude_session_id":"","group_id":"api","last_event_at":"2026-11-20T09:00:00Z",
          "attention":{"rank":1,"reason":"waiting","since":"2026-11-20T08:59:00.25Z"}}
         """.utf8))
     #expect(s.groupID == "api" && s.attention?.rank == 1 && s.attention?.reason == "waiting")
     #expect(s.attention?.sinceDate == Timestamps.date("2026-11-20T08:59:00.25Z"))
     #expect(SessionAttention(rank: 1, reason: "x", since: "not a time").sinceDate == .distantPast)
     let g: SessionGroup = try JSONDecoder().decode(SessionGroup.self, from: Data("""
-        {"type":"group","ID":"api","Name":"api","Color":"blue","order":10,"IsDefault":false,"ArchivedAt":"0001-01-01T00:00:00Z"}
+        {"type":"group","id":"api","name":"api","color":"blue","order":10,"is_default":false}
         """.utf8))
     #expect(g.color == "blue" && g.order == 10 && !g.isArchived)
 }
@@ -213,7 +213,7 @@ extension UsesSharedSpeech {
         @Test func aNewGroupIsMadeThenFilled() async throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
-            daemon.reply("mutate", ["ID": "g1", "Name": "fresh"])
+            daemon.reply("mutate", ["id": "g1", "name": "fresh"])
             let store = SessionStore()
             store.createGroup("fresh", moving: ["a"])
             let all = try await sent(daemon, count: 2)

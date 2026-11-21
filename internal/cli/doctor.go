@@ -224,10 +224,11 @@ func daemonHealth(ctx context.Context, env doctor.Env) ([]ipc.Health, error) {
 		return h, nil
 	}
 	defer conn.Close()
-	var s ipc.Snapshot
-	if err := conn.Call(ipc.OpSnapshot, nil, &s); err != nil {
+	var wire ipc.Snapshot
+	if err := conn.Call(ipc.OpSnapshot, nil, &wire); err != nil {
 		return nil, err
 	}
+	s := snapshotOf(wire)
 	if s.Health == nil {
 		s.Health = []ipc.Health{}
 	}

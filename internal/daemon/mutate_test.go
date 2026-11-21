@@ -32,7 +32,7 @@ func snapshot(t *testing.T, c *ipc.Conn) ipc.Snapshot {
 	return s
 }
 
-func byClaude(snap ipc.Snapshot, cid string) *core.Session {
+func byClaude(snap ipc.Snapshot, cid string) *ipc.Session {
 	for _, s := range snap.Sessions {
 		if s.ClaudeSessionID == cid {
 			return s
@@ -76,7 +76,7 @@ func TestMutations(t *testing.T) {
 	}
 
 	// Groups, move, collapse, view state, focus.
-	var g core.Group
+	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "PROJ-1"}, &g))
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{bg.ID, ex.ID}, GroupID: g.ID})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupRename, GroupID: g.ID, Text: "PROJ-1 auth"})
@@ -87,7 +87,7 @@ func TestMutations(t *testing.T) {
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewFilter, Text: "g:proj"})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutViewArchived, Flag: true})
 	snap = snapshot(t, c)
-	var got *core.Group
+	var got *ipc.Group
 	for _, x := range snap.Groups {
 		if x.ID == g.ID {
 			got = x
@@ -184,7 +184,7 @@ func TestArchiveRules(t *testing.T) {
 	st.err = nil
 
 	// Group archive / unarchive with sessions.
-	var g core.Group
+	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "G"}, &g))
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{byClaude(snap, "grp").ID}, GroupID: g.ID})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupArchive, GroupID: g.ID})
@@ -267,7 +267,7 @@ func TestFinish(t *testing.T) {
 		t.Error("finished an external session")
 	}
 	agents.add(bgAgent("run00000-x", "run00000", &idle, &pid)) // Claude runs it again
-	var r core.Session
+	var r ipc.Session
 	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: run.ID}, &r))
 	if r.Status != core.StatusStarting {
 		t.Errorf("resume: %s", r.Status)

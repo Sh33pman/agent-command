@@ -89,7 +89,7 @@ struct WakeState: Decodable, Equatable {
     }
 }
 
-/// A group of sessions (internal/core.Group): a named, coloured container you arrange.
+/// A group of sessions (internal/ipc.Group): a named, coloured container you arrange.
 struct SessionGroup: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
@@ -101,7 +101,8 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
     var order = 0
 
     enum CodingKeys: String, CodingKey {
-        case id = "ID", name = "Name", isDefault = "IsDefault", archivedAt = "ArchivedAt", color = "Color", order
+        case id, name, color, order
+        case isDefault = "is_default", archivedAt = "archived_at"
     }
 
     init(id: String, name: String, isDefault: Bool = false, archivedAt: String = "", color: String = "", order: Int = 0) {
@@ -122,8 +123,8 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
     /// The colours a group can have, in the daemon's order.
     static let colors = ["blue", "magenta", "cyan", "yellow", "green", "red"]
 
-    /// Go's zero time is "0001-01-01T00:00:00Z".
-    var isArchived: Bool { !archivedAt.isEmpty && !archivedAt.hasPrefix("0001-") }
+    /// The daemon leaves the time out for a group that isn't archived.
+    var isArchived: Bool { !archivedAt.isEmpty }
 }
 
 /// Something a session sent you (internal/core.InboxItem).
@@ -327,12 +328,37 @@ struct Session: Decodable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey {
         case agent, capabilities
         case display = "display_name"
-        case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
-        case harness = "Harness", claudeSessionID = "ClaudeSessionID"
-        case statusDetail = "StatusDetail", description = "Description", remote = "Remote"
-        case host = "Host", remoteID = "RemoteID", hostGone = "HostGone", jobID = "JobID"
-        case parent, order, attention
-        case groupID = "GroupID", lastEventAt = "LastEventAt"
+        case id, name, cwd, status, kind, unseen, harness, description, remote, host, parent, order, attention
+        case claudeSessionID = "claude_session_id", statusDetail = "status_detail", remoteID = "remote_id"
+        case hostGone = "host_gone", jobID = "job_id", groupID = "group_id", lastEventAt = "last_event_at"
+    }
+
+    /// The daemon leaves out what isn't set (internal/ipc.Session).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        cwd = try c.decodeIfPresent(String.self, forKey: .cwd) ?? ""
+        status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+        kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
+        unseen = try c.decodeIfPresent(Bool.self, forKey: .unseen) ?? false
+        harness = try c.decodeIfPresent(String.self, forKey: .harness) ?? ""
+        claudeSessionID = try c.decodeIfPresent(String.self, forKey: .claudeSessionID) ?? ""
+        statusDetail = try c.decodeIfPresent(String.self, forKey: .statusDetail)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        remote = try c.decodeIfPresent(Bool.self, forKey: .remote)
+        host = try c.decodeIfPresent(String.self, forKey: .host)
+        remoteID = try c.decodeIfPresent(String.self, forKey: .remoteID)
+        hostGone = try c.decodeIfPresent(Bool.self, forKey: .hostGone)
+        jobID = try c.decodeIfPresent(String.self, forKey: .jobID)
+        parent = try c.decodeIfPresent(String.self, forKey: .parent)
+        order = try c.decodeIfPresent(Int.self, forKey: .order)
+        groupID = try c.decodeIfPresent(String.self, forKey: .groupID)
+        lastEventAt = try c.decodeIfPresent(String.self, forKey: .lastEventAt)
+        attention = try c.decodeIfPresent(SessionAttention.self, forKey: .attention)
+        agent = try c.decodeIfPresent(String.self, forKey: .agent)
+        display = try c.decodeIfPresent(String.self, forKey: .display)
+        capabilities = try c.decodeIfPresent([String].self, forKey: .capabilities)
     }
 
     var isRemote: Bool { remote == true }

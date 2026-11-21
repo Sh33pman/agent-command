@@ -32,8 +32,8 @@ import Testing
     #expect(try makeSession(id: "old").remote == nil, "older daemons don't send it")
     #expect(try !makeSession(id: "old").isRemote)
     for on in [true, false] {
-        let fields: [String: Any] = ["ID": "r", "Name": "r", "Cwd": "/", "Status": "busy", "Kind": "hosted", "Unseen": false,
-                                     "Harness": "claude", "ClaudeSessionID": "", "Remote": on]
+        let fields: [String: Any] = ["id": "r", "name": "r", "cwd": "/", "status": "busy", "kind": "hosted", "unseen": false,
+                                     "harness": "claude", "claude_session_id": "", "remote": on]
         let decoded = try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
         #expect(decoded.isRemote == on)
     }
@@ -64,8 +64,8 @@ import Testing
     #expect(try makeSession(id: "n", name: "", cwd: "/tmp/project", status: "done").displayName == "project")
     #expect(try makeSession(id: "m", name: "mine", status: "done").displayName == "mine")
     let named = try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: [
-        "ID": "d", "Name": "", "Cwd": "/w/x", "Status": "busy", "Kind": "hosted", "Unseen": false, "Harness": "claude",
-        "ClaudeSessionID": "", "display_name": "From the daemon",
+        "id": "d", "name": "", "cwd": "/w/x", "status": "busy", "kind": "hosted", "unseen": false, "harness": "claude",
+        "claude_session_id": "", "display_name": "From the daemon",
     ]))
     #expect(named.displayName == "From the daemon" && named.capabilities == nil && !named.can(.attach))
 }

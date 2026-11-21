@@ -27,7 +27,7 @@ func newPurgeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return withClient(cmd.Context(), func(c *client, snap ipc.Snapshot) error {
+			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				cutoff := now().Add(-age)
 				var ids []string
 				for _, s := range snap.Sessions {

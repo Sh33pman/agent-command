@@ -186,7 +186,7 @@
         "$ref": "#/$defs/ipc.Mutation"
       },
       "output": {
-        "$ref": "#/$defs/core.Group"
+        "$ref": "#/$defs/ipc.Group"
       }
     },
     {
@@ -557,7 +557,7 @@
         "$ref": "#/$defs/ipc.NewRequest"
       },
       "output": {
-        "$ref": "#/$defs/core.Session"
+        "$ref": "#/$defs/ipc.Session"
       }
     },
     {
@@ -911,7 +911,7 @@
         "$ref": "#/$defs/ipc.RemoteNewRequest"
       },
       "output": {
-        "$ref": "#/$defs/core.Session"
+        "$ref": "#/$defs/ipc.Session"
       }
     },
     {
@@ -988,7 +988,7 @@
         "$ref": "#/$defs/ipc.RemoteHostRef"
       },
       "output": {
-        "$ref": "#/$defs/core.Session"
+        "$ref": "#/$defs/ipc.Session"
       }
     },
     {
@@ -1063,7 +1063,7 @@
         "$ref": "#/$defs/ipc.Mutation"
       },
       "output": {
-        "$ref": "#/$defs/core.Session"
+        "$ref": "#/$defs/ipc.Session"
       }
     },
     {
@@ -1666,63 +1666,6 @@
         "where"
       ]
     },
-    "core.Attention": {
-      "properties": {
-        "rank": {
-          "type": "integer"
-        },
-        "reason": {
-          "type": "string"
-        },
-        "since": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "type": "object",
-      "required": [
-        "rank",
-        "reason",
-        "since"
-      ]
-    },
-    "core.Group": {
-      "properties": {
-        "ID": {
-          "type": "string"
-        },
-        "Name": {
-          "type": "string"
-        },
-        "Color": {
-          "type": "string"
-        },
-        "SortKey": {
-          "type": "integer"
-        },
-        "IsDefault": {
-          "type": "boolean"
-        },
-        "CreatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "ArchivedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "type": "object",
-      "required": [
-        "ID",
-        "Name",
-        "Color",
-        "SortKey",
-        "IsDefault",
-        "CreatedAt",
-        "ArchivedAt"
-      ]
-    },
     "core.InboxItem": {
       "properties": {
         "id": {
@@ -1913,229 +1856,6 @@
         "result"
       ]
     },
-    "core.PaneLoc": {
-      "properties": {
-        "Terminal": {
-          "type": "string"
-        },
-        "KittySocket": {
-          "type": "string"
-        },
-        "KittyWindow": {
-          "type": "integer"
-        },
-        "GhosttyTerm": {
-          "type": "string"
-        },
-        "TTY": {
-          "type": "string"
-        },
-        "RestoreLayout": {
-          "type": "string"
-        },
-        "BarWindow": {
-          "type": "integer"
-        },
-        "HeaderWindow": {
-          "type": "integer"
-        },
-        "HeaderTerm": {
-          "type": "string"
-        },
-        "TermWindow": {
-          "type": "integer"
-        },
-        "TermTerm": {
-          "type": "string"
-        }
-      },
-      "type": "object",
-      "required": [
-        "Terminal",
-        "KittySocket",
-        "KittyWindow",
-        "GhosttyTerm",
-        "TTY"
-      ]
-    },
-    "core.Session": {
-      "properties": {
-        "ID": {
-          "type": "string"
-        },
-        "Name": {
-          "type": "string"
-        },
-        "Description": {
-          "type": "string"
-        },
-        "GroupID": {
-          "type": "string"
-        },
-        "NameSource": {
-          "type": "string"
-        },
-        "Cwd": {
-          "type": "string"
-        },
-        "ClaudeSessionID": {
-          "type": "string"
-        },
-        "ClaudeHistory": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "TranscriptPath": {
-          "type": "string"
-        },
-        "Status": {
-          "type": "string"
-        },
-        "StatusDetail": {
-          "type": "string"
-        },
-        "Unseen": {
-          "type": "boolean"
-        },
-        "Kind": {
-          "type": "string"
-        },
-        "Harness": {
-          "type": "string"
-        },
-        "BgID": {
-          "type": "string"
-        },
-        "Pid": {
-          "type": "integer"
-        },
-        "Remote": {
-          "type": "boolean"
-        },
-        "Host": {
-          "type": "string"
-        },
-        "RemoteID": {
-          "type": "string"
-        },
-        "HostGone": {
-          "type": "boolean"
-        },
-        "JobID": {
-          "type": "string"
-        },
-        "External": {
-          "$ref": "#/$defs/core.PaneLoc"
-        },
-        "CreatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "LastEventAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "ArchivedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "parent": {
-          "type": "string"
-        },
-        "order": {
-          "type": "integer"
-        },
-        "attention": {
-          "$ref": "#/$defs/core.Attention"
-        },
-        "agent": {
-          "type": "string"
-        },
-        "display_name": {
-          "type": "string"
-        },
-        "capabilities": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object",
-      "required": [
-        "ID",
-        "Name",
-        "Description",
-        "GroupID",
-        "NameSource",
-        "Cwd",
-        "ClaudeSessionID",
-        "ClaudeHistory",
-        "TranscriptPath",
-        "Status",
-        "StatusDetail",
-        "Unseen",
-        "Kind",
-        "Harness",
-        "BgID",
-        "Pid",
-        "Remote",
-        "Host",
-        "RemoteID",
-        "HostGone",
-        "JobID",
-        "External",
-        "CreatedAt",
-        "LastEventAt",
-        "ArchivedAt"
-      ]
-    },
-    "core.ViewState": {
-      "properties": {
-        "Mode": {
-          "type": "string"
-        },
-        "Sort": {
-          "type": "string"
-        },
-        "Desc": {
-          "type": "boolean"
-        },
-        "Filter": {
-          "type": "string"
-        },
-        "FocusedGroup": {
-          "type": "string"
-        },
-        "PreFocus": {
-          "additionalProperties": {
-            "type": "boolean"
-          },
-          "type": "object"
-        },
-        "ShowArchived": {
-          "type": "boolean"
-        },
-        "Collapsed": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object",
-      "required": [
-        "Mode",
-        "Sort",
-        "Desc",
-        "Filter",
-        "FocusedGroup",
-        "PreFocus",
-        "ShowArchived"
-      ]
-    },
     "harness.Setting": {
       "properties": {
         "key": {
@@ -2166,6 +1886,26 @@
         "label",
         "kind",
         "flag"
+      ]
+    },
+    "ipc.Attention": {
+      "properties": {
+        "rank": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "rank",
+        "reason",
+        "since"
       ]
     },
     "ipc.ConfigSet": {
@@ -2267,6 +2007,44 @@
       "required": [
         "host",
         "device"
+      ]
+    },
+    "ipc.Group": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "is_default": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "archived_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "name",
+        "created_at",
+        "archived_at"
       ]
     },
     "ipc.Harness": {
@@ -2681,7 +2459,7 @@
           "type": "boolean"
         },
         "pane": {
-          "$ref": "#/$defs/core.PaneLoc"
+          "$ref": "#/$defs/ipc.PaneLoc"
         },
         "set_id": {
           "type": "string"
@@ -2777,6 +2555,47 @@
         "seq",
         "session_id",
         "kind"
+      ]
+    },
+    "ipc.PaneLoc": {
+      "properties": {
+        "terminal": {
+          "type": "string"
+        },
+        "kitty_socket": {
+          "type": "string"
+        },
+        "kitty_window": {
+          "type": "integer"
+        },
+        "ghostty_term": {
+          "type": "string"
+        },
+        "tty": {
+          "type": "string"
+        },
+        "restore_layout": {
+          "type": "string"
+        },
+        "bar_window": {
+          "type": "integer"
+        },
+        "header_window": {
+          "type": "integer"
+        },
+        "header_term": {
+          "type": "string"
+        },
+        "term_window": {
+          "type": "integer"
+        },
+        "term_term": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "terminal"
       ]
     },
     "ipc.PromptFile": {
@@ -3429,6 +3248,131 @@
         "id"
       ]
     },
+    "ipc.Session": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "order": {
+          "type": "integer"
+        },
+        "name_source": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "claude_session_id": {
+          "type": "string"
+        },
+        "claude_history": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "transcript_path": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "status_detail": {
+          "type": "string"
+        },
+        "unseen": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "bg_id": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "remote": {
+          "type": "boolean"
+        },
+        "host": {
+          "type": "string"
+        },
+        "remote_id": {
+          "type": "string"
+        },
+        "host_gone": {
+          "type": "boolean"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "external": {
+          "$ref": "#/$defs/ipc.PaneLoc"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_event_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "status_since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "archived_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "attention": {
+          "$ref": "#/$defs/ipc.Attention"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "group_id",
+        "parent",
+        "cwd",
+        "status",
+        "kind",
+        "harness",
+        "created_at",
+        "last_event_at",
+        "status_since",
+        "archived_at"
+      ]
+    },
     "ipc.Set": {
       "properties": {
         "type": {
@@ -3455,13 +3399,13 @@
       "properties": {
         "sessions": {
           "items": {
-            "$ref": "#/$defs/core.Session"
+            "$ref": "#/$defs/ipc.Session"
           },
           "type": "array"
         },
         "groups": {
           "items": {
-            "$ref": "#/$defs/core.Group"
+            "$ref": "#/$defs/ipc.Group"
           },
           "type": "array"
         },
@@ -3472,7 +3416,7 @@
           "type": "array"
         },
         "view_state": {
-          "$ref": "#/$defs/core.ViewState"
+          "$ref": "#/$defs/ipc.ViewState"
         },
         "notices": {
           "items": {
@@ -3633,6 +3577,45 @@
       "type": "object",
       "required": [
         "current"
+      ]
+    },
+    "ipc.ViewState": {
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "sort": {
+          "type": "string"
+        },
+        "desc": {
+          "type": "boolean"
+        },
+        "filter": {
+          "type": "string"
+        },
+        "focused_group": {
+          "type": "string"
+        },
+        "pre_focus": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object"
+        },
+        "show_archived": {
+          "type": "boolean"
+        },
+        "collapsed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "mode",
+        "sort"
       ]
     },
     "ipc.WakeRef": {

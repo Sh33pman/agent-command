@@ -5,7 +5,6 @@
 package core
 
 import (
-	"encoding/json"
 	"slices"
 	"time"
 )
@@ -147,36 +146,11 @@ type Session struct {
 	LastEventAt time.Time
 	ArchivedAt  time.Time
 	// StatusSince is when Status last changed. The store keeps it.
-	StatusSince time.Time `json:"-"`
+	StatusSince time.Time
 	// SetID is the set it's in ("" for none), and SetOrder its place there
 	// (from 1). Only the store's set functions change them.
-	SetID    string `json:"-"`
-	SetOrder int    `json:"-"`
-	// Parent and Order are how clients see the above (section 7 of the
-	// design): the set it's in, else its group, and its place in a set.
-	// MarshalJSON fills them in; nothing else sets them.
-	Parent string `json:"parent,omitempty"`
-	Order  int    `json:"order,omitempty"`
-	// Needs is Attention(), for clients. MarshalJSON fills it in.
-	Needs *Attention `json:"attention,omitempty"`
-	// What it is and what can be done with it, for clients (caps.go).
-	// MarshalJSON fills them in.
-	AgentNow string   `json:"agent,omitempty"`
-	Display  string   `json:"display_name,omitempty"`
-	Can      []string `json:"capabilities,omitempty"`
-}
-
-// MarshalJSON writes the session with Parent, Order and Needs filled in.
-func (s Session) MarshalJSON() ([]byte, error) {
-	type plain Session // without this method
-	p := plain(s)
-	p.Parent, p.Order = s.GroupID, 0
-	if s.SetID != "" {
-		p.Parent, p.Order = s.SetID, s.SetOrder
-	}
-	p.Needs = s.Attention()
-	p.AgentNow, p.Display, p.Can = s.Agent(), s.DisplayName(), s.Capabilities()
-	return json.Marshal(p)
+	SetID    string
+	SetOrder int
 }
 
 // Attention is why a session needs you, and how urgently: Rank 1 is the
@@ -185,7 +159,7 @@ func (s Session) MarshalJSON() ([]byte, error) {
 type Attention struct {
 	Rank   int       `json:"rank"`
 	Reason string    `json:"reason"`
-	Since  time.Time `json:"since"` // when it started needing you
+	Since  time.Time `json:"since,omitzero"` // when it started needing you
 }
 
 // Attention reasons.
@@ -249,21 +223,6 @@ type Group struct {
 	IsDefault  bool
 	CreatedAt  time.Time
 	ArchivedAt time.Time
-}
-
-// MarshalJSON writes the group with its type and, for one you arranged, its
-// order (section 7 of the design). Default has none: it always comes last.
-func (g Group) MarshalJSON() ([]byte, error) {
-	type plain Group // without this method
-	out := struct {
-		plain
-		Type  string `json:"type"`
-		Order int    `json:"order,omitempty"`
-	}{plain: plain(g), Type: "group"}
-	if !g.IsDefault {
-		out.Order = g.SortKey
-	}
-	return json.Marshal(out)
 }
 
 // ViewState is the CLI's list presentation, kept by the daemon. Each other

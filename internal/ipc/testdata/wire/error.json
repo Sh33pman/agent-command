@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "build runs on studio, which can't send its screen yet",
+  "code": "not_supported"
+}

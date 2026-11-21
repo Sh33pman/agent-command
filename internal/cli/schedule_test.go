@@ -194,7 +194,7 @@ func TestJobText(t *testing.T) {
 	if s := lastText(nil); s != "-" {
 		t.Error(s)
 	}
-	snap := ipc.Snapshot{Sessions: []*core.Session{{ID: "s1", Name: "docs"}}}
+	snap := snapshotOf(ipc.Snapshot{Sessions: ipc.SessionsOf([]*core.Session{{ID: "s1", Name: "docs"}})})
 	if s := sessionText(snap, "s1", " in "); s != ` in "docs"` {
 		t.Error(s)
 	}
@@ -226,7 +226,7 @@ func TestJobText(t *testing.T) {
 func job(t *testing.T, name string) *core.Job {
 	t.Helper()
 	var found *core.Job
-	err := withClient(t.Context(), func(_ *client, snap ipc.Snapshot) error {
+	err := withClient(t.Context(), func(_ *client, snap snapshot) error {
 		var err error
 		found, err = resolveJob(snap, name)
 		return err

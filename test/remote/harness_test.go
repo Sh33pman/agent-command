@@ -288,13 +288,13 @@ func (m *machine) identity() *identity.Identity {
 }
 
 // newSession starts a terminal session in dir and waits for its host.
-func (m *machine) newSession(name string, remote bool) *core.Session {
+func (m *machine) newSession(name string, remote bool) *ipc.Session {
 	m.t.Helper()
 	dir := filepath.Join(m.home, name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		m.t.Fatal(err)
 	}
-	var s core.Session
+	var s ipc.Session
 	m.call(ipc.OpNew, ipc.NewRequest{Cwd: dir, Harness: core.HarnessTerminal, Name: name, Remote: &remote}, &s)
 	m.waitFor("the session's host", func() bool { return term.Running(m.p.HostSocket(s.ID)) })
 	return &s
@@ -359,7 +359,7 @@ func (m *machine) pair(name string, host *machine) {
 }
 
 // session is a session in this machine's snapshot.
-func (m *machine) session(id string) *core.Session {
+func (m *machine) session(id string) *ipc.Session {
 	m.t.Helper()
 	for _, s := range m.snapshot().Sessions {
 		if s.ID == id {

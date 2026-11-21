@@ -36,10 +36,10 @@ type InboxItem struct {
 	Text      string    `json:"text"`
 	Options   []string  `json:"options,omitempty"`   // question and permission answers
 	Multipart bool      `json:"multipart,omitempty"` // several questions: answered in the session
-	At        time.Time `json:"at"`
+	At        time.Time `json:"at,omitzero"`
 	Read      bool      `json:"read"`
 	State     string    `json:"state"`
-	HandledAt time.Time `json:"handled_at"`
+	HandledAt time.Time `json:"handled_at,omitzero"`
 	// Host is the Remote host of an item from a session added from one.
 	Host string `json:"host,omitempty"`
 }

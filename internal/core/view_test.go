@@ -274,3 +274,11 @@ func TestAttention(t *testing.T) {
 		t.Error("AttentionBefore: want a < b < idle")
 	}
 }
+func TestViewCollapsesGroupsByID(t *testing.T) {
+	groups := []*Group{{ID: "default", Name: "Default", IsDefault: true}, {ID: "g", Name: "G", SortKey: 1}}
+	ss := []*Session{{ID: "a", GroupID: "g"}, {ID: "b", GroupID: "default"}}
+	rows := Layout(ss, groups, ViewState{Mode: "groups", Collapsed: []string{"g"}})
+	if !rows[0].Collapsed || rows[1].Group.ID != "default" || rows[2].Session.ID != "b" || rows[2].Number != 1 {
+		t.Errorf("collapsed by the view: %+v", rows)
+	}
+}

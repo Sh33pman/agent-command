@@ -443,3 +443,26 @@ func TestScreenCommand(t *testing.T) {
 		t.Error("json for no terminal")
 	}
 }
+
+// acmd paths says where things are, after the environment, for UIs and scripts.
+func TestPathsCommand(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ACMD_STATE_DIR", filepath.Join(dir, "s"))
+	t.Setenv("ACMD_RUNTIME_DIR", filepath.Join(dir, "r"))
+	t.Setenv("ACMD_CONFIG_DIR", filepath.Join(dir, "c"))
+	out := mustRun(t, "paths", "--json")
+	var got pathsJSON
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Socket != filepath.Join(dir, "r", "daemon.sock") || got.Config != filepath.Join(dir, "c", "config.toml") ||
+		got.DB != filepath.Join(dir, "s", "state.db") || got.IdentityDir != filepath.Join(dir, "c", "identity") {
+		t.Errorf("paths = %+v", got)
+	}
+	if text := mustRun(t, "paths"); !strings.Contains(text, "socket") || !strings.Contains(text, got.Socket) {
+		t.Errorf("text:\n%s", text)
+	}
+	if _, err := acmd(t, "paths", "extra"); err == nil {
+		t.Error("took an argument")
+	}
+}

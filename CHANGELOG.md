@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.65.0](https://github.com/brettmostert/agent-command/compare/v0.64.0...v0.65.0) (2026-11-21)
+
+
+### Features
+
+* the app's Remote settings call the daemon, and attached counts come with the snapshot ([#102](https://github.com/brettmostert/agent-command/issues/102)) ([51ba9cc](https://github.com/brettmostert/agent-command/commit/51ba9cc3e67189107a917a799e8b9de49ae486b9))
+
 ## [0.64.0](https://github.com/brettmostert/agent-command/compare/v0.63.0...v0.64.0) (2026-11-21)
 
 

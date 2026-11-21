@@ -196,7 +196,7 @@ enum ShellWords {
 
     /// The daemon's settings ops; tests swap its calls.
     @ObservationIgnored var client = SettingsClient()
-    /// Runs acmd, for what isn't a setting yet (the sample voice, doctor, wake); tests swap it.
+    /// Runs acmd, for what isn't an op yet (doctor, wake); tests swap it.
     @ObservationIgnored var runAcmd: (_ args: [String], _ done: @escaping @MainActor (Bool, String) -> Void) -> Void = Acmd.run
     /// The app's Ghostty config: read, written, and applied once written.
     @ObservationIgnored var readGhostty: () -> String = {
@@ -291,9 +291,14 @@ enum ShellWords {
              "editor.run_in": .string("background")])
     }
 
+    /// Reads the sample aloud, through the daemon.
     func playSample() {
-        runAcmd(["speech", "say", Self.voiceSample]) { [weak self] ok, output in
-            if !ok { self?.error = output.isEmpty ? "Couldn't read the sample." : output }
+        let data = (try? JSONEncoder().encode(["text": Self.voiceSample])) ?? Data()
+        client.calls.call("speech.say", data) { [weak self] result in
+            if case .failure(let failure) = result {
+                let why = errorText(failure)
+                self?.error = why.isEmpty ? "Couldn't read the sample." : why
+            }
         }
     }
 

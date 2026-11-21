@@ -170,6 +170,12 @@ func localOps() []Op {
 
 		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
 
+		// Speech: device ops, on this machine only.
+		act(ipc.OpSpeechSay, "Reads text aloud, and answers when it's done or stopped.", host, ipc.SpeechSay{}, nil).hostOnly(),
+		act(ipc.OpSpeechStop, "Stops reading aloud, whatever started it.", host, nil, nil).hostOnly(),
+		read(ipc.OpSpeechStatus, "Says how speech stands here: there, on, set up, setting up, speaking.", host, nil, ipc.SpeechState{}).hostOnly(),
+		act(ipc.OpSpeechInstall, "Sets speech up for the voice, in the background.", host, nil, ipc.SpeechState{}).hostOnly(),
+
 		// Health: what's wrong with the host, and putting it right.
 		act(ipc.OpHealthDismiss, "Stops showing a warning to one client.", host, ipc.HealthRef{}, []string{}),
 		act(ipc.OpHealthRestore, "Shows a client every warning it dismissed again.", host, ipc.HealthRef{}, []string{}),

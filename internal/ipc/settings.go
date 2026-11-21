@@ -81,6 +81,32 @@ const (
 // Severities, from the most serious: HealthError, HealthWarning, HealthInfo.
 const HealthInfo = "info"
 
+// Speech: device ops on this machine's daemon.
+const (
+	OpSpeechSay     = "speech.say"     // SpeechSay: reads it aloud, and answers when it's done or stopped
+	OpSpeechStop    = "speech.stop"    // stops reading aloud, whatever started it
+	OpSpeechStatus  = "speech.status"  // → SpeechState
+	OpSpeechInstall = "speech.install" // sets speech up for the voice, in the background → SpeechState
+)
+
+// SpeechSay is the text to read aloud (Markdown: code is skipped).
+type SpeechSay struct {
+	Text string `json:"text"`
+}
+
+// SpeechState is how speech stands on this machine.
+type SpeechState struct {
+	Supported  bool   `json:"supported"`       // the helper is here
+	Enabled    bool   `json:"enabled"`         // speech.enabled
+	Installed  bool   `json:"installed"`       // set up for the voice
+	Older      bool   `json:"older,omitempty"` // an older engine is set up instead
+	Installing bool   `json:"installing,omitempty"`
+	Progress   *int   `json:"progress,omitempty"` // percent downloaded, while installing
+	Failure    string `json:"failure,omitempty"`  // why setting up failed
+	Speaking   bool   `json:"speaking,omitempty"`
+	Voice      string `json:"voice,omitempty"`
+}
+
 // Health ops.
 const (
 	OpHealthDismiss = "health.dismiss" // HealthRef: a client stops showing a warning → []string (its dismissed ids)

@@ -3,160 +3,121 @@ import Testing
 
 @testable import AgentCommand
 
-/// The speech controller with a fake acmd, so nothing plays and nothing downloads.
-extension UsesSharedSpeech {
-@Suite @MainActor
-struct SpeechControllerTests {
-    private let speech = SpeechController.shared
-
-    /// A stand-in for `acmd speech ...`, which does what the script says for each.
-    private func fakeAcmd(status: String = "Speech: set up", say: String = "sleep 30", install: String = "exit 0") throws {
-        let dir = NSTemporaryDirectory() + "acmd-speech-tests-\(getpid())"
-        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let path = dir + "/fake-acmd"
-        let script = """
-            #!/bin/sh
-            case "$2" in
-            status) echo "\(status)";;
-            say) cat > /dev/null; \(say);;
-            install) \(install);;
-            esac
-            """
-        try script.write(toFile: path, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
-        setenv("ACMD_BIN", path, 1)
-        try #require(DaemonPaths.acmd == path)
-        UserDefaults.standard.removeObject(forKey: "speech.enabled")
-        speech.setEnabled(false)
-        UserDefaults.standard.removeObject(forKey: "speech.enabled")
-    }
-
-    private func item(_ id: Int64) throws -> InboxItem { try makeItem(id, session: "a") }
-
-    private func wait(_ what: String, until done: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async throws {
-        for _ in 0..<300 {
-            if done() { return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        Issue.record("timed out waiting for \(what)", sourceLocation: sourceLocation)
-    }
-
-    private func turnOn() async throws {
-        speech.checkSetup()
-        try await wait("speech on") { speech.isEnabled && speech.isInstalled }
-    }
-
-    private func readStatusNotInstalled() async throws {
-        speech.checkSetup()
-        try await wait("the status") { !speech.isInstalled }
-    }
-
-    // MARK: Whether it's on
-
-    @Test func someoneWhoNeverSetItUpHasItOffWithNoDownload() async throws {
-        try fakeAcmd(status: "Speech: not installed")
-        speech.checkSetup()
-        try await Task.sleep(for: .milliseconds(300))
-        #expect(!speech.isEnabled && !speech.isInstalled && !speech.isSettingUp)
-    }
-
-    @Test func someoneWhoHasItKeepsIt() async throws {
-        try fakeAcmd()
-        try await turnOn()
-        #expect(!speech.isSettingUp)
-    }
-
-    @Test func anOlderEngineUpgradesByItself() async throws {
-        try fakeAcmd(status: "Speech: set up for an older engine, which acmd no longer uses", install: "sleep 0.3; exit 0")
-        speech.checkSetup()
-        try await wait("the upgrade to start") { speech.isSettingUp }
-        #expect(speech.isEnabled && speech.isUpgrading)
-        try await wait("the upgrade to finish") { !speech.isSettingUp }
-        #expect(speech.isInstalled && speech.setupFailure == nil)
-    }
-
-    @Test func turningItOnDownloadsAndShowsProgress() async throws {
-        try fakeAcmd(status: "Speech: not installed", install: "echo 'progress 42'; sleep 0.5; exit 0")
-        try await readStatusNotInstalled()
-        speech.setEnabled(true)
-        #expect(speech.isSettingUp && !speech.isUpgrading)
-        try await wait("progress") { speech.setupProgress == 0.42 }
-        try await wait("the install to finish") { !speech.isSettingUp }
-        #expect(speech.isInstalled && speech.setupProgress == nil)
-    }
-
-    @Test func aFailedInstallSaysWhyAndCanBeRetried() async throws {
-        try fakeAcmd(status: "Speech: not installed", install: "echo 'error: no network' >&2; exit 1")
-        try await readStatusNotInstalled()
-        speech.setEnabled(true)
-        try await wait("the failure") { speech.setupFailure != nil }
-        #expect(speech.setupFailure == "no network")
-        #expect(!speech.isInstalled)
-        try fakeAcmd(status: "Speech: not installed", install: "exit 0")
-        speech.setEnabled(true)
-        try await wait("the retry") { speech.isInstalled }
-        #expect(speech.setupFailure == nil)
-    }
-
-    @Test func turningItOffStopsADownload() async throws {
-        try fakeAcmd(status: "Speech: not installed", install: "sleep 30")
-        try await readStatusNotInstalled()
-        speech.setEnabled(true)
-        #expect(speech.isSettingUp)
-        speech.setEnabled(false)
-        #expect(!speech.isSettingUp && !speech.isEnabled)
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(speech.setupFailure == nil, "stopping it isn't a failure")
-    }
-
-    // MARK: Reading
-
-    @Test func offItSaysHowToTurnItOn() throws {
-        try fakeAcmd()
-        speech.speak(try item(1))
-        #expect(speech.speakingItem == nil)
-        #expect(speech.failure?.contains("Speech is off") == true)
-    }
-
-    @Test func oneReadAtATimeAndTheSameItemStopsIt() async throws {
-        try fakeAcmd()
-        try await turnOn()
-        speech.speak(try item(1))
-        #expect(speech.speakingItem == 1 && speech.isSpeaking)
-        speech.speak(try item(2))
-        #expect(speech.speakingItem == 2)
-        speech.toggle(try item(1))
-        #expect(speech.speakingItem == 1, "another item's button starts that one")
-        speech.toggle(try item(1))
-        #expect(speech.speakingItem == nil && !speech.isSpeaking)
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(speech.failure == nil, "stopping isn't a failure")
-    }
-
-    @Test func aFinishedReadClears() async throws {
-        try fakeAcmd(say: "exit 0")
-        try await turnOn()
-        speech.speak(try item(1))
-        try await wait("the read to end") { !speech.isSpeaking }
-        #expect(speech.failure == nil)
-    }
-
-    @Test func aFailedReadSaysWhy() async throws {
-        try fakeAcmd(say: "echo 'error: speech engine: boom' >&2; exit 1")
-        try await turnOn()
-        speech.speak(try item(1))
-        try await wait("the failure") { speech.failure != nil }
-        #expect(speech.failure == "speech engine: boom")
-        #expect(!speech.isSpeaking)
-    }
-
-    @Test func aWholeLongMessageDoesntHangIt() async throws {
-        try fakeAcmd(say: "exit 0")
-        try await turnOn()
-        let long = String(repeating: "A long message. ", count: 40_000)
-        let data = try JSONSerialization.data(withJSONObject: ["id": 9, "session_id": "a", "kind": "done", "text": long, "state": "open"])
-        speech.speak(try JSONDecoder().decode(InboxItem.self, from: data))
-        try await wait("the read to end") { !speech.isSpeaking }
-    }
+/// The speech controller with the daemon played by the test: nothing plays and
+/// nothing downloads.
+@MainActor
+private func controller(_ fake: FakeCalls, defaults: UserDefaults? = nil) throws -> (SpeechController, UserDefaults) {
+    let name = "acmd-test-speech-\(UUID().uuidString)"
+    let d = try #require(defaults ?? UserDefaults(suiteName: name))
+    let settings = HostSettings()
+    settings.client = SettingsClient(calls: fake)
+    fake.replies["config.set"] = ["values": [String: Any]()]
+    return (SpeechController(calls: fake, settings: settings, defaults: d), d)
 }
+
+private func item(_ id: Int64, _ text: String = "hello") throws -> InboxItem {
+    try JSONDecoder().decode(InboxItem.self, from: JSONSerialization.data(withJSONObject: [
+        "id": id, "session_id": "a", "kind": "done", "text": text, "state": "open",
+    ]))
+}
+
+@MainActor @Test func speechFollowsTheDaemon() throws {
+    let fake = FakeCalls()
+    let (s, _) = try controller(fake)
+    #expect(!s.isSupported && !s.isEnabled)
+    s.apply(SpeechState(supported: true, enabled: true, installed: true))
+    #expect(s.isSupported && s.isEnabled && s.isInstalled && !s.isSettingUp && fake.ops.isEmpty, "set up and on: nothing to do")
+    s.apply(SpeechState(supported: true, enabled: true, installing: true, progress: 40))
+    #expect(s.isSettingUp && s.setupProgress == 0.4)
+    s.apply(SpeechState(supported: true, enabled: true, older: true, failure: "no network"))
+    #expect(s.isUpgrading && s.setupFailure == "no network" && s.setupProgress == nil)
+    s.apply(nil)
+    #expect(s.isUpgrading, "no word keeps what was")
+    s.apply(SpeechState(supported: false, enabled: true))
+    #expect(!s.isEnabled, "where it isn't supported, it's off")
+}
+
+/// The app kept speech on or off in its defaults: the first snapshot moves it to
+/// the device setting, and sets speech up if it's on.
+@MainActor @Test func theOldSettingMovesToTheDaemon() throws {
+    let fake = FakeCalls()
+    let (s, d) = try controller(fake)
+    d.set(true, forKey: SpeechController.oldEnabledKey)
+    fake.replies["speech.install"] = ["supported": true, "enabled": true, "installing": true]
+    s.apply(SpeechState(supported: true, enabled: false))
+    #expect(d.object(forKey: SpeechController.oldEnabledKey) == nil)
+    #expect(fake.ops == ["config.set", "speech.install"] && s.isEnabled && s.isSettingUp)
+    s.apply(SpeechState(supported: true, enabled: true))
+    #expect(fake.ops.count == 2, "only once")
+
+    // On, but not set up: it sets up.
+    let fake2 = FakeCalls()
+    let (s2, _) = try controller(fake2)
+    s2.apply(SpeechState(supported: true, enabled: true))
+    #expect(fake2.ops == ["speech.install"])
+    // Never on: nothing downloads.
+    let fake3 = FakeCalls()
+    let (s3, _) = try controller(fake3)
+    s3.apply(SpeechState(supported: true))
+    #expect(fake3.ops.isEmpty && !s3.isEnabled)
+}
+
+@MainActor @Test func turningItOnAndOff() throws {
+    let fake = FakeCalls()
+    let (s, _) = try controller(fake)
+    s.apply(SpeechState(supported: true))
+    fake.replies["speech.install"] = ["supported": true, "enabled": true, "installing": true, "progress": 10]
+    s.setEnabled(true)
+    #expect(fake.ops == ["config.set", "speech.install"] && fake.asked[0].input["values"] as? [String: Bool] == ["speech.enabled": true])
+    #expect(s.setupProgress == 0.1)
+    s.setEnabled(false)
+    #expect(fake.ops.last == "config.set" && !s.isEnabled)
+    fake.failures["speech.install"] = "no helper"
+    s.apply(SpeechState(supported: true, enabled: true))
+    s.retrySetup()
+    #expect(s.setupFailure == "no helper" && !s.isSettingUp)
+    fake.failures["config.set"] = "config.toml has a mistake"
+    s.setEnabled(false)
+    #expect(s.failure == "config.toml has a mistake")
+    s.apply(SpeechState(supported: true, enabled: true, installed: true))
+    fake.failures["speech.install"] = nil
+    s.voiceChanged()
+    #expect(fake.ops.last == "speech.install", "another voice downloads")
+}
+
+@MainActor @Test func readingGoesThroughTheDaemon() throws {
+    let fake = FakeCalls()
+    let (s, _) = try controller(fake)
+    s.speak(try item(1))
+    #expect(s.failure?.hasPrefix("Speech is off") == true && fake.ops.isEmpty)
+    s.apply(SpeechState(supported: true, enabled: true, installing: true))
+    s.speak(try item(1))
+    #expect(s.failure?.contains("still being set up") == true)
+    s.apply(SpeechState(supported: true, enabled: true, installed: true))
+
+    fake.holding = true
+    s.toggle(try item(1, "read me"))
+    #expect(s.speakingItem == 1 && fake.last["text"] as? String == "read me")
+    s.toggle(try item(2))
+    #expect(s.speakingItem == 2 && fake.ops.suffix(2) == ["speech.stop", "speech.say"], "one at a time")
+    s.toggle(try item(2))
+    #expect(!s.isSpeaking && fake.ops.last == "speech.stop", "the same item stops it")
+    fake.release()
+    #expect(!s.isSpeaking, "an old answer doesn't bring it back")
+
+    fake.holding = false
+    fake.failures["speech.say"] = "speech engine: boom"
+    s.speak(try item(3))
+    #expect(s.failure == "speech engine: boom" && !s.isSpeaking)
+    fake.failures["speech.say"] = nil
+    s.speak(try item(4))
+    #expect(!s.isSpeaking && s.failure == nil, "a finished read clears")
+    s.stop()
+    s.fail("why")
+    #expect(s.failure == "why")
+}
+
+@Test func speechStateDecodes() throws {
+    let st = try JSONDecoder().decode(SpeechState.self, from: Data(#"{"supported": true, "installing": true, "progress": 5, "voice": "af_bella"}"#.utf8))
+    #expect(st.supported && st.installing && st.progress == 5 && st.voice == "af_bella" && !st.enabled)
 }

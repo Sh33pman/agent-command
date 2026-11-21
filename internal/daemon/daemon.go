@@ -113,8 +113,9 @@ type Config struct {
 	Init func(ctx context.Context) (ipc.InitResult, error)
 	// OSVersion is the OS's version, for reports ("" when unknown).
 	OSVersion func(ctx context.Context) string
-	// Speech says whether the speech helper is here (a device feature).
-	Speech func() bool
+	// Speaker is the speech engine for the settings given (default: the
+	// speech helper, internal/speech).
+	Speaker func(config.Config) Speaker
 	// ReleasesURL is where updates are looked for (the Homebrew tap's
 	// releases), and HTTP what asks. "" is the tap.
 	ReleasesURL string
@@ -140,8 +141,9 @@ type Daemon struct {
 	settingsOnce sync.Once
 	settingsFile *config.File // config.toml (settings.go)
 
-	healthy healthState // the setup checks' last word (health.go)
-	updates updateState // the newest release (update.go)
+	healthy  healthState // the setup checks' last word (health.go)
+	speaking speechState // reading aloud (speech.go)
+	updates  updateState // the newest release (update.go)
 
 	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
 	agentSeen  map[string]uint64    // agentstate.go: the last OSC 7501 report applied, per session
@@ -362,6 +364,9 @@ func changesState(op string) bool {
 func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	if isJobOp(req.Op) {
 		return d.handleJob(ctx, req)
+	}
+	if isSpeechOp(req.Op) {
+		return d.handleSpeech(ctx, req)
 	}
 	if isFolderOp(req.Op) {
 		return d.handleFolders(ctx, req)

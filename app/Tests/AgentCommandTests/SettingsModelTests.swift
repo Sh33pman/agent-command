@@ -146,11 +146,11 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     m.setVoice("bf_emma")
     #expect(changed == 1, "not when it wasn't saved")
     m.playSample()
-    #expect(acmd.calls.last == ["speech", "say", SettingsModel.voiceSample])
-    acmd.fail = ["speech"]
-    acmd.said = ""
+    #expect(fake.ops.last == "speech.say" && fake.last["text"] as? String == SettingsModel.voiceSample)
+    fake.failures["speech.say"] = ""
     m.playSample()
     #expect(m.error == "Couldn't read the sample.")
+    #expect(acmd.calls.isEmpty, "no process")
 }
 
 @MainActor @Test func theEditorWakingAndSetup() {

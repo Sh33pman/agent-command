@@ -246,6 +246,8 @@ type Snapshot struct {
 	Features *Features `json:"features,omitempty"`
 	// Update is this daemon's version, and a newer release if there is one.
 	Update *Update `json:"update,omitempty"`
+	// Speech is how reading aloud stands on this machine.
+	Speech *SpeechState `json:"speech,omitempty"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view

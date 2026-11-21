@@ -23,9 +23,11 @@ struct Snapshot: Decodable {
     var dismissed: [String]? = nil
     var features: HostFeatures? = nil
     var update: UpdateState? = nil
+    /// How reading aloud stands on this Mac.
+    var speech: SpeechState? = nil
 
     enum CodingKeys: String, CodingKey {
-        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health, dismissed, features, update
+        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health, dismissed, features, update, speech
         case remoteHosts = "remote_hosts"
     }
 }

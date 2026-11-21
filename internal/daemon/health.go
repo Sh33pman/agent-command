@@ -190,9 +190,7 @@ func (d *Daemon) features() *ipc.Features {
 		agents = d.cfg.Harnesses()
 	}
 	f := &ipc.Features{Host: ipc.HostFeatures{OS: runtime.GOOS, Agents: agents, Wake: d.cfg.Waker != nil, Hosting: d.remote != nil}}
-	if d.cfg.Speech != nil {
-		f.Device.Speech = d.cfg.Speech()
-	}
+	f.Device.Speech = d.speaker().Supported()
 	f.Device.Editor = d.config().Editor.Preset != ""
 	return f
 }

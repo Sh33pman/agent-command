@@ -147,6 +147,9 @@ var Specs = []Spec{
 		Description: `"default" plays the notification sound; empty is silent.`,
 		get:         func(c Config) any { return c.Notify.Sound }},
 
+	{Key: "speech.enabled", Type: TypeBool, Default: false, Where: WhereDevice,
+		Description: "Read aloud on this machine: speech buttons, and the model downloaded when it's turned on.",
+		get:         func(c Config) any { return c.Speech.Enabled }},
 	{Key: "speech.voice", Type: TypeString, Default: "af_heart:0.6,af_bella:0.4", Suggestions: Voices, Where: WhereDevice,
 		Description: `Kokoro's voice, or a blend "voice:weight,voice:weight". American English voices only (af_, am_).`,
 		get:         func(c Config) any { return c.Speech.Voice },

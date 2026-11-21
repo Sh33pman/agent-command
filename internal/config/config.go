@@ -65,8 +65,10 @@ var Retired = struct {
 // (Older configs may still have engine and model, from the Python engine;
 // they're ignored.)
 type Speech struct {
-	Voice string  `toml:"voice"` // a voice, or a blend "af_heart:0.6,af_bella:0.4"
-	Speed float64 `toml:"speed"`
+	// Enabled is reading aloud on or off, on this machine.
+	Enabled bool    `toml:"enabled"`
+	Voice   string  `toml:"voice"` // a voice, or a blend "af_heart:0.6,af_bella:0.4"
+	Speed   float64 `toml:"speed"`
 }
 
 // Notify is the [notify] section.
@@ -199,6 +201,8 @@ cooldown = "20s"
 sound = "default"
 
 [speech]
+# Read aloud on this machine. Turning it on downloads the model.
+enabled = false
 # Kokoro's voice; a blend is "voice:weight,voice:weight". American English
 # voices only (af_, am_). Run "acmd speech install" after changing it.
 voice = "af_heart:0.6,af_bella:0.4"

@@ -179,9 +179,11 @@ struct StatusBarView: View {
         @Bindable var settings = PopupSettings.shared
         return Menu {
             Toggle("Popup on", isOn: $settings.enabled)
-            Toggle("Speech on", isOn: Binding(get: { speech.isEnabled }, set: { speech.setEnabled($0) }))
-            Toggle("Read messages aloud in the popup", isOn: $settings.autoPlay)
-                .disabled(!speech.isEnabled)
+            if speech.isSupported {
+                Toggle("Speech on", isOn: Binding(get: { speech.isEnabled }, set: { speech.setEnabled($0) }))
+                Toggle("Read messages aloud in the popup", isOn: $settings.autoPlay)
+                    .disabled(!speech.isEnabled)
+            }
             Picker("Popup style", selection: $settings.style) {
                 ForEach(ReplyPopupStyle.allCases) { Text($0.label).tag($0) }
             }

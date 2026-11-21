@@ -159,7 +159,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         remote.onChange = { [weak self] in self?.settingsModel?.load() }
         notifier.onRemoteRequest = { [weak self] answer in self?.answerRemoteRequest(answer) }
         setUpPopup()
-        SpeechController.shared.checkSetup()
         let args = CommandLine.arguments
         store.start()
         HarnessList.shared.load() // what new sessions can run here, from the daemon

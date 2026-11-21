@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -9,10 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
@@ -282,5 +285,158 @@ func TestUpdateCheckFailures(t *testing.T) {
 	d.checkUpdates(context.Background())
 	if d.update().Latest != "" || strings.Count(logged.String(), "updates:") != 3 {
 		t.Errorf("logged:\n%s", logged.String())
+	}
+}
+
+// fakeSpeaker is the speech engine played by the test.
+type fakeSpeaker struct {
+	mu        sync.Mutex
+	supported bool
+	installed bool
+	legacy    bool
+	said      []string
+	stopped   int
+	installs  int
+	release   chan struct{} // a say waits for it, or for its stop
+	failWith  error
+}
+
+func (f *fakeSpeaker) Supported() bool { return f.supported }
+func (f *fakeSpeaker) Status() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.installed {
+		return ""
+	}
+	return "not installed"
+}
+func (f *fakeSpeaker) HasLegacy() bool { return f.legacy }
+func (f *fakeSpeaker) Say(ctx context.Context, text string) error {
+	f.mu.Lock()
+	f.said = append(f.said, text)
+	f.mu.Unlock()
+	select {
+	case <-ctx.Done():
+	case <-f.release:
+	}
+	return nil
+}
+func (f *fakeSpeaker) Stop(context.Context) error {
+	f.mu.Lock()
+	f.stopped++
+	f.mu.Unlock()
+	return nil
+}
+func (f *fakeSpeaker) Install(_ context.Context, progress func(int)) error {
+	progress(50)
+	progress(100)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.installs++
+	if f.failWith != nil {
+		return f.failWith
+	}
+	f.installed = true
+	return nil
+}
+
+func TestSpeechIsADeviceOp(t *testing.T) {
+	p := settingsPaths(t)
+	sp := &fakeSpeaker{supported: true, release: make(chan struct{})}
+	start(t, p, withConfig(p, func(c *Config) { c.Speaker = func(config.Config) Speaker { return sp } }))
+	c := dial(t, p)
+	var st ipc.SpeechState
+	must(t, c.Call(ipc.OpSpeechStatus, nil, &st))
+	if !st.Supported || st.Enabled || st.Installed {
+		t.Fatalf("status = %+v", st)
+	}
+	if err := c.Call(ipc.OpSpeechSay, ipc.SpeechSay{Text: "hi"}, nil); err == nil || !strings.Contains(err.Error(), "speech is off") {
+		t.Errorf("say while off: %v", err)
+	}
+	must(t, c.Call(ipc.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"speech.enabled": true}}, nil))
+	if err := c.Call(ipc.OpSpeechSay, ipc.SpeechSay{Text: "hi"}, nil); err == nil || !strings.Contains(err.Error(), "isn't set up") {
+		t.Errorf("say before setting up: %v", err)
+	}
+	must(t, c.Call(ipc.OpSpeechInstall, nil, &st))
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		st = ipc.SpeechState{}
+		must(t, c.Call(ipc.OpSpeechStatus, nil, &st))
+		if st.Installed && !st.Installing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("not set up: %+v", st)
+		}
+	}
+	if s := snapshot(t, c).Speech; s == nil || !s.Installed || !s.Enabled {
+		t.Errorf("snapshot's speech = %+v", s)
+	}
+
+	// Saying answers once it's done; stopping ends it.
+	done := make(chan error, 1)
+	go func() { done <- dial(t, p).Call(ipc.OpSpeechSay, ipc.SpeechSay{Text: "a long message"}, nil) }()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		must(t, c.Call(ipc.OpSpeechStatus, nil, &st))
+		if st.Speaking {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("not speaking")
+		}
+	}
+	must(t, c.Call(ipc.OpSpeechStop, nil, nil))
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("a stopped say: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stopping didn't end the say")
+	}
+	if err := c.Call(ipc.OpSpeechSay, ipc.SpeechSay{Text: " "}, nil); err == nil {
+		t.Error("said nothing")
+	}
+	close(sp.release)
+	must(t, c.Call(ipc.OpSpeechSay, ipc.SpeechSay{Text: "short"}, nil))
+	if sp.stopped != 1 || len(sp.said) != 2 {
+		t.Errorf("stopped %d, said %v", sp.stopped, sp.said)
+	}
+	if f := snapshot(t, c).Features; f == nil || !f.Device.Speech {
+		t.Errorf("features = %+v", f)
+	}
+}
+
+func TestSpeechSetupFailsAndUnsupported(t *testing.T) {
+	p := settingsPaths(t)
+	sp := &fakeSpeaker{supported: true, failWith: errors.New("no network"), release: make(chan struct{})}
+	start(t, p, withConfig(p, func(c *Config) { c.Speaker = func(config.Config) Speaker { return sp } }))
+	c := dial(t, p)
+	var st ipc.SpeechState
+	must(t, c.Call(ipc.OpSpeechInstall, nil, &st))
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		st = ipc.SpeechState{}
+		must(t, c.Call(ipc.OpSpeechStatus, nil, &st))
+		if st.Failure != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no failure: %+v", st)
+		}
+	}
+	if st.Failure != "no network" || st.Installing {
+		t.Errorf("failed = %+v", st)
+	}
+	sp.supported = false
+	must(t, c.Call(ipc.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"speech.enabled": true}}, nil))
+	if err := c.Call(ipc.OpSpeechSay, ipc.SpeechSay{Text: "hi"}, nil); err == nil || !strings.Contains(err.Error(), "isn't available") {
+		t.Errorf("unsupported: %v", err)
+	}
+	st = ipc.SpeechState{}
+	must(t, c.Call(ipc.OpSpeechInstall, nil, &st))
+	if st.Installing || sp.installs != 1 {
+		t.Error("set up where it can't be")
+	}
+	if err := c.Call(ipc.OpSpeechSay, "nope", nil); err == nil {
+		t.Error("took a say that isn't one")
 	}
 }

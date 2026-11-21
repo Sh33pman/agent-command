@@ -1314,6 +1314,59 @@
       }
     },
     {
+      "name": "speech.install",
+      "description": "Sets speech up for the voice, in the background.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "speech.install"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.SpeechState"
+      }
+    },
+    {
+      "name": "speech.say",
+      "description": "Reads text aloud, and answers when it's done or stopped.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "speech.say"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.SpeechSay"
+      }
+    },
+    {
+      "name": "speech.status",
+      "description": "Says how speech stands here: there, on, set up, setting up, speaking.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "speech.status"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.SpeechState"
+      }
+    },
+    {
+      "name": "speech.stop",
+      "description": "Stops reading aloud, whatever started it.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "speech.stop"
+      }
+    },
+    {
       "name": "status",
       "description": "Returns counts of sessions and connections, for doctor and tests.",
       "scope": "read",
@@ -3418,6 +3471,9 @@
         },
         "update": {
           "$ref": "#/$defs/ipc.Update"
+        },
+        "speech": {
+          "$ref": "#/$defs/ipc.SpeechState"
         }
       },
       "type": "object",
@@ -3434,6 +3490,54 @@
         }
       },
       "type": "object"
+    },
+    "ipc.SpeechSay": {
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "text"
+      ]
+    },
+    "ipc.SpeechState": {
+      "properties": {
+        "supported": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "older": {
+          "type": "boolean"
+        },
+        "installing": {
+          "type": "boolean"
+        },
+        "progress": {
+          "type": "integer"
+        },
+        "failure": {
+          "type": "string"
+        },
+        "speaking": {
+          "type": "boolean"
+        },
+        "voice": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "supported",
+        "enabled",
+        "installed"
+      ]
     },
     "ipc.Status": {
       "properties": {

@@ -474,6 +474,7 @@ final class SessionStore {
             if dismissed != self.dismissed { self.dismissed = dismissed }
             if snapshot.features != self.features { self.features = snapshot.features }
             if snapshot.update != self.update { self.update = snapshot.update }
+            if snapshot.speech != SpeechController.shared.state { SpeechController.shared.apply(snapshot.speech) }
             if !self.healthArrived {
                 self.healthArrived = true
                 self.onFirstHealth?(health)

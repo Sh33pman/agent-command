@@ -358,6 +358,12 @@ private struct SpeechSettings: View {
     private var speech: SpeechController { .shared }
 
     var body: some View {
+        if speech.isSupported { available } else {
+            Section { Text("Read aloud isn't available on this Mac: its speech helper isn't installed.").foregroundStyle(.secondary) }
+        }
+    }
+
+    @ViewBuilder private var available: some View {
         let v = model.values
         Section {
             Toggle(isOn: Binding(get: { speech.isEnabled }, set: { speech.setEnabled($0) })) {

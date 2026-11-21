@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -149,6 +150,11 @@ func (b *daemon) HostSocket(id string) string {
 
 // The host's settings live in its remoteHost's file (see newRemoteHost).
 func (b *daemon) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
+
+// Call answers with the op it was asked to run.
+func (b *daemon) Call(_ context.Context, op string, _ json.RawMessage) (json.RawMessage, error) {
+	return json.Marshal(map[string]string{"op": op})
+}
 
 func (b *daemon) SetConfig(values map[string]any) (ipc.ConfigState, error) {
 	_, err := b.file.Set(values)

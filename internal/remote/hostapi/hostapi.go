@@ -7,6 +7,7 @@ package hostapi
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"slices"
@@ -45,6 +46,10 @@ type Backend interface {
 	// Config is the settings, and SetConfig changes them (config.set).
 	Config() ipc.ConfigState
 	SetConfig(values map[string]any) (ipc.ConfigState, error)
+	// Call runs a daemon op as a client on its socket would, and answers its
+	// data as the socket sends it. Callable has already allowed op; an
+	// error with a code (a *wire.CallError) keeps it.
+	Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error)
 }
 
 // Registrar is Hosting (*host.Host): what serves ops to its clients, and
@@ -85,6 +90,7 @@ func Register(r Registrar, b Backend, o Options) *API {
 	r.HandleStream(api.OpEvents, a.events)
 	r.Handle(api.OpConfigGet, a.configGet)
 	r.Handle(api.OpConfigSet, a.configSet)
+	r.Handle(api.OpCall, a.call)
 	return a
 }
 

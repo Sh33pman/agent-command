@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/hostapi"
+	"github.com/brettmostert/agent-command/internal/remote/wire"
 )
 
 // hostBackend is the daemon for the host API (internal/remote/hostapi), which
@@ -91,6 +93,24 @@ func (b hostBackend) Harnesses() ([]string, string) {
 
 // Config is the host's settings, for its clients.
 func (b hostBackend) Config() ipc.ConfigState { return b.d.configState() }
+
+// Call runs a daemon op for a paired device (Direct Connect), as the socket
+// would, with the error's code kept.
+func (b hostBackend) Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
+	d := b.d
+	out, err := d.handle(ctx, ipc.Request{Op: op, Data: data})
+	if err != nil {
+		r := resultOf("", err)
+		return nil, wire.Errorf(r.Code, "%s", r.Error)
+	}
+	if changesState(op) {
+		d.changes.bump()
+	}
+	if out == nil {
+		return nil, nil
+	}
+	return json.Marshal(onTheWire(out))
+}
 
 // SetConfig changes the host's settings for a client (config.set).
 func (b hostBackend) SetConfig(values map[string]any) (ipc.ConfigState, error) {

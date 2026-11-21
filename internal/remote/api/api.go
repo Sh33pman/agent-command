@@ -3,9 +3,19 @@
 // (internal/remote/hostapi) serves them, and the client daemon calls them, so
 // both import the types from here.
 //
-// Every op sees only the host's Remote sessions that aren't archived. A
-// session that isn't Remote, or doesn't exist, is CodeNotFound either way, so
-// a client can't tell the two apart.
+// Every op but OpCall sees only the host's Remote sessions that aren't
+// archived. A session that isn't Remote, or doesn't exist, is CodeNotFound
+// either way, so a client can't tell the two apart.
+//
+// # Call
+//
+// OpCall runs one of the host daemon's own ops (internal/catalog), as a
+// client on the host's socket would: Direct Connect, the whole host as the
+// host has it. It takes any op a paired device may call: not one only for
+// the host's own machine (HostOnly), not an admin op, not a stream, and not
+// the host's own remote.* ops, so a host can't be used to reach its hosts.
+// config.get and config.set are the host's settings, as OpConfigGet and
+// OpConfigSet. A refused op is CodeForbidden.
 //
 // # Attach
 //
@@ -24,7 +34,10 @@
 // gets a fresh EventSnapshot in their place.
 package api
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Version is the host API's version, in wire.Info's API. It's bumped on any
 // change a client of the previous version couldn't follow; adding an op or a
@@ -46,7 +59,17 @@ const (
 	// The host's settings, not its device ones (editor, speech).
 	OpConfigGet = "config.get" // no arguments → ipc.ConfigState
 	OpConfigSet = "config.set" // ipc.ConfigSet → ipc.ConfigState
+	// OpCall runs a host daemon op (see the package doc).
+	OpCall = "call" // CallRequest → the op's answer
 )
+
+// CallRequest names a daemon op and its argument, as the daemon's socket takes
+// them (internal/ipc.Request): a change sent through mutate is Op "mutate"
+// with the ipc.Mutation as Data.
+type CallRequest struct {
+	Op   string          `json:"op"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
 
 // Error codes the host API adds to wire's (wire.CodeNotFound and
 // wire.CodeBadRequest mean what they say there).
@@ -55,6 +78,7 @@ const (
 	CodePermission = "permission_denied" // the host's user may not read or write there
 	CodeExists     = "exists"            // there's already something at that path
 	CodeNotFolder  = "not_folder"        // the path is a file, not a folder
+	CodeForbidden  = "forbidden"         // a paired device may not call that op
 )
 
 // Session is a Remote session, as a client sees it.

@@ -4,6 +4,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -40,13 +41,44 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 			c.Annotations = map[string]string{needsSetup: "yes"}
 		}
 	}
-	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error { return autoInit(cmd) }
+	// --host: the commands that are a daemon's ops run against a Remote host.
+	for _, c := range root.Commands() {
+		switch c.Name() {
+		case "list", "screen", "rename", "describe", "finish", "archive", "unarchive", "move", "group", "view-mode", "sort",
+			"focus-group", "new", "resume", "purge", "schedule", "config", "status":
+			markOnHost(c)
+		}
+	}
+	root.PersistentFlags().StringVar(&targetHost, "host", os.Getenv("ACMD_HOST"),
+		"run against this Remote host (a known host's name) instead of this machine; ACMD_HOST sets a default")
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if targetHost != "" {
+			if cmd.Annotations[onHost] == "" {
+				return fmt.Errorf("acmd %s runs on this machine only: it doesn't take --host", cmd.Name())
+			}
+			return nil // the host is set up already
+		}
+		return autoInit(cmd)
+	}
 	// Plain `acmd` brings up the app, or its window if it's running.
 	var newInstance bool
 	root.Args = cobra.NoArgs
 	root.Flags().BoolVar(&newInstance, "new-instance", false, "start another copy of the app, even if one is running")
 	root.RunE = func(cmd *cobra.Command, _ []string) error { return openApp(cmd.OutOrStdout(), newInstance) }
 	return root
+}
+
+// onHost marks a command that can run against a Remote host (--host).
+const onHost = "acmd.on-host"
+
+func markOnHost(c *cobra.Command) {
+	if c.Annotations == nil {
+		c.Annotations = map[string]string{}
+	}
+	c.Annotations[onHost] = "yes"
+	for _, sub := range c.Commands() {
+		markOnHost(sub)
+	}
 }
 
 func newVersionCmd() *cobra.Command {

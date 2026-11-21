@@ -147,7 +147,7 @@ func newWakeOffCmd() *cobra.Command {
 				return err
 			}
 			return withClient(ctx, func(c *client, _ snapshot) error {
-				if err := c.conn.Call(ipc.OpWakeSet, ipc.WakeRef{}, nil); err != nil {
+				if err := c.call(ipc.OpWakeSet, ipc.WakeRef{}, nil); err != nil {
 					return err
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "Waking the Mac is off.")
@@ -227,7 +227,7 @@ func turnWakeOn(ctx context.Context, in io.Reader, out io.Writer, all *bool) err
 			ref.All = snap.Wake.All
 		}
 		var st ipc.WakeState
-		if err := c.conn.Call(ipc.OpWakeSet, ref, &st); err != nil {
+		if err := c.call(ipc.OpWakeSet, ref, &st); err != nil {
 			return err
 		}
 		snap.Wake = &st

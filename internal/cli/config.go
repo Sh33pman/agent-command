@@ -28,7 +28,7 @@ func configCall(parent context.Context, op string, in any) (ipc.ConfigState, err
 	}
 	defer c.close()
 	var st ipc.ConfigState
-	err = c.conn.Call(op, in, &st)
+	err = c.call(op, in, &st)
 	return st, err
 }
 

@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -111,6 +112,11 @@ func (b *otherDaemon) HostSocket(id string) string {
 func (b *otherDaemon) Harnesses() ([]string, string) { return []string{core.HarnessTerminal}, "" }
 
 func (b *otherDaemon) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
+
+// Call answers with the op it was asked to run.
+func (b *otherDaemon) Call(_ context.Context, op string, _ json.RawMessage) (json.RawMessage, error) {
+	return json.Marshal(map[string]string{"op": op})
+}
 
 func (b *otherDaemon) SetConfig(values map[string]any) (ipc.ConfigState, error) {
 	_, err := b.file.Set(values)
@@ -277,6 +283,18 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	// Other ops reach the host.
 	var harnesses api.Harnesses
 	must(t, call(ipc.OpRemoteHarnesses, ipc.RemoteHostRef{Host: "studio"}, &harnesses))
+	// Its own ops, as acmd --host runs them.
+	var ran map[string]string
+	must(t, call(ipc.OpRemoteCall, ipc.RemoteCall{Host: "studio", Op: ipc.OpSnapshot}, &ran))
+	if ran["op"] != ipc.OpSnapshot {
+		t.Errorf("remote.call = %v", ran)
+	}
+	if err := call(ipc.OpRemoteCall, ipc.RemoteCall{Host: "studio", Op: ipc.OpInit}, nil); err == nil || !strings.Contains(err.Error(), "can't be run from another machine") {
+		t.Errorf("init on the host: %v", err)
+	}
+	if err := call(ipc.OpRemoteCall, "x", nil); err == nil {
+		t.Error("a call that isn't one")
+	}
 	// Its settings: the host's own, read and changed from here.
 	var hostSettings ipc.ConfigState
 	must(t, call(ipc.OpRemoteConfigGet, ipc.RemoteHostRef{Host: "studio"}, &hostSettings))

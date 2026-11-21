@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -788,5 +789,50 @@ func TestRemoteHostsEndToEnd(t *testing.T) {
 	mustRun(t, "config", "set", "remote.host.port", strconv.Itoa(taken.Addr().(*net.TCPAddr).Port))
 	if _, err := acmd(t, "remote", "hosting", "on"); ExitCode(err) != exitPortTaken {
 		t.Errorf("hosting on a taken port: %v (code %d)", err, ExitCode(err))
+	}
+}
+
+// --host runs a command's ops on a Remote host, through this machine's daemon
+// (remote.call); commands for this machine only refuse it.
+func TestHostFlagRunsOpsOnTheHost(t *testing.T) {
+	f := newFakeDaemon(t)
+	var inner []string
+	f.handle(ipc.OpRemoteCall, func(data json.RawMessage) (any, error) {
+		var rc ipc.RemoteCall
+		if err := json.Unmarshal(data, &rc); err != nil || rc.Host != "studio" {
+			return nil, fmt.Errorf("bad call %s", data)
+		}
+		inner = append(inner, rc.Op+" "+string(rc.Data))
+		switch rc.Op {
+		case ipc.OpSnapshot:
+			return ipc.Snapshot{Sessions: ipc.SessionsOf([]*core.Session{{ID: "h1", Name: "api", Kind: core.KindHosted, Status: core.StatusPaused}})}, nil
+		case ipc.OpSessionScreen:
+			return ipc.Screen{ID: "h1", Text: "on the host", Lines: 1, Total: 1}, nil
+		case ipc.OpNew:
+			return ipc.SessionOf(&core.Session{ID: "h2", Name: "new", Cwd: "/home/me"}), nil
+		case ipc.OpMutate:
+			return ipc.Results{Results: []ipc.Result{{ID: "h1", OK: true}}}, nil
+		}
+		return nil, &ipc.RemoteError{Msg: "studio: can't", Code: "forbidden"}
+	})
+	if out := mustRun(t, "--host", "studio", "screen", "1"); out != "on the host\n" {
+		t.Errorf("screen = %q", out)
+	}
+	if out := mustRun(t, "--host", "studio", "new"); !strings.Contains(out, `Started "new"`) || !strings.Contains(inner[len(inner)-1], `"cwd":"~"`) {
+		t.Errorf("new: %s %v", out, inner)
+	}
+	mustRun(t, "--host", "studio", "rename", "1", "--to", "x")
+	if !strings.Contains(inner[len(inner)-1], `"kind":"session.rename"`) {
+		t.Errorf("rename went as %v", inner)
+	}
+	_, err := acmd(t, "--host", "studio", "resume", "1")
+	errContains(t, err, "studio: can't") // the host's refusal
+	_, err = acmd(t, "--host", "studio", "keys")
+	errContains(t, err, "acmd keys runs on this machine only")
+	_, err = acmd(t, "--host", "studio", "new", "--on", "lab")
+	errContains(t, err, "give one")
+	t.Setenv("ACMD_HOST", "studio")
+	if out := mustRun(t, "screen", "1"); out != "on the host\n" {
+		t.Errorf("ACMD_HOST: %q", out)
 	}
 }

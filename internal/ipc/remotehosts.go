@@ -1,6 +1,7 @@
 package ipc
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/remote/api"
@@ -33,7 +34,19 @@ const (
 	OpRemoteFoldersList   = "remote.folders.list"   // RemoteFolderRequest → api.FolderList
 	OpRemoteFoldersMkdir  = "remote.folders.mkdir"  // RemoteFolderRequest → api.Folder
 	OpRemoteHarnesses     = "remote.harnesses"      // RemoteHostRef.Host → api.Harnesses
+	// OpRemoteCall runs one of a host's daemon ops on it (RemoteCall → the
+	// op's answer): what acmd --host does. The host decides which ops a paired
+	// device may run (internal/remote/api's OpCall).
+	OpRemoteCall = "remote.call"
 )
+
+// RemoteCall is an op to run on a host: its name and argument as the host's
+// socket takes them (a change is Op "mutate" with the Mutation as Data).
+type RemoteCall struct {
+	Host string          `json:"host"`
+	Op   string          `json:"op"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
 
 // Remote host states (RemoteHost.State).
 const (

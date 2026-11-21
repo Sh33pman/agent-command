@@ -167,6 +167,7 @@ func localOps() []Op {
 		read(ipc.OpRemoteFoldersList, "Lists a folder on a host.", host, ipc.RemoteFolderRequest{}, api.FolderList{}),
 		act(ipc.OpRemoteFoldersMkdir, "Makes a folder on a host.", host, ipc.RemoteFolderRequest{}, api.Folder{}),
 		read(ipc.OpRemoteHarnesses, "Lists the harnesses a host can start.", host, ipc.RemoteHostRef{}, api.Harnesses{}),
+		act(ipc.OpRemoteCall, "Runs one of a host's ops on it, as acmd --host does. The host decides which ops a paired device may run: not admin ones, nor ones for its own machine only.", host, ipc.RemoteCall{}, nil).runsCode(),
 
 		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
 

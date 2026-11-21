@@ -28,7 +28,7 @@ func newScreenCmd() *cobra.Command {
 					return err
 				}
 				var screen ipc.Screen
-				if err := c.conn.Call(ipc.OpSessionScreen, ipc.ScreenRequest{ID: s.ID, Lines: lines}, &screen); err != nil {
+				if err := c.call(ipc.OpSessionScreen, ipc.ScreenRequest{ID: s.ID, Lines: lines}, &screen); err != nil {
 					return err
 				}
 				out := cmd.OutOrStdout()

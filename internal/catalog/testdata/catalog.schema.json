@@ -619,6 +619,20 @@
       }
     },
     {
+      "name": "remote.call",
+      "description": "Runs one of a host's ops on it, as acmd --host does. The host decides which ops a paired device may run: not admin ones, nor ones for its own machine only.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "remote.call"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteCall"
+      }
+    },
+    {
       "name": "remote.cert",
       "description": "Uses a cert and key of your own for a role, once they're checked to belong together, or acmd's identity again.",
       "scope": "admin",
@@ -2708,6 +2722,22 @@
         "last_activity",
         "created",
         "added"
+      ]
+    },
+    "ipc.RemoteCall": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        },
+        "data": true
+      },
+      "type": "object",
+      "required": [
+        "host",
+        "op"
       ]
     },
     "ipc.RemoteCert": {

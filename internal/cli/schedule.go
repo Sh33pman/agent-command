@@ -76,7 +76,7 @@ func newScheduleShowCmd() *cobra.Command {
 					return err
 				}
 				var runs []core.JobRun
-				if err := c.conn.Call(ipc.OpJobRuns, ipc.JobRef{ID: j.ID}, &runs); err != nil {
+				if err := c.call(ipc.OpJobRuns, ipc.JobRef{ID: j.ID}, &runs); err != nil {
 					return err
 				}
 				showJob(cmd.OutOrStdout(), j, snap, runs)
@@ -292,7 +292,7 @@ func maps(in map[string][]string) map[string][]string {
 // saveJob checks and saves j, and says when it runs next.
 func saveJob(out io.Writer, c *client, snap snapshot, j core.Job, verb string) error {
 	var saved core.Job
-	if err := c.conn.Call(ipc.OpJobSave, j, &saved); err != nil {
+	if err := c.call(ipc.OpJobSave, j, &saved); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "%s %q: %s.", verb, saved.Name, jobSchedule(&saved))
@@ -319,7 +319,7 @@ func newSchedulePauseCmd(use string, pause bool) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if err := c.conn.Call(ipc.OpJobPause, ipc.JobRef{ID: j.ID, Paused: pause}, nil); err != nil {
+				if err := c.call(ipc.OpJobPause, ipc.JobRef{ID: j.ID, Paused: pause}, nil); err != nil {
 					return err
 				}
 				verb := "Paused"
@@ -345,7 +345,7 @@ func newScheduleRunCmd() *cobra.Command {
 					return err
 				}
 				var run core.JobRun
-				if err := c.conn.Call(ipc.OpJobRun, ipc.JobRef{ID: j.ID}, &run); err != nil {
+				if err := c.call(ipc.OpJobRun, ipc.JobRef{ID: j.ID}, &run); err != nil {
 					return err
 				}
 				out := cmd.OutOrStdout()
@@ -373,7 +373,7 @@ func newScheduleRunsCmd() *cobra.Command {
 					return err
 				}
 				var runs []core.JobRun
-				if err := c.conn.Call(ipc.OpJobRuns, ipc.JobRef{ID: j.ID}, &runs); err != nil {
+				if err := c.call(ipc.OpJobRuns, ipc.JobRef{ID: j.ID}, &runs); err != nil {
 					return err
 				}
 				writeRuns(cmd.OutOrStdout(), snap, runs)
@@ -398,7 +398,7 @@ func newScheduleDeleteCmd() *cobra.Command {
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, fmt.Sprintf("Delete the job %q?", j.Name)); err != nil {
 					return err
 				}
-				if err := c.conn.Call(ipc.OpJobDelete, ipc.JobRef{ID: j.ID}, nil); err != nil {
+				if err := c.call(ipc.OpJobDelete, ipc.JobRef{ID: j.ID}, nil); err != nil {
 					return err
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "Deleted %q\n", j.Name)

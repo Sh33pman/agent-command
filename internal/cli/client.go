@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,37 @@ import (
 // version) when needed.
 type client struct {
 	conn *ipc.Conn
+	// host is the Remote host the command runs against (--host), "" for this
+	// machine.
+	host string
+}
+
+// targetHost is --host, or ACMD_HOST: the Remote host commands run against.
+var targetHost string
+
+// call runs a daemon op: this machine's, or with --host the host's, through
+// this machine's daemon (remote.call), which the host answers as its own
+// socket would.
+func (c *client) call(op string, in, out any) error {
+	if c.host == "" {
+		return c.conn.Call(op, in, out)
+	}
+	rc := ipc.RemoteCall{Host: c.host, Op: op}
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		rc.Data = b
+	}
+	var raw json.RawMessage
+	if err := c.hostCall(c.host, ipc.OpRemoteCall, rc, &raw); err != nil {
+		return err
+	}
+	if out == nil || len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return json.Unmarshal(raw, out)
 }
 
 // spawnDaemon is swappable in tests.
@@ -36,7 +68,7 @@ func connect(ctx context.Context) (*client, error) {
 	me := ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version}
 	conn, err := ipc.Dial(ctx, p.Socket(), me)
 	if err == nil {
-		return &client{conn: conn}, nil
+		return &client{conn: conn, host: targetHost}, nil
 	}
 	var mismatch *ipc.ErrVersionMismatch
 	if errors.As(err, &mismatch) {
@@ -51,7 +83,7 @@ func connect(ctx context.Context) (*client, error) {
 	for {
 		conn, err = ipc.Dial(ctx, p.Socket(), me)
 		if err == nil {
-			return &client{conn: conn}, nil
+			return &client{conn: conn, host: targetHost}, nil
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
 			return nil, fmt.Errorf("daemon didn't start (see %s): %w", p.DaemonLog(), err)
@@ -64,7 +96,7 @@ func (c *client) close() { _ = c.conn.Close() }
 
 func (c *client) snapshot() (snapshot, error) {
 	var s ipc.Snapshot
-	err := c.conn.Call(ipc.OpSnapshot, nil, &s)
+	err := c.call(ipc.OpSnapshot, nil, &s)
 	return snapshotOf(s), err
 }
 
@@ -82,7 +114,7 @@ func snapshotOf(s ipc.Snapshot) snapshot {
 }
 
 func (c *client) mutate(m ipc.Mutation, out any) error {
-	return c.conn.Call(ipc.OpMutate, m, out)
+	return c.call(ipc.OpMutate, m, out)
 }
 
 // withClient runs fn with a connected client and a fresh snapshot.

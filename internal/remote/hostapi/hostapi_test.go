@@ -37,6 +37,10 @@ type backend struct {
 	created   []ipc.NewRequest
 	stateErr  error
 	file      *config.File
+	// calls are the daemon ops run through api.OpCall; replies answer them by op.
+	calls   []api.CallRequest
+	replies map[string]json.RawMessage
+	callErr error
 
 	rev uint64
 	ch  chan struct{}
@@ -137,6 +141,16 @@ func (b *backend) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
 func (b *backend) SetConfig(values map[string]any) (ipc.ConfigState, error) {
 	_, err := b.file.Set(values)
 	return ipc.ConfigOf(b.file), err
+}
+
+func (b *backend) Call(_ context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.calls = append(b.calls, api.CallRequest{Op: op, Data: data})
+	if b.callErr != nil {
+		return nil, b.callErr
+	}
+	return b.replies[op], nil
 }
 
 func (b *backend) Harnesses() ([]string, string) {

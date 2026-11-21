@@ -48,7 +48,7 @@ func isRemoteHostsOp(op string) bool {
 	switch op {
 	case ipc.OpRemoteHosts, ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteHostRemove, ipc.OpRemoteHostRetry,
 		ipc.OpRemoteBrowse, ipc.OpRemoteSessionAdd, ipc.OpRemoteSessionRemove, ipc.OpRemoteNew,
-		ipc.OpRemoteFoldersRecent, ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir, ipc.OpRemoteHarnesses:
+		ipc.OpRemoteFoldersRecent, ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir, ipc.OpRemoteHarnesses, ipc.OpRemoteCall:
 		return true
 	}
 	return false
@@ -60,7 +60,7 @@ func (d *Daemon) handleRemoteHosts(ctx context.Context, req ipc.Request) (any, e
 	c := d.client
 	var ref ipc.RemoteHostRef
 	switch req.Op {
-	case ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteNew, ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir:
+	case ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteNew, ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir, ipc.OpRemoteCall:
 	default:
 		if len(req.Data) > 0 {
 			var err error
@@ -125,6 +125,12 @@ func (d *Daemon) handleRemoteHosts(ctx context.Context, req ipc.Request) (any, e
 		return c.ListFolders(ctx, r)
 	case ipc.OpRemoteHarnesses:
 		return c.Harnesses(ctx, ref.Host)
+	case ipc.OpRemoteCall:
+		r, err := decode[ipc.RemoteCall](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return c.Call(ctx, r.Host, r.Op, r.Data)
 	}
 	return nil, fmt.Errorf("unknown op %q", req.Op)
 }

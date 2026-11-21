@@ -364,6 +364,15 @@ func TestIdleHostDisconnects(t *testing.T) {
 	if h.Default != core.HarnessClaude || len(h.Harnesses) != 2 {
 		t.Errorf("harnesses = %+v", h)
 	}
+	// The host daemon's own ops, as acmd --host runs them.
+	raw, err := l.c.Call(ctx5(), "studio", ipc.OpSnapshot, nil)
+	must(t, err)
+	if string(raw) != `{"op":"snapshot"}` {
+		t.Errorf("call = %s", raw)
+	}
+	if _, err := l.c.Call(ctx5(), "studio", ipc.OpInit, nil); err == nil {
+		t.Error("init ran on the host")
+	}
 	l.waitState("studio", ipc.HostConnected)
 	l.waitState("studio", ipc.HostIdle)
 	eventually(t, "the host sees it go", func() bool { return r.h.Status().Connected == 0 })

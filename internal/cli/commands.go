@@ -66,6 +66,9 @@ func newNewCmd() *cobra.Command {
 			if o.prompt, err = promptOf(o.prompt, args); err != nil {
 				return err
 			}
+			if on.host != "" && targetHost != "" {
+				return errors.New("--on adds a host's session here; --host runs on the host: give one")
+			}
 			if on.host != "" {
 				for _, f := range []string{"cwd", "description", "remote", "no-remote"} {
 					if cmd.Flags().Changed(f) {
@@ -82,6 +85,9 @@ func newNewCmd() *cobra.Command {
 			}
 			if o.cwd == "" {
 				o.cwd, _ = os.Getwd()
+				if targetHost != "" {
+					o.cwd = "~" // the host's home
+				}
 			}
 			s, err := startSession(cmd.Context(), o)
 			if err != nil {
@@ -153,6 +159,11 @@ func startRemoteSession(cmd *cobra.Command, o newOptions, on remoteNewOptions) e
 }
 
 func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
+	if targetHost != "" {
+		// The folder and the harness are the host's to check: "~" and relative
+		// paths start at its home, and no harness means its default.
+		return startOnHost(ctx, o, o.cwd)
+	}
 	p, err := paths.Default()
 	if err != nil {
 		return nil, err
@@ -170,8 +181,14 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("%s isn't a folder", dir)
 	}
+	return startOnHost(ctx, o, dir)
+}
+
+// startOnHost asks the daemon (this machine's, or with --host the host's) to
+// start the session in dir.
+func startOnHost(ctx context.Context, o newOptions, dir string) (*core.Session, error) {
 	var s ipc.Session
-	err = withClient(ctx, func(c *client, snap snapshot) error {
+	err := withClient(ctx, func(c *client, snap snapshot) error {
 		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Prompt: o.prompt, Harness: o.harness, Remote: o.remote}
 		if o.group != "" {
 			g, err := resolveGroup(snap, o.group)
@@ -187,7 +204,7 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 			}
 			req.GroupID = g.ID
 		}
-		return c.conn.Call(ipc.OpNew, req, &s)
+		return c.call(ipc.OpNew, req, &s)
 	})
 	return s.Core(), err
 }
@@ -242,7 +259,7 @@ func newResumeCmd() *cobra.Command {
 						continue
 					}
 					var w ipc.Session
-					if err := c.conn.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &w); err != nil {
+					if err := c.call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &w); err != nil {
 						errs = append(errs, fmt.Errorf("%s: %w", nameOf(s), err))
 						continue
 					}

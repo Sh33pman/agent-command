@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -220,6 +221,14 @@ func (c *Client) ListFolders(ctx context.Context, r ipc.RemoteFolderRequest) (ap
 func (c *Client) MakeFolder(ctx context.Context, r ipc.RemoteFolderRequest) (api.Folder, error) {
 	var out api.Folder
 	err := c.call(ctx, r.Host, api.OpFoldersMkdir, api.FolderPath{Path: r.Path}, &out)
+	return out, err
+}
+
+// Call runs one of a host's daemon ops (api.OpCall), and answers its data as
+// the host sent it.
+func (c *Client) Call(ctx context.Context, host, op string, data json.RawMessage) (json.RawMessage, error) {
+	var out json.RawMessage
+	err := c.call(ctx, host, api.OpCall, api.CallRequest{Op: op, Data: data}, &out)
 	return out, err
 }
 

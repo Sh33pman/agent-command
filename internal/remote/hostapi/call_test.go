@@ -1,0 +1,113 @@
+package hostapi
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/brettmostert/agent-command/internal/catalog"
+	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/api"
+	"github.com/brettmostert/agent-command/internal/remote/wire"
+)
+
+func callReq(t *testing.T, op string, data any) api.CallRequest {
+	t.Helper()
+	r := api.CallRequest{Op: op}
+	if data != nil {
+		b, err := json.Marshal(data)
+		must(t, err)
+		r.Data = b
+	}
+	return r
+}
+
+// A paired device runs the host daemon's own ops (Direct Connect), except ones
+// for the host's own machine, admin ones, streams and the host's remote.* ops.
+func TestCallRunsTheHostsOps(t *testing.T) {
+	f := newFixture(t)
+	f.b.replies = map[string]json.RawMessage{ipc.OpSnapshot: json.RawMessage(`{"sessions":[{"id":"l1"}]}`)}
+
+	var snap ipc.Snapshot
+	must(t, f.call(api.OpCall, callReq(t, ipc.OpSnapshot, nil), &snap))
+	if len(snap.Sessions) != 1 || snap.Sessions[0].ID != "l1" {
+		t.Errorf("snapshot = %+v", snap)
+	}
+	// A change through mutate is checked by its kind.
+	must(t, f.call(api.OpCall, callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: "l1", Text: "x"}), nil))
+	if last := f.b.calls[len(f.b.calls)-1]; last.Op != ipc.OpMutate || !json.Valid(last.Data) {
+		t.Errorf("mutate went as %+v", last)
+	}
+	for _, r := range []api.CallRequest{
+		callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{"l1"}}), // admin
+		callReq(t, ipc.OpInit, nil),                      // admin
+		callReq(t, ipc.OpSpeechSay, map[string]string{}), // the host's own machine
+		callReq(t, ipc.OpRemoteHosts, nil),               // the host's own hosts
+		callReq(t, ipc.OpRemoteCall, ipc.RemoteCall{}),   // nor through them
+		callReq(t, ipc.OpHello, ipc.Hello{}),
+	} {
+		wantCode(t, r.Op+" "+string(r.Data), f.call(api.OpCall, r, nil), api.CodeForbidden)
+	}
+	wantCode(t, "unknown", f.call(api.OpCall, callReq(t, "nope", nil), nil), wire.CodeUnknownOp)
+	wantCode(t, "bad mutate", f.call(api.OpCall, api.CallRequest{Op: ipc.OpMutate, Data: json.RawMessage(`"x"`)}, nil), wire.CodeBadRequest)
+	f.b.callErr = wire.Errorf("not_supported", "can't")
+	wantCode(t, "the daemon's code", f.call(api.OpCall, callReq(t, ipc.OpSessionScreen, ipc.ScreenRequest{ID: "l1"}), nil), "not_supported")
+	f.b.callErr = nil
+	wantCode(t, "bad call", f.call(api.OpCall, "x", nil), wire.CodeBadRequest)
+}
+
+// config.get and config.set are the host's settings, as on their own: not its
+// device ones.
+func TestCallSettingsAreTheHosts(t *testing.T) {
+	f := newFixture(t)
+	var st ipc.ConfigState
+	must(t, f.call(api.OpCall, callReq(t, ipc.OpConfigGet, nil), &st))
+	if _, ok := st.Values["editor"]; ok {
+		t.Errorf("a device setting came: %v", st.Values)
+	}
+	must(t, f.call(api.OpCall, callReq(t, ipc.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"default_harness": "antigravity"}}), &st))
+	if st.Values["default_harness"] != "antigravity" {
+		t.Errorf("set: %v", st.Values)
+	}
+	wantCode(t, "device", f.call(api.OpCall, callReq(t, ipc.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"editor": "vim"}}), nil),
+		wire.CodeBadRequest)
+	if len(f.b.calls) != 0 {
+		t.Errorf("settings went to the daemon's ops: %+v", f.b.calls)
+	}
+}
+
+// A new session's folder is on the host, from its home; the harness is its
+// default, and must be installed.
+func TestCallStartsSessionsInTheHostsFolders(t *testing.T) {
+	f := newFixture(t)
+	must(t, os.Mkdir(filepath.Join(f.home, "api"), 0o750))
+	f.b.installed, f.b.def = []string{"claude", "terminal"}, "terminal"
+	must(t, f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~/api", Name: "x"}), nil))
+	var got ipc.NewRequest
+	must(t, json.Unmarshal(f.b.calls[0].Data, &got))
+	if got.Cwd != filepath.Join(f.home, "api") || got.Harness != "terminal" || got.Name != "x" {
+		t.Errorf("new = %+v", got)
+	}
+	wantCode(t, "no folder", f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~/nope"}), nil), wire.CodeNotFound)
+	wantCode(t, "not installed", f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~", Harness: "antigravity"}), nil),
+		wire.CodeNotFound)
+	wantCode(t, "bad new", f.call(api.OpCall, api.CallRequest{Op: ipc.OpNew, Data: json.RawMessage(`[]`)}, nil), wire.CodeBadRequest)
+}
+
+func TestCallableOps(t *testing.T) {
+	allowed := map[string]bool{}
+	for _, op := range catalog.Local.Ops() {
+		allowed[op.Name] = Callable(op)
+	}
+	for _, name := range []string{ipc.OpSnapshot, ipc.OpSessionScreen, ipc.MutRename, ipc.MutArchive, ipc.OpNew, ipc.OpJobSave, ipc.OpInboxAnswer, ipc.OpConfigGet} {
+		if !allowed[name] {
+			t.Errorf("%s isn't callable", name)
+		}
+	}
+	for _, name := range []string{ipc.OpEvent, ipc.OpShutdown, ipc.OpWakeSet, ipc.OpSpeechSay, ipc.MutPurge, ipc.OpConfigSet, ipc.OpRemoteHosts, ipc.OpRemoteCall} {
+		if allowed[name] {
+			t.Errorf("%s is callable", name)
+		}
+	}
+}

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/wire"
 	"github.com/brettmostert/agent-command/internal/store"
 )
 
@@ -182,5 +184,37 @@ func TestSessionScreen(t *testing.T) {
 	}
 	if err := c.Call(ipc.OpSessionScreen, "nope", nil); err == nil {
 		t.Error("took a request that isn't one")
+	}
+}
+
+// A paired device runs the daemon's ops as its socket would (Direct Connect):
+// a change bumps the revision, an error keeps its code, and sessions and
+// groups go as their wire types.
+func TestHostBackendRunsOps(t *testing.T) {
+	d, _, _, _ := jobDaemon(t)
+	b := hostBackend{d}
+	ctx := context.Background()
+	raw, err := b.Call(ctx, ipc.OpNew, json.RawMessage(`{"cwd":"`+t.TempDir()+`","harness":"terminal","name":"api"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s ipc.Session
+	must(t, json.Unmarshal(raw, &s))
+	if s.Name != "api" || s.Parent == "" {
+		t.Errorf("new = %s", raw)
+	}
+	rev, _ := d.changes.current()
+	if _, err := b.Call(ctx, ipc.OpMutate, json.RawMessage(`{"kind":"session.rename","id":"`+s.ID+`","text":"x"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if now, _ := d.changes.current(); now == rev {
+		t.Error("a change didn't bump the revision")
+	}
+	if raw, err := b.Call(ctx, ipc.OpPing, nil); err != nil || raw != nil {
+		t.Errorf("ping = %s %v", raw, err)
+	}
+	_, err = b.Call(ctx, ipc.OpSessionScreen, json.RawMessage(`{"id":"nope"}`))
+	if !wire.IsCode(err, ipc.CodeNotFound) {
+		t.Errorf("screen of nothing: %v", err)
 	}
 }

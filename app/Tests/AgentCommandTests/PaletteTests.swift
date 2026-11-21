@@ -82,7 +82,8 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
         "Rename…", "Archive…", "Turn Remote on", "Move to a new group…", "Open in editor", "Copy folder path",
     ])
     let unnamed = try makeSession(id: "x1", harness: "codex")
-    #expect(titles(Palette.entries(PaletteState(targets: [unnamed])), in: "Agent session").first == "Rename…")
+    #expect(titles(Palette.entries(PaletteState(targets: [unnamed])), in: "Codex session").first == "Rename…",
+            "an agent the app doesn't know, by its name")
     #expect(Palette.archivePrompt([agent])?.note.hasPrefix("Agents stop.") == true, "it can be unarchived, as Claude can")
 }
 

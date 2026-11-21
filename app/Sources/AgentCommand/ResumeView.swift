@@ -84,10 +84,10 @@ private struct HarnessMark: View {
 
     var body: some View {
         let color = isSelected ? theme.bg : theme.fg
-        if harness == .antigravity {
-            AgentMark(mark: AntigravityMarkShape(), label: harness.title, color: color, busy: false)
-        } else {
-            AgentMark(mark: ClaudeMarkShape(), label: harness.title, color: color, busy: false)
+        switch harness.icon {
+        case "antigravity": AgentMark(mark: AntigravityMarkShape(), label: harness.title, color: color, busy: false)
+        case "claude": AgentMark(mark: ClaudeMarkShape(), label: harness.title, color: color, busy: false)
+        default: Text("●").foregroundStyle(color).help(harness.title) // one the app has no mark for
         }
     }
 }

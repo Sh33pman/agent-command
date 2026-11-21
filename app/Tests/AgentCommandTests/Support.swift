@@ -24,7 +24,8 @@ func isolateFromTheRealDaemon() throws {
 /// needs you (internal/core Attention), waiting since `since`.
 func makeSession(
     id: String, name: String = "", cwd: String = "/tmp", harness: String = "claude",
-    status: String = "done", claude: String = "", unseen: Bool = false, since: String = "2026-11-20T09:00:00Z"
+    status: String = "done", claude: String = "", unseen: Bool = false, since: String = "2026-11-20T09:00:00Z",
+    agent: String? = nil, capabilities: [String]? = nil
 ) throws -> Session {
     var fields: [String: Any] = [
         "ID": id, "Name": name.isEmpty && cwd == "/tmp" ? id : name, "Cwd": cwd, "Status": status, "Kind": "hosted",
@@ -36,6 +37,20 @@ func makeSession(
     case ("done", true): fields["attention"] = ["rank": 3, "reason": "unseen_done", "since": since]
     default: break
     }
+    // What the daemon says it is and what can be done with it (internal/core/caps.go),
+    // for a session on this Mac.
+    let runs = agent ?? (harness == "terminal" ? (claude.isEmpty ? "none" : "claude") : (harness.isEmpty ? "claude" : harness))
+    fields["agent"] = runs
+    fields["capabilities"] = capabilities ?? {
+        if status == "archived" { return harness == "terminal" ? ["purge"] : ["unarchive", "purge", "open_in_editor"] }
+        var caps = ["attach", "archive", "set_remote"]
+        if !cwd.isEmpty { caps.append("open_in_editor") }
+        if status == "paused" || status == "finished" { caps.append("resume") }
+        if (runs == "claude" && (harness != "terminal" || !claude.isEmpty)) || (runs == "antigravity" && !claude.isEmpty) {
+            caps.append("continue_in_job")
+        }
+        return caps
+    }()
     return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
 }
 

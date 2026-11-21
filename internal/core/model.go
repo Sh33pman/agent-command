@@ -159,6 +159,11 @@ type Session struct {
 	Order  int    `json:"order,omitempty"`
 	// Needs is Attention(), for clients. MarshalJSON fills it in.
 	Needs *Attention `json:"attention,omitempty"`
+	// What it is and what can be done with it, for clients (caps.go).
+	// MarshalJSON fills them in.
+	AgentNow string   `json:"agent,omitempty"`
+	Display  string   `json:"display_name,omitempty"`
+	Can      []string `json:"capabilities,omitempty"`
 }
 
 // MarshalJSON writes the session with Parent, Order and Needs filled in.
@@ -170,6 +175,7 @@ func (s Session) MarshalJSON() ([]byte, error) {
 		p.Parent, p.Order = s.SetID, s.SetOrder
 	}
 	p.Needs = s.Attention()
+	p.AgentNow, p.Display, p.Can = s.Agent(), s.DisplayName(), s.Capabilities()
 	return json.Marshal(p)
 }
 

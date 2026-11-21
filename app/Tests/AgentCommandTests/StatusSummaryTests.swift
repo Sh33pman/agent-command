@@ -5,7 +5,9 @@ import Testing
 
 private func session(_ status: String, harness: String = "claude", claude: String = "c", detail: String? = nil,
                      description: String? = nil, cwd: String = "/tmp") throws -> Session {
-    var s = try makeSession(id: UUID().uuidString, cwd: cwd, harness: harness, status: status, claude: claude)
+    // As the daemon names an agent typed in a terminal with no hooks: by the program in front.
+    let typed = status == "unknown" && harness == "terminal" ? (detail == "claude" ? "claude" : "other") : nil
+    var s = try makeSession(id: UUID().uuidString, cwd: cwd, harness: harness, status: status, claude: claude, agent: typed)
     s.statusDetail = detail
     s.description = description
     return s

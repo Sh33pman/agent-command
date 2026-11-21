@@ -313,8 +313,18 @@ struct Session: Decodable, Identifiable, Equatable {
     var groupID: String?
     var lastEventAt: String?
     var attention: SessionAttention?
+    /// What runs in it now, as the daemon says: claude, antigravity, other, none, or
+    /// one the app doesn't know (shown generically).
+    var agent: String?
+    /// Its name, or its folder's.
+    var display: String?
+    /// What can be done with it now. The daemon decides; the app offers only these,
+    /// and ignores ones it doesn't know.
+    var capabilities: [String]?
 
     enum CodingKeys: String, CodingKey {
+        case agent, capabilities
+        case display = "display_name"
         case id = "ID", name = "Name", cwd = "Cwd", status = "Status", kind = "Kind", unseen = "Unseen"
         case harness = "Harness", claudeSessionID = "ClaudeSessionID"
         case statusDetail = "StatusDetail", description = "Description", remote = "Remote"
@@ -336,42 +346,45 @@ struct Session: Decodable, Identifiable, Equatable {
         return "\(status) · \(detail)"
     }
 
-    /// Claude runs in it: a Claude session, or Claude typed in a terminal (with
-    /// or without hooks). Not Antigravity, whose conversation id is kept in the same place.
-    var runsClaude: Bool {
-        isClaude || (!isAntigravity && (!claudeSessionID.isEmpty || (status == "unknown" && statusDetail == "claude")))
+    /// Whether the daemon says this can be done with it now.
+    func can(_ capability: SessionCapability) -> Bool {
+        capabilities?.contains(capability.rawValue) == true
     }
 
-    /// Whose conversation claudeSessionID is: Antigravity's, or else Claude's.
-    var conversationHarness: Harness { isAntigravity ? .antigravity : .claude }
+    /// The agent that runs in it now; nil for a terminal with none.
+    var runningAgent: Harness? {
+        guard let agent, agent != "none", !agent.isEmpty else { return nil }
+        return Harness.agent(agent)
+    }
 
     /// The row's tooltip: everything about the session on a few lines.
     var details: String {
         var lines = [displayName, statusLine]
         if let description, !description.isEmpty { lines.append(description) }
         if !cwd.isEmpty { lines.append((cwd as NSString).abbreviatingWithTildeInPath) }
-        if !claudeSessionID.isEmpty { lines.append("\(conversationHarness.conversationTitle) \(claudeSessionID)") }
+        if !claudeSessionID.isEmpty { lines.append("\((runningAgent ?? .claude).conversationTitle) \(claudeSessionID)") }
         return lines.joined(separator: "\n")
     }
 
     var isTerminal: Bool { harness == "terminal" }
-    /// What it was started with, if the app knows it.
-    var harnessKind: Harness? { Harness(session: harness) }
-    /// Started as Claude: what Claude's own features (its session id, resume) need.
-    var isClaude: Bool { harnessKind == .claude }
-    var isAntigravity: Bool { harnessKind == .antigravity }
-    /// "Claude", "Antigravity" or "Terminal"; "Agent" for one the app can't name.
-    var harnessTitle: String { harnessKind?.title ?? "Agent" }
-    /// A terminal counts once an agent has started in it.
-    var isAgent: Bool { !isTerminal || !claudeSessionID.isEmpty }
+    /// What it was started with: one the daemon listed, or a generic one.
+    var harnessKind: Harness { Harness(session: harness) ?? Harness.agent(harness) }
+    /// "Claude", "Antigravity" or "Terminal", or what the daemon calls another.
+    var harnessTitle: String { harnessKind.title }
     var isArchived: Bool { status == "archived" }
 
-    /// Stopped by itself or by a reboot: activating it resumes it.
-    var isStopped: Bool { status == "paused" || status == "finished" }
-
     var displayName: String {
-        name.isEmpty ? (cwd as NSString).lastPathComponent : name
+        if let display, !display.isEmpty { return display }
+        return name.isEmpty ? (cwd as NSString).lastPathComponent : name
     }
+}
+
+/// What can be done with a session (internal/core's capabilities). Ones the app
+/// doesn't know yet are ignored.
+enum SessionCapability: String {
+    case resume, attach, archive, unarchive, purge
+    case removeAdded = "remove_added", continueInJob = "continue_in_job"
+    case openInEditor = "open_in_editor", setRemote = "set_remote"
 }
 
 /// An earlier agent conversation that can be resumed (internal/ipc.Conversation).

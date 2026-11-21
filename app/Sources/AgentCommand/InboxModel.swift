@@ -526,13 +526,13 @@ final class InboxModel {
         guard item.isOpen else { return "This has been dealt with." }
         if item.multipart { return "This question has several parts. Answer it in the session." }
         let found = store.session(id: item.sessionID)
-        // The agent's own name, or Claude's for a terminal it was typed in.
-        let agent = found?.isAntigravity == true ? Harness.antigravity.title : Harness.claude.title
-        // Claude's conversation id says Claude runs in the session. Antigravity's
-        // comes only with its first hook, after its sign-in and trust prompts, so
-        // for it the session running is enough, as the daemon checks too.
-        guard let session = found, session.isAntigravity || !session.claudeSessionID.isEmpty,
-              !session.isStopped, !session.isArchived
+        // The agent the daemon says runs in it, or Claude's name when none does.
+        let agent = (found?.runningAgent ?? .claude).title
+        // An agent runs in it, and it isn't stopped: the daemon says it can be
+        // attached and not resumed. Claude's conversation id says Claude runs; agy's
+        // comes only with its first hook, after its sign-in and trust prompts.
+        guard let session = found, let running = session.runningAgent, running != .claude || !session.claudeSessionID.isEmpty,
+              session.can(.attach), !session.can(.resume)
         else { return "\(agent) isn't running in this session." }
         if item.needsOption {
             return session.status == "waiting" ? nil : "This session isn't waiting for an answer."

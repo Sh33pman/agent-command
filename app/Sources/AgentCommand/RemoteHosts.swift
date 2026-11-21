@@ -339,17 +339,17 @@ struct SessionPlace: Equatable {
 
     /// hosts are the known hosts, and clients the connections attached to it.
     init(_ session: Session, hosts: [RemoteHost], clients: Int = 0) {
+        canRemove = session.can(.removeAdded)
+        canArchive = session.can(.archive)
+        canToggleRemote = session.can(.setRemote)
         guard session.isOnHost else {
             if session.isRemote { shared = clients > 0 ? "shared · \(clients)" : "shared" }
             return
         }
-        canToggleRemote = false
-        canRemove = true
         hostBadge = "↗ \(session.hostName)"
         if session.isHostGone {
             dimmed = true
             note = "no longer available"
-            canArchive = false
             return
         }
         // A host that's gone from the list is as good as unreachable.

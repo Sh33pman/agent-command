@@ -143,16 +143,15 @@ enum Palette {
                 list.append(PaletteEntry(section: section, title: "Move out of set", action: .moveOut(sessionID: session.id)))
             }
             // A host's folder isn't on this Mac.
-            if !session.cwd.isEmpty, !session.isOnHost {
+            if session.can(.openInEditor) {
                 list.append(PaletteEntry(
                     section: section, title: "Open in editor", shortcut: keys.label(.openInEditor), action: .openInEditor(session)))
             }
             list.append(PaletteEntry(section: section, title: "Copy folder path", action: .copy(session.cwd)))
-            if session.isClaude {
-                list.append(PaletteEntry(section: section, title: "Copy Claude session ID", action: .copy(session.claudeSessionID)))
-            } else if session.isAntigravity, !session.claudeSessionID.isEmpty {
-                // Its id comes with its first hook.
-                list.append(PaletteEntry(section: section, title: "Copy Antigravity conversation ID", action: .copy(session.claudeSessionID)))
+            // Its agent's conversation id, once a hook has given it.
+            if let agent = session.runningAgent, !session.claudeSessionID.isEmpty {
+                let what = agent == .claude ? "Claude session ID" : "\(agent.title) conversation ID"
+                list.append(PaletteEntry(section: section, title: "Copy \(what)", action: .copy(session.claudeSessionID)))
             }
         }
         if state.needsYou {
@@ -205,7 +204,7 @@ enum Palette {
         list.append(PaletteEntry(section: "App", title: "Inbox", shortcut: keys.label(.inbox), action: .inbox))
         list.append(PaletteEntry(section: "App", title: "Scheduled jobs", shortcut: keys.label(.scheduled), action: .scheduled))
         list.append(PaletteEntry(section: "App", title: state.speechOn ? "Turn speech off" : "Turn speech on", action: .toggleSpeech))
-        if state.speechOn, current?.isAgent == true || state.speaking {
+        if state.speechOn, current?.runningAgent != nil || state.speaking {
             let title = state.speaking ? "Stop reading" : "Read the latest message aloud"
             list.append(PaletteEntry(section: "App", title: title, shortcut: keys.label(.readAloud), action: .toggleReading))
         }

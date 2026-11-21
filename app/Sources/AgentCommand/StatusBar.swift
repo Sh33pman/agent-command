@@ -66,7 +66,7 @@ struct StatusBarView: View {
                         .onTapGesture { speech.stop() }
                 }
                 Spacer()
-                if speech.isEnabled, !store.inboxOpen, store.selected?.isAgent == true {
+                if speech.isEnabled, !store.inboxOpen, store.selected?.runningAgent != nil {
                     speakButton
                 }
                 popupMenu

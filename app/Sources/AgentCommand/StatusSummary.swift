@@ -11,17 +11,15 @@ enum RowMark: Equatable {
     /// Another agent, or one acmd can't name.
     case dot
 
+    /// From the agent the daemon says runs in it: one the app has no mark for is a dot.
     init(_ session: Session) {
-        let dimmed = session.isStopped || session.isArchived || session.status == "unknown"
+        let dimmed = ["paused", "finished", "archived", "unknown"].contains(session.status)
         let busy = session.status == "busy"
-        if session.runsClaude {
-            self = .claude(dimmed: dimmed, busy: busy)
-        } else if session.isAntigravity {
-            self = .antigravity(dimmed: dimmed, busy: busy)
-        } else if session.isTerminal && session.status != "unknown" {
-            self = .terminal
-        } else {
-            self = .dot
+        switch session.runningAgent?.icon {
+        case "claude": self = .claude(dimmed: dimmed, busy: busy)
+        case "antigravity": self = .antigravity(dimmed: dimmed, busy: busy)
+        case nil: self = .terminal
+        default: self = .dot
         }
     }
 }

@@ -332,3 +332,21 @@ func TestIdentityOps(t *testing.T) {
 		t.Errorf("broken host cert: %v", err)
 	}
 }
+
+func TestHarnessesOp(t *testing.T) {
+	p := settingsPaths(t)
+	must(t, writeSetting(p.Config(), "", "default_harness", "antigravity"))
+	start(t, p, withConfig(p, func(c *Config) {
+		c.Harnesses = func() []string { return []string{"claude", "antigravity", "terminal", "copilot"} }
+	}))
+	c := dial(t, p)
+	var h ipc.Harnesses
+	must(t, c.Call(ipc.OpHarnesses, nil, &h))
+	var names []string
+	for _, e := range h.Harnesses {
+		names = append(names, e.Name+":"+e.Icon)
+	}
+	if strings.Join(names, ",") != "claude:claude,antigravity:antigravity,terminal:terminal" || h.Default != "antigravity" || !h.Harnesses[0].Agent || h.Harnesses[2].Agent {
+		t.Errorf("harnesses = %+v", h)
+	}
+}

@@ -201,6 +201,19 @@
       }
     },
     {
+      "name": "harnesses",
+      "description": "Lists what new sessions can run here, each with an icon key, and the default.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "harnesses"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Harnesses"
+      }
+    },
+    {
       "name": "health.dismiss",
       "description": "Stops showing a warning to one client.",
       "scope": "act",
@@ -1826,6 +1839,18 @@
         },
         "attention": {
           "$ref": "#/$defs/core.Attention"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object",
@@ -2032,6 +2057,46 @@
       "required": [
         "host",
         "device"
+      ]
+    },
+    "ipc.Harness": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "title",
+        "icon",
+        "agent"
+      ]
+    },
+    "ipc.Harnesses": {
+      "properties": {
+        "harnesses": {
+          "items": {
+            "$ref": "#/$defs/ipc.Harness"
+          },
+          "type": "array"
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "harnesses"
       ]
     },
     "ipc.Health": {

@@ -149,7 +149,7 @@ final class PaneView: NSView {
             slot.setMessage("Pick a session, or press ⌘N or ⌘T for a new one")
             return
         }
-        if session.isStopped && surfaces[sessionID] == nil {
+        if session.can(.resume) && surfaces[sessionID] == nil {
             slot.setSurface(nil)
             slot.setMessage("\(session.displayName) has stopped. Click to resume it")
             return
@@ -160,7 +160,7 @@ final class PaneView: NSView {
     private func paneClicked(_ id: String) {
         change { $0.editCurrent { $0.focus(id) } }
         if let sessionID = tree.focusedSession, surfaces[sessionID] == nil,
-           let session = session(sessionID), session.isStopped {
+           let session = session(sessionID), session.can(.resume) {
             onActivate?(session)
         }
     }

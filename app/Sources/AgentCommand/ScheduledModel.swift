@@ -67,13 +67,10 @@ final class ScheduledModel {
     /// The sessions a job of the form's agent can continue.
     var continuableSessions: [Session] { continuableSessions(for: harness) }
 
-    /// The sessions a job of an agent's can continue: Claude's, or a terminal Claude
-    /// was typed in; Antigravity's once its first hook has given its conversation id.
+    /// The sessions a job of an agent's can continue: the daemon says which can,
+    /// and the agent in them is the job's.
     func continuableSessions(for agent: Harness) -> [Session] {
-        switch agent {
-        case .antigravity: store.sessions.filter { $0.isAntigravity && !$0.claudeSessionID.isEmpty }
-        default: store.sessions.filter { $0.isClaude || (!$0.isAntigravity && !$0.claudeSessionID.isEmpty) }
-        }
+        store.sessions.filter { $0.can(.continueInJob) && $0.runningAgent?.rawValue == agent.rawValue }
     }
 
     func sessionName(_ id: String) -> String? {

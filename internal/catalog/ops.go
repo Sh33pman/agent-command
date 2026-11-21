@@ -161,6 +161,8 @@ func localOps() []Op {
 		act(ipc.OpRemoteFoldersMkdir, "Makes a folder on a host.", host, ipc.RemoteFolderRequest{}, api.Folder{}),
 		read(ipc.OpRemoteHarnesses, "Lists the harnesses a host can start.", host, ipc.RemoteHostRef{}, api.Harnesses{}),
 
+		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
+
 		// Health: what's wrong with the host, and putting it right.
 		act(ipc.OpHealthDismiss, "Stops showing a warning to one client.", host, ipc.HealthRef{}, []string{}),
 		act(ipc.OpHealthRestore, "Shows a client every warning it dismissed again.", host, ipc.HealthRef{}, []string{}),

@@ -162,6 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         SpeechController.shared.checkSetup()
         let args = CommandLine.arguments
         store.start()
+        HarnessList.shared.load() // what new sessions can run here, from the daemon
 
         NSApp.mainMenu = makeMenu()
         MenuBarPreference.shared.onChange = { [weak self] in self?.updateMenuBarItem() }
@@ -533,8 +534,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Activating a stopped session resumes it; anything else just shows.
     private func activate(_ session: Session?) {
         guard let session else { return }
-        // A host resumes its own sessions; this Mac only attaches.
-        guard session.isStopped, !session.isOnHost else {
+        // The daemon says whether it resumes (a host resumes its own sessions).
+        guard session.can(.resume) else {
             pane?.select(sessionID: session.id)
             return
         }

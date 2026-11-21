@@ -4,7 +4,7 @@ import Foundation
 /// which `acmd new` reads too. Unset, ⌘N asks first.
 enum DefaultHarness {
     /// What can be the default: the agents. A terminal has its own shortcut.
-    static let choices = Harness.agents
+    static var choices: [Harness] { Harness.agents }
 
     static let key = "default_harness"
 

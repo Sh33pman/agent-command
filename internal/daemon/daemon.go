@@ -386,6 +386,8 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 			return nil, fmt.Errorf("bad event: %w", err)
 		}
 		return nil, d.ApplyHook(ctx, ev)
+	case ipc.OpHarnesses:
+		return d.harnesses(), nil
 	case ipc.OpSnapshot:
 		var sr ipc.SnapshotRequest
 		if len(req.Data) > 0 {

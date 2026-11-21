@@ -163,3 +163,23 @@ type Update struct {
 func ConfigOf(f *config.File) ConfigState {
 	return ConfigState{Path: f.Path(), Settings: config.Specs, Values: config.Values(f.Config()), Problem: f.Problem()}
 }
+
+// OpHarnesses lists what new sessions can run here (as the Remote API's
+// harnesses.list does for a host), with an icon key for each. A client shows
+// an icon key it doesn't know generically.
+const OpHarnesses = "harnesses" // no arguments → Harnesses
+
+// Harness is something a new session can run.
+type Harness struct {
+	Name  string `json:"name"`  // what new and job.save take: claude, antigravity, terminal
+	Title string `json:"title"` // what to call it: "Claude", "Antigravity", "Terminal"
+	Icon  string `json:"icon"`  // the client's icon for it; unknown ones are generic
+	Agent bool   `json:"agent"` // keeps a conversation, runs jobs and can be resumed
+}
+
+// Harnesses are the harnesses installed, and the default for a plain new
+// session ("" while it isn't chosen).
+type Harnesses struct {
+	Harnesses []Harness `json:"harnesses"`
+	Default   string    `json:"default,omitempty"`
+}

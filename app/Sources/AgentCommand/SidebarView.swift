@@ -281,7 +281,7 @@ struct SidebarView: View {
                         isCursor: false, isMarked: false, unread: 0, showsFolder: true,
                         scheduled: session.scheduledNote(jobs: store.jobs))
                         .contextMenu {
-                            if !session.isTerminal {
+                            if session.can(.unarchive) {
                                 Button("Unarchive") { store.unarchive(session.id) }
                             }
                         }

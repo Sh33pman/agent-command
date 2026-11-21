@@ -20,6 +20,10 @@ func makeRemoteSession(
     ]
     if !host.isEmpty { fields["Host"] = host; fields["RemoteID"] = "r-\(id)"; fields["HostGone"] = gone }
     if status == "waiting" { fields["attention"] = ["rank": 1, "reason": "waiting", "since": "2026-11-20T09:00:00Z"] }
+    // As the daemon says (internal/core/caps.go).
+    fields["agent"] = "claude"
+    fields["capabilities"] = host.isEmpty ? ["attach", "archive", "open_in_editor", "set_remote"]
+        : (gone ? ["remove_added"] : ["attach", "archive", "remove_added"])
     return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
 }
 

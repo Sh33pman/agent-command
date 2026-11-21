@@ -39,30 +39,63 @@ import Testing
     }
 }
 
-@Test func aSessionKnowsWhatItIs() throws {
+@Test func aSessionIsWhatTheDaemonSays() throws {
     let terminal = try makeSession(id: "t", harness: "terminal", status: "running")
-    #expect(terminal.isTerminal && !terminal.isAgent && !terminal.isStopped)
+    #expect(terminal.isTerminal && terminal.runningAgent == nil && !terminal.can(.resume))
     let withAgent = try makeSession(id: "a", harness: "terminal", status: "busy", claude: "c1")
-    #expect(withAgent.isTerminal && withAgent.isAgent)
+    #expect(withAgent.isTerminal && withAgent.runningAgent == .claude)
     let paused = try makeSession(id: "p", status: "paused", claude: "c2")
-    #expect(!paused.isTerminal && paused.isAgent && paused.isStopped)
-    #expect(try makeSession(id: "f", status: "finished").isStopped)
+    #expect(paused.runningAgent == .claude && paused.can(.resume) && paused.can(.continueInJob))
     let claude = try makeSession(id: "c")
-    #expect(claude.isClaude && !claude.isAntigravity && claude.harnessKind == .claude && claude.harnessTitle == "Claude")
-    #expect(try makeSession(id: "o", harness: "").isClaude, "older sessions are Claude's")
-    let gravity = try makeSession(id: "g", harness: "antigravity", status: "busy")
-    #expect(gravity.isAntigravity && !gravity.isClaude && !gravity.isTerminal && gravity.isAgent)
-    #expect(!gravity.runsClaude && gravity.harnessTitle == "Antigravity")
+    #expect(claude.harnessKind == .claude && claude.harnessTitle == "Claude")
+    #expect(try makeSession(id: "o", harness: "").harnessKind == .claude, "older sessions are Claude's")
     let hooked = try makeSession(id: "h", harness: "antigravity", status: "busy", claude: "conv-1")
-    #expect(!hooked.runsClaude, "its conversation id is kept as Claude's is, but it isn't Claude")
-    #expect(hooked.conversationHarness == .antigravity && claude.conversationHarness == .claude)
+    #expect(hooked.runningAgent == .antigravity && hooked.harnessTitle == "Antigravity")
     #expect(hooked.details.contains("Antigravity conversation conv-1"))
     #expect(try makeSession(id: "w", claude: "s-1").details.contains("Claude session s-1"))
-    #expect(try makeSession(id: "tc", harness: "terminal", claude: "s-2").runsClaude, "Claude typed in a terminal")
-    #expect(terminal.harnessTitle == "Terminal" && !terminal.isClaude)
-    let other = try makeSession(id: "x", harness: "codex")
-    #expect(other.harnessKind == nil && other.harnessTitle == "Agent" && !other.runsClaude && other.isAgent)
+    #expect(terminal.harnessTitle == "Terminal")
+    // An agent the app doesn't know: shown by its name, with a generic icon.
+    let other = try makeSession(id: "x", harness: "codex", agent: "codex")
+    #expect(other.harnessTitle == "Codex" && other.runningAgent?.icon == "codex" && RowMark(other) == .dot)
+    // A capability the app doesn't know is ignored; one the daemon didn't give isn't offered.
+    let odd = try makeSession(id: "q", capabilities: ["teleport", "attach"])
+    #expect(odd.can(.attach) && !odd.can(.archive))
     #expect(try makeSession(id: "z", status: "archived").isArchived)
     #expect(try makeSession(id: "n", name: "", cwd: "/tmp/project", status: "done").displayName == "project")
     #expect(try makeSession(id: "m", name: "mine", status: "done").displayName == "mine")
+    let named = try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: [
+        "ID": "d", "Name": "", "Cwd": "/w/x", "Status": "busy", "Kind": "hosted", "Unseen": false, "Harness": "claude",
+        "ClaudeSessionID": "", "display_name": "From the daemon",
+    ]))
+    #expect(named.displayName == "From the daemon" && named.capabilities == nil && !named.can(.attach))
+}
+
+/// A harness the daemon lists that the app has no icon for: shown with a generic one.
+@MainActor @Test func aNewAgentFromTheDaemonNeedsNoNewApp() {
+    let fake = FakeCalls()
+    let list = HarnessList()
+    list.calls = fake
+    fake.replies["harnesses"] = ["harnesses": [
+        ["name": "claude", "title": "Claude", "icon": "claude", "agent": true],
+        ["name": "copilot", "title": "Copilot", "icon": "copilot", "agent": true],
+        ["name": "terminal", "title": "Terminal", "icon": "terminal", "agent": false],
+    ], "default": "claude"]
+    var loaded = false
+    list.load { loaded = true }
+    #expect(loaded && list.harnesses.map(\.rawValue) == ["claude", "copilot", "terminal"])
+    let copilot = list.harnesses[1]
+    #expect(copilot.isAgent && copilot.title == "Copilot" && copilot.panelPrompt == "Start Session")
+    #expect(HarnessChoice(list.harnesses).matches.map(\.title) == ["Claude", "Copilot", "Terminal"])
+    let running = try? makeSession(id: "s", harness: "copilot", agent: "copilot")
+    #expect(running.map(RowMark.init) == .dot, "no mark of its own: the generic one")
+
+    // An answer with nothing in it, or a failure, keeps what was there.
+    fake.replies["harnesses"] = ["harnesses": [Any]()]
+    list.load()
+    fake.failures["harnesses"] = "down"
+    list.load()
+    #expect(list.harnesses.count == 3)
+    list.set([])
+    #expect(list.harnesses == Harness.known)
+    #expect(Harness.agent("") .title == "Agent")
 }

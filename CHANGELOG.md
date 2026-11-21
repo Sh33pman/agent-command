@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.66.0](https://github.com/brettmostert/agent-command/compare/v0.65.0...v0.66.0) (2026-11-21)
+
+
+### Features
+
+* health, features, updates, init and report from the daemon ([#104](https://github.com/brettmostert/agent-command/issues/104)) ([cd54b92](https://github.com/brettmostert/agent-command/commit/cd54b924ba6f3f7f1b9c0c0007ac8a20df4963aa))
+
 ## [0.65.0](https://github.com/brettmostert/agent-command/compare/v0.64.0...v0.65.0) (2026-11-21)
 
 

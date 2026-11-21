@@ -333,6 +333,9 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 		resp := ipc.Response{OK: err == nil}
 		if err != nil {
 			resp.Error = err.Error()
+			if r := resultOf("", err); r.Code != ipc.CodeFailed {
+				resp.Code = r.Code
+			}
 		} else if data != nil {
 			b, merr := json.Marshal(data)
 			if merr != nil {
@@ -396,6 +399,12 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		return nil, d.ApplyHook(ctx, ev)
 	case ipc.OpHarnesses:
 		return d.harnesses(), nil
+	case ipc.OpSessionScreen:
+		r, err := decode[ipc.ScreenRequest](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.screen(ctx, r)
 	case ipc.OpSnapshot:
 		var sr ipc.SnapshotRequest
 		if len(req.Data) > 0 {

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -132,5 +133,54 @@ func TestRenameManyIsNumbered(t *testing.T) {
 	}
 	if core.RenameNames("x", 0) != nil {
 		t.Error("none")
+	}
+}
+
+// A session's screen as text: local sessions, all of it or its last lines;
+// one on a host or one that's ended says so, with a code.
+func TestSessionScreen(t *testing.T) {
+	p := settingsPaths(t)
+	must(t, os.MkdirAll(p.StateDir, 0o700))
+	st, err := store.Open(context.Background(), p.DB())
+	must(t, err)
+	ctx := context.Background()
+	local := &core.Session{Name: "api", Cwd: "/w", Status: core.StatusDone, Harness: core.HarnessTerminal, Kind: core.KindHosted}
+	ended := &core.Session{Name: "old", Cwd: "/w", Status: core.StatusDone, Harness: core.HarnessTerminal, Kind: core.KindHosted}
+	far := &core.Session{Name: "far", Cwd: "/r", Status: core.StatusDone, Harness: core.HarnessClaude, Kind: core.KindHosted, Host: "studio", RemoteID: "r1"}
+	for _, s := range []*core.Session{local, ended, far} {
+		must(t, st.CreateSession(ctx, s))
+	}
+	must(t, st.SetAppState(ctx, movedKey, "done"))
+	must(t, st.Close())
+	start(t, p, withConfig(p, func(c *Config) {
+		c.HostScreen = func(id string) (string, bool) {
+			if id == local.ID {
+				return "$ make\r\n\x1b[32mok\x1b[0m\n$ ", true
+			}
+			return "", false
+		}
+	}))
+	c := dial(t, p)
+	var sc ipc.Screen
+	must(t, c.Call(ipc.OpSessionScreen, ipc.ScreenRequest{ID: local.ID}, &sc))
+	if sc.Text != "$ make\nok\n$ " || sc.Lines != 3 || sc.Total != 3 {
+		t.Errorf("screen = %+v", sc)
+	}
+	must(t, c.Call(ipc.OpSessionScreen, ipc.ScreenRequest{ID: local.ID, Lines: 1}, &sc))
+	if sc.Text != "$ " || sc.Lines != 1 || sc.Total != 3 {
+		t.Errorf("last line = %+v", sc)
+	}
+	for id, code := range map[string]string{far.ID: ipc.CodeNotSupported, ended.ID: ipc.CodeNotRunning, "nope": ipc.CodeNotFound} {
+		err := c.Call(ipc.OpSessionScreen, ipc.ScreenRequest{ID: id}, nil)
+		var re *ipc.RemoteError
+		if !errors.As(err, &re) || re.Code != code {
+			t.Errorf("%s: %v (want code %s)", id, err, code)
+		}
+	}
+	if err := c.Call(ipc.OpSessionScreen, ipc.ScreenRequest{ID: local.ID, Lines: -1}, nil); err == nil {
+		t.Error("lines -1")
+	}
+	if err := c.Call(ipc.OpSessionScreen, "nope", nil); err == nil {
+		t.Error("took a request that isn't one")
 	}
 }

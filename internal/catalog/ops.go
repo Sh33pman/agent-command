@@ -170,6 +170,9 @@ func localOps() []Op {
 
 		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
 
+		read(ipc.OpSessionScreen, "Returns a session's screen and recent history as plain text: all of it, or its last lines. Sessions on this machine only, for now.",
+			entities, ipc.ScreenRequest{}, ipc.Screen{}),
+
 		// Speech: device ops, on this machine only.
 		act(ipc.OpSpeechSay, "Reads text aloud, and answers when it's done or stopped.", host, ipc.SpeechSay{}, nil).hostOnly(),
 		act(ipc.OpSpeechStop, "Stops reading aloud, whatever started it.", host, nil, nil).hostOnly(),

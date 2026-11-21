@@ -429,3 +429,17 @@ func TestHostedSessions(t *testing.T) {
 		t.Errorf("hosted: %+v", got)
 	}
 }
+
+func TestScreenCommand(t *testing.T) {
+	env(t)
+	if _, err := acmd(t, "screen", "zzz"); err == nil || !strings.Contains(err.Error(), "no session matches") {
+		t.Errorf("unknown: %v", err)
+	}
+	// The test sessions have no terminal running: it says so, rather than printing nothing.
+	if _, err := acmd(t, "screen", "1", "--lines", "5"); err == nil || !strings.Contains(err.Error(), "isn't running") {
+		t.Errorf("no terminal: %v", err)
+	}
+	if _, err := acmd(t, "screen", "1", "--json"); err == nil {
+		t.Error("json for no terminal")
+	}
+}

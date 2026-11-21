@@ -422,9 +422,12 @@ type Request struct {
 
 // Response answers a Request.
 type Response struct {
-	OK    bool            `json:"ok"`
-	Error string          `json:"error,omitempty"`
-	Data  json.RawMessage `json:"data,omitempty"`
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+	// Code says what kind of error, when the daemon knows (CodeNotSupported,
+	// CodeNotRunning, CodeNotFound, CodeInvalid…).
+	Code string          `json:"code,omitempty"`
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 // Hello is exchanged first in both directions.
@@ -461,7 +464,7 @@ type Status struct {
 }
 
 // RemoteError is an error the daemon reported (the connection is fine).
-type RemoteError struct{ Msg string }
+type RemoteError struct{ Msg, Code string }
 
 func (e *RemoteError) Error() string { return e.Msg }
 
@@ -525,7 +528,7 @@ func (c *Conn) Call(op string, in, out any) error {
 		return err
 	}
 	if !resp.OK {
-		return &RemoteError{Msg: resp.Error}
+		return &RemoteError{Msg: resp.Error, Code: resp.Code}
 	}
 	if out != nil && len(resp.Data) > 0 {
 		return json.Unmarshal(resp.Data, out)
@@ -632,4 +635,32 @@ type PromptFile struct {
 	Path   string `json:"path"`
 	Text   string `json:"text"`
 	Exists bool   `json:"exists"`
+}
+
+// OpSessionScreen reads a session's screen and recent history as plain text
+// (ScreenRequest → Screen). Sessions on this machine only, for now: one on a
+// Remote host fails with CodeNotSupported.
+const OpSessionScreen = "session.screen"
+
+// CodeNotSupported: the session's host can't do that yet.
+const CodeNotSupported = "not_supported"
+
+// CodeNotRunning: the session's terminal has ended.
+const CodeNotRunning = "not_running"
+
+// ScreenRequest names the session, and how much to send: Lines is the last
+// lines of the screen and history (0: all of it).
+type ScreenRequest struct {
+	ID    string `json:"id"`
+	Lines int    `json:"lines,omitempty"`
+}
+
+// Screen is a session's screen as text.
+type Screen struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+	// Lines is how many lines Text has, and Total how many there were before
+	// Lines cut it.
+	Lines int `json:"lines"`
+	Total int `json:"total"`
 }

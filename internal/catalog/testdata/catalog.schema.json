@@ -1197,6 +1197,22 @@
       }
     },
     {
+      "name": "session.screen",
+      "description": "Returns a session's screen and recent history as plain text: all of it, or its last lines. Sessions on this machine only, for now.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "entities",
+      "transport": {
+        "op": "session.screen"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.ScreenRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Screen"
+      }
+    },
+    {
       "name": "session.seen",
       "description": "Marks a session as seen: you've looked at it.",
       "scope": "act",
@@ -3374,6 +3390,43 @@
       "type": "object",
       "required": [
         "results"
+      ]
+    },
+    "ipc.Screen": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "text",
+        "lines",
+        "total"
+      ]
+    },
+    "ipc.ScreenRequest": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "lines": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
       ]
     },
     "ipc.Set": {

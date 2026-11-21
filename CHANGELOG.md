@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.72.0](https://github.com/brettmostert/agent-command/compare/v0.71.0...v0.72.0) (2026-11-21)
+
+
+### Features
+
+* --json everywhere, JSON errors and documented exit codes ([#119](https://github.com/brettmostert/agent-command/issues/119)) ([0c542e8](https://github.com/brettmostert/agent-command/commit/0c542e8a8cd7e39479c9473146601ad97c2f1afa))
+* acmd --host runs commands on a Remote host (Direct Connect) ([#117](https://github.com/brettmostert/agent-command/issues/117)) ([742adba](https://github.com/brettmostert/agent-command/commit/742adbaf05f5ef349ca3b8fe7840a2f6e31e477f))
+
 ## [0.71.0](https://github.com/brettmostert/agent-command/compare/v0.70.0...v0.71.0) (2026-11-21)
 
 

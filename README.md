@@ -6,7 +6,7 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 
 - **Panes:** split sessions horizontally and vertically to any depth. Sessions created with splits stay together as a set.
 - **Keyboard:** click a session or press ⇧⌘B to move the keyboard to the sidebar. The sidebar, the Inbox, the popup and Scheduled share their list keys: the arrow keys, ⌃J and ⌃K, or j and k move, X marks, Return opens, Tab goes to the next that needs you (a session in the sidebar, an unread message in the Inbox), ⌫ dismisses or deletes and Esc goes back. In the sidebar, 1 to 9 open that session. ⌘R renames and ⇧⌘⌫ archives (for a session added from a Remote host, ⌥⌘⌫ removes it from this Mac and leaves it running there), acting on what's marked, the row in the sidebar, or the session you're in; in Scheduled, the same keys edit and delete the job, and ⌘W closes the Inbox or Scheduled. Renaming several numbers them: `name - 1`, `name - 2`.
-- **Keyboard shortcuts** (⌘/, or **Keyboard Shortcuts** in the Help menu): every shortcut in one list, grouped by where it works. `acmd keys` prints the same list in a terminal (`--format markdown` or `json` too). Click **+** beside one and press a key to add or change it, **×** on a key to remove it, or the arrow to put back the default. It says when two actions share a key, and won't take a key that would stop a terminal or a text field getting it.
+- **Keyboard shortcuts** (⌘/, or **Keyboard Shortcuts** in the Help menu): every shortcut in one list, grouped by where it works. `acmd keys` prints the same list in a terminal (`--markdown` or `--json` too). Click **+** beside one and press a key to add or change it, **×** on a key to remove it, or the arrow to put back the default. It says when two actions share a key, and won't take a key that would stop a terminal or a text field getting it.
 - **Settings** (⌘,): every setting in one window. **General:** open at login, the menu bar icon, Agent Remote Control for new sessions, and warnings you dismissed. **Claude:** the claude command and extra arguments for new sessions. **Notifications:** what to be told about, how long a turn must take, how often per session, and the sound. **Reply Popup:** on or off, what opens it, its style, and reading aloud. **Read Aloud:** speech on or off, the voice, the speed and a sample. **Scheduled Jobs:** waking the Mac. **Appearance:** the theme, and the terminal's font and size. **Keyboard:** the shortcuts list. **Editor:** where `acmd` opens folders. **Remote:** Hosting, this Mac's identity, clients and known hosts for Remote sessions. **Advanced:** checking and repairing the setup, and the settings files. acmd's settings live in `~/.config/agent-command/config.toml`, which `acmd config show` lists and `acmd config set` changes (`acmd config set notify.cooldown 1m`). The daemon is the file's only writer and keeps its comments; a change, in the app, with `acmd` or by hand, applies straight away.
 - **Menu bar icon:** opens the app, the Inbox (with how many messages are waiting), Scheduled Jobs, a new Claude session, Settings and the keyboard shortcuts, and turns the reply popup on or off, from any app, even with the window closed. Turn it off in Settings → General.
 - **Going to a session:** ⌘1 to ⌘9 show a session, counting down the sidebar, from anywhere in the app. ⇧⌘A goes to the next one that needs you: waiting, then errors, then finished turns you haven't seen. ⌃⌘A brings the app forward from any app, and hides it again when you're in it.
@@ -34,6 +34,31 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 Mark a session Remote, and another Agent Command can open it, type in it and get its notifications, while it keeps running where it started. The Mac with the sessions turns on **Hosting** (Settings → Remote, or `acmd remote hosting on`), and the other adds it as a known host by its address and fingerprint (`acmd remote add`). The two connect with mutual TLS, each pinning the other's fingerprint, and the host approves each new client. Hosting is off by default, and listens only on localhost until you choose otherwise.
 
 [docs/remote-sessions.md](docs/remote-sessions.md) has a quick start for a local network, a guide for the internet through Cloudflare Tunnel, your own certs, the security notes, every `acmd remote` command and exit code, and troubleshooting. Remote sessions are separate from Agent Remote Control, which is for claude.ai, the Claude app and Antigravity.
+
+## Scripting with acmd
+
+Every command that reads or changes state takes `--json`, which prints the answer of the daemon op it runs, in the daemon's wire types (`internal/ipc`), and nothing else. A command that runs several ops prints one answer per line. Errors go to stderr as `{"error": {"code": "…", "message": "…"}}`. Name sessions by id in scripts: the numbers `acmd list` shows follow the list's order, which changes.
+
+`--host <name>` (or `ACMD_HOST`) runs the command on a known Remote host instead of this Mac: `acmd --host studio list --json`. A paired machine can do on the host what you can, except admin ops (purge, init, Hosting and pairing, settings that run code) and what belongs to the host's own machine (speech, waking, hooks).
+
+| Exit code | Meaning |
+| -- | -- |
+| 0 | Done |
+| 1 | Failed, for any reason below doesn't cover |
+| 2 | Usage: the command line doesn't make sense |
+| 3 | A Remote host is unreachable |
+| 4 | A Remote host is waiting for its user to approve this machine |
+| 5 | A Remote host refused this machine |
+| 6 | A Remote host's fingerprint isn't the one you pinned |
+| 7 | A Remote host speaks another protocol version |
+| 8 | Hosting is on, but can't listen on its port |
+| 9 | Not found: no such session, group, job or host |
+| 10 | Invalid: a bad name, value or schedule |
+| 11 | Not supported: the host can't do that, or a paired machine may not |
+| 12 | Not running: the session's terminal has ended |
+| 13 | Partial: some of several sessions didn't change |
+
+`acmd --help` lists them too.
 
 ## Install (macOS 26 or later, Apple Silicon)
 

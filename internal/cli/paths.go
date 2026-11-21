@@ -32,7 +32,6 @@ func pathsOf(p paths.Paths) pathsJSON {
 }
 
 func newPathsCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "paths",
 		Short: "Print where acmd keeps its socket, settings, state and logs",
@@ -46,8 +45,8 @@ func newPathsCmd() *cobra.Command {
 				return err
 			}
 			out := pathsOf(p)
-			if asJSON {
-				enc := json.NewEncoder(cmd.OutOrStdout())
+			if jsonOut {
+				enc := json.NewEncoder(jsonWriter(cmd))
 				enc.SetIndent("", "  ")
 				return enc.Encode(out)
 			}
@@ -60,6 +59,5 @@ func newPathsCmd() *cobra.Command {
 			return w.Flush()
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 	return cmd
 }

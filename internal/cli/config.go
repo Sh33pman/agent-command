@@ -46,7 +46,6 @@ func newConfigCmd() *cobra.Command {
 			"settings apply to sessions started after a change, and a new voice needs `acmd speech install`.",
 		Args: cobra.NoArgs,
 	}
-	var asJSON bool
 	show := &cobra.Command{
 		Use:   "show",
 		Short: "List the settings and their values",
@@ -57,8 +56,8 @@ func newConfigCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if asJSON {
-				enc := json.NewEncoder(out)
+			if jsonOut {
+				enc := json.NewEncoder(jsonWriter(cmd))
 				enc.SetIndent("", "  ")
 				return enc.Encode(st)
 			}
@@ -75,7 +74,6 @@ func newConfigCmd() *cobra.Command {
 			return err
 		},
 	}
-	show.Flags().BoolVar(&asJSON, "json", false, "print JSON: what each setting is, and its value")
 	set := &cobra.Command{
 		Use:   "set <setting> <value> [<setting> <value>…]",
 		Short: "Change settings, keeping the rest of config.toml as it is",

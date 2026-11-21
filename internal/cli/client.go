@@ -35,22 +35,28 @@ var targetHost string
 // call runs a daemon op: this machine's, or with --host the host's, through
 // this machine's daemon (remote.call), which the host answers as its own
 // socket would.
+//
+// With --json, its answer is kept to print (record).
 func (c *client) call(op string, in, out any) error {
+	var raw json.RawMessage
 	if c.host == "" {
-		return c.conn.Call(op, in, out)
-	}
-	rc := ipc.RemoteCall{Host: c.host, Op: op}
-	if in != nil {
-		b, err := json.Marshal(in)
-		if err != nil {
+		if err := c.conn.Call(op, in, &raw); err != nil {
 			return err
 		}
-		rc.Data = b
+	} else {
+		rc := ipc.RemoteCall{Host: c.host, Op: op}
+		if in != nil {
+			b, err := json.Marshal(in)
+			if err != nil {
+				return err
+			}
+			rc.Data = b
+		}
+		if err := c.hostCall(c.host, ipc.OpRemoteCall, rc, &raw); err != nil {
+			return err
+		}
 	}
-	var raw json.RawMessage
-	if err := c.hostCall(c.host, ipc.OpRemoteCall, rc, &raw); err != nil {
-		return err
-	}
+	record(op, raw)
 	if out == nil || len(raw) == 0 || string(raw) == "null" {
 		return nil
 	}

@@ -46,7 +46,6 @@ func printJSON(w io.Writer, v any) error {
 }
 
 func newRemoteHostingCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "hosting on|off",
 		Short: "Turn Hosting on or off: whether other acmds can connect to this one",
@@ -70,8 +69,8 @@ func newRemoteHostingCmd() *cobra.Command {
 			if err := remoteCall(cmd, ipc.OpRemoteHosting, ipc.RemoteRef{Enabled: on}, &st); err != nil {
 				return err
 			}
-			if asJSON {
-				if err := printJSON(cmd.OutOrStdout(), st); err != nil {
+			if jsonOut {
+				if err := printJSON(jsonWriter(cmd), st); err != nil {
 					return err
 				}
 			} else {
@@ -83,12 +82,10 @@ func newRemoteHostingCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print the status as JSON")
 	return cmd
 }
 
 func newRemoteStatusCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show Hosting: whether it's on, its address and port, and its clients",
@@ -98,14 +95,13 @@ func newRemoteStatusCmd() *cobra.Command {
 			if err := remoteCall(cmd, ipc.OpRemoteStatus, nil, &st); err != nil {
 				return err
 			}
-			if asJSON {
-				return printJSON(cmd.OutOrStdout(), st)
+			if jsonOut {
+				return printJSON(jsonWriter(cmd), st)
 			}
 			writeRemoteStatus(cmd.OutOrStdout(), st)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 
@@ -138,7 +134,6 @@ func plural(n int, word string) string {
 }
 
 func newRemoteClientsCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "clients",
 		Short: "List the authorized clients, and who's connected",
@@ -148,17 +143,16 @@ func newRemoteClientsCmd() *cobra.Command {
 			if err := remoteCall(cmd, ipc.OpRemoteClients, nil, &clients); err != nil {
 				return err
 			}
-			if asJSON {
+			if jsonOut {
 				if clients == nil {
 					clients = []ipc.RemoteClient{}
 				}
-				return printJSON(cmd.OutOrStdout(), clients)
+				return printJSON(jsonWriter(cmd), clients)
 			}
 			writeRemoteClients(cmd.OutOrStdout(), clients)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 
@@ -270,7 +264,6 @@ func newRemoteDisconnectCmd() *cobra.Command {
 }
 
 func newRemoteRequestsCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "requests",
 		Short: "List clients waiting for approval; approve or deny them",
@@ -283,17 +276,16 @@ func newRemoteRequestsCmd() *cobra.Command {
 			if err := remoteCall(cmd, ipc.OpRemoteRequests, nil, &reqs); err != nil {
 				return err
 			}
-			if asJSON {
+			if jsonOut {
 				if reqs == nil {
 					reqs = []ipc.RemoteRequest{}
 				}
-				return printJSON(cmd.OutOrStdout(), reqs)
+				return printJSON(jsonWriter(cmd), reqs)
 			}
 			writeRemoteRequests(cmd.OutOrStdout(), reqs)
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	var name string
 	approve := &cobra.Command{
 		Use:   "approve <id>",

@@ -246,7 +246,7 @@ A new cert has a new fingerprint. After you change one, clients must pin the hos
 
 ## What clients can do, and security
 
-**What a client gets.** An authorized client sees only the host's Remote sessions. Every other session is hidden, and acting on one fails as if it didn't exist. But a client has full control of the Remote sessions it sees: it can type in them (including answering permission prompts), read their screens and Inbox messages, rename them, finish and end them. It can also start new sessions on the host, including terminals, in any folder your account can reach, and list and make folders to do it. Each new one is Remote.
+**What a client gets.** In the app and with `acmd remote`, an authorized client sees only the host's Remote sessions. Every other session is hidden there, and acting on one fails as if it didn't exist. **With `acmd --host`, it gets the whole host** (Direct Connect): every session, group and scheduled job, as the host has them, and it can do what you can there, except admin ops (purging, `init`, Hosting and pairing, settings that run code) and what belongs to the host's own machine (speech, waking, hooks). Approve only your own machines, and revoke a pairing you no longer trust (`acmd remote clients`, then `acmd remote revoke`). But a client has full control of the Remote sessions it sees: it can type in them (including answering permission prompts), read their screens and Inbox messages, rename them, finish and end them. It can also start new sessions on the host, including terminals, in any folder your account can reach, and list and make folders to do it. Each new one is Remote.
 
 So authorizing a client is like giving it your account on the host. Only authorize machines you control, and check the fingerprint in a request matches the one the client shows before you approve it.
 
@@ -305,7 +305,7 @@ On either:
 
 A session on a host can be named by its number in `browse`, its id on the host, its name, or a unique start of its name or id. `acmd list` shows where each session runs: `↗ studio` for one added from a host.
 
-**Exit codes**, when a Remote host can't be used (also in `acmd remote --help`):
+**Exit codes**, when a Remote host can't be used (also in `acmd --help`, with the others, and in the README):
 
 | Code | Meaning |
 |---|---|

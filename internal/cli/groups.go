@@ -28,6 +28,19 @@ func newGroupListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd.Context(), func(_ *client, snap snapshot) error {
+				groups := []*ipc.Group{} // the daemon's, Default last
+				for _, g := range orderedGroups(snap.Groups) {
+					if g.ArchivedAt.IsZero() || all {
+						for _, w := range snap.Snapshot.Groups {
+							if w.ID == g.ID {
+								groups = append(groups, w)
+							}
+						}
+					}
+				}
+				if done, err := emitJSON(cmd, groups); done {
+					return err
+				}
 				counts := map[string]int{}
 				for _, s := range snap.Sessions {
 					if s.Status != core.StatusArchived {

@@ -79,7 +79,6 @@ func remoteHosting() (config.RemoteHost, error) {
 }
 
 func newRemoteSessionsCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "sessions",
 		Short: "List the Remote sessions, whether Hosting is on, and the clients attached to each",
@@ -106,14 +105,13 @@ func newRemoteSessionsCmd() *cobra.Command {
 					return err
 				}
 				attached := attachedCounts(clients)
-				if asJSON {
-					return writeRemoteJSON(cmd.OutOrStdout(), host, rows, attached)
+				if jsonOut {
+					return writeRemoteJSON(jsonWriter(cmd), host, rows, attached)
 				}
 				return writeRemoteTable(cmd.OutOrStdout(), host, rows, attached)
 			})
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 

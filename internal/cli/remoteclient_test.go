@@ -208,7 +208,7 @@ func TestHostProblemsAndExitCodes(t *testing.T) {
 
 func TestRemoteHelpListsExitCodes(t *testing.T) {
 	out := mustRun(t, "remote", "--help")
-	for _, want := range []string{"Remote hosts", "acmd remote add", "4  waiting for approval", "6  fingerprint mismatch",
+	for _, want := range []string{"Remote hosts", "acmd remote add", "4   a Remote host is waiting", "6   a Remote host's fingerprint",
 		"add", "browse", "open", "attach", "drop", "retry"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help lacks %q:\n%s", want, out)
@@ -689,10 +689,14 @@ func TestListShowsTheHost(t *testing.T) {
 		}
 	}
 	b.Reset()
-	must(t, writeListJSON(&b, rows))
-	var got []jsonRow
+	var sessions []*core.Session
+	for _, r := range rows {
+		sessions = append(sessions, r.Session)
+	}
+	must(t, writeListJSON(&b, snapshotOf(ipc.Snapshot{Sessions: ipc.SessionsOf(sessions)}), rows))
+	var got []ipc.Session
 	must(t, json.Unmarshal([]byte(b.String()), &got))
-	if got[0].Host != "studio" || got[0].RemoteID != "r1" || got[0].Where != "↗ studio" || !got[1].HostGone || got[2].Host != "" {
+	if got[0].Host != "studio" || got[0].RemoteID != "r1" || !got[1].HostGone || got[2].Host != "" {
 		t.Errorf("list --json = %+v", got)
 	}
 	if n := strings.Count(b.String(), `"host":`); n != 2 {

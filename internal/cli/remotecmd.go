@@ -45,7 +45,7 @@ func newRemoteCmd() *cobra.Command {
 }
 
 func newRemoteIdentityCmd() *cobra.Command {
-	var regenerate, yes, asJSON bool
+	var regenerate, yes bool
 	cmd := &cobra.Command{
 		Use:   "identity",
 		Short: "Show this machine's identity for Remote sessions: its fingerprint and cert",
@@ -86,8 +86,8 @@ func newRemoteIdentityCmd() *cobra.Command {
 				return err
 			}
 			ids.address = hostingAddress(cmd.Context(), p)
-			if asJSON {
-				return writeIdentityJSON(out, ids)
+			if jsonOut {
+				return writeIdentityJSON(jsonWriter(cmd), ids)
 			}
 			writeIdentity(out, ids)
 			return nil
@@ -95,7 +95,6 @@ func newRemoteIdentityCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&regenerate, "regenerate", false, "make a new identity (peers must trust the new fingerprint)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 

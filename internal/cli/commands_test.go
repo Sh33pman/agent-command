@@ -138,6 +138,28 @@ func mustRun(t *testing.T, args ...string) string {
 	return out
 }
 
+// jsonRow is what tests read of list --json: the daemon's sessions.
+type jsonRow = ipc.Session
+
+// numbered is the list as acmd list numbers it: each session's number (0 in
+// a collapsed group) and group.
+type numbered struct {
+	Number      int
+	Name, Group string
+}
+
+func listed(t *testing.T) []numbered {
+	t.Helper()
+	var out []numbered
+	must(t, withClient(context.Background(), func(_ *client, snap snapshot) error {
+		for _, r := range filterRows(listRows(snap, snap.ViewState), snap, "", "") {
+			out = append(out, numbered{Number: r.Number, Name: r.Session.Name, Group: r.Group.Name})
+		}
+		return nil
+	}))
+	return out
+}
+
 func listJSON(t *testing.T, args ...string) []jsonRow {
 	t.Helper()
 	var rows []jsonRow
@@ -164,7 +186,7 @@ func TestListCommand(t *testing.T) {
 		}
 	}
 	rows := listJSON(t)
-	if names(rows) != "refactor auth middleware | fix flaky e2e test | docs: hooks reference" || rows[0].Number != 1 {
+	if names(rows) != "refactor auth middleware | fix flaky e2e test | docs: hooks reference" || listed(t)[0].Number != 1 {
 		t.Errorf("default order: %s", names(rows))
 	}
 	if rows[1].Status != "waiting" || !rows[1].Unseen {
@@ -246,7 +268,7 @@ func TestGroupsMoveViewAndFocus(t *testing.T) {
 	}
 	mustRun(t, "move", "3", "billing", "--create")
 
-	rows := listJSON(t)
+	rows := listed(t)
 	if rows[0].Group != "PROJ-123 auth" || rows[2].Group != "billing" {
 		t.Errorf("groups: %+v", rows)
 	}
@@ -262,7 +284,7 @@ func TestGroupsMoveViewAndFocus(t *testing.T) {
 
 	// Collapsed groups: sessions still listed, but unnumbered.
 	mustRun(t, "group", "collapse", "PROJ-123 auth")
-	rows = listJSON(t)
+	rows = listed(t)
 	if rows[0].Number != 0 || rows[2].Number != 1 {
 		t.Errorf("collapsed numbering: %+v", rows)
 	}
@@ -273,11 +295,11 @@ func TestGroupsMoveViewAndFocus(t *testing.T) {
 
 	// Focus mode collapses the others and restores them after.
 	mustRun(t, "focus-group", "billing v2")
-	if rows = listJSON(t); rows[0].Number != 0 || rows[2].Number != 1 {
+	if rows = listed(t); rows[0].Number != 0 || rows[2].Number != 1 {
 		t.Errorf("focus: %+v", rows)
 	}
 	mustRun(t, "focus-group", "--clear")
-	if rows = listJSON(t); rows[0].Number != 1 {
+	if rows = listed(t); rows[0].Number != 1 {
 		t.Errorf("after clear: %+v", rows)
 	}
 
@@ -298,7 +320,7 @@ func TestGroupsMoveViewAndFocus(t *testing.T) {
 		t.Errorf("delete without confirmation: %v", err)
 	}
 	mustRun(t, "group", "delete", "billing v2", "--yes")
-	for _, r := range listJSON(t) {
+	for _, r := range listed(t) {
 		if r.Name == "docs: hooks reference" && r.Group != "Default" {
 			t.Errorf("after delete: %+v", r)
 		}
@@ -337,7 +359,7 @@ func TestArchive(t *testing.T) {
 	}
 	mustRun(t, "unarchive", "docs")
 	for _, r := range listJSON(t) {
-		if r.Name == "docs: hooks reference" && r.Status != string(core.StatusPaused) {
+		if r.Name == "docs: hooks reference" && r.Status != core.StatusPaused {
 			t.Errorf("unarchived status: %s", r.Status)
 		}
 	}

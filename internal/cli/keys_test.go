@@ -38,18 +38,18 @@ func TestKeysListsTheAppsShortcuts(t *testing.T) {
 			t.Errorf("text lacks %q:\n%s", want, text)
 		}
 	}
-	md := mustRun(t, "keys", "--format", "markdown")
+	md := mustRun(t, "keys", "--markdown")
 	for _, want := range []string{"# Agent Command keyboard shortcuts", "## Lists", "| ⇧⌘K | Inbox (changed) |",
 		"| (none) | Rename — In Scheduled: edits the job. |", "## Can't be changed"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown lacks %q:\n%s", want, md)
 		}
 	}
-	if out := mustRun(t, "keys", "--format", "json"); out != keysJSON {
+	if out := mustRun(t, "keys", "--json"); out != keysJSON {
 		t.Errorf("json: %s", out)
 	}
-	if _, err := acmd(t, "keys", "--format", "yaml"); err == nil {
-		t.Error("yaml accepted")
+	if _, err := acmd(t, "keys", "--format", "yaml"); ExitCode(err) != exitUsage {
+		t.Errorf("--format is gone: %v", err)
 	}
 	must(t, os.WriteFile(filepath.Join(dir, "s", "keys.json"), []byte("{"), 0o600))
 	if _, err := acmd(t, "keys"); err == nil {

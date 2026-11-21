@@ -13,7 +13,6 @@ import (
 
 func newScreenCmd() *cobra.Command {
 	var lines int
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "screen <N|id|name-prefix>",
 		Short: "Print what a session's terminal shows, as plain text",
@@ -32,8 +31,8 @@ func newScreenCmd() *cobra.Command {
 					return err
 				}
 				out := cmd.OutOrStdout()
-				if asJSON {
-					enc := json.NewEncoder(out)
+				if jsonOut {
+					enc := json.NewEncoder(jsonWriter(cmd))
 					enc.SetIndent("", "  ")
 					return enc.Encode(screen)
 				}
@@ -46,6 +45,5 @@ func newScreenCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVarP(&lines, "lines", "n", 0, "only the last this many lines (0: all)")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON: the text, and how many lines")
 	return cmd
 }

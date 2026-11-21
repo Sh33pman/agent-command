@@ -1,9 +1,13 @@
 package cli
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/brettmostert/agent-command/internal/ipc"
+)
 
 // ExitError is an error with an exit code of its own, so scripts can tell
-// failures apart (see acmd remote --help).
+// failures apart (see acmd --help).
 type ExitError struct {
 	Code int
 	Err  error
@@ -22,5 +26,15 @@ func ExitCode(err error) int {
 	if errors.As(err, &ee) {
 		return ee.Code
 	}
-	return 1
+	var ue usageError
+	if errors.As(err, &ue) {
+		return exitUsage
+	}
+	var re *ipc.RemoteError
+	if errors.As(err, &re) {
+		if code, ok := codedExits[re.Code]; ok {
+			return code
+		}
+	}
+	return exitFailed
 }

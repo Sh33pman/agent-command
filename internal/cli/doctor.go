@@ -35,7 +35,7 @@ var versionOutput = func(ctx context.Context, name string, args ...string) ([]by
 }
 
 func newDoctorCmd() *cobra.Command {
-	var fix, asJSON bool
+	var fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check acmd's setup, Claude Code and the daemon, and show how to fix problems",
@@ -54,7 +54,7 @@ func newDoctorCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if asJSON {
+			if jsonOut {
 				// The daemon's health list, which the apps show: the same checks.
 				// It always succeeds: the problems are the answer.
 				health, err := daemonHealth(cmd.Context(), env)
@@ -67,7 +67,7 @@ func newDoctorCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				_, err = fmt.Fprintln(jsonWriter(cmd), string(b))
 				return err
 			}
 			report := doctor.Run(cmd.Context(), env)
@@ -79,7 +79,6 @@ func newDoctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&fix, "fix", false, "fix what it can: re-add the hooks and replace a stale daemon")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print the health list as JSON: what the apps warn about, each with its fix")
 	return cmd
 }
 

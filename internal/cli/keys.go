@@ -36,7 +36,7 @@ type keymap struct {
 }
 
 func newKeysCmd() *cobra.Command {
-	var format string
+	var markdown bool
 	cmd := &cobra.Command{
 		Use:   "keys",
 		Short: "List the app's keyboard shortcuts (change them in the app: ⌘/ or Settings → Keyboard)",
@@ -57,20 +57,17 @@ func newKeysCmd() *cobra.Command {
 			if err := json.Unmarshal(b, &km); err != nil {
 				return fmt.Errorf("%s: %w", p.Keys(), err)
 			}
-			out := cmd.OutOrStdout()
-			switch format {
-			case "json":
-				_, err = out.Write(b)
+			switch {
+			case jsonOut:
+				_, err = jsonWriter(cmd).Write(b)
 				return err
-			case "markdown", "md":
-				return writeKeysMarkdown(out, km)
-			case "text":
-				return writeKeysText(out, km)
+			case markdown:
+				return writeKeysMarkdown(cmd.OutOrStdout(), km)
 			}
-			return fmt.Errorf("--format is text, markdown or json, not %q", format)
+			return writeKeysText(cmd.OutOrStdout(), km)
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "text", "text, markdown or json")
+	cmd.Flags().BoolVar(&markdown, "markdown", false, "print the shortcuts as a Markdown table")
 	return cmd
 }
 

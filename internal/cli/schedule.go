@@ -48,6 +48,13 @@ func newScheduleListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withClient(cmd.Context(), func(_ *client, snap snapshot) error {
+				jobs := snap.Jobs
+				if jobs == nil {
+					jobs = []*core.Job{}
+				}
+				if done, err := emitJSON(cmd, jobs); done {
+					return err
+				}
 				out := cmd.OutOrStdout()
 				if len(snap.Jobs) == 0 {
 					fmt.Fprintln(out, "No scheduled jobs. Add one with `acmd schedule add`.")
@@ -74,6 +81,9 @@ func newScheduleShowCmd() *cobra.Command {
 				j, err := resolveJob(snap, args[0])
 				if err != nil {
 					return err
+				}
+				if done, err := emitJSON(cmd, j); done {
+					return err // its runs: acmd schedule runs --json
 				}
 				var runs []core.JobRun
 				if err := c.call(ipc.OpJobRuns, ipc.JobRef{ID: j.ID}, &runs); err != nil {

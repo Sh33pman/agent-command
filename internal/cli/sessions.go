@@ -22,7 +22,7 @@ var now = time.Now
 
 func newListCmd() *cobra.Command {
 	var (
-		all, desc, asJSON           bool
+		all, desc                   bool
 		group, status, filter, view string
 		sortKey                     string
 	)
@@ -47,8 +47,8 @@ func newListCmd() *cobra.Command {
 				}
 				rows := listRows(snap, vs)
 				rows = filterRows(rows, snap, group, status)
-				if asJSON {
-					return writeListJSON(cmd.OutOrStdout(), rows)
+				if jsonOut {
+					return writeListJSON(jsonWriter(cmd), snap, rows)
 				}
 				return writeListTable(cmd.OutOrStdout(), rows)
 			})
@@ -62,7 +62,6 @@ func newListCmd() *cobra.Command {
 	f.StringVar(&view, "view", "", "groups or list (default: set with acmd view-mode)")
 	f.StringVar(&sortKey, "sort", "", "created, name, activity, status or cwd (default: set with acmd sort)")
 	f.BoolVar(&desc, "desc", false, "sort descending (with --sort)")
-	f.BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 
@@ -147,42 +146,19 @@ func writeListTable(w io.Writer, rows []listRow) error {
 	return tw.Flush()
 }
 
-type jsonRow struct {
-	Number       int    `json:"number,omitempty"`
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Description  string `json:"description,omitempty"`
-	Status       string `json:"status"`
-	StatusDetail string `json:"status_detail,omitempty"`
-	Unseen       bool   `json:"unseen,omitempty"`
-	Remote       bool   `json:"remote,omitempty"`
-	Group        string `json:"group"`
-	Cwd          string `json:"cwd"`
-	Kind         string `json:"kind"`
-	Where        string `json:"where"`
-	// Host is the Remote host a session added from one runs on, and RemoteID
-	// its id there. HostGone: the host no longer offers it.
-	Host            string `json:"host,omitempty"`
-	RemoteID        string `json:"remote_id,omitempty"`
-	HostGone        bool   `json:"host_gone,omitempty"`
-	BgID            string `json:"bg_id,omitempty"`
-	ClaudeSessionID string `json:"claude_session_id,omitempty"`
-	LastEventAt     string `json:"last_event_at,omitempty"`
-	// JobID is the scheduled job that started it.
-	JobID string `json:"job_id,omitempty"`
-}
-
-func writeListJSON(w io.Writer, rows []listRow) error {
-	out := make([]jsonRow, 0, len(rows))
+// writeListJSON is list --json: the rows' sessions as the daemon sent them
+// (internal/ipc.Session), in the list's order. Numbers aren't in it: scripts
+// name sessions by id.
+func writeListJSON(w io.Writer, snap snapshot, rows []listRow) error {
+	byID := map[string]*ipc.Session{}
+	for _, s := range snap.Snapshot.Sessions {
+		byID[s.ID] = s
+	}
+	out := make([]*ipc.Session, 0, len(rows))
 	for _, r := range rows {
-		s := r.Session
-		j := jsonRow{Number: r.Number, ID: s.ID, Name: s.Name, Description: s.Description, Status: string(s.Status),
-			StatusDetail: s.StatusDetail, Unseen: s.Unseen, Remote: s.Remote, Group: r.Group.Name, Cwd: s.Cwd, Kind: string(s.Kind),
-			Where: where(s), Host: s.Host, RemoteID: s.RemoteID, HostGone: s.HostGone, BgID: s.BgID, ClaudeSessionID: s.ClaudeSessionID, JobID: s.JobID}
-		if !s.LastEventAt.IsZero() {
-			j.LastEventAt = s.LastEventAt.UTC().Format(time.RFC3339)
+		if s := byID[r.Session.ID]; s != nil {
+			out = append(out, s)
 		}
-		out = append(out, j)
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -303,7 +279,7 @@ func reportResults(w io.Writer, res ipc.Results, done string) error {
 		fmt.Fprintf(w, done, ok)
 	}
 	if n := res.Failed(); n > 0 {
-		return fmt.Errorf("%d of %d didn't change", n, len(res.Results))
+		return &ExitError{Code: exitPartial, Err: fmt.Errorf("%d of %d didn't change", n, len(res.Results))}
 	}
 	return nil
 }

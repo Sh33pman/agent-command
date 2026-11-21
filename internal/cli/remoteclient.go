@@ -36,16 +36,6 @@ const (
 	exitPortTaken    = 8 // Hosting is on, but can't listen on its port
 )
 
-// exitCodesHelp is the list of exit codes, for acmd remote --help.
-const exitCodesHelp = "Exit codes, when a Remote host can't be used:\n" +
-	"  3  unreachable: no answer from its address, or the connection dropped\n" +
-	"  4  waiting for approval: the host's user hasn't approved this machine yet\n" +
-	"  5  unauthorized: the host refused this machine\n" +
-	"  6  fingerprint mismatch: the host isn't showing the fingerprint you pinned\n" +
-	"  7  version mismatch: the two acmds speak different protocol versions\n" +
-	"  8  port taken: Hosting is on, but can't listen on its port\n" +
-	"Any other failure exits 1."
-
 func remoteClientCmds() []*cobra.Command {
 	return []*cobra.Command{newRemoteAddCmd(), newRemoteEditCmd(), newRemoteRemoveCmd(), newRemoteListCmd(),
 		newRemoteRetryCmd(), newRemoteBrowseCmd(), newRemoteOpenCmd(), newRemoteAttachCmd(), newRemoteDropCmd()}
@@ -264,7 +254,6 @@ func newRemoteRemoveCmd() *cobra.Command {
 }
 
 func newRemoteListCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List the Remote hosts this machine knows, and their connections",
@@ -274,16 +263,15 @@ func newRemoteListCmd() *cobra.Command {
 			if err := withDaemon(cmd, func(c *client) error { return c.conn.Call(ipc.OpRemoteHosts, nil, &hosts) }); err != nil {
 				return err
 			}
-			if asJSON {
+			if jsonOut {
 				if hosts == nil {
 					hosts = []ipc.RemoteHost{}
 				}
-				return printJSON(cmd.OutOrStdout(), hosts)
+				return printJSON(jsonWriter(cmd), hosts)
 			}
 			return writeRemoteHosts(cmd.OutOrStdout(), hosts)
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 
@@ -375,7 +363,6 @@ func (c *client) browse(host string) (ipc.RemoteBrowse, error) {
 }
 
 func newRemoteBrowseCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:               "browse <host>",
 		Short:             "List a Remote host's Remote sessions, and which are added here",
@@ -392,13 +379,12 @@ func newRemoteBrowseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if asJSON {
-				return writeBrowseJSON(cmd.OutOrStdout(), b)
+			if jsonOut {
+				return writeBrowseJSON(jsonWriter(cmd), b)
 			}
 			return writeBrowse(cmd.OutOrStdout(), b)
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 

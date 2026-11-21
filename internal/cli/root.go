@@ -51,7 +51,15 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&targetHost, "host", os.Getenv("ACMD_HOST"),
 		"run against this Remote host (a known host's name) instead of this machine; ACMD_HOST sets a default")
+	root.PersistentFlags().BoolVar(&jsonOut, "json", false,
+		"print the answer of the op the command runs, in the daemon's wire types, and errors as JSON on stderr")
+	root.Long += "\n\nCommands run against this machine's daemon, or with --host a Remote host's. Scripts should name\n" +
+		"sessions by id: numbers follow the list's order, which changes.\n\n" + exitCodesHelp
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usageError{err} })
+	usageArgs(root)
+	root.PersistentPostRunE = func(*cobra.Command, []string) error { return finishOutput() }
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		startOutput(cmd)
 		if targetHost != "" {
 			if cmd.Annotations[onHost] == "" {
 				return fmt.Errorf("acmd %s runs on this machine only: it doesn't take --host", cmd.Name())
@@ -68,6 +76,21 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	return root
 }
 
+// usageArgs makes wrong arguments a usage error (exit 2), on every command.
+func usageArgs(c *cobra.Command) {
+	if args := c.Args; args != nil {
+		c.Args = func(cmd *cobra.Command, a []string) error {
+			if err := args(cmd, a); err != nil {
+				return usageError{err}
+			}
+			return nil
+		}
+	}
+	for _, sub := range c.Commands() {
+		usageArgs(sub)
+	}
+}
+
 // onHost marks a command that can run against a Remote host (--host).
 const onHost = "acmd.on-host"
 
@@ -82,7 +105,6 @@ func markOnHost(c *cobra.Command) {
 }
 
 func newVersionCmd() *cobra.Command {
-	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print version, commit, build date and Go version",
@@ -90,19 +112,18 @@ func newVersionCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info := version.Get()
 			info.Screen = term.ScreenKind()
-			if asJSON {
+			if jsonOut {
 				b, err := info.JSON()
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), string(b))
+				_, err = fmt.Fprintln(jsonWriter(cmd), string(b))
 				return err
 			}
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), info.String())
 			return err
 		},
 	}
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print as JSON")
 	return cmd
 }
 
@@ -112,5 +133,12 @@ func Execute(argv0 string, args []string, stdout, stderr io.Writer) error {
 	invokedAs = argv0
 	root := NewRootCmd(filepath.Base(argv0), stdout, stderr)
 	root.SetArgs(args)
-	return root.Execute()
+	jsonOut = false
+	err := root.Execute()
+	if err != nil {
+		// What changed before the failure (several sessions, some of them
+		// refused) is still the answer.
+		_ = finishOutput()
+	}
+	return err
 }

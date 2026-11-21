@@ -230,6 +230,20 @@ func (c *Client) Harnesses(ctx context.Context, host string) (api.Harnesses, err
 	return out, err
 }
 
+// Config is a host's settings: its host ones, not its device ones.
+func (c *Client) Config(ctx context.Context, host string) (ipc.ConfigState, error) {
+	var out ipc.ConfigState
+	err := c.call(ctx, host, api.OpConfigGet, nil, &out)
+	return out, err
+}
+
+// SetConfig changes a host's settings, all or none.
+func (c *Client) SetConfig(ctx context.Context, host string, values map[string]any) (ipc.ConfigState, error) {
+	var out ipc.ConfigState
+	err := c.call(ctx, host, api.OpConfigSet, ipc.ConfigSet{Values: values}, &out)
+	return out, err
+}
+
 // Local is a fresh session for s from host, as Backend.Add records it: the
 // fields the host says, the rest as for any hosted session.
 func Local(host string, s api.Session) *core.Session {

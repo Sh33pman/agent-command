@@ -26,6 +26,36 @@
       }
     },
     {
+      "name": "config.get",
+      "description": "Describes every setting (type, default, allowed values, host or device, whether it runs code) and returns the values in effect.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "config.get"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ConfigState"
+      }
+    },
+    {
+      "name": "config.set",
+      "description": "Changes settings by key, all or none, keeping config.toml's comments. Refused while config.toml has a mistake.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "config.set"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.ConfigSet"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ConfigState"
+      }
+    },
+    {
       "name": "conversations",
       "description": "Lists earlier Claude and Antigravity conversations that can be resumed.",
       "scope": "read",
@@ -463,6 +493,39 @@
       }
     },
     {
+      "name": "remote.config.get",
+      "description": "Returns a host's settings: its host ones, not its device ones.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.config.get"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteHostRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ConfigState"
+      }
+    },
+    {
+      "name": "remote.config.set",
+      "description": "Changes a host's settings, all or none. Its device settings can't be changed from here.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "remote.config.set"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteConfigSet"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ConfigState"
+      }
+    },
+    {
       "name": "remote.deny",
       "description": "Drops a pending request.",
       "scope": "admin",
@@ -667,7 +730,7 @@
     },
     {
       "name": "remote.reload",
-      "description": "Reads the Hosting settings again after editing config.toml.",
+      "description": "Reads config.toml again now, and applies the Hosting settings.",
       "scope": "admin",
       "kind": "change",
       "grant": "host",
@@ -676,6 +739,22 @@
       },
       "output": {
         "$ref": "#/$defs/ipc.RemoteStatus"
+      }
+    },
+    {
+      "name": "remote.rename",
+      "description": "Renames an authorized client. It stays authorized and connected.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.rename"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteClient"
       }
     },
     {
@@ -1173,6 +1252,69 @@
         "harnesses"
       ]
     },
+    "config.Problem": {
+      "properties": {
+        "line": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "message"
+      ]
+    },
+    "config.Spec": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "default": true,
+        "choices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "suggestions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "where": {
+          "type": "string"
+        },
+        "runs_code": {
+          "type": "boolean"
+        },
+        "read_only": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "key",
+        "type",
+        "default",
+        "description",
+        "where"
+      ]
+    },
     "core.Attention": {
       "properties": {
         "rank": {
@@ -1660,6 +1802,42 @@
         "flag"
       ]
     },
+    "ipc.ConfigSet": {
+      "properties": {
+        "values": {
+          "type": "object"
+        }
+      },
+      "type": "object",
+      "required": [
+        "values"
+      ]
+    },
+    "ipc.ConfigState": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "settings": {
+          "items": {
+            "$ref": "#/$defs/config.Spec"
+          },
+          "type": "array"
+        },
+        "values": {
+          "type": "object"
+        },
+        "problem": {
+          "$ref": "#/$defs/config.Problem"
+        }
+      },
+      "type": "object",
+      "required": [
+        "path",
+        "settings",
+        "values"
+      ]
+    },
     "ipc.Conversation": {
       "properties": {
         "id": {
@@ -1694,6 +1872,42 @@
         "cwd",
         "updated_at"
       ]
+    },
+    "ipc.Health": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "fix": {
+          "$ref": "#/$defs/ipc.HealthFix"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "severity",
+        "title"
+      ]
+    },
+    "ipc.HealthFix": {
+      "properties": {
+        "op": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "ipc.Hello": {
       "properties": {
@@ -2041,6 +2255,9 @@
         "fingerprint": {
           "type": "string"
         },
+        "in_config": {
+          "type": "boolean"
+        },
         "connections": {
           "items": {
             "$ref": "#/$defs/ipc.RemoteConnection"
@@ -2052,6 +2269,21 @@
       "required": [
         "name",
         "fingerprint"
+      ]
+    },
+    "ipc.RemoteConfigSet": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "values": {
+          "type": "object"
+        }
+      },
+      "type": "object",
+      "required": [
+        "host",
+        "values"
       ]
     },
     "ipc.RemoteConnection": {
@@ -2165,6 +2397,9 @@
         },
         "sessions": {
           "type": "integer"
+        },
+        "in_config": {
+          "type": "boolean"
         }
       },
       "type": "object",
@@ -2439,6 +2674,15 @@
         "remote_hosts": {
           "items": {
             "$ref": "#/$defs/ipc.RemoteHost"
+          },
+          "type": "array"
+        },
+        "settings": {
+          "type": "object"
+        },
+        "health": {
+          "items": {
+            "$ref": "#/$defs/ipc.Health"
           },
           "type": "array"
         }

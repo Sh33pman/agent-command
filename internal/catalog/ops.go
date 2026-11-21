@@ -127,7 +127,7 @@ func localOps() []Op {
 		// Hosting: this machine's listener for other acmds.
 		read(ipc.OpRemoteStatus, "Returns Hosting's state: whether it's on, where it listens, and why not.", host, nil, ipc.RemoteStatus{}),
 		admin(ipc.OpRemoteHosting, "Turns Hosting on or off.", host, ipc.RemoteRef{}, ipc.RemoteStatus{}),
-		admin(ipc.OpRemoteReload, "Reads the Hosting settings again after editing config.toml.", host, nil, ipc.RemoteStatus{}),
+		admin(ipc.OpRemoteReload, "Reads config.toml again now, and applies the Hosting settings.", host, nil, ipc.RemoteStatus{}),
 		{Name: ipc.OpRemoteClients, Description: "Lists the authorized clients and their connections.",
 			Scope: ScopeAdmin, Kind: KindRead, Grant: host, Output: []ipc.RemoteClient{}},
 		{Name: ipc.OpRemoteRequests, Description: "Lists requests from unknown clients waiting for approval.",
@@ -137,6 +137,7 @@ func localOps() []Op {
 		admin(ipc.OpRemoteAuthorize, "Authorizes a client by its fingerprint.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 		admin(ipc.OpRemoteRevoke, "Un-authorizes a client and drops its connections.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 		admin(ipc.OpRemoteDisconnect, "Drops a client's connections, or one connection.", host, ipc.RemoteRef{}, ipc.RemoteDisconnected{}),
+		admin(ipc.OpRemoteRename, "Renames an authorized client. It stays authorized and connected.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 
 		// Remote hosts: the other acmds this machine uses sessions on.
 		read(ipc.OpRemoteHosts, "Lists the known hosts and their connections.", host, nil, []ipc.RemoteHost{}),
@@ -152,5 +153,16 @@ func localOps() []Op {
 		read(ipc.OpRemoteFoldersList, "Lists a folder on a host.", host, ipc.RemoteFolderRequest{}, api.FolderList{}),
 		act(ipc.OpRemoteFoldersMkdir, "Makes a folder on a host.", host, ipc.RemoteFolderRequest{}, api.Folder{}),
 		read(ipc.OpRemoteHarnesses, "Lists the harnesses a host can start.", host, ipc.RemoteHostRef{}, api.Harnesses{}),
+
+		// Settings: config.toml, which the daemon alone writes.
+		read(ipc.OpConfigGet, "Describes every setting (type, default, allowed values, host or device, whether it runs code) and returns the values in effect.",
+			host, nil, ipc.ConfigState{}),
+		// Changing a setting that runs code needs admin; the rest need act.
+		// Until scopes are checked per key (4.3), the op asks for admin.
+		admin(ipc.OpConfigSet, "Changes settings by key, all or none, keeping config.toml's comments. Refused while config.toml has a mistake.",
+			host, ipc.ConfigSet{}, ipc.ConfigState{}).runsCode(),
+		read(ipc.OpRemoteConfigGet, "Returns a host's settings: its host ones, not its device ones.", host, ipc.RemoteHostRef{}, ipc.ConfigState{}),
+		admin(ipc.OpRemoteConfigSet, "Changes a host's settings, all or none. Its device settings can't be changed from here.",
+			host, ipc.RemoteConfigSet{}, ipc.ConfigState{}).runsCode(),
 	}
 }

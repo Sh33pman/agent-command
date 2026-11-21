@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"cmp"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -157,27 +156,13 @@ func (d *Daemon) notices() []ipc.Notice {
 	return append([]ipc.Notice(nil), d.notify.notices...)
 }
 
-// refreshNotify reads the notification settings again when config.toml has changed
-// since they were read, so a change made in Settings applies straight away (d.mu
-// is held). A file that doesn't parse leaves them as they were.
+// refreshNotify follows [notify] in config.toml, so a change applies straight
+// away (d.mu is held). A file that doesn't parse leaves it as it was.
 func (d *Daemon) refreshNotify() {
-	path := d.cfg.ConfigFile
-	if path == "" {
+	if d.cfg.ConfigFile == "" {
 		return
 	}
-	var mod time.Time
-	if info, err := os.Stat(path); err == nil {
-		mod = info.ModTime()
-	}
-	if !d.notifyRead.IsZero() && mod.Equal(d.notifyRead) {
-		return
-	}
-	d.notifyRead = mod
-	c, err := config.Load(path)
-	if err != nil {
-		d.cfg.Log.Printf("config: %v (notifications stay as they were)", err)
-		return
-	}
+	c := d.config()
 	if d.notify == nil {
 		d.notify = newNotifier(c.Notify)
 		return

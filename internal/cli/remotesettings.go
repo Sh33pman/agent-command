@@ -8,37 +8,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
-	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
-	"github.com/brettmostert/agent-command/internal/setup"
-	"github.com/brettmostert/agent-command/internal/version"
 )
 
-// `acmd remote cert` and `acmd remote rename`: the settings of Remote sessions
-// that `acmd config set` can't change one value at a time. The app's Settings
-// window runs them too.
-
-// reloadHosting asks a running daemon to read [remote] again, so a change
-// applies now rather than at its next look at config.toml. It doesn't start
-// one: a daemon that starts later reads the file anyway.
-func reloadHosting(parent context.Context, p paths.Paths) {
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
-	defer cancel()
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
-	if err != nil {
-		if conn != nil {
-			_ = conn.Close()
-		}
-		return
-	}
-	defer conn.Close()
-	_ = conn.Call(ipc.OpRemoteReload, nil, nil)
-}
+// `acmd remote cert` and `acmd remote rename`: a cert and its key, checked
+// and set together, and an authorized client's name. Both go through the
+// daemon.
 
 // certRoles are the sections that name a cert and key of your own.
 var certRoles = map[string]string{"host": "remote.host", "client": "remote.client"}
@@ -77,15 +53,9 @@ func newRemoteCertCmd() *cobra.Command {
 			default:
 				return fmt.Errorf("give a cert file and a key file, or --default")
 			}
-			p, err := paths.Default()
-			if err != nil {
+			if _, err := setSettings(cmd.Context(), map[string]any{section + ".cert": cert, section + ".key": key}); err != nil {
 				return err
 			}
-			if err := setup.SaveSettings(p.Config(), section,
-				config.KeyValue{Key: "cert", Value: cert}, config.KeyValue{Key: "key", Value: key}); err != nil {
-				return err
-			}
-			reloadHosting(cmd.Context(), p)
 			role := map[string]string{"host": "Hosting", "client": "Connecting to hosts"}[args[0]]
 			if cert == "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s uses acmd's identity.\n", role)
@@ -105,38 +75,19 @@ func newRemoteRenameCmd() *cobra.Command {
 		Short: "Rename an authorized client (it stays authorized and connected)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := paths.Default()
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+			c, err := connect(ctx)
 			if err != nil {
 				return err
 			}
-			c, err := config.Load(p.Config())
-			if err != nil {
+			defer c.close()
+			var rc ipc.RemoteClient
+			if err := c.conn.Call(ipc.OpRemoteRename, ipc.RemoteRef{Client: args[0], Name: args[1]}, &rc); err != nil {
 				return err
 			}
-			name := args[1]
-			if name == "" {
-				return fmt.Errorf("the new name can't be empty")
-			}
-			var found *config.AuthorizedClient
-			for i, ac := range c.Remote.AuthorizedClients {
-				if ac.Name == args[0] || identity.Equal(ac.Fingerprint, args[0]) {
-					found = &c.Remote.AuthorizedClients[i]
-				}
-			}
-			if found == nil {
-				return fmt.Errorf("no authorized client %q (acmd remote clients lists them)", args[0])
-			}
-			for _, ac := range c.Remote.AuthorizedClients {
-				if ac.Name == name && ac.Fingerprint != found.Fingerprint {
-					return fmt.Errorf("another client is already called %q", name)
-				}
-			}
-			if _, err := setup.RenameAuthorizedClient(p.Config(), found.Fingerprint, name); err != nil {
-				return err
-			}
-			reloadHosting(cmd.Context(), p)
-			fmt.Fprintf(cmd.OutOrStdout(), "Renamed %q to %q (%s).\n", found.Name, name, found.Fingerprint)
-			return nil
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Renamed %q to %q (%s).\n", args[0], rc.Name, rc.Fingerprint)
+			return err
 		},
 	}
 }

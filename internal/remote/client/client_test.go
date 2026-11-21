@@ -69,11 +69,14 @@ func TestKnownHosts(t *testing.T) {
 	if _, err := l.c.AddHost(ipc.RemoteHostEdit{Name: "box", Address: "a:1", Fingerprint: fp}); err == nil || !strings.Contains(err.Error(), "already") {
 		t.Errorf("a second box: %v", err)
 	}
-	c, err := config.Load(l.cfg)
+	saved, err := l.data.KnownHosts()
 	must(t, err)
-	if len(c.Remote.Hosts) != 2 || c.Remote.Hosts[0] != (config.KnownHost{Name: "studio", Address: "10.0.0.2:7433", Fingerprint: fp}) ||
-		c.Remote.Hosts[1] != (config.KnownHost{Name: "box", Address: "localhost:17433", Fingerprint: fp, Cert: certFile}) {
-		t.Errorf("config.toml: %+v", c.Remote.Hosts)
+	if len(saved) != 2 || saved[0] != (config.KnownHost{Name: "studio", Address: "10.0.0.2:7433", Fingerprint: fp}) ||
+		saved[1] != (config.KnownHost{Name: "box", Address: "localhost:17433", Fingerprint: fp, Cert: certFile}) {
+		t.Errorf("data: %+v", saved)
+	}
+	if b, _ := os.ReadFile(l.cfg); string(b) != "# the laptop's own\n" {
+		t.Errorf("config.toml was written:\n%s", b)
 	}
 	if hosts := l.c.Hosts(); len(hosts) != 2 || hosts[0].Name != "studio" || hosts[1].Name != "box" {
 		t.Errorf("hosts = %+v", hosts)
@@ -117,10 +120,8 @@ func TestKnownHosts(t *testing.T) {
 	if err := l.c.RemoveHost(ctx5(), "tunnel"); err == nil {
 		t.Error("removed it twice")
 	}
-	b, err := os.ReadFile(l.cfg)
-	must(t, err)
-	if !strings.HasPrefix(string(b), "# the laptop's own\n") || strings.Contains(string(b), "tunnel") {
-		t.Errorf("config.toml:\n%s", b)
+	if saved, _ := l.data.KnownHosts(); len(saved) != 1 || saved[0].Name != "studio" {
+		t.Errorf("data: %+v", saved)
 	}
 	if _, err := l.c.Host("tunnel"); err == nil {
 		t.Error("still known")
@@ -141,23 +142,35 @@ func TestKnownHostsFollowConfig(t *testing.T) {
 	must(t, os.WriteFile(l.cfg, []byte(text), 0o600))
 	future := time.Now().Add(time.Second)
 	must(t, os.Chtimes(l.cfg, future, future))
-	must(t, l.c.ReloadIfChanged())
-	must(t, l.c.ReloadIfChanged()) // unchanged: nothing to do
+	must(t, l.c.Reload())
 	list, err := l.c.Browse(ctx5(), "studio")
 	must(t, err)
 	if len(list.Sessions) != 1 || list.Sessions[0].ID != "r1" || list.Sessions[0].Added {
 		t.Errorf("browse = %+v", list)
 	}
+	// It's read-only here: the file changes it.
+	if h := l.c.Hosts(); len(h) != 1 || !h[0].InConfig {
+		t.Errorf("hosts = %+v", h)
+	}
+	if _, err := l.c.EditHost(ctx5(), ipc.RemoteHostEdit{Host: "studio", Address: "a:1"}); !errors.Is(err, ErrInConfig) {
+		t.Errorf("edit: %v", err)
+	}
+	if err := l.c.RemoveHost(ctx5(), "studio"); !errors.Is(err, ErrInConfig) {
+		t.Errorf("remove: %v", err)
+	}
+	if _, err := l.c.AddHost(ipc.RemoteHostEdit{Name: "studio", Address: "a:1", Fingerprint: r.h.Status().Fingerprint}); err == nil {
+		t.Error("added a second studio")
+	}
 	// A file that doesn't parse leaves the hosts as they are.
 	must(t, os.WriteFile(l.cfg, []byte("x = "), 0o600))
-	if err := l.c.Reload(); err == nil {
-		t.Error("reloaded a broken config.toml")
-	}
+	must(t, os.Chtimes(l.cfg, future.Add(time.Second), future.Add(time.Second)))
+	must(t, l.c.Reload())
 	if len(l.c.Hosts()) != 1 {
 		t.Errorf("hosts = %+v", l.c.Hosts())
 	}
 	// Taken out by hand: disconnected and forgotten.
 	must(t, os.WriteFile(l.cfg, []byte("# none\n"), 0o600))
+	must(t, os.Chtimes(l.cfg, future.Add(2*time.Second), future.Add(2*time.Second)))
 	must(t, l.c.Reload())
 	if len(l.c.Hosts()) != 0 {
 		t.Errorf("hosts = %+v", l.c.Hosts())
@@ -701,4 +714,32 @@ func TestClientIdentityError(t *testing.T) {
 		t.Errorf("browse: %v", err)
 	}
 	l.waitState("studio", ipc.HostError) // between its tries
+}
+
+// A host's settings, through it: the host ones, and changes to them.
+func TestHostSettings(t *testing.T) {
+	l := newLaptop(t)
+	r := newRemoteHost(t, "studio")
+	r.authorize(l.fingerprint())
+	_, err := l.c.AddHost(ipc.RemoteHostEdit{Name: "studio", Address: r.addr(), Fingerprint: r.h.Status().Fingerprint})
+	must(t, err)
+	st, err := l.c.Config(ctx5(), "studio")
+	must(t, err)
+	if st.Values["remote.host.enabled"] != true {
+		t.Fatalf("config = %+v", st.Values)
+	}
+	if _, ok := st.Values["editor.preset"]; ok {
+		t.Error("saw a device setting")
+	}
+	st, err = l.c.SetConfig(ctx5(), "studio", map[string]any{"default_harness": "antigravity"})
+	must(t, err)
+	if st.Values["default_harness"] != "antigravity" || r.file.Config().DefaultHarness != "antigravity" {
+		t.Errorf("after set: %v", st.Values["default_harness"])
+	}
+	if _, err := l.c.SetConfig(ctx5(), "studio", map[string]any{"speech.voice": "af_bella"}); err == nil {
+		t.Error("changed a device setting")
+	}
+	if _, err := l.c.Config(ctx5(), "nowhere"); err == nil {
+		t.Error("a host that isn't known")
+	}
 }

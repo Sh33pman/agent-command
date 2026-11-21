@@ -65,7 +65,7 @@ struct KnownHostForm: Equatable {
 }
 
 /// Settings → Remote → Known hosts: adds, edits, removes and retries hosts
-/// through the daemon, which keeps them in config.toml. The list itself is
+/// through the daemon, which keeps them in its database. The list itself is
 /// the snapshot's.
 @Observable final class KnownHostsModel {
     @ObservationIgnored var client = RemoteHostsClient()

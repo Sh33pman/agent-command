@@ -3,24 +3,20 @@ import Testing
 @testable import AgentCommand
 
 struct DefaultHarnessTests {
-    @Test func readsTheTopLevelKey() {
-        #expect(DefaultHarness.value(inConfig: "") == nil, "unset: ⌘N asks")
-        #expect(DefaultHarness.value(inConfig: "default_harness = \"\"\n") == nil)
-        #expect(DefaultHarness.value(inConfig: "claude_args = []\ndefault_harness = \"antigravity\"\n") == .antigravity)
-        #expect(DefaultHarness.value(inConfig: "default_harness = \"claude\" # mine\n") == .claude)
-        #expect(DefaultHarness.value(inConfig: "default_harness = claude\n") == .claude)
-        #expect(DefaultHarness.value(inConfig: "default_harness = \"terminal\"\n") == nil, "not an agent")
-        #expect(DefaultHarness.value(inConfig: "default_harness = \"copilot\"\n") == nil)
-        #expect(DefaultHarness.value(inConfig: "[editor]\ndefault_harness = \"claude\"\n") == nil, "not top level")
-        #expect(DefaultHarness.value(inConfig: "# What a new session runs (⌘N...): claude or\ndefault_harness = \"\"\n") == nil, "as the template has it")
+    @Test func readsTheSetting() {
+        #expect(DefaultHarness.value("") == nil, "unset: ⌘N asks")
+        #expect(DefaultHarness.value("antigravity") == .antigravity)
+        #expect(DefaultHarness.value("claude") == .claude)
+        #expect(DefaultHarness.value("terminal") == nil, "not an agent")
+        #expect(DefaultHarness.value("copilot") == nil)
     }
 
-    @Test func menuTitlesAndArguments() {
+    @Test func menuTitlesAndChanges() {
         #expect(DefaultHarness.menuTitle(.claude) == "New Claude Session")
         #expect(DefaultHarness.menuTitle(.antigravity) == "New Antigravity Session")
         #expect(DefaultHarness.menuTitle(nil) == "New Session (Pick a Default)…")
-        #expect(DefaultHarness.arguments(.antigravity) == ["config", "set", "--", "default_harness", "antigravity"])
-        #expect(DefaultHarness.arguments(nil) == ["config", "set", "--", "default_harness", ""])
+        #expect(DefaultHarness.change(.antigravity) == ["default_harness": .string("antigravity")])
+        #expect(DefaultHarness.change(nil) == ["default_harness": .string("")])
     }
 
     @Test func onlyAnAgentBecomesTheDefault() {

@@ -153,8 +153,7 @@ func TestInitFreshHome(t *testing.T) {
 	in := Input{
 		Home: home, ConfigFile: filepath.Join(home, "cfg/config.toml"), EnvFile: filepath.Join(home, "state/env.json"),
 		AcmdPath: "/opt/homebrew/bin/acmd", ClaudeDir: filepath.Join(home, ".claude"),
-		Read:   os.ReadFile,
-		Editor: &config.Editor{Preset: "zed", Resolved: "/usr/local/bin/zed", RunIn: "background"},
+		Read: os.ReadFile, AgyPath: "/opt/agy/bin/agy",
 	}
 	plan, err := PlanInit(in)
 	must(t, err)
@@ -175,8 +174,14 @@ func TestInitFreshHome(t *testing.T) {
 	}
 	cfg, err := config.Load(in.ConfigFile)
 	must(t, err)
-	if cfg.Editor.Preset != "zed" || cfg.Editor.Resolved != "/usr/local/bin/zed" || cfg.ClaudeCommand != "claude" {
+	if cfg.AgyCommand != "/opt/agy/bin/agy" || cfg.ClaudeCommand != "claude" {
 		t.Errorf("config: %+v", cfg)
+	}
+	// A running daemon makes the same change: what it is, by key.
+	for _, c := range plan.Changes {
+		if filepath.Base(c.Path) == "config.toml" && (len(c.Settings) != 1 || c.Settings["agy_command"] != "/opt/agy/bin/agy") {
+			t.Errorf("settings = %+v", c.Settings)
+		}
 	}
 
 	// With no settings file, uninstall has nothing to do.
@@ -402,33 +407,7 @@ func TestInitRetiresV1Settings(t *testing.T) {
 	t.Error("config.toml isn't changed")
 }
 
-// The background service tidies config.toml as it starts: once, and only when
-// there's something to take out.
-func TestRetireOldOnStart(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "config.toml")
-	if changed, err := RetireOld(file); changed || err != nil {
-		t.Fatalf("no file: %v %v", changed, err)
-	}
-	must(t, os.WriteFile(file, []byte("a = 1\n\n[popup]\nenabled = true\n"), 0o600))
-	if changed, err := RetireOld(file); !changed || err != nil {
-		t.Fatalf("v1 file: %v %v", changed, err)
-	}
-	if b, _ := os.ReadFile(file); string(b) != "a = 1\n" {
-		t.Errorf("after: %q", b)
-	}
-	if changed, err := RetireOld(file); changed || err != nil {
-		t.Errorf("again: %v %v", changed, err)
-	}
-	must(t, os.WriteFile(file, []byte("[x\n[keys]\n"), 0o600))
-	if _, err := RetireOld(file); err == nil {
-		t.Error("a broken file was rewritten")
-	}
-	if _, err := RetireOld(t.TempDir()); err == nil {
-		t.Error("a folder read as a file")
-	}
-}
-
-// acmd init and a saved setting rename remote_control to agent_remote_control,
+// acmd init and the daemon rename remote_control to agent_remote_control,
 // keeping its value and the file's comments.
 func TestInitAndSaveMigrateAgentRemoteControl(t *testing.T) {
 	const old = "# mine\nremote_control = true # on\n\n[speech]\nspeed = 1.5\n"
@@ -453,25 +432,11 @@ func TestInitAndSaveMigrateAgentRemoteControl(t *testing.T) {
 		t.Error("init doesn't change config.toml")
 	}
 
+	// The daemon, opening it, does the same.
 	file := filepath.Join(t.TempDir(), "config.toml")
 	must(t, os.WriteFile(file, []byte(old), 0o600))
-	must(t, SaveSetting(file, "speech", "speed", 1.5)) // nothing else changes, but it migrates
+	config.OpenFile(file)
 	if b, _ := os.ReadFile(file); string(b) != want {
-		t.Errorf("save:\n%s\nwant:\n%s", b, want)
-	}
-	must(t, SaveSetting(file, "", "agent_remote_control", false))
-	if c, _ := config.Load(file); c.AgentRemoteControl {
-		t.Error("not turned off")
-	}
-
-	// A missing file starts from the template, which has the new key.
-	fresh := filepath.Join(t.TempDir(), "config.toml")
-	must(t, SaveSetting(fresh, "", "agent_remote_control", true))
-	if c, _ := config.Load(fresh); !c.AgentRemoteControl {
-		t.Error("fresh: not on")
-	}
-	must(t, os.WriteFile(fresh, []byte("[x\n"), 0o600))
-	if err := SaveSetting(fresh, "", "agent_remote_control", true); err == nil {
-		t.Error("a broken file was rewritten")
+		t.Errorf("open:\n%s\nwant:\n%s", b, want)
 	}
 }

@@ -23,9 +23,9 @@ The app steps below are for the macOS app. On Linux, the daemon and `acmd` do ev
 - **Hosting:** the host's listener for clients. It's off by default. When it's on, it listens on `localhost:7433` unless you choose otherwise.
 - **Remote session:** a session on the host that clients may use. Each session has its own Remote flag, and it's off unless you turn it on. Clients never see the host's other sessions.
 - **Identity and fingerprints:** each Mac has a cert and key. acmd makes them the first time they're needed, or you use your own. A Mac is known by its cert's **fingerprint**: `SHA256:` followed by 43 characters, the SHA-256 of the cert in base64. `acmd remote identity` shows it, and so does Settings → Remote → Identity. There's no certificate authority: each side pins the other's fingerprint.
-- **Authorized clients:** on the host, the clients allowed in, by fingerprint (`[[remote.authorized_clients]]` in config.toml).
+- **Authorized clients:** on the host, the clients allowed in, by fingerprint. acmd keeps them in its database; ones you list in config.toml (`[[remote.authorized_clients]]`) count too.
 - **Pending requests:** a client the host doesn't know is refused, and its request waits on the host for you to approve or deny. Nothing is ever approved by itself. A request is kept for 24 hours after the client last tried.
-- **Known hosts:** on the client, the hosts it connects to, each with a name, an address (`host:port`) and the fingerprint it expects (`[[remote.hosts]]`). A session you open from a host is **added** here: it's a row in the sidebar with a "↗ host" badge, and it still runs on the host.
+- **Known hosts:** on the client, the hosts it connects to, each with a name, an address (`host:port`) and the fingerprint it expects. acmd keeps them in its database; ones you list in config.toml (`[[remote.hosts]]`) count too. A session you open from a host is **added** here: it's a row in the sidebar with a "↗ host" badge, and it still runs on the host.
 
 The apps and the CLI never touch the network. They talk to their own Mac's background service (the daemon), and the two daemons talk to each other:
 
@@ -242,7 +242,7 @@ A new cert has a new fingerprint. After you change one, clients must pin the hos
 - Hosting's port is **7433** unless you choose another (`remote.host.port`, or **Port** in Settings → Remote → Hosting).
 - **Use another port if this one is taken** (`port_fallback`, on by default): when the port is in use, Hosting listens on another free one instead of failing. It tries the port it fell back to last time first, so clients usually find it in the same place. `acmd remote status` and the app's status line show the port in use, as "listening on 127.0.0.1:59427 (port 7433 was taken)". Clients pin the address, so a moved port means editing the host's address on each client (`acmd remote edit <host> --address …`).
 - **A port of your own fails when it's taken:** with the fallback off, Hosting doesn't start, and its status names the port: "port 7433 is in use, so Hosting can't start: free it, choose another port, or turn on port_fallback". `acmd remote hosting on` exits with code 8. In the app, saving a port other than 7433 turns the fallback off; the checkbox turns it back on. After you free the port, turn Hosting off and on again.
-- The port the fallback picked is remembered in `~/.local/state/agent-command/remote-host.json`.
+- The port the fallback picked is remembered in acmd's database (`~/.local/state/agent-command/state.db`).
 
 ## What clients can do, and security
 
@@ -348,7 +348,11 @@ If you don't know why, don't connect: something else may be answering at that ad
 
 ## Configuration reference
 
-The settings are in `~/.config/agent-command/config.toml`. A change applies straight away: the daemon follows the file. The app and `acmd` write it for you; editing it by hand works too.
+The settings are in `~/.config/agent-command/config.toml`. The daemon is the only thing that writes it, and keeps your comments: the app, `acmd config set` and a client connected over Remote all change it through the daemon. Editing it by hand works too, and applies straight away. A hand edit with a mistake leaves the last good settings in effect: the app and `acmd config show` name the line, and changes wait until it's fixed.
+
+Authorized clients and known hosts that you add in the app or with `acmd` are kept in acmd's database (`state.db`), not in config.toml. Ones you list in config.toml still count, read-only: the app marks them "Set in config.toml", and you remove them by editing the file. Upgrading moves the entries config.toml had into the database once, after copying the file to `config.toml.before-state-db`.
+
+A client connected over Remote can read and change a host's settings (the app's **Settings for** picker, on the Claude, Antigravity and Notifications pages), but not its device settings: the editor and speech belong to whoever sits at the host.
 
 ```toml
 [remote]
@@ -385,12 +389,12 @@ fingerprint = "SHA256:…"   # or cert = "/path/to/host.pem"
 | `remote.host.port_fallback` | `true` | When the port is taken, listen on another free one instead of failing. |
 | `remote.host.cert`, `remote.host.key` | `""` | Your own cert and key for Hosting. Empty is acmd's identity. Set both or neither, with `acmd remote cert host`. |
 | `remote.client.cert`, `remote.client.key` | `""` | Your own cert and key for connecting to hosts. Empty is acmd's identity. `acmd remote cert client`. |
-| `[[remote.authorized_clients]]` | none | On a host, each client allowed in: `name`, and `fingerprint` (required). Managed by approve, `authorize`, `rename` and `revoke`. |
-| `[[remote.hosts]]` | none | On a client, each known host: `name` (unique), `address` (`host:port`), and `fingerprint` or `cert` (a path to the host's cert, to pin its fingerprint). Managed by `add`, `edit` and `remove`. |
+| `[[remote.authorized_clients]]` | none | On a host, clients allowed in that you list yourself: `name`, and `fingerprint` (required). Read-only to acmd; the ones you approve, `authorize`, `rename` and `revoke` are kept in its database. |
+| `[[remote.hosts]]` | none | On a client, known hosts you list yourself: `name` (unique), `address` (`host:port`), and `fingerprint` or `cert` (a path to the host's cert, to pin its fingerprint). Read-only to acmd; the ones you `add`, `edit` and `remove` are kept in its database. |
 
-`acmd config show` lists the `[remote]` settings, and `acmd config set` changes `remote.new_sessions_remote` and `remote.host.enabled`, `listen`, `port` and `port_fallback` (`acmd config set remote.host.listen all`).
+`acmd config show` lists every setting, and `acmd config set` changes one or more at once (`acmd config set remote.host.listen all remote.host.port 7500`).
 
 Other files:
 
 - `~/.config/agent-command/identity/`: acmd's own identity, `cert.pem` and `key.pem` (the key `0600`, the folder `0700`). acmd makes it the first time it's needed: when Hosting starts, a known host is added, or `acmd remote identity` runs.
-- `~/.local/state/agent-command/remote-host.json`: Hosting's pending requests and the port the fallback picked.
+- `~/.local/state/agent-command/state.db`: the authorized clients and known hosts added through acmd, Hosting's pending requests, and the port the fallback picked.

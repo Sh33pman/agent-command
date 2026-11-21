@@ -105,7 +105,7 @@ func (h *hostConn) wantedLocked() bool {
 func (h *hostConn) statusLocked() ipc.RemoteHost {
 	st := ipc.RemoteHost{Name: h.cfg.Name, Address: h.cfg.Address, Fingerprint: h.cfg.Fingerprint, Cert: h.cfg.Cert,
 		State: h.state, Error: h.err, Since: h.since, RetryAt: h.retryAt, OurFingerprint: h.c.fingerprintLocked(),
-		Seen: h.seen}
+		Seen: h.seen, InConfig: h.c.inConfig[h.cfg.Name]}
 	if h.state == ipc.HostConnected {
 		st.HostName, st.HostVersion = h.peer.Name, h.peer.Version
 	}

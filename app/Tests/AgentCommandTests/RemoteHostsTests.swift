@@ -271,18 +271,6 @@ func makeRemoteSession(
 
 // MARK: New sessions
 
-@Test func theRemoteCheckboxStartsFromTheConfig() {
-    #expect(!RemoteDefaults.newSessionsRemote(inConfig: ""))
-    #expect(RemoteDefaults.newSessionsRemote(inConfig: "[remote]\nnew_sessions_remote = true\n"))
-    #expect(RemoteDefaults.newSessionsRemote(inConfig: "default_harness = \"claude\"\n[remote] # Remote sessions\nnew_sessions_remote=true # on\n"))
-    #expect(!RemoteDefaults.newSessionsRemote(inConfig: "[remote]\nnew_sessions_remote = false\n"))
-    #expect(!RemoteDefaults.newSessionsRemote(inConfig: "[remote.host]\nnew_sessions_remote = true\n"), "another table's key")
-    #expect(!RemoteDefaults.newSessionsRemote(inConfig: "new_sessions_remote = true\n"), "not at the top level")
-    #expect(RemoteDefaults.newSessionsRemote(inConfig: "remote.new_sessions_remote = true\n"), "a dotted key")
-    #expect(!RemoteDefaults.newSessionsRemote(inConfig: "[remote]\n# new_sessions_remote = true\n"), "commented out")
-    _ = RemoteDefaults.newSessionsRemote // the real config: whatever it says, it reads
-}
-
 @Test func attachedCountsAreConnectionsBySession() {
     let clients = [
         RemoteClient(name: "a", fingerprint: "1", connections: [

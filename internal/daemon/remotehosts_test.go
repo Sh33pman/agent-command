@@ -22,13 +22,13 @@ import (
 	"github.com/brettmostert/agent-command/internal/remote/host"
 	"github.com/brettmostert/agent-command/internal/remote/hostapi"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
-	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
 )
 
 // otherDaemon is a Remote host's daemon, in memory.
 type otherDaemon struct {
+	file     *config.File
 	mu       sync.Mutex
 	sessions []*core.Session
 	inbox    []core.InboxItem
@@ -110,6 +110,13 @@ func (b *otherDaemon) HostSocket(id string) string {
 
 func (b *otherDaemon) Harnesses() ([]string, string) { return []string{core.HarnessTerminal}, "" }
 
+func (b *otherDaemon) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
+
+func (b *otherDaemon) SetConfig(values map[string]any) (ipc.ConfigState, error) {
+	_, err := b.file.Set(values)
+	return ipc.ConfigOf(b.file), err
+}
+
 type syncBuf struct {
 	mu sync.Mutex
 	b  bytes.Buffer
@@ -143,12 +150,14 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	must(t, err)
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	must(t, setup.SaveSetting(hostCfg, "remote.host", "enabled", true))
-	must(t, setup.SaveSetting(hostCfg, "remote.host", "port", port))
-	h := host.New(host.Options{ConfigFile: hostCfg, StateFile: filepath.Join(other, "state.json"), IdentityDir: filepath.Join(other, "id")})
+	must(t, writeSetting(hostCfg, "remote.host", "enabled", true))
+	must(t, writeSetting(hostCfg, "remote.host", "port", port))
+	hostFile := config.OpenFile(hostCfg)
+	b.file = hostFile
+	h := host.New(host.Options{Settings: func() config.Remote { return hostFile.Config().Remote }, IdentityDir: filepath.Join(other, "id")})
 	t.Cleanup(h.Close)
 	hostapi.Register(h, b, hostapi.Options{Home: other})
-	must(t, h.Reload())
+	h.Reload()
 	sock := filepath.Join(other, "r1.sock")
 	ready := make(chan struct{})
 	srv := &term.Server{Socket: sock, Shell: []string{"/bin/sh"}, Dir: other, Env: []string{"PS1=$ ", "PATH=/usr/bin:/bin"},
@@ -171,7 +180,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	must(t, err)
 
 	// This machine.
-	must(t, setup.SaveSetting(p.Config(), "notify", "enabled", true))
+	must(t, writeSetting(p.Config(), "notify", "enabled", true))
 	start(t, p, func(c *Config) { c.ConfigFile = p.Config(); c.ReconcileEvery = 20 * time.Millisecond })
 	c := dial(t, p)
 	call := func(op string, in, out any) error {
@@ -268,6 +277,25 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	// Other ops reach the host.
 	var harnesses api.Harnesses
 	must(t, call(ipc.OpRemoteHarnesses, ipc.RemoteHostRef{Host: "studio"}, &harnesses))
+	// Its settings: the host's own, read and changed from here.
+	var hostSettings ipc.ConfigState
+	must(t, call(ipc.OpRemoteConfigGet, ipc.RemoteHostRef{Host: "studio"}, &hostSettings))
+	if hostSettings.Values["remote.host.enabled"] != true {
+		t.Errorf("host config = %+v", hostSettings.Values)
+	}
+	must(t, call(ipc.OpRemoteConfigSet, ipc.RemoteConfigSet{Host: "studio", Values: map[string]any{"notify.cooldown": "45s"}}, &hostSettings))
+	if hostSettings.Values["notify.cooldown"] != "45s" || b.file.Config().Notify.Cooldown != "45s" {
+		t.Errorf("after set = %+v", hostSettings.Values["notify.cooldown"])
+	}
+	if err := call(ipc.OpRemoteConfigSet, ipc.RemoteConfigSet{Host: "studio", Values: map[string]any{"speech.speed": 1.2}}, nil); err == nil {
+		t.Error("changed the host's device settings")
+	}
+	if err := call(ipc.OpRemoteConfigGet, "nope", nil); err == nil {
+		t.Error("took a ref that isn't one")
+	}
+	if err := call(ipc.OpRemoteConfigSet, "nope", nil); err == nil {
+		t.Error("took a change that isn't one")
+	}
 	var folders api.FolderList
 	must(t, call(ipc.OpRemoteFoldersRecent, ipc.RemoteHostRef{Host: "studio"}, &folders))
 	must(t, call(ipc.OpRemoteFoldersList, ipc.RemoteFolderRequest{Host: "studio", Path: "~"}, &folders))

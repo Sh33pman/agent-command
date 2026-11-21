@@ -2,9 +2,7 @@ package setup
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,13 +15,12 @@ import (
 // caller (so planning has no side effects and is testable).
 type Input struct {
 	Home       string
-	ConfigFile string         // acmd's config.toml
-	EnvFile    string         // env.json
-	AcmdPath   string         // stable path written into hooks and keybinds
-	ClaudeDir  string         // directory holding Claude's settings.json
-	ClaudePath string         // resolved claude binary; "" = not found
-	Editor     *config.Editor // the editor choice to save; nil = leave as is
-	LoginEnv   LoginEnv       // nil = leave env.json as is
+	ConfigFile string   // acmd's config.toml
+	EnvFile    string   // env.json
+	AcmdPath   string   // stable path written into hooks and keybinds
+	ClaudeDir  string   // directory holding Claude's settings.json
+	ClaudePath string   // resolved claude binary; "" = not found
+	LoginEnv   LoginEnv // nil = leave env.json as is
 	Read       func(string) ([]byte, error)
 
 	// AntigravityDir holds agy's hooks.json (AntigravityConfigDir); "" = leave it alone.
@@ -186,27 +183,23 @@ func planConfig(p *Plan, in Input) error {
 	if text, err = config.Retire(text); err != nil {
 		return err
 	}
-	set := func(section, key string, v any) {
+	settings := map[string]any{}
+	set := func(key string, v any) {
 		if err == nil {
-			text, err = config.Set(text, section, key, v)
+			settings[key] = v
+			text, err = config.Set(text, "", key, v)
 		}
 	}
 	if in.ClaudePath != "" {
-		set("", "claude_command", in.ClaudePath)
+		set("claude_command", in.ClaudePath)
 	}
 	if in.AgyPath != "" {
-		set("", "agy_command", in.AgyPath)
-	}
-	if e := in.Editor; e != nil {
-		set("editor", "preset", e.Preset)
-		set("editor", "command", e.Command)
-		set("editor", "resolved", e.Resolved)
-		set("editor", "run_in", e.RunIn)
+		set("agy_command", in.AgyPath)
 	}
 	if err != nil {
 		return err
 	}
-	c := Change{Path: in.ConfigFile, Exists: exists, Old: old, New: []byte(text), Mode: 0o644}
+	c := Change{Path: in.ConfigFile, Exists: exists, Old: old, New: []byte(text), Mode: 0o644, Settings: settings}
 	if exists {
 		c.Summary = "update acmd's settings"
 		c.Detail = changedLines(string(old), text)
@@ -308,187 +301,4 @@ func StableBinary(argv0, exe string, lookPath func(string) (string, error)) stri
 		}
 	}
 	return filepath.Clean(p)
-}
-
-// SaveEditor writes the editor choice into config.toml (acmd's own file,
-// created from the template if needed), keeping everything else.
-func SaveEditor(configFile string, e config.Editor) error {
-	p := &Plan{}
-	if err := planConfig(p, Input{ConfigFile: configFile, Editor: &e, Read: os.ReadFile}); err != nil {
-		return err
-	}
-	c := p.Changes[0]
-	if c.Action() == "unchanged" {
-		return nil
-	}
-	return writeAtomic(configFile, c.New, c.Mode, false)
-}
-
-// SaveSetting sets one value in config.toml, keeping the rest of the file as it
-// is, apart from what config.Retire migrates or takes out. A missing file
-// starts from the template.
-func SaveSetting(configFile, section, key string, value any) error {
-	orig, text, err := readConfig(configFile)
-	if err != nil {
-		return err
-	}
-	if text, err = config.Set(text, section, key, value); err != nil {
-		return err
-	}
-	return writeConfig(configFile, orig, text)
-}
-
-// SaveSettings sets several values in one section of config.toml with one
-// write, so a cert and its key never disagree in between.
-func SaveSettings(configFile, section string, kv ...config.KeyValue) error {
-	orig, text, err := readConfig(configFile)
-	if err != nil {
-		return err
-	}
-	for _, p := range kv {
-		if text, err = config.Set(text, section, p.Key, p.Value); err != nil {
-			return err
-		}
-	}
-	return writeConfig(configFile, orig, text)
-}
-
-// RenameAuthorizedClient gives the authorized client with this fingerprint a
-// new name, with one write. Its entry moves to the end of the list. It says
-// whether there was one.
-func RenameAuthorizedClient(configFile, fingerprint, name string) (bool, error) {
-	orig, text, err := readConfig(configFile)
-	if err != nil {
-		return false, err
-	}
-	text, n, err := config.RemoveTables(text, "remote.authorized_clients", func(t map[string]any) bool {
-		fp, _ := t["fingerprint"].(string)
-		return fp == fingerprint
-	})
-	if err != nil || n == 0 {
-		return false, err
-	}
-	text, err = config.AppendTable(text, "remote.authorized_clients",
-		config.KeyValue{Key: "name", Value: name}, config.KeyValue{Key: "fingerprint", Value: fingerprint})
-	if err != nil {
-		return false, err
-	}
-	return true, writeConfig(configFile, orig, text)
-}
-
-// AddAuthorizedClient adds a [[remote.authorized_clients]] entry to the end of
-// config.toml, keeping the rest of the file as SaveSetting does.
-func AddAuthorizedClient(configFile string, c config.AuthorizedClient) error {
-	orig, text, err := readConfig(configFile)
-	if err != nil {
-		return err
-	}
-	text, err = config.AppendTable(text, "remote.authorized_clients",
-		config.KeyValue{Key: "name", Value: c.Name}, config.KeyValue{Key: "fingerprint", Value: c.Fingerprint})
-	if err != nil {
-		return err
-	}
-	return writeConfig(configFile, orig, text)
-}
-
-// RemoveAuthorizedClients takes the [[remote.authorized_clients]] entries that
-// match out of config.toml, keeping the rest of the file, and says how many it
-// took.
-func RemoveAuthorizedClients(configFile string, match func(config.AuthorizedClient) bool) (int, error) {
-	orig, text, err := readConfig(configFile)
-	if err != nil {
-		return 0, err
-	}
-	text, n, err := config.RemoveTables(text, "remote.authorized_clients", func(t map[string]any) bool {
-		name, _ := t["name"].(string)
-		fp, _ := t["fingerprint"].(string)
-		return match(config.AuthorizedClient{Name: name, Fingerprint: fp})
-	})
-	if err != nil {
-		return 0, err
-	}
-	return n, writeConfig(configFile, orig, text)
-}
-
-// SetKnownHost writes a [[remote.hosts]] entry to config.toml, keeping the
-// rest of the file: it takes out the entry named replace first (when not ""),
-// then adds h at the end, in one write.
-func SetKnownHost(configFile, replace string, h config.KnownHost) error {
-	orig, text, err := readConfig(configFile)
-	if err != nil {
-		return err
-	}
-	if replace != "" {
-		if text, _, err = config.RemoveTables(text, "remote.hosts", func(t map[string]any) bool {
-			name, _ := t["name"].(string)
-			return name == replace
-		}); err != nil {
-			return err
-		}
-	}
-	kv := []config.KeyValue{{Key: "name", Value: h.Name}, {Key: "address", Value: h.Address}, {Key: "fingerprint", Value: h.Fingerprint}}
-	if h.Cert != "" {
-		kv = append(kv, config.KeyValue{Key: "cert", Value: h.Cert})
-	}
-	if text, err = config.AppendTable(text, "remote.hosts", kv...); err != nil {
-		return err
-	}
-	return writeConfig(configFile, orig, text)
-}
-
-// RemoveKnownHost takes the [[remote.hosts]] entries named name out of
-// config.toml, keeping the rest of the file, and says how many it took.
-func RemoveKnownHost(configFile, name string) (int, error) {
-	orig, text, err := readConfig(configFile)
-	if err != nil {
-		return 0, err
-	}
-	text, n, err := config.RemoveTables(text, "remote.hosts", func(t map[string]any) bool {
-		v, _ := t["name"].(string)
-		return v == name
-	})
-	if err != nil {
-		return 0, err
-	}
-	return n, writeConfig(configFile, orig, text)
-}
-
-// readConfig reads config.toml as it is, and as config.Retire makes it. A
-// missing file is the template.
-func readConfig(configFile string) (orig, text string, err error) {
-	b, err := os.ReadFile(configFile) // #nosec G304 -- acmd's own config file
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		b = []byte(config.Template)
-	case err != nil:
-		return "", "", err
-	}
-	text, err = config.Retire(string(b))
-	return string(b), text, err
-}
-
-// writeConfig writes config.toml when text differs from what was read.
-func writeConfig(configFile, orig, text string) error {
-	if text == orig {
-		return nil
-	}
-	return writeAtomic(configFile, []byte(text), 0o600, false)
-}
-
-// RetireOld takes acmd v1's settings out of config.toml (config.Retire), keeping
-// the rest as it is, and says whether it changed the file. The background
-// service runs it as it starts, so an upgrade tidies the file without `acmd init`.
-func RetireOld(configFile string) (bool, error) {
-	b, err := os.ReadFile(configFile) // #nosec G304 -- acmd's own config file
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	text, err := config.Retire(string(b))
-	if err != nil || text == string(b) {
-		return false, err
-	}
-	return true, writeAtomic(configFile, []byte(text), 0o600, false)
 }

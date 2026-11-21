@@ -43,6 +43,9 @@ const (
 	OpFoldersMkdir  = "folders.mkdir"  // FolderPath → Folder
 	OpHarnessesList = "harnesses.list" // no arguments → Harnesses
 	OpEvents        = "events"         // no arguments → a stream of Event lines
+	// The host's settings, not its device ones (editor, speech).
+	OpConfigGet = "config.get" // no arguments → ipc.ConfigState
+	OpConfigSet = "config.set" // ipc.ConfigSet → ipc.ConfigState
 )
 
 // Error codes the host API adds to wire's (wire.CodeNotFound and

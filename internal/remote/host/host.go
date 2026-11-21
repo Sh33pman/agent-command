@@ -18,7 +18,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"slices"
 	"strconv"
 	"sync"
@@ -34,13 +33,16 @@ import (
 
 // Options configure a Host.
 type Options struct {
-	// ConfigFile is config.toml: Reload reads [remote] from it, and approving,
-	// authorizing, revoking and turning Hosting on or off write to it. ""
-	// leaves Hosting off, and those fail.
-	ConfigFile string
-	// StateFile keeps what isn't config: pending requests, and the port the
-	// fallback picked last.
-	StateFile string
+	// Settings is [remote] as it's in effect, from config.toml: Reload
+	// applies it. nil is the defaults, with Hosting off.
+	Settings func() config.Remote
+	// SetSettings changes settings (the daemon's config.set): turning Hosting
+	// on or off goes through it. nil refuses.
+	SetSettings func(map[string]any) error
+	// Data keeps what changes through ops: the clients authorized here,
+	// pending requests, and the port the fallback picked last (state.db). nil
+	// keeps them in memory.
+	Data Data
 	// IdentityDir is acmd's generated identity, used unless [remote.host]
 	// names a cert and key.
 	IdentityDir string
@@ -63,13 +65,10 @@ type Host struct {
 	wg     sync.WaitGroup
 	sem    chan struct{} // handshakes under way
 
-	cfgMu      sync.Mutex // config.toml: reading it and writing to it
-	configRead time.Time  // its modification time when last read
-	read       bool
-
 	mu          sync.Mutex
-	remote      config.Remote // as last applied
-	key         listenKey     // what the listener was started with
+	remote      config.Remote             // as last applied: its AuthorizedClients are config.toml's
+	added       []config.AuthorizedClient // authorized through ops (Data)
+	key         listenKey                 // what the listener was started with
 	id          *identity.Identity
 	ln          net.Listener
 	since       time.Time
@@ -124,11 +123,18 @@ func New(o Options) *Host {
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &Host{o: o, mux: wire.NewMux(), ctx: ctx, cancel: cancel, sem: make(chan struct{}, maxHandshakes),
 		remote: config.DefaultRemote(), conns: map[*wire.Conn]*conn{}, attachments: map[*attachment]struct{}{}}
-	st, err := loadState(o.StateFile)
+	if o.Data == nil {
+		o.Data = &MemoryData{}
+		h.o.Data = o.Data
+	}
+	st, err := loadState(o.Data)
 	if err != nil {
 		o.Log.Printf("remote: %v (starting afresh)", err)
 	}
 	h.st = st
+	if h.added, err = o.Data.AuthorizedClients(); err != nil {
+		o.Log.Printf("remote: reading the authorized clients: %v", err)
+	}
 	h.mux.Handle(wire.OpPing, func(context.Context, *wire.Call) (any, error) { return nil, nil })
 	h.Handle(wire.OpInfo, h.info)
 	return h
@@ -173,41 +179,13 @@ func (h *Host) Close() {
 	h.wg.Wait()
 }
 
-// Reload reads [remote] from config.toml and applies it. A config.toml that
-// doesn't parse leaves Hosting as it is.
-func (h *Host) Reload() error {
-	h.cfgMu.Lock()
-	defer h.cfgMu.Unlock()
-	return h.reloadLocked(true)
-}
-
-// ReloadIfChanged is Reload when config.toml has changed since it was last
-// read.
-func (h *Host) ReloadIfChanged() error {
-	h.cfgMu.Lock()
-	defer h.cfgMu.Unlock()
-	return h.reloadLocked(false)
-}
-
-func (h *Host) reloadLocked(force bool) error {
-	if h.o.ConfigFile == "" {
-		return nil
+// Reload applies [remote] as it's in effect now (Options.Settings).
+func (h *Host) Reload() {
+	r := config.DefaultRemote()
+	if h.o.Settings != nil {
+		r = h.o.Settings()
 	}
-	var mod time.Time
-	if info, err := os.Stat(h.o.ConfigFile); err == nil {
-		mod = info.ModTime()
-	}
-	if !force && h.read && mod.Equal(h.configRead) {
-		return nil
-	}
-	h.configRead, h.read = mod, true
-	c, err := config.Load(h.o.ConfigFile)
-	if err != nil {
-		h.o.Log.Printf("remote: %v (Hosting stays as it was)", err)
-		return err
-	}
-	h.Apply(c.Remote)
-	return nil
+	h.Apply(r)
 }
 
 // Apply follows r: it starts, stops or restarts the listener when [remote.host]
@@ -430,7 +408,7 @@ func (h *Host) Status() ipc.RemoteStatus {
 	h.pruneLocked(h.o.Now())
 	hc := h.remote.Host
 	s := ipc.RemoteStatus{Enabled: hc.Enabled, Listen: hc.Listen, ConfiguredPort: hc.Port, PortFallback: hc.PortFallback,
-		Error: h.err, Proto: wire.Proto, Authorized: len(h.remote.AuthorizedClients), Connected: len(h.conns), Pending: len(h.st.Requests)}
+		Error: h.err, Proto: wire.Proto, Authorized: len(h.clientsLocked()), Connected: len(h.conns), Pending: len(h.st.Requests)}
 	if h.ln != nil {
 		s.Listening, s.Since = true, h.since
 		if a, ok := h.ln.Addr().(*net.TCPAddr); ok {

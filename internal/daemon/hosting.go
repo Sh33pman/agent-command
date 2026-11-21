@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/host"
 	"github.com/brettmostert/agent-command/internal/remote/hostapi"
@@ -15,8 +16,9 @@ import (
 
 func (d *Daemon) startRemote() {
 	d.remote = host.New(host.Options{
-		ConfigFile:  d.cfg.ConfigFile,
-		StateFile:   d.cfg.Paths.RemoteHostState(),
+		Settings:    func() config.Remote { return d.config().Remote },
+		SetSettings: func(m map[string]any) error { _, err := d.setConfig(m); return err },
+		Data:        hostData{d},
 		IdentityDir: d.cfg.Paths.RemoteIdentityDir(),
 		Version:     d.cfg.Version,
 		Log:         d.cfg.Log,
@@ -25,7 +27,7 @@ func (d *Daemon) startRemote() {
 	})
 	// What clients may do: the host API, on Remote sessions only.
 	hostapi.Register(d.remote, hostBackend{d}, hostapi.Options{Home: d.cfg.Home})
-	_ = d.remote.Reload() // it logs what's wrong
+	d.remote.Reload() // it logs what's wrong
 	// A session turned local drops the clients attached to it at once.
 	d.OnRemoteChanged(func(c RemoteChange) {
 		if !c.Remote {
@@ -53,8 +55,11 @@ func (d *Daemon) handleRemote(req ipc.Request) (any, error) {
 	case ipc.OpRemoteHosting:
 		return h.SetHosting(ref.Enabled)
 	case ipc.OpRemoteReload:
-		err := h.Reload()
-		return h.Status(), err
+		if d.settings().Reload() {
+			d.changes.bump()
+		}
+		h.Reload()
+		return h.Status(), nil
 	case ipc.OpRemoteClients:
 		return h.Clients(), nil
 	case ipc.OpRemoteRequests:
@@ -67,6 +72,8 @@ func (d *Daemon) handleRemote(req ipc.Request) (any, error) {
 		return h.Authorize(ref.Fingerprint, ref.Name)
 	case ipc.OpRemoteRevoke:
 		return h.Revoke(ref.Client)
+	case ipc.OpRemoteRename:
+		return h.Rename(ref.Client, ref.Name)
 	case ipc.OpRemoteDisconnect:
 		n, err := h.Disconnect(ref.Client)
 		return ipc.RemoteDisconnected{Closed: n}, err

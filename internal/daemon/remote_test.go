@@ -125,11 +125,11 @@ func TestNewSessionsRemoteDefault(t *testing.T) {
 	if !d.newSessionsRemote(ptr(true)) {
 		t.Error("the request wins")
 	}
-	d.cfg.ConfigFile = filepath.Join(dir, "missing.toml")
+	d = &Daemon{cfg: Config{Log: log.New(&logged, "", 0), ConfigFile: filepath.Join(dir, "missing.toml")}}
 	if d.newSessionsRemote(nil) {
 		t.Error("a missing config is the default: not Remote")
 	}
-	d.cfg.ConfigFile = filepath.Join(dir, "broken.toml")
+	d = &Daemon{cfg: Config{Log: log.New(&logged, "", 0), ConfigFile: filepath.Join(dir, "broken.toml")}}
 	must(t, os.WriteFile(d.cfg.ConfigFile, []byte("[remote\n"), 0o600))
 	if d.newSessionsRemote(nil) || logged.Len() == 0 {
 		t.Errorf("a broken config: not Remote, and logged (%q)", logged.String())

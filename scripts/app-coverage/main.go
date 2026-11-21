@@ -26,6 +26,7 @@ var minimums = map[string]float64{
 	"Daemon.swift":              85,
 	"Harness.swift":             95,
 	"HookHealth.swift":          90,
+	"HostSettings.swift":        90,
 	"DefaultHarness.swift":      80,
 	"InboxModel.swift":          90,
 	"Jobs.swift":                90,

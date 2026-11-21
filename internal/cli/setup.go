@@ -161,9 +161,16 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	if err := g.paths.Ensure(); err != nil {
 		return false, err
 	}
+	// A running daemon is config.toml's only writer: it makes the change.
+	settings := plan.TakeSettings(daemonRunning(ctx, g.paths))
 	backups, err := plan.Apply(g.paths.Backups(), g.in.Home, time.Now())
 	if err != nil {
 		return false, err
+	}
+	if len(settings) > 0 {
+		if _, err := setSettings(ctx, settings); err != nil {
+			return false, err
+		}
 	}
 	rec := setup.Record{
 		Version: version.Get().Version, At: time.Now().UTC(), AcmdPath: g.in.AcmdPath,
@@ -538,4 +545,16 @@ func autoInit(cmd *cobra.Command) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout())
 	return nil
+}
+
+// daemonRunning says whether a daemon answers on p's socket, without starting
+// one.
+func daemonRunning(parent context.Context, p paths.Paths) bool {
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	if conn != nil {
+		_ = conn.Close()
+	}
+	return err == nil
 }

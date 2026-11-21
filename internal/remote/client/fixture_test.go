@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
@@ -21,7 +22,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/remote/hostapi"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
-	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/term"
 )
 
@@ -61,6 +61,7 @@ type daemon struct {
 	created  int
 	rev      uint64
 	ch       chan struct{}
+	file     *config.File
 }
 
 func newDaemon() *daemon { return &daemon{sockets: map[string]string{}, ch: make(chan struct{})} }
@@ -146,6 +147,14 @@ func (b *daemon) HostSocket(id string) string {
 	return "/nonexistent/" + id + ".sock"
 }
 
+// The host's settings live in its remoteHost's file (see newRemoteHost).
+func (b *daemon) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
+
+func (b *daemon) SetConfig(values map[string]any) (ipc.ConfigState, error) {
+	_, err := b.file.Set(values)
+	return ipc.ConfigOf(b.file), err
+}
+
 func (b *daemon) Harnesses() ([]string, string) {
 	return []string{core.HarnessClaude, core.HarnessTerminal}, core.HarnessClaude
 }
@@ -157,6 +166,8 @@ type remoteHost struct {
 	dir  string
 	home string
 	cfg  string
+	file *config.File
+	data *host.MemoryData
 	b    *daemon
 	h    *host.Host
 }
@@ -170,9 +181,10 @@ func newRemoteHost(t *testing.T, name string) *remoteHost {
 	must(t, err)
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	must(t, setup.SaveSetting(r.cfg, "remote.host", "enabled", true))
-	must(t, setup.SaveSetting(r.cfg, "remote.host", "port", port))
-	must(t, setup.SaveSetting(r.cfg, "remote.host", "port_fallback", false))
+	r.file, r.data = config.OpenFile(r.cfg), &host.MemoryData{}
+	r.b.file = r.file
+	_, err = r.file.Set(map[string]any{"remote.host.enabled": true, "remote.host.port": port, "remote.host.port_fallback": false})
+	must(t, err)
 	r.start()
 	return r
 }
@@ -180,10 +192,10 @@ func newRemoteHost(t *testing.T, name string) *remoteHost {
 // start runs Hosting, as the host's daemon does when it starts.
 func (r *remoteHost) start() {
 	r.t.Helper()
-	h := host.New(host.Options{ConfigFile: r.cfg, StateFile: filepath.Join(r.dir, "state.json"),
+	h := host.New(host.Options{Settings: func() config.Remote { return r.file.Config().Remote }, Data: r.data,
 		IdentityDir: filepath.Join(r.dir, "id"), Version: "1.0.0"})
 	hostapi.Register(h, r.b, hostapi.Options{Home: r.home})
-	must(r.t, h.Reload())
+	h.Reload()
 	r.h = h
 	r.t.Cleanup(h.Close)
 	if st := h.Status(); !st.Listening {
@@ -348,6 +360,8 @@ type laptop struct {
 	dir   string
 	cfg   string
 	idDir string
+	file  *config.File
+	data  *MemoryData
 	b     *local
 	c     *Client
 	dials *dials
@@ -359,7 +373,10 @@ func newLaptop(t *testing.T, tweak ...func(*Options)) *laptop {
 	dir := shortDir(t)
 	l := &laptop{t: t, dir: dir, cfg: filepath.Join(dir, "config.toml"), idDir: filepath.Join(dir, "id"), b: newLocal(), dials: &dials{}}
 	must(t, os.WriteFile(l.cfg, []byte("# the laptop's own\n"), 0o600))
-	l.o = Options{ConfigFile: l.cfg, IdentityDir: l.idDir, Version: "1.0.0",
+	l.file, l.data = config.OpenFile(l.cfg), &MemoryData{}
+	// As the daemon does: config.toml as it is on disk, hand edits too.
+	settings := func() config.Remote { l.file.ReloadIfChanged(); return l.file.Config().Remote }
+	l.o = Options{Settings: settings, Data: l.data, IdentityDir: l.idDir, Version: "1.0.0",
 		Socket:     func(id string) string { return filepath.Join(dir, "h-"+id+".sock") },
 		MinBackoff: 20 * time.Millisecond, MaxBackoff: 100 * time.Millisecond, DialTimeout: 3 * time.Second,
 		IdleAfter: time.Minute}

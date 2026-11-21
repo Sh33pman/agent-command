@@ -42,6 +42,9 @@ type Backend interface {
 	HostSocket(id string) string
 	// Harnesses are what's installed, and the default ("" when not chosen).
 	Harnesses() (installed []string, def string)
+	// Config is the settings, and SetConfig changes them (config.set).
+	Config() ipc.ConfigState
+	SetConfig(values map[string]any) (ipc.ConfigState, error)
 }
 
 // Registrar is Hosting (*host.Host): what serves ops to its clients, and
@@ -80,6 +83,8 @@ func Register(r Registrar, b Backend, o Options) *API {
 	r.Handle(api.OpFoldersMkdir, a.mkdir)
 	r.Handle(api.OpHarnessesList, a.harnesses)
 	r.HandleStream(api.OpEvents, a.events)
+	r.Handle(api.OpConfigGet, a.configGet)
+	r.Handle(api.OpConfigSet, a.configSet)
 	return a
 }
 

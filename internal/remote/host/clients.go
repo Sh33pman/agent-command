@@ -14,7 +14,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
-	"github.com/brettmostert/agent-command/internal/setup"
 )
 
 // Limits on requests from unknown clients.
@@ -29,8 +28,12 @@ const (
 	RequestWindow  = time.Minute
 )
 
-// ErrNoConfig is a change to config.toml with no config.toml to change.
-var ErrNoConfig = errors.New("hosting has no config.toml to change")
+// ErrNoConfig is a change to settings with nowhere to make it.
+var ErrNoConfig = errors.New("hosting has no settings to change")
+
+// ErrInConfig is a change to a client that config.toml lists: it's changed
+// by editing the file.
+var ErrInConfig = errors.New("set in config.toml: edit the file to change it")
 
 // ErrAlreadyAuthorized is a client that's already on the list.
 var ErrAlreadyAuthorized = errors.New("already authorized")
@@ -63,13 +66,34 @@ func (h *Host) authorize(p wire.Peer) wire.Verdict {
 
 // authorizedLocked finds a client on the list by its fingerprint (h.mu is
 // held).
-func (h *Host) authorizedLocked(fp string) (config.AuthorizedClient, bool) {
-	for _, ac := range h.remote.AuthorizedClients {
+func (h *Host) authorizedLocked(fp string) (authorized, bool) {
+	for _, ac := range h.clientsLocked() {
 		if identity.Equal(ac.Fingerprint, fp) {
 			return ac, true
 		}
 	}
-	return config.AuthorizedClient{}, false
+	return authorized{}, false
+}
+
+// authorized is a client on the list, and whether config.toml lists it.
+type authorized struct {
+	config.AuthorizedClient
+	inConfig bool
+}
+
+// clientsLocked is the list: config.toml's clients, then the ones authorized
+// through ops (h.mu is held).
+func (h *Host) clientsLocked() []authorized {
+	out := make([]authorized, 0, len(h.remote.AuthorizedClients)+len(h.added))
+	for _, ac := range h.remote.AuthorizedClients {
+		out = append(out, authorized{ac, true})
+	}
+	for _, ac := range h.added {
+		if !slices.ContainsFunc(out, func(a authorized) bool { return identity.Equal(a.Fingerprint, ac.Fingerprint) }) {
+			out = append(out, authorized{ac, false})
+		}
+	}
+	return out
 }
 
 // closeUnauthorizedLocked drops the connections of clients no longer on the
@@ -83,7 +107,7 @@ func (h *Host) closeUnauthorizedLocked() int {
 			n++
 			continue
 		}
-		cn.name = ac.Name // a rename in config.toml
+		cn.name = ac.Name // a rename
 	}
 	return n
 }
@@ -170,15 +194,16 @@ func (h *Host) Requests() []ipc.RemoteRequest {
 	return out
 }
 
-// Clients are the authorized clients, as config.toml lists them, each with
-// its connections.
+// Clients are the authorized clients, config.toml's first, each with its
+// connections.
 func (h *Host) Clients() []ipc.RemoteClient {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	conns := h.connectionsLocked()
-	out := make([]ipc.RemoteClient, 0, len(h.remote.AuthorizedClients))
-	for _, ac := range h.remote.AuthorizedClients {
-		c := ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint}
+	list := h.clientsLocked()
+	out := make([]ipc.RemoteClient, 0, len(list))
+	for _, ac := range list {
+		c := ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint, InConfig: ac.inConfig}
 		for _, rc := range conns {
 			if identity.Equal(rc.Fingerprint, ac.Fingerprint) {
 				c.Connections = append(c.Connections, rc)
@@ -190,10 +215,8 @@ func (h *Host) Clients() []ipc.RemoteClient {
 }
 
 // Approve authorizes a request's client, under name (its cert's name when
-// ""), adding it to config.toml. It gets in the next time it connects.
+// ""). It gets in the next time it connects.
 func (h *Host) Approve(id, name string) (ipc.RemoteClient, error) {
-	h.cfgMu.Lock()
-	defer h.cfgMu.Unlock()
 	h.mu.Lock()
 	h.pruneLocked(h.o.Now())
 	r := h.requestLocked(strings.TrimSpace(id))
@@ -236,14 +259,12 @@ func (h *Host) Deny(id string) error {
 }
 
 // Authorize adds a client by its fingerprint, under name ("" names it after
-// the fingerprint), to config.toml.
+// the fingerprint).
 func (h *Host) Authorize(fingerprint, name string) (ipc.RemoteClient, error) {
 	fp, err := identity.ParseFingerprint(fingerprint)
 	if err != nil {
 		return ipc.RemoteClient{}, err
 	}
-	h.cfgMu.Lock()
-	defer h.cfgMu.Unlock()
 	c, err := h.addClientLocked(fp, name)
 	if err == nil {
 		h.o.Log.Printf("remote: %q (%s) is authorized", c.Name, c.Fingerprint)
@@ -251,26 +272,22 @@ func (h *Host) Authorize(fingerprint, name string) (ipc.RemoteClient, error) {
 	return c, err
 }
 
-// addClientLocked puts a client on the list in config.toml, and drops its
-// request (h.cfgMu is held).
+// addClientLocked puts a client on the list, and drops its request.
 func (h *Host) addClientLocked(fp, name string) (ipc.RemoteClient, error) {
-	if h.o.ConfigFile == "" {
-		return ipc.RemoteClient{}, ErrNoConfig
-	}
 	h.mu.Lock()
 	if ac, ok := h.authorizedLocked(fp); ok {
 		h.dropRequestLocked(fp)
 		h.mu.Unlock()
 		h.changed()
-		return ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint}, fmt.Errorf("%s is %w, as %q", fp, ErrAlreadyAuthorized, ac.Name)
+		return ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint, InConfig: ac.inConfig},
+			fmt.Errorf("%s is %w, as %q", fp, ErrAlreadyAuthorized, ac.Name)
 	}
-	ac := config.AuthorizedClient{Name: h.uniqueNameLocked(name, fp), Fingerprint: fp}
-	h.mu.Unlock()
-	if err := setup.AddAuthorizedClient(h.o.ConfigFile, ac); err != nil {
+	ac := config.AuthorizedClient{Name: h.uniqueNameLocked(name, fp, ""), Fingerprint: fp}
+	if err := h.o.Data.AddAuthorizedClient(ac); err != nil {
+		h.mu.Unlock()
 		return ipc.RemoteClient{}, err
 	}
-	h.mu.Lock()
-	h.remote.AuthorizedClients = append(h.remote.AuthorizedClients, ac)
+	h.added = append(h.added, ac)
 	h.dropRequestLocked(fp)
 	h.mu.Unlock()
 	h.changed()
@@ -278,14 +295,16 @@ func (h *Host) addClientLocked(fp, name string) (ipc.RemoteClient, error) {
 }
 
 // uniqueNameLocked is name, or one made from the fingerprint when it's "",
-// with a number added when another client has it (h.mu is held).
-func (h *Host) uniqueNameLocked(name, fp string) string {
+// with a number added when another client has it (h.mu is held). The
+// client with fingerprint self doesn't count.
+func (h *Host) uniqueNameLocked(name, fp, self string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "client-" + strings.TrimPrefix(fp, identity.Prefix)[:8]
 	}
+	list := h.clientsLocked()
 	taken := func(n string) bool {
-		return slices.ContainsFunc(h.remote.AuthorizedClients, func(ac config.AuthorizedClient) bool { return ac.Name == n })
+		return slices.ContainsFunc(list, func(ac authorized) bool { return ac.Name == n && !identity.Equal(ac.Fingerprint, self) })
 	}
 	unique := name
 	for i := 2; taken(unique); i++ {
@@ -294,29 +313,22 @@ func (h *Host) uniqueNameLocked(name, fp string) string {
 	return unique
 }
 
-// Revoke takes a client off the list in config.toml, by its name or
-// fingerprint, and drops its connections at once.
+// Revoke takes a client off the list, by its name or fingerprint, and drops
+// its connections at once. One config.toml lists is taken off there.
 func (h *Host) Revoke(client string) (ipc.RemoteClient, error) {
-	if h.o.ConfigFile == "" {
-		return ipc.RemoteClient{}, ErrNoConfig
-	}
-	h.cfgMu.Lock()
-	defer h.cfgMu.Unlock()
 	h.mu.Lock()
 	ac, err := h.findClientLocked(client)
-	h.mu.Unlock()
+	if err == nil && ac.inConfig {
+		err = fmt.Errorf("%q is %w", ac.Name, ErrInConfig)
+	}
+	if err == nil {
+		_, err = h.o.Data.RemoveAuthorizedClient(ac.Fingerprint)
+	}
 	if err != nil {
+		h.mu.Unlock()
 		return ipc.RemoteClient{}, err
 	}
-	if _, err := setup.RemoveAuthorizedClients(h.o.ConfigFile, func(c config.AuthorizedClient) bool {
-		return identity.Equal(c.Fingerprint, ac.Fingerprint)
-	}); err != nil {
-		return ipc.RemoteClient{}, err
-	}
-	h.mu.Lock()
-	h.remote.AuthorizedClients = slices.DeleteFunc(slices.Clone(h.remote.AuthorizedClients), func(c config.AuthorizedClient) bool {
-		return identity.Equal(c.Fingerprint, ac.Fingerprint)
-	})
+	h.added = slices.DeleteFunc(h.added, func(c config.AuthorizedClient) bool { return identity.Equal(c.Fingerprint, ac.Fingerprint) })
 	n := h.closeUnauthorizedLocked()
 	h.mu.Unlock()
 	h.o.Log.Printf("remote: revoked %q (%s): closed %d connections", ac.Name, ac.Fingerprint, n)
@@ -324,26 +336,61 @@ func (h *Host) Revoke(client string) (ipc.RemoteClient, error) {
 	return ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint}, nil
 }
 
+// Rename gives an authorized client, by its name or fingerprint, a new name.
+// It stays authorized and connected.
+func (h *Host) Rename(client, name string) (ipc.RemoteClient, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ipc.RemoteClient{}, errors.New("the new name can't be empty")
+	}
+	h.mu.Lock()
+	ac, err := h.findClientLocked(client)
+	switch {
+	case err != nil:
+	case ac.inConfig:
+		err = fmt.Errorf("%q is %w", ac.Name, ErrInConfig)
+	case h.uniqueNameLocked(name, ac.Fingerprint, ac.Fingerprint) != name:
+		err = fmt.Errorf("another client is already called %q", name)
+	}
+	if err == nil {
+		err = h.o.Data.AddAuthorizedClient(config.AuthorizedClient{Name: name, Fingerprint: ac.Fingerprint})
+	}
+	if err != nil {
+		h.mu.Unlock()
+		return ipc.RemoteClient{}, err
+	}
+	for i := range h.added {
+		if identity.Equal(h.added[i].Fingerprint, ac.Fingerprint) {
+			h.added[i].Name = name
+		}
+	}
+	h.closeUnauthorizedLocked() // names the connections again
+	h.mu.Unlock()
+	h.o.Log.Printf("remote: renamed %q to %q (%s)", ac.Name, name, ac.Fingerprint)
+	h.changed()
+	return ipc.RemoteClient{Name: name, Fingerprint: ac.Fingerprint}, nil
+}
+
 // findClientLocked finds an authorized client by its name or fingerprint (h.mu
 // is held).
-func (h *Host) findClientLocked(sel string) (config.AuthorizedClient, error) {
+func (h *Host) findClientLocked(sel string) (authorized, error) {
 	sel = strings.TrimSpace(sel)
 	if ac, ok := h.authorizedLocked(sel); ok {
 		return ac, nil
 	}
-	var found []config.AuthorizedClient
-	for _, ac := range h.remote.AuthorizedClients {
+	var found []authorized
+	for _, ac := range h.clientsLocked() {
 		if ac.Name == sel {
 			found = append(found, ac)
 		}
 	}
 	switch len(found) {
 	case 0:
-		return config.AuthorizedClient{}, fmt.Errorf("no authorized client %q", sel)
+		return authorized{}, fmt.Errorf("no authorized client %q", sel)
 	case 1:
 		return found[0], nil
 	default:
-		return config.AuthorizedClient{}, fmt.Errorf("%d clients are named %q: use the fingerprint", len(found), sel)
+		return authorized{}, fmt.Errorf("%d clients are named %q: use the fingerprint", len(found), sel)
 	}
 }
 
@@ -368,16 +415,14 @@ func (h *Host) Disconnect(client string) (int, error) {
 	return n, nil
 }
 
-// SetHosting turns Hosting on or off in config.toml, and applies it.
+// SetHosting turns Hosting on or off in the settings, and applies it.
 func (h *Host) SetHosting(on bool) (ipc.RemoteStatus, error) {
-	if h.o.ConfigFile == "" {
+	if h.o.SetSettings == nil {
 		return ipc.RemoteStatus{}, ErrNoConfig
 	}
-	h.cfgMu.Lock()
-	err := setup.SaveSetting(h.o.ConfigFile, "remote.host", "enabled", on)
+	err := h.o.SetSettings(map[string]any{"remote.host.enabled": on})
 	if err == nil {
-		err = h.reloadLocked(true)
+		h.Reload()
 	}
-	h.cfgMu.Unlock()
 	return h.Status(), err
 }

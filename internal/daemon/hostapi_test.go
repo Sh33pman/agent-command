@@ -14,7 +14,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
-	"github.com/brettmostert/agent-command/internal/setup"
 )
 
 // TestHostAPI runs the host API against a real daemon: clients see and use
@@ -29,10 +28,10 @@ func TestHostAPI(t *testing.T) {
 	must(t, err)
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	must(t, setup.SaveSetting(p.Config(), "remote.host", "port", port))
-	must(t, setup.SaveSetting(p.Config(), "remote.host", "enabled", true))
-	must(t, setup.SaveSetting(p.Config(), "", "claude_args", []string{"--own"}))
-	must(t, setup.SaveSetting(p.Config(), "", "default_harness", "terminal"))
+	must(t, writeSetting(p.Config(), "remote.host", "port", port))
+	must(t, writeSetting(p.Config(), "remote.host", "enabled", true))
+	must(t, writeSetting(p.Config(), "", "claude_args", []string{"--own"}))
+	must(t, writeSetting(p.Config(), "", "default_harness", "terminal"))
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) {
 		c.ConfigFile, c.Hosts, c.Home = p.Config(), fh, home

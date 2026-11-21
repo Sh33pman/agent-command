@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/host"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
-	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/term"
 )
 
@@ -36,6 +36,7 @@ type backend struct {
 	def       string
 	created   []ipc.NewRequest
 	stateErr  error
+	file      *config.File
 
 	rev uint64
 	ch  chan struct{}
@@ -131,6 +132,13 @@ func (b *backend) HostSocket(id string) string {
 	return "/nonexistent/" + id + ".sock"
 }
 
+func (b *backend) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
+
+func (b *backend) SetConfig(values map[string]any) (ipc.ConfigState, error) {
+	_, err := b.file.Set(values)
+	return ipc.ConfigOf(b.file), err
+}
+
 func (b *backend) Harnesses() ([]string, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -174,12 +182,14 @@ func newFixture(t *testing.T) *fixture {
 	must(t, err)
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	must(t, setup.SaveSetting(cfg, "remote.host", "enabled", true))
-	must(t, setup.SaveSetting(cfg, "remote.host", "port", port))
-	f.h = host.New(host.Options{ConfigFile: cfg, StateFile: filepath.Join(dir, "state.json"), IdentityDir: filepath.Join(dir, "id"), Version: "1.0.0"})
+	f.b.file = config.OpenFile(cfg)
+	_, err = f.b.file.Set(map[string]any{"remote.host.enabled": true, "remote.host.port": port})
+	must(t, err)
+	f.h = host.New(host.Options{Settings: func() config.Remote { return f.b.file.Config().Remote },
+		IdentityDir: filepath.Join(dir, "id"), Version: "1.0.0"})
 	t.Cleanup(f.h.Close)
 	Register(f.h, f.b, Options{Home: f.home})
-	must(t, f.h.Reload())
+	f.h.Reload()
 	client, err := identity.Ensure(filepath.Join(dir, "client"))
 	must(t, err)
 	_, err = f.h.Authorize(client.Fingerprint(), "laptop")
@@ -905,5 +915,48 @@ func TestEventsOverTheNetworkWithASlowClient(t *testing.T) {
 	}
 	if !resynced {
 		t.Error("no resync")
+	}
+}
+
+// Clients see and change the host's settings, never its device ones.
+func TestSettings(t *testing.T) {
+	f := newFixture(t)
+	var st ipc.ConfigState
+	must(t, f.call(api.OpConfigGet, nil, &st))
+	if st.Path == "" || st.Values["remote.host.enabled"] != true || st.Problem != nil {
+		t.Fatalf("config = %+v", st)
+	}
+	for _, s := range st.Settings {
+		if s.Where != config.WhereHost {
+			t.Errorf("a client sees %s", s.Key)
+		}
+		if _, ok := st.Values[s.Key]; !ok {
+			t.Errorf("no value for %s", s.Key)
+		}
+	}
+	if _, ok := st.Values["speech.voice"]; ok {
+		t.Error("a client sees the voice")
+	}
+	// A change, as the client types it.
+	must(t, f.call(api.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"notify.cooldown": "1m", "claude_args": []string{"--x"}}}, &st))
+	if st.Values["notify.cooldown"] != "1m0s" || f.b.file.Config().Notify.Cooldown != "1m0s" {
+		t.Errorf("after set = %+v", st.Values["notify.cooldown"])
+	}
+	// Device settings are refused, with the rest.
+	err := f.call(api.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"speech.speed": 1.5, "editor.preset": "zed", "notify.sound": ""}}, nil)
+	var ce *wire.CallError
+	if !errors.As(err, &ce) || ce.Code != wire.CodeBadRequest || !strings.Contains(err.Error(), "editor.preset, speech.speed belong to the host's own machine") {
+		t.Errorf("device: %v", err)
+	}
+	if f.b.file.Config().Notify.Sound != "default" {
+		t.Error("a refused change was made")
+	}
+	// A bad value says what's wrong.
+	err = f.call(api.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"remote.host.port": "x"}}, nil)
+	if !errors.As(err, &ce) || ce.Code != wire.CodeBadRequest || !strings.Contains(err.Error(), "remote.host.port") {
+		t.Errorf("bad value: %v", err)
+	}
+	if err := f.call(api.OpConfigSet, "nope", nil); err == nil {
+		t.Error("took arguments that aren't a change")
 	}
 }

@@ -87,46 +87,64 @@ func newEditorSetCmd() *cobra.Command {
 		Short: "Choose the editor (custom commands get the folder as {dir}, added at the end if omitted, and a file as {file}, {line} and {col})",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := paths.Default()
-			if err != nil {
-				return err
-			}
-			pathList := loginPath()
-			var e config.Editor
+			values := map[string]any{"editor.preset": args[0], "editor.command": []string{}, "editor.run_in": "background"}
 			switch name := args[0]; name {
 			case "custom":
 				if len(args) < 2 {
 					return errors.New("usage: acmd editor set custom -- <command> [args…] [{dir}]")
 				}
-				argv := setup.WithDir(append([]string(nil), args[1:]...))
-				resolved, err := setup.LookPathIn(argv[0], pathList)
-				if err != nil {
-					return err
-				}
-				e = config.Editor{Preset: "custom", Command: argv, Resolved: resolved, RunIn: "background"}
+				values["editor.command"] = args[1:]
 			default:
-				preset, ok := setup.PresetByName(name)
-				if !ok {
+				if _, ok := setup.PresetByName(name); !ok {
 					return fmt.Errorf("unknown editor %q: use vscode, cursor, zed, idea or custom", name)
 				}
 				if len(args) > 1 {
 					return fmt.Errorf("%s takes no command (that's for custom)", name)
 				}
-				e = config.Editor{Preset: name, RunIn: "background"}
-				if l, err := setup.LookPathIn(preset.Launcher, pathList); err == nil {
-					e.Resolved = l
-				} else if !hasAnyBundle(preset) {
-					return fmt.Errorf("%s doesn't seem to be installed (no `%s` on PATH and no app found)", preset.Label, preset.Launcher)
-				}
 			}
-			if err := setup.SaveEditor(p.Config(), e); err != nil {
+			// The daemon finds it (resolveEditor), and says if it isn't installed.
+			if _, err := setSettings(cmd.Context(), values); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Editor set to %s.\n", e.Preset)
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "Editor set to %s.\n", args[0])
 			return err
 		},
 	}
 	return cmd
+}
+
+// resolveEditor finds a chosen editor's launcher on the login shell's PATH,
+// for the daemon (Config.ResolveEditor). A custom command gets {dir} added
+// when it has none. A preset with no launcher still works when its app is
+// installed: it's opened by bundle id.
+func resolveEditor(e config.Editor) (config.Editor, error) {
+	pathList := loginPath()
+	switch e.Preset {
+	case "":
+		e.Command, e.Resolved = nil, ""
+	case "custom":
+		if len(e.Command) == 0 {
+			return e, errors.New("a custom editor needs its command, such as nvim {dir}")
+		}
+		e.Command = setup.WithDir(append([]string(nil), e.Command...))
+		resolved, err := setup.LookPathIn(e.Command[0], pathList)
+		if err != nil {
+			return e, err
+		}
+		e.Resolved = resolved
+	default:
+		preset, ok := setup.PresetByName(e.Preset)
+		if !ok {
+			return e, fmt.Errorf("unknown editor %q: use vscode, cursor, zed, idea or custom", e.Preset)
+		}
+		e.Command, e.Resolved = nil, ""
+		if l, err := setup.LookPathIn(preset.Launcher, pathList); err == nil {
+			e.Resolved = l
+		} else if !hasAnyBundle(preset) {
+			return e, fmt.Errorf("%s doesn't seem to be installed (no `%s` on PATH and no app found)", preset.Label, preset.Launcher)
+		}
+	}
+	return e, nil
 }
 
 func hasAnyBundle(p setup.EditorPreset) bool {

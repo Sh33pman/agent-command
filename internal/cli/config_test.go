@@ -3,26 +3,28 @@ package cli
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
 func TestConfigShowAndSet(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("ACMD_CONFIG_DIR", dir)
-	t.Setenv("ACMD_STATE_DIR", filepath.Join(dir, "s"))
-	t.Setenv("ACMD_RUNTIME_DIR", filepath.Join(dir, "r"))
-	file := filepath.Join(dir, "config.toml")
+	p := daemonEnv(t)
+	file := p.Config()
 
-	var view configView
+	var view ipc.ConfigState
 	must(t, json.Unmarshal([]byte(mustRun(t, "config", "show", "--json")), &view))
-	if view.Path != file || view.Settings["notify.cooldown"] != "20s" || view.Settings["agent_remote_control"] != false ||
-		view.Settings["default_harness"] != "" ||
-		len(view.Voices) != 20 || view.Settings["editor.preset"] != "" {
+	if view.Path != file || view.Values["notify.cooldown"] != "20s" || view.Values["agent_remote_control"] != false ||
+		view.Values["default_harness"] != "" || view.Values["editor.preset"] != "" || len(view.Settings) != len(config.Specs) {
 		t.Fatalf("defaults: %+v", view)
+	}
+	for _, s := range view.Settings {
+		if s.Key == "speech.voice" && len(s.Suggestions) != 20 {
+			t.Errorf("voices: %v", s.Suggestions)
+		}
 	}
 	if out := mustRun(t, "config", "path"); strings.TrimSpace(out) != file {
 		t.Errorf("path: %q", out)
@@ -60,16 +62,39 @@ func TestConfigShowAndSet(t *testing.T) {
 	for _, bad := range [][2]string{
 		{"notify.cooldown", "soon"}, {"notify.cooldown", "-1s"}, {"notify.enabled", "maybe"}, {"speech.voice", "bf_emma"},
 		{"speech.voice", " "}, {"speech.speed", "3"}, {"editor.run_in", "window"}, {"claude_command", ""},
-		{"claude_args", "[1"}, {"agy_args", "[1"}, {"agy_command", " "}, {"editor.preset", "zed"}, {"nope", "1"}, {"notify.sound", "ping"},
+		{"claude_args", "[1"}, {"agy_args", "[1"}, {"agy_command", " "}, {"editor.preset", "notepad"}, {"nope", "1"}, {"notify.sound", "ping"},
+		{"editor.resolved", "/x"},
 		{"default_harness", "terminal"}, {"default_harness", "copilot"},
 	} {
 		if _, err := acmd(t, "config", "set", bad[0], bad[1]); err == nil {
 			t.Errorf("%s = %q accepted", bad[0], bad[1])
 		}
 	}
-	if _, err := acmd(t, "config", "set", "editor.preset", "zed"); err == nil || !strings.Contains(err.Error(), "acmd editor set") {
-		t.Errorf("preset: %v", err)
+	// Several at once: all, or none.
+	if out := mustRun(t, "config", "set", "notify.on_done", "off", "remote_control", "off"); out != "notify.on_done = false\nagent_remote_control = false\n" {
+		t.Errorf("two: %q", out)
 	}
+	if _, err := acmd(t, "config", "set", "notify.on_done", "on", "notify.cooldown", "soon"); err == nil {
+		t.Error("a bad pair")
+	}
+	if c, _ := config.Load(file); c.Notify.OnDone {
+		t.Error("half of a refused change was made")
+	}
+	if _, err := acmd(t, "config", "set", "notify.on_done"); err == nil {
+		t.Error("a setting with no value")
+	}
+	// A mistake by hand: show says so, and set waits for the fix.
+	b0, _ := os.ReadFile(file)
+	must(t, os.WriteFile(file, append(b0, []byte("\nbroken = \n")...), 0o600))
+	later := time.Now().Add(time.Minute)
+	must(t, os.Chtimes(file, later, later))
+	if out := mustRun(t, "config", "show"); !strings.Contains(out, "these are the last good settings") {
+		t.Errorf("show with a mistake:\n%s", out)
+	}
+	if _, err := acmd(t, "config", "set", "notify.on_done", "on"); err == nil || !strings.Contains(err.Error(), "fix it first") {
+		t.Errorf("set with a mistake: %v", err)
+	}
+	must(t, os.WriteFile(file, b0, 0o600))
 	b, err := os.ReadFile(file)
 	must(t, err)
 	if !strings.Contains(string(b), "# Notifications") {

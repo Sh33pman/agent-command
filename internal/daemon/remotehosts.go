@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
@@ -30,7 +31,8 @@ var remoteCallTimeout = 15 * time.Second
 
 func (d *Daemon) startRemoteHosts(ctx context.Context) {
 	d.client = client.New(client.Options{
-		ConfigFile:  d.cfg.ConfigFile,
+		Settings:    func() config.Remote { return d.config().Remote },
+		Data:        knownHostData{d},
 		IdentityDir: d.cfg.Paths.RemoteIdentityDir(),
 		Version:     d.cfg.Version,
 		Log:         d.cfg.Log,

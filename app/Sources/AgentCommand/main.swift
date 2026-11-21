@@ -610,13 +610,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         showPopup(RemoteFolderView(model: chooser, harness: harness, close: { [weak self] in self?.closePopup() }))
     }
 
-    /// Saves what ⌘N starts in acmd's config, which `acmd new` reads too.
+    /// Saves what ⌘N starts in the daemon's settings, which `acmd new` reads too.
     private func setDefaultHarness(_ harness: Harness?) {
-        Acmd.run(DefaultHarness.arguments(harness)) { ok, output in
-            guard !ok else { return }
+        HostSettings.shared.set(DefaultHarness.change(harness)) { why in
             let failed = NSAlert()
             failed.messageText = "The default couldn't be saved"
-            failed.informativeText = output.isEmpty ? "Run acmd config set default_harness in a terminal to see why." : output
+            failed.informativeText = why
             failed.runModal()
         }
     }
@@ -817,18 +816,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// Applies to sessions started or resumed after the change.
     @objc func toggleAgentRemoteControl() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: DaemonPaths.acmd)
-        process.arguments = AgentRemoteControlSetting.arguments(on: !AgentRemoteControlSetting.isOn)
-        do {
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus == 0 { return }
-        } catch {}
-        let alert = NSAlert()
-        alert.messageText = "Couldn't change Agent Remote Control"
-        alert.informativeText = "Run \(DaemonPaths.acmd) agent-remote-control on (or off) in a terminal to see why."
-        alert.runModal()
+        HostSettings.shared.set(AgentRemoteControlSetting.change(on: !AgentRemoteControlSetting.isOn)) { why in
+            let alert = NSAlert()
+            alert.messageText = "Couldn't change Agent Remote Control"
+            alert.informativeText = why
+            alert.runModal()
+        }
     }
 
     @objc private func toggleInbox() {

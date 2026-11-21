@@ -2,11 +2,14 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 )
 
@@ -82,4 +85,20 @@ func TestRemoteIdentityRegenerate(t *testing.T) {
 	if !strings.Contains(out, "Made a new identity") {
 		t.Errorf("output:\n%s", out)
 	}
+}
+
+// writeSetting edits config.toml as a person would.
+func writeSetting(path, section, key string, v any) error {
+	b, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	text, err := config.Set(string(b), section, key, v)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(text), 0o600)
 }

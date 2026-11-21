@@ -72,6 +72,9 @@ type RemoteHost struct {
 	HostName    string `json:"host_name,omitempty"`
 	HostVersion string `json:"host_version,omitempty"`
 	Sessions    int    `json:"sessions"` // added here, archived ones aside
+	// InConfig is a host config.toml lists: it's changed by editing the
+	// file, not by ops.
+	InConfig bool `json:"in_config,omitempty"`
 }
 
 // RemoteHostEdit adds or edits a known host. For an add, Name and Address

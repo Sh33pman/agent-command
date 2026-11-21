@@ -49,8 +49,8 @@ const (
 	OpWakeSet       = "wake.set"       // wakes the Mac for every job or not (WakeRef), checking the sudoers rule again → WakeState
 	// Remote sessions: Hosting, this machine's listener for other acmds.
 	OpRemoteStatus     = "remote.status"     // → RemoteStatus
-	OpRemoteHosting    = "remote.hosting"    // turns Hosting on or off in config.toml (RemoteRef.Enabled) → RemoteStatus
-	OpRemoteReload     = "remote.reload"     // reads [remote] from config.toml again, after editing it → RemoteStatus
+	OpRemoteHosting    = "remote.hosting"    // turns Hosting on or off (RemoteRef.Enabled) → RemoteStatus
+	OpRemoteReload     = "remote.reload"     // reads config.toml again and applies [remote] → RemoteStatus
 	OpRemoteClients    = "remote.clients"    // the authorized clients, with their connections → []RemoteClient
 	OpRemoteRequests   = "remote.requests"   // pending requests from unknown clients → []RemoteRequest
 	OpRemoteApprove    = "remote.approve"    // authorizes a request's client (RemoteRef.ID, Name) → RemoteClient
@@ -58,6 +58,7 @@ const (
 	OpRemoteAuthorize  = "remote.authorize"  // authorizes a client (RemoteRef.Fingerprint, Name) → RemoteClient
 	OpRemoteRevoke     = "remote.revoke"     // un-authorizes a client and drops it (RemoteRef.Client) → RemoteClient
 	OpRemoteDisconnect = "remote.disconnect" // drops a client's connections (RemoteRef.Client) → RemoteDisconnected
+	OpRemoteRename     = "remote.rename"     // renames an authorized client (RemoteRef.Client, Name) → RemoteClient
 )
 
 // RemoteRef names what a remote.* op acts on. Client is an authorized
@@ -97,8 +98,11 @@ type RemoteStatus struct {
 
 // RemoteClient is an authorized client, and its connections.
 type RemoteClient struct {
-	Name        string             `json:"name"`
-	Fingerprint string             `json:"fingerprint"`
+	Name        string `json:"name"`
+	Fingerprint string `json:"fingerprint"`
+	// InConfig is a client config.toml lists: it's changed by editing the
+	// file, not by ops.
+	InConfig    bool               `json:"in_config,omitempty"`
 	Connections []RemoteConnection `json:"connections,omitempty"`
 }
 
@@ -187,6 +191,11 @@ type Snapshot struct {
 	// with their connections' state. Sessions added from them are in
 	// Sessions, with Host set.
 	RemoteHosts []RemoteHost `json:"remote_hosts,omitempty"`
+	// Settings are the settings in effect, by key (ConfigState.Values).
+	// config.get says what each one is.
+	Settings map[string]any `json:"settings,omitempty"`
+	// Health is what's wrong with the host, or worth knowing.
+	Health []Health `json:"health,omitempty"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view

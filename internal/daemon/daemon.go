@@ -57,9 +57,14 @@ type Config struct {
 	AgyDir    string
 	// Notify configures notifications (nil = none).
 	Notify *config.Notify
-	// ConfigFile is config.toml: when it changes, notifications follow its [notify]
-	// section without a restart. "" keeps Notify as it was given.
+	// ConfigFile is config.toml. The daemon is its only writer (config.set),
+	// and follows it when it's edited by hand. "" keeps Notify as it was
+	// given, and refuses changes.
 	ConfigFile string
+	// ResolveEditor finds an editor's launcher when one is chosen
+	// (editor.preset or editor.command), and says if it isn't installed.
+	// nil leaves editor.resolved as it is.
+	ResolveEditor func(config.Editor) (config.Editor, error)
 	// Fallback shows a notification when no view's sidebar can (terminal-notifier,
 	// else osascript).
 	Fallback func(ipc.Notice)
@@ -112,9 +117,11 @@ type Daemon struct {
 	appWatches   atomic.Int32 // the app's open watches (notify.go)
 	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
 
-	notify     *notifier   // d.mu
-	notifyRead time.Time   // config.toml's modification time when notify was read (d.mu)
-	bg         *background // d.mu (background.go)
+	notify *notifier   // d.mu
+	bg     *background // d.mu (background.go)
+
+	settingsOnce sync.Once
+	settingsFile *config.File // config.toml (settings.go)
 
 	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
 	agentSeen  map[string]uint64    // agentstate.go: the last OSC 7501 report applied, per session
@@ -210,10 +217,14 @@ func Run(ctx context.Context, cfg Config) error {
 	d.refreshNotify()
 	d.mu.Unlock()
 	defer os.Remove(sock)
+	if err := d.moveRemoteData(ctx); err != nil {
+		cfg.Log.Printf("config: %v", err)
+	}
 	d.startRemote()
 	defer d.remote.Close()
 	d.startRemoteHosts(ctx)
 	defer d.client.Close()
+	d.startSettings(ctx)
 
 	if err := d.drainSpool(ctx); err != nil {
 		cfg.Log.Printf("drain spool: %v", err)
@@ -329,6 +340,9 @@ func changesState(op string) bool {
 func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	if isJobOp(req.Op) {
 		return d.handleJob(ctx, req)
+	}
+	if isConfigOp(req.Op) {
+		return d.handleConfig(ctx, req)
 	}
 	if isRemoteHostsOp(req.Op) {
 		return d.handleRemoteHosts(ctx, req)
@@ -544,9 +558,6 @@ func (d *Daemon) background(ctx context.Context) {
 			if err := d.drainSpool(ctx); err != nil {
 				d.cfg.Log.Printf("drain spool: %v", err)
 			}
-			// Hosting follows config.toml, edited by hand or in Settings.
-			_ = d.remote.ReloadIfChanged()
-			_ = d.client.ReloadIfChanged()
 			if rec != nil {
 				d.reconcile(ctx, rec)
 			}

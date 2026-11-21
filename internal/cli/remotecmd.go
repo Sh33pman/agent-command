@@ -195,3 +195,23 @@ func writeIdentityJSON(w io.Writer, ids identities) error {
 	v.Address = ids.address
 	return printJSON(w, v)
 }
+
+// reloadHosting asks a running daemon to apply [remote] again, so a new
+// identity shows straight away. It doesn't start one: a daemon that starts
+// later uses it anyway.
+func reloadHosting(parent context.Context, p paths.Paths) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	if err != nil {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		return
+	}
+	defer conn.Close()
+	_ = conn.Call(ipc.OpRemoteReload, nil, nil)
+}

@@ -18,7 +18,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
-	"github.com/brettmostert/agent-command/internal/setup"
 )
 
 type clock struct {
@@ -60,7 +59,8 @@ type fixture struct {
 	t       *testing.T
 	dir     string
 	config  string
-	state   string
+	file    *config.File
+	data    *MemoryData
 	port    int
 	clock   *clock
 	logs    *logs
@@ -103,8 +103,9 @@ func must(t *testing.T, err error) {
 func newFixture(t *testing.T, enabled bool) *fixture {
 	t.Helper()
 	dir := t.TempDir()
-	f := &fixture{t: t, dir: dir, config: filepath.Join(dir, "config.toml"), state: filepath.Join(dir, "state", "remote-host.json"),
+	f := &fixture{t: t, dir: dir, config: filepath.Join(dir, "config.toml"), data: &MemoryData{},
 		port: freePort(t), clock: &clock{t: time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)}, logs: &logs{}}
+	f.file = config.OpenFile(f.config)
 	f.set("remote.host", "enabled", enabled)
 	f.set("remote.host", "port", f.port)
 	f.h = f.newHost()
@@ -112,16 +113,20 @@ func newFixture(t *testing.T, enabled bool) *fixture {
 }
 
 func (f *fixture) newHost() *Host {
-	h := New(Options{ConfigFile: f.config, StateFile: f.state, IdentityDir: filepath.Join(f.dir, "identity"), Version: "0.59.0",
+	h := New(Options{Settings: func() config.Remote { return f.file.Config().Remote },
+		SetSettings: func(m map[string]any) error { _, err := f.file.Set(m); return err },
+		Data:        f.data, IdentityDir: filepath.Join(f.dir, "identity"), Version: "0.59.0",
 		Log: log.New(f.logs, "", 0), Now: f.clock.Now, OnChange: func() { f.mu.Lock(); f.changes++; f.mu.Unlock() }})
 	f.t.Cleanup(h.Close)
-	must(f.t, h.Reload())
+	h.Reload()
 	return h
 }
 
 func (f *fixture) set(section, key string, v any) {
 	f.t.Helper()
-	must(f.t, setup.SaveSetting(f.config, section, key, v))
+	key = strings.TrimPrefix(section+"."+key, ".")
+	_, err := f.file.Set(map[string]any{key: v})
+	must(f.t, err)
 }
 
 func (f *fixture) addr() string {
@@ -188,17 +193,19 @@ func TestHostingOffByDefault(t *testing.T) {
 	// It's off without a config too, and can't be changed.
 	h := New(Options{})
 	defer h.Close()
-	must(t, h.Reload())
+	h.Reload()
 	if st := h.Status(); st.Enabled || st.Listening || st.ConfiguredPort != config.DefaultRemotePort {
 		t.Errorf("no config: %+v", st)
 	}
 	if _, err := h.SetHosting(true); !errors.Is(err, ErrNoConfig) {
 		t.Errorf("SetHosting: %v", err)
 	}
-	if _, err := h.Authorize(f.client("a").Fingerprint(), ""); !errors.Is(err, ErrNoConfig) {
+	// Authorizing still works: it's kept in memory.
+	a := f.client("a").Fingerprint()
+	if _, err := h.Authorize(a, ""); err != nil {
 		t.Errorf("Authorize: %v", err)
 	}
-	if _, err := h.Revoke("a"); !errors.Is(err, ErrNoConfig) {
+	if _, err := h.Revoke(a); err != nil {
 		t.Errorf("Revoke: %v", err)
 	}
 	if _, err := h.info(context.Background(), nil); err == nil {
@@ -308,15 +315,15 @@ func TestUnknownClientApproved(t *testing.T) {
 	must(t, err)
 	must(t, conn.Call(context.Background(), wire.OpPing, nil, nil))
 
-	// It's in config.toml now, which kept its comments.
-	b, err := os.ReadFile(f.config)
-	must(t, err)
-	if !strings.Contains(string(b), "# agent-command (acmd) configuration.") ||
-		!strings.Contains(string(b), "[[remote.authorized_clients]]\nname = \""+laptop.CommonName+"\"\nfingerprint = \""+laptop.Fingerprint()+"\"\n") {
+	// It's kept in the data, not config.toml.
+	if got, _ := f.data.AuthorizedClients(); len(got) != 1 || got[0].Fingerprint != laptop.Fingerprint() || got[0].Name != laptop.CommonName {
+		t.Errorf("data: %+v", got)
+	}
+	if b, _ := os.ReadFile(f.config); strings.Contains(string(b), "\n[[remote.authorized_clients]]") {
 		t.Errorf("config.toml:\n%s", b)
 	}
-	// Reading config.toml again changes nothing, and keeps the connection.
-	must(t, f.h.Reload())
+	// Reading the settings again changes nothing, and keeps the connection.
+	f.h.Reload()
 	if st := f.h.Status(); st.Connected != 1 || st.Authorized != 1 {
 		t.Errorf("after a reload: %+v", st)
 	}
@@ -389,26 +396,18 @@ func TestRevokeDropsClient(t *testing.T) {
 	if _, err := f.dial(laptop); !errors.Is(err, wire.ErrPending) {
 		t.Errorf("revoked client: %v", err)
 	}
-	b, _ := os.ReadFile(f.config)
-	if strings.Contains(string(b), laptop.Fingerprint()) || !strings.Contains(string(b), desk.Fingerprint()) {
-		t.Errorf("config.toml:\n%s", b)
+	if got, _ := f.data.AuthorizedClients(); len(got) != 1 || got[0].Fingerprint != desk.Fingerprint() {
+		t.Errorf("data: %+v", got)
 	}
 	if !strings.Contains(f.logs.String(), `revoked "laptop" (`+laptop.Fingerprint()+"): closed 1 connections") {
 		t.Errorf("logs:\n%s", f.logs)
 	}
 
-	// Taken out of config.toml by hand: it's dropped on the next reload.
-	f.clock.Add(time.Second)
-	_, err = setup.RemoveAuthorizedClients(f.config, func(config.AuthorizedClient) bool { return true })
-	must(t, err)
-	must(t, f.h.Reload())
-	waitDone(t, other, "removed from config.toml")
-
 	// By fingerprint.
-	f.authorize(desk, "desk")
 	if _, err := f.h.Revoke(desk.Fingerprint()); err != nil {
 		t.Error(err)
 	}
+	waitDone(t, other, "revoked by fingerprint")
 }
 
 func TestAuthorize(t *testing.T) {
@@ -439,7 +438,6 @@ func TestAuthorize(t *testing.T) {
 		t.Errorf("name = %q", c2.Name)
 	}
 	// Approving a client that's already on the list just drops its request.
-	must(t, setup.SaveSetting(f.config, "x", "y", 1)) // config.toml changes on disk only
 	f.h.mu.Lock()
 	_, _, _ = f.h.recordLocked(wire.Peer{Fingerprint: desk.Fingerprint(), CommonName: "desk"})
 	id := f.h.st.Requests[0].ID
@@ -447,17 +445,18 @@ func TestAuthorize(t *testing.T) {
 	if got, err := f.h.Approve(id, ""); err != nil || got.Name != c2.Name {
 		t.Errorf("approve = %+v, %v", got, err)
 	}
-	// A config.toml that doesn't parse.
-	must(t, os.WriteFile(f.config, []byte("x = "), 0o600))
+	// Data that can't be written.
+	f.data.Fail = errors.New("disk full")
 	if _, err := f.h.Authorize(f.client("third").Fingerprint(), ""); err == nil {
-		t.Error("wrote to a bad config.toml")
+		t.Error("authorized with nowhere to keep it")
 	}
 	if _, err := f.h.Revoke(c.Name); err == nil {
-		t.Error("revoked in a bad config.toml")
+		t.Error("revoked with nowhere to keep it")
 	}
-	if err := f.h.Reload(); err == nil || !f.h.Status().Listening {
-		t.Errorf("a bad config.toml: %v, %+v", err, f.h.Status())
+	if _, err := f.h.Rename(c.Name, "new"); err == nil {
+		t.Error("renamed with nowhere to keep it")
 	}
+	f.data.Fail = nil
 	// Two with one name: revoking by name is ambiguous.
 	f.h.mu.Lock()
 	f.h.remote.AuthorizedClients = append(f.h.remote.AuthorizedClients, config.AuthorizedClient{Name: c.Name, Fingerprint: f.client("x").Fingerprint()})
@@ -587,13 +586,13 @@ func TestHostingOnOff(t *testing.T) {
 	}
 	cfg, err := config.Load(f.config)
 	must(t, err)
-	if cfg.Remote.Host.Enabled {
+	if cfg.Remote.Host.Enabled || f.file.Config().Remote.Host.Enabled {
 		t.Error("config.toml still says on")
 	}
 	// Listening on all interfaces.
 	f.set("remote.host", "listen", "all")
 	f.set("remote.host", "enabled", true)
-	must(t, f.h.Reload())
+	f.h.Reload()
 	if st := f.h.Status(); st.Address != "0.0.0.0:"+strconv.Itoa(f.port) || st.Listen != "all" {
 		t.Errorf("all: %+v", st)
 	}
@@ -611,9 +610,9 @@ func TestPortFallback(t *testing.T) {
 	if !strings.Contains(f.logs.String(), "port "+strconv.Itoa(f.port)+" is in use: using "+strconv.Itoa(picked)+" instead") {
 		t.Errorf("logs:\n%s", f.logs)
 	}
-	b, err := os.ReadFile(f.state)
+	b, err := f.data.HostingState()
 	must(t, err)
-	if !strings.Contains(string(b), `"port": `+strconv.Itoa(picked)) {
+	if !strings.Contains(string(b), `"port":`+strconv.Itoa(picked)) {
 		t.Errorf("state:\n%s", b)
 	}
 	// A client reaches it there.
@@ -655,7 +654,7 @@ func TestOwnPortTaken(t *testing.T) {
 	}
 	// Once it's free, a reload tries again.
 	free()
-	must(t, f.h.Reload())
+	f.h.Reload()
 	if st := f.h.Status(); !st.Listening || st.Port != f.port || st.Error != "" {
 		t.Errorf("status = %+v", st)
 	}
@@ -670,39 +669,37 @@ func TestHostingErrors(t *testing.T) {
 		t.Errorf("half a cert: %+v", st)
 	}
 	f.set("remote.host", "cert", "")
-	f.set("remote.host", "port", 0)
-	must(t, f.h.Reload())
+	// A port config.set refuses, written by hand.
+	must(t, os.WriteFile(f.config, []byte("[remote.host]\nenabled = true\nport = 0\n"), 0o600))
+	f.file.Reload()
+	f.h.Reload()
 	if st := f.h.Status(); st.Listening || !strings.Contains(st.Error, "remote.host.port is from 1 to 65535") {
 		t.Errorf("port 0: %+v", st)
 	}
 	f.set("remote.host", "port", f.port)
 	f.h.o.Listen = func(string) (net.Listener, error) { return nil, errors.New("no network") }
-	must(t, f.h.Reload())
+	f.h.Reload()
 	if st := f.h.Status(); !strings.Contains(st.Error, "can't listen on 127.0.0.1:"+strconv.Itoa(f.port)+": no network") {
 		t.Errorf("no network: %+v", st)
 	}
 }
 
-func TestReloadIfChanged(t *testing.T) {
+func TestReloadOnlyRestartsForHosting(t *testing.T) {
 	f := newFixture(t, true)
-	must(t, f.h.ReloadIfChanged()) // nothing changed
 	before := f.h.Status().Since
 	f.clock.Add(time.Hour)
-	must(t, f.h.ReloadIfChanged())
+	f.h.Reload()
 	if !f.h.Status().Since.Equal(before) {
 		t.Error("restarted without a change")
 	}
-	// A change on disk is picked up; one that doesn't touch Hosting keeps it running.
-	info, _ := os.Stat(f.config)
+	// A change that doesn't touch Hosting keeps it running.
 	f.set("remote", "new_sessions_remote", true)
-	must(t, os.Chtimes(f.config, time.Now(), info.ModTime().Add(time.Second)))
-	must(t, f.h.ReloadIfChanged())
+	f.h.Reload()
 	if !f.h.Status().Since.Equal(before) {
 		t.Error("restarted for a change elsewhere")
 	}
 	f.set("remote.host", "enabled", false)
-	must(t, os.Chtimes(f.config, time.Now(), info.ModTime().Add(2*time.Second)))
-	must(t, f.h.ReloadIfChanged())
+	f.h.Reload()
 	if f.h.Status().Listening {
 		t.Error("still on")
 	}
@@ -761,8 +758,8 @@ func TestRequestLimits(t *testing.T) {
 	if st := h.Status(); st.Pending != 1 {
 		t.Errorf("status = %+v", st)
 	}
-	// The state file followed.
-	st, err := loadState(f.state)
+	// The data followed.
+	st, err := loadState(f.data)
 	must(t, err)
 	if len(st.Requests) != 1 {
 		t.Errorf("state has %d requests", len(st.Requests))
@@ -770,37 +767,40 @@ func TestRequestLimits(t *testing.T) {
 }
 
 func TestState(t *testing.T) {
-	dir := t.TempDir()
-	bad := filepath.Join(dir, "bad.json")
-	must(t, os.WriteFile(bad, []byte("{"), 0o600))
+	bad := &MemoryData{State: []byte("{")}
 	if _, err := loadState(bad); err == nil {
-		t.Error("read a bad state file")
+		t.Error("read bad state")
 	}
-	// A bad state file starts afresh, and says so.
+	// Bad state starts afresh, and says so.
 	var l logs
-	h := New(Options{StateFile: bad, Log: log.New(&l, "", 0)})
+	h := New(Options{Data: bad, Log: log.New(&l, "", 0)})
 	h.Close()
 	if !strings.Contains(l.String(), "starting afresh") {
 		t.Errorf("logs: %s", l.String())
 	}
-	if _, err := loadState(dir); err == nil {
-		t.Error("read a folder")
-	}
-	// A state file that can't be written is logged.
-	h = New(Options{StateFile: filepath.Join(bad, "x", "state.json"), Log: log.New(&l, "", 0)})
+	// State that can't be kept is logged.
+	failing := &MemoryData{Fail: errors.New("disk full")}
+	h = New(Options{Data: failing, Log: log.New(&l, "", 0)})
 	h.mu.Lock()
 	h.saveLocked()
 	h.mu.Unlock()
 	h.Close()
-	if !strings.Contains(l.String(), "remote: saving") {
+	if !strings.Contains(l.String(), "remote: saving Hosting's state: disk full") {
 		t.Errorf("logs: %s", l.String())
 	}
-	// No state file: nothing is saved.
-	h = New(Options{})
+	// It comes back on the next start.
+	data := &MemoryData{}
+	h = New(Options{Data: data})
 	h.mu.Lock()
+	h.st.Port = &rememberedPort{Listen: "localhost", Configured: 1, Port: 2}
 	h.saveLocked()
 	h.mu.Unlock()
 	h.Close()
+	h = New(Options{Data: data})
+	defer h.Close()
+	if h.st.Port == nil || h.st.Port.Port != 2 {
+		t.Errorf("state after a restart: %+v", h.st)
+	}
 }
 
 func TestChanges(t *testing.T) {
@@ -810,5 +810,74 @@ func TestChanges(t *testing.T) {
 	f.mu.Unlock()
 	if n == 0 {
 		t.Error("no change reported")
+	}
+}
+
+// Clients config.toml lists count, but only the file changes them.
+func TestClientsInConfigAreReadOnly(t *testing.T) {
+	f := newFixture(t, true)
+	server, laptop := f.client("server"), f.client("laptop")
+	text := f.file.Text() + "\n[[remote.authorized_clients]]\nname = \"server\"\nfingerprint = \"" + server.Fingerprint() + "\"\n"
+	must(t, os.WriteFile(f.config, []byte(text), 0o600))
+	f.file.Reload()
+	f.h.Reload()
+	f.authorize(laptop, "laptop")
+
+	got := f.h.Clients()
+	if len(got) != 2 || got[0].Name != "server" || !got[0].InConfig || got[1].Name != "laptop" || got[1].InConfig {
+		t.Fatalf("clients = %+v", got)
+	}
+	c, err := f.dial(server)
+	must(t, err)
+	must(t, c.Call(context.Background(), wire.OpPing, nil, nil))
+	if _, err := f.h.Revoke("server"); !errors.Is(err, ErrInConfig) {
+		t.Errorf("revoke: %v", err)
+	}
+	if _, err := f.h.Rename("server", "srv"); !errors.Is(err, ErrInConfig) {
+		t.Errorf("rename: %v", err)
+	}
+	// Names stay unique across both.
+	if c, err := f.h.Authorize(f.client("other").Fingerprint(), "server"); err != nil || c.Name != "server-2" {
+		t.Errorf("authorize = %+v, %v", c, err)
+	}
+	// Taken out of the file by hand, it's dropped.
+	must(t, os.WriteFile(f.config, []byte("[remote.host]\nenabled = true\nport = "+strconv.Itoa(f.port)+"\n"), 0o600))
+	f.file.Reload()
+	f.h.Reload()
+	waitDone(t, c, "removed from config.toml")
+}
+
+func TestRename(t *testing.T) {
+	f := newFixture(t, true)
+	laptop, desk := f.client("laptop"), f.client("desk")
+	f.authorize(laptop, "laptop")
+	f.authorize(desk, "desk")
+	c, err := f.dial(laptop)
+	must(t, err)
+	got, err := f.h.Rename("laptop", "  work laptop ")
+	must(t, err)
+	if got.Name != "work laptop" || got.Fingerprint != laptop.Fingerprint() {
+		t.Errorf("renamed = %+v", got)
+	}
+	// It stays connected, under its new name.
+	must(t, c.Call(context.Background(), wire.OpPing, nil, nil))
+	if cl := f.h.Clients(); cl[0].Name != "work laptop" || len(cl[0].Connections) != 1 || cl[0].Connections[0].Name != "work laptop" {
+		t.Errorf("clients = %+v", cl)
+	}
+	if d, _ := f.data.AuthorizedClients(); d[0].Name != "work laptop" {
+		t.Errorf("data = %+v", d)
+	}
+	// Renaming to its own name is fine; to another's isn't.
+	if _, err := f.h.Rename(laptop.Fingerprint(), "work laptop"); err != nil {
+		t.Error(err)
+	}
+	if _, err := f.h.Rename("desk", "work laptop"); err == nil || !strings.Contains(err.Error(), "already called") {
+		t.Errorf("taken: %v", err)
+	}
+	if _, err := f.h.Rename("desk", " "); err == nil {
+		t.Error("an empty name")
+	}
+	if _, err := f.h.Rename("nobody", "x"); err == nil {
+		t.Error("renamed nobody")
 	}
 }

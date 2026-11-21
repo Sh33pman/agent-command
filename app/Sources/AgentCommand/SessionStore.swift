@@ -41,6 +41,8 @@ final class SessionStore {
     @ObservationIgnored var onRemote: ((RemoteStatus?) -> Void)?
     /// The Remote hosts this Mac uses sessions on, and their connections.
     private(set) var remoteHosts: [RemoteHost] = []
+    /// What's wrong with the host, from the daemon: config.toml with a mistake, for one.
+    private(set) var health: [HealthItem] = []
     /// Which sessions the sidebar lists; kept for next time.
     var filter = SidebarFilter.load() {
         didSet { if filter != oldValue { filter.save(defaults) } }
@@ -439,6 +441,9 @@ final class SessionStore {
             self.onRemote?(snapshot.remote)
             let hosts = snapshot.remoteHosts ?? []
             if hosts != self.remoteHosts { self.remoteHosts = hosts }
+            if let settings = snapshot.settings, settings != HostSettings.shared.values { HostSettings.shared.values = settings }
+            let health = snapshot.health ?? []
+            if health != self.health { self.health = health }
             let queue = snapshot.inbox ?? []
             if queue != self.queue {
                 self.queue = queue

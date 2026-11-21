@@ -170,9 +170,10 @@ struct RemoteSettings: View {
                     Menu {
                         Button("Browse Sessions…") { browseHosts(host.name) }
                         Button("Retry") { knownHosts.retry(host) }.disabled(!host.canRetry)
-                        Button("Edit…") { editingHost = host }
+                        Button("Edit…") { editingHost = host }.disabled(host.inConfig)
                         Divider()
-                        Button("Remove…", role: .destructive) { removingHost = host }
+                        Button("Remove…", role: .destructive) { removingHost = host }.disabled(host.inConfig)
+                        if host.inConfig { Text("Set in config.toml: edit the file to change it") }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -236,10 +237,11 @@ struct RemoteSettings: View {
                         .foregroundStyle(client.isConnected ? .green : .secondary)
                         .font(.caption)
                     Menu {
-                        Button("Rename…") { renaming = client }
+                        Button("Rename…") { renaming = client }.disabled(client.inConfig)
                         Button("Disconnect") { remote.disconnect(client) }.disabled(!client.isConnected)
                         Divider()
-                        Button("Revoke…", role: .destructive) { revoking = client }
+                        Button("Revoke…", role: .destructive) { revoking = client }.disabled(client.inConfig)
+                        if client.inConfig { Text("Set in config.toml: edit the file to change it") }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }

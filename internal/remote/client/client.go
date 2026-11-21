@@ -22,7 +22,6 @@ import (
 	"log"
 	"math/rand/v2"
 	"net"
-	"os"
 	"slices"
 	"sync"
 	"time"
@@ -78,9 +77,12 @@ type Backend interface {
 
 // Options configure a Client.
 type Options struct {
-	// ConfigFile is config.toml: [[remote.hosts]] and [remote.client]. Adding,
-	// editing and removing hosts writes to it.
-	ConfigFile string
+	// Settings is [remote] as it's in effect, from config.toml: its hosts
+	// (read-only here) and [remote.client]. nil is the defaults.
+	Settings func() config.Remote
+	// Data keeps the hosts added through ops (state.db). nil keeps them in
+	// memory.
+	Data Data
 	// IdentityDir is acmd's generated identity, used unless [remote.client]
 	// names a cert and key.
 	IdentityDir string
@@ -120,20 +122,19 @@ type Client struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	cfgMu      sync.Mutex // config.toml: reading it and writing to it
-	configRead time.Time
-	read       bool
+	cfgMu sync.Mutex // changing the known hosts
 
-	mu      sync.Mutex
-	hosts   map[string]*hostConn // by name
-	order   []string             // as in config.toml
-	added   map[string]*added    // by local id
-	id      *identity.Identity
-	idErr   error
-	idKey   [2]string // the cert and key it was resolved from
-	inbox   inbox
-	started bool
-	closed  bool
+	mu       sync.Mutex
+	hosts    map[string]*hostConn // by name
+	order    []string             // config.toml's, then the ones added through ops
+	inConfig map[string]bool      // the hosts config.toml lists
+	added    map[string]*added    // by local id
+	id       *identity.Identity
+	idErr    error
+	idKey    [2]string // the cert and key it was resolved from
+	inbox    inbox
+	started  bool
+	closed   bool
 }
 
 // added is an added session, with its socket.
@@ -150,6 +151,9 @@ func New(o Options, b Backend) *Client {
 	}
 	if o.Now == nil {
 		o.Now = time.Now
+	}
+	if o.Data == nil {
+		o.Data = &MemoryData{}
 	}
 	if o.Dial == nil {
 		o.Dial = wire.Dial
@@ -249,43 +253,40 @@ func (c *Client) Close() {
 	c.wg.Wait()
 }
 
-// Reload reads [remote] from config.toml and follows it: hosts added, edited
-// or removed by hand, and the client identity.
+// Reload reads the known hosts and [remote] again, and follows them: hosts
+// added, edited or removed, and the client identity.
 func (c *Client) Reload() error {
-	c.cfgMu.Lock()
-	defer c.cfgMu.Unlock()
-	return c.reloadLocked(true)
-}
-
-// ReloadIfChanged is Reload when config.toml has changed since it was last
-// read.
-func (c *Client) ReloadIfChanged() error {
 	if c == nil {
 		return nil
 	}
 	c.cfgMu.Lock()
 	defer c.cfgMu.Unlock()
-	return c.reloadLocked(false)
+	return c.reloadLocked()
 }
 
-func (c *Client) reloadLocked(force bool) error {
+// reloadLocked follows the settings and the data (c.cfgMu is held).
+func (c *Client) reloadLocked() error {
 	r := config.DefaultRemote()
-	if c.o.ConfigFile != "" {
-		var mod time.Time
-		if info, err := os.Stat(c.o.ConfigFile); err == nil {
-			mod = info.ModTime()
-		}
-		if !force && c.read && mod.Equal(c.configRead) {
-			return nil
-		}
-		c.configRead, c.read = mod, true
-		cfg, err := config.Load(c.o.ConfigFile)
-		if err != nil {
-			c.o.Log.Printf("remote hosts: %v (they stay as they were)", err)
-			return err
-		}
-		r = cfg.Remote
+	if c.o.Settings != nil {
+		r = c.o.Settings()
 	}
+	added, err := c.o.Data.KnownHosts()
+	if err != nil {
+		c.o.Log.Printf("remote hosts: %v (they stay as they were)", err)
+		return err
+	}
+	inConfig := map[string]bool{}
+	for _, h := range r.Hosts {
+		inConfig[h.Name] = true
+	}
+	for _, h := range added {
+		if !inConfig[h.Name] {
+			r.Hosts = append(r.Hosts, h)
+		}
+	}
+	c.mu.Lock()
+	c.inConfig = inConfig
+	c.mu.Unlock()
 	c.apply(r)
 	return nil
 }

@@ -1,210 +1,49 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/brettmostert/agent-command/internal/config"
-	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
-	"github.com/brettmostert/agent-command/internal/setup"
-	"github.com/brettmostert/agent-command/internal/speech"
 )
 
-// `acmd config`: the settings in config.toml, for people and for the app's
-// Settings window. The editor is chosen with `acmd editor set`, which finds it.
+// `acmd config`: the settings, through the daemon, config.toml's only writer.
+// The app's Settings window uses the same ops (config.get, config.set).
 
-// setting is one value `acmd config set` can change.
-type setting struct {
-	key   string // as shown: "notify.cooldown"
-	parse func(string) (any, error)
-	get   func(config.Config) any
-	// setWith is the command that sets a setting that's only shown here.
-	setWith string
-}
-
-// section splits the key at its last dot: "remote.host.port" is port in
-// [remote.host].
-func (s setting) section() (string, string) {
-	if i := strings.LastIndex(s.key, "."); i >= 0 {
-		return s.key[:i], s.key[i+1:]
+// configCall runs a settings op on the daemon, starting it if needed.
+func configCall(parent context.Context, op string, in any) (ipc.ConfigState, error) {
+	if parent == nil {
+		parent = context.Background()
 	}
-	return "", s.key
-}
-
-// Voices are Kokoro's American English voices, the ones its model can speak.
-var Voices = []string{
-	"af_heart", "af_alloy", "af_aoede", "af_bella", "af_jessica", "af_kore", "af_nicole", "af_nova", "af_river",
-	"af_sarah", "af_sky", "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx",
-	"am_puck", "am_santa",
-}
-
-func boolSetting(key string, get func(config.Config) bool) setting {
-	return setting{key: key, get: func(c config.Config) any { return get(c) }, parse: func(v string) (any, error) {
-		switch strings.ToLower(v) {
-		case "true", "on", "yes", "1":
-			return true, nil
-		case "false", "off", "no", "0":
-			return false, nil
-		}
-		return nil, fmt.Errorf("%s is on or off, not %q", key, v)
-	}}
-}
-
-func durationSetting(key string, get func(config.Config) string) setting {
-	return setting{key: key, get: func(c config.Config) any { return get(c) }, parse: func(v string) (any, error) {
-		d, err := time.ParseDuration(v)
-		if err != nil || d < 0 {
-			return nil, fmt.Errorf("%s is a length of time like 10s or 2m, not %q", key, v)
-		}
-		return d.String(), nil
-	}}
-}
-
-func choiceSetting(key string, choices []string, get func(config.Config) string) setting {
-	return setting{key: key, get: func(c config.Config) any { return get(c) }, parse: func(v string) (any, error) {
-		if !slices.Contains(choices, v) {
-			return nil, fmt.Errorf("%s is one of %s, not %q", key, strings.Join(choices, ", "), v)
-		}
-		return v, nil
-	}}
-}
-
-// settings are what can be set, in the order they're shown.
-var settings = []setting{
-	{key: "claude_command", get: func(c config.Config) any { return c.ClaudeCommand }, parse: func(v string) (any, error) {
-		if strings.TrimSpace(v) == "" {
-			return nil, errors.New("claude_command can't be empty")
-		}
-		return strings.TrimSpace(v), nil
-	}},
-	listSetting("claude_args", func(c config.Config) []string { return c.ClaudeArgs }),
-	{key: "agy_command", get: func(c config.Config) any { return c.AgyCommand }, parse: func(v string) (any, error) {
-		if strings.TrimSpace(v) == "" {
-			return nil, errors.New("agy_command can't be empty")
-		}
-		return strings.TrimSpace(v), nil
-	}},
-	listSetting("agy_args", func(c config.Config) []string { return c.AgyArgs }),
-	boolSetting("agent_remote_control", func(c config.Config) bool { return c.AgentRemoteControl }),
-	choiceSetting("default_harness", []string{core.HarnessClaude, core.HarnessAntigravity, ""}, func(c config.Config) string { return c.DefaultHarness }),
-	boolSetting("notify.enabled", func(c config.Config) bool { return c.Notify.Enabled }),
-	boolSetting("notify.on_waiting", func(c config.Config) bool { return c.Notify.OnWaiting }),
-	boolSetting("notify.on_error", func(c config.Config) bool { return c.Notify.OnError }),
-	boolSetting("notify.on_done", func(c config.Config) bool { return c.Notify.OnDone }),
-	boolSetting("notify.on_paused", func(c config.Config) bool { return c.Notify.OnPaused }),
-	durationSetting("notify.done_min_duration", func(c config.Config) string { return c.Notify.DoneMinDuration }),
-	durationSetting("notify.cooldown", func(c config.Config) string { return c.Notify.Cooldown }),
-	choiceSetting("notify.sound", []string{"default", ""}, func(c config.Config) string { return c.Notify.Sound }),
-	{key: "speech.voice", get: func(c config.Config) any { return c.Speech.Voice }, parse: func(v string) (any, error) {
-		v = strings.TrimSpace(v)
-		if err := speech.CheckVoice(v); err != nil {
-			return nil, err
-		}
-		return v, nil
-	}},
-	{key: "speech.speed", get: func(c config.Config) any { return c.Speech.Speed }, parse: func(v string) (any, error) {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil || f < 0.5 || f > 2 {
-			return nil, fmt.Errorf("speech.speed is from 0.5 to 2, not %q", v)
-		}
-		return f, nil
-	}},
-	boolSetting("remote.new_sessions_remote", func(c config.Config) bool { return c.Remote.NewSessionsRemote }),
-	boolSetting("remote.host.enabled", func(c config.Config) bool { return c.Remote.Host.Enabled }),
-	choiceSetting("remote.host.listen", []string{config.ListenLocalhost, config.ListenAll}, func(c config.Config) string { return c.Remote.Host.Listen }),
-	{key: "remote.host.port", get: func(c config.Config) any { return c.Remote.Host.Port }, parse: func(v string) (any, error) {
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil || n < 1 || n > 65535 {
-			return nil, fmt.Errorf("remote.host.port is a port from 1 to 65535, not %q", v)
-		}
-		return n, nil
-	}},
-	boolSetting("remote.host.port_fallback", func(c config.Config) bool { return c.Remote.Host.PortFallback }),
-	choiceSetting("editor.run_in", []string{"background", "tab"}, func(c config.Config) string { return c.Editor.RunIn }),
-	choiceSetting("editor.target", []string{"cwd", "git_root"}, func(c config.Config) string { return c.Editor.Target }),
-}
-
-// shownOnly are shown with the settings, but set elsewhere.
-var shownOnly = []setting{
-	{key: "editor.preset", get: func(c config.Config) any { return c.Editor.Preset }, setWith: "acmd editor set"},
-	{key: "editor.command", get: func(c config.Config) any { return orEmpty(c.Editor.Command) }, setWith: "acmd editor set"},
-	// A cert and its key change together, once they're checked.
-	{key: "remote.host.cert", get: func(c config.Config) any { return c.Remote.Host.Cert }, setWith: "acmd remote cert host"},
-	{key: "remote.host.key", get: func(c config.Config) any { return c.Remote.Host.Key }, setWith: "acmd remote cert host"},
-	{key: "remote.client.cert", get: func(c config.Config) any { return c.Remote.Client.Cert }, setWith: "acmd remote cert client"},
-	{key: "remote.client.key", get: func(c config.Config) any { return c.Remote.Client.Key }, setWith: "acmd remote cert client"},
-}
-
-func orEmpty(list []string) []string {
-	if list == nil {
-		return []string{}
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	defer cancel()
+	c, err := connect(ctx)
+	if err != nil {
+		return ipc.ConfigState{}, err
 	}
-	return list
+	defer c.close()
+	var st ipc.ConfigState
+	err = c.conn.Call(op, in, &st)
+	return st, err
 }
 
-// listSetting is a list: a JSON array, as the app sends, or words separated by
-// spaces.
-func listSetting(key string, get func(config.Config) []string) setting {
-	return setting{key: key, get: func(c config.Config) any { return orEmpty(get(c)) }, parse: func(v string) (any, error) {
-		list, err := parseList(v)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", key, err)
-		}
-		return list, nil
-	}}
-}
-
-func parseList(v string) ([]string, error) {
-	v = strings.TrimSpace(v)
-	if strings.HasPrefix(v, "[") {
-		var list []string
-		if err := json.Unmarshal([]byte(v), &list); err != nil {
-			return nil, err
-		}
-		return orEmpty(list), nil
-	}
-	return orEmpty(strings.Fields(v)), nil
-}
-
-func findSetting(key string) (setting, error) {
-	if key == "remote_control" { // its old name
-		key = "agent_remote_control"
-	}
-	for _, s := range settings {
-		if s.key == key {
-			return s, nil
-		}
-	}
-	for _, s := range shownOnly {
-		if s.key == key {
-			return setting{}, fmt.Errorf("%s is set with: %s", key, s.setWith)
-		}
-	}
-	return setting{}, fmt.Errorf("no setting %q (acmd config show lists them)", key)
-}
-
-// configView is what `acmd config show --json` prints.
-type configView struct {
-	Path     string         `json:"path"`
-	Settings map[string]any `json:"settings"`
-	Voices   []string       `json:"voices"`
+// setSettings changes settings through the daemon, all or none.
+func setSettings(ctx context.Context, values map[string]any) (ipc.ConfigState, error) {
+	return configCall(ctx, ipc.OpConfigSet, ipc.ConfigSet{Values: values})
 }
 
 func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show or change acmd's settings (config.toml)",
-		Long: "The settings in config.toml, which the app's Settings window (⌘,) also changes. A change to\n" +
-			"notifications applies straight away; the agents' settings apply to sessions started after it,\n" +
-			"and a new voice needs `acmd speech install`.",
+		Long: "The settings in config.toml, which the app's Settings window (⌘,) also changes. The daemon\n" +
+			"keeps the file, and its comments: a change here or by hand applies straight away. The agents'\n" +
+			"settings apply to sessions started after a change, and a new voice needs `acmd speech install`.",
 		Args: cobra.NoArgs,
 	}
 	var asJSON bool
@@ -213,65 +52,64 @@ func newConfigCmd() *cobra.Command {
 		Short: "List the settings and their values",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, err := paths.Default()
-			if err != nil {
-				return err
-			}
-			cfg, err := config.Load(p.Config())
+			st, err := configCall(cmd.Context(), ipc.OpConfigGet, nil)
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			all := append(append([]setting(nil), settings...), shownOnly...)
 			if asJSON {
-				view := configView{Path: p.Config(), Settings: map[string]any{}, Voices: Voices}
-				for _, s := range all {
-					view.Settings[s.key] = s.get(cfg)
-				}
 				enc := json.NewEncoder(out)
 				enc.SetIndent("", "  ")
-				return enc.Encode(view)
+				return enc.Encode(st)
 			}
-			for _, s := range all {
-				b, _ := json.Marshal(s.get(cfg))
-				if _, err := fmt.Fprintf(out, "%s = %s\n", s.key, b); err != nil {
+			for _, s := range st.Settings {
+				b, _ := json.Marshal(st.Values[s.Key])
+				if _, err := fmt.Fprintf(out, "%s = %s\n", s.Key, b); err != nil {
 					return err
 				}
 			}
-			_, err = fmt.Fprintf(out, "\n(%s)\n", tilde(p.Config()))
+			if st.Problem != nil {
+				fmt.Fprintf(out, "\n%v: these are the last good settings, and changes wait until it's fixed.\n", st.Problem)
+			}
+			_, err = fmt.Fprintf(out, "\n(%s)\n", tilde(st.Path))
 			return err
 		},
 	}
-	show.Flags().BoolVar(&asJSON, "json", false, "print JSON, for the app")
+	show.Flags().BoolVar(&asJSON, "json", false, "print JSON: what each setting is, and its value")
 	set := &cobra.Command{
-		Use:   "set <setting> <value>",
-		Short: "Change a setting, keeping the rest of config.toml as it is",
+		Use:   "set <setting> <value> [<setting> <value>…]",
+		Short: "Change settings, keeping the rest of config.toml as it is",
+		Long: "Changes one or more settings at once: all of them, or none if one is wrong. A list is\n" +
+			"a JSON array or words separated by spaces.",
 		Example: "  acmd config set notify.cooldown 1m\n  acmd config set -- claude_args \"--model opus\"\n" +
-			"  acmd config set notify.sound \"\"   # silent",
-		Args: cobra.ExactArgs(2),
+			"  acmd config set notify.sound \"\"   # silent\n  acmd config set remote.host.listen all remote.host.port 7500",
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 || len(args)%2 != 0 {
+				return fmt.Errorf("give each setting a value: acmd config set <setting> <value> …")
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := findSetting(args[0])
+			values := map[string]any{}
+			var keys []string
+			for i := 0; i < len(args); i += 2 {
+				values[args[i]] = args[i+1]
+				keys = append(keys, args[i])
+			}
+			st, err := setSettings(cmd.Context(), values)
 			if err != nil {
 				return err
 			}
-			value, err := s.parse(args[1])
-			if err != nil {
-				return err
+			for _, k := range keys {
+				if k == "remote_control" { // its old name
+					k = "agent_remote_control"
+				}
+				b, _ := json.Marshal(st.Values[k])
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s = %s\n", k, b); err != nil {
+					return err
+				}
 			}
-			p, err := paths.Default()
-			if err != nil {
-				return err
-			}
-			section, name := s.section()
-			if err := setup.SaveSetting(p.Config(), section, name, value); err != nil {
-				return err
-			}
-			if strings.HasPrefix(s.key, "remote.") {
-				reloadHosting(cmd.Context(), p) // so Hosting follows it now, not at the daemon's next look
-			}
-			b, _ := json.Marshal(value)
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s = %s\n", s.key, b)
-			return err
+			return nil
 		},
 	}
 	cmd.AddCommand(show, set, &cobra.Command{

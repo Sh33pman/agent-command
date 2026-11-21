@@ -181,7 +181,7 @@ func TestNotifyFollowsTheConfigFile(t *testing.T) {
 
 	write("[notify\n", start.Add(2*time.Minute))
 	d.transition(s, core.Transition{From: core.StatusError, To: core.StatusWaiting})
-	if n := d.notices(); len(n) != 2 || !strings.Contains(logged.String(), "stay as they were") {
+	if n := d.notices(); len(n) != 2 || !strings.Contains(logged.String(), "stay in effect") {
 		t.Errorf("a broken file: %+v %q", n, logged.String())
 	}
 

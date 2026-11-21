@@ -93,7 +93,10 @@ func Open(ctx context.Context, dbPath string, opts ...Option) (*Store, error) {
 	}
 	existed := fileExists(dbPath)
 
-	dsn := "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
+	// Transactions take the write lock when they begin (_txlock=immediate): one
+	// that reads, then writes, waits its turn behind another connection's write
+	// rather than failing with SQLITE_BUSY.
+	dsn := "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

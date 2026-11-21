@@ -118,11 +118,16 @@ struct RemoteClient: Decodable, Equatable, Identifiable {
     var name = ""
     var fingerprint = ""
     var connections: [RemoteConnection] = []
+    /// Listed in config.toml: renamed or revoked there, not here.
+    var inConfig = false
 
     var id: String { fingerprint }
     var isConnected: Bool { !connections.isEmpty }
 
-    enum CodingKeys: String, CodingKey { case name, fingerprint, connections }
+    enum CodingKeys: String, CodingKey {
+        case name, fingerprint, connections
+        case inConfig = "in_config"
+    }
 
     init(name: String, fingerprint: String, connections: [RemoteConnection] = []) {
         (self.name, self.fingerprint, self.connections) = (name, fingerprint, connections)
@@ -133,6 +138,7 @@ struct RemoteClient: Decodable, Equatable, Identifiable {
         name = c.value(.name, "")
         fingerprint = c.value(.fingerprint, "")
         connections = c.value(.connections, [])
+        inConfig = c.value(.inConfig, false)
     }
 }
 

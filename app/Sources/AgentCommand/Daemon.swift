@@ -15,10 +15,43 @@ struct Snapshot: Decodable {
     /// The sets: sessions made together by splitting. Their sessions name them
     /// as their parent.
     var sets: [SessionSetEntity]? = nil
+    /// This Mac's settings in effect, by key: config.get says what each is.
+    var settings: [String: SettingValue]? = nil
+    /// What's wrong with the host, or worth knowing.
+    var health: [HealthItem]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case sessions, notices, inbox, jobs, groups, wake, remote, sets
+        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health
         case remoteHosts = "remote_hosts"
+    }
+}
+
+/// Something wrong with the host (internal/ipc.Health), and how to fix it.
+struct HealthItem: Decodable, Equatable {
+    let id: String
+    var severity = "warning"
+    let title: String
+    var detail = ""
+    var fix: Fix? = nil
+
+    struct Fix: Decodable, Equatable {
+        var op: String? = nil
+        var step: String? = nil
+    }
+
+    enum CodingKeys: String, CodingKey { case id, severity, title, detail, fix }
+
+    init(id: String, severity: String = "warning", title: String, detail: String = "", fix: Fix? = nil) {
+        (self.id, self.severity, self.title, self.detail, self.fix) = (id, severity, title, detail, fix)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        severity = try c.decodeIfPresent(String.self, forKey: .severity) ?? "warning"
+        title = try c.decode(String.self, forKey: .title)
+        detail = try c.decodeIfPresent(String.self, forKey: .detail) ?? ""
+        fix = try c.decodeIfPresent(Fix.self, forKey: .fix)
     }
 }
 

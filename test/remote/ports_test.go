@@ -1,8 +1,6 @@
 package remote
 
 import (
-	"encoding/json"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,8 +9,8 @@ import (
 )
 
 // TestPortFallback: with the port taken and the fallback on, Hosting listens
-// on another port, and the same one again after a restart. Clients reach it
-// there.
+// on another port, and the same one again after a restart (state.db keeps
+// it). Clients reach it there.
 func TestPortFallback(t *testing.T) {
 	taken := hold(t)
 	host := newMachine(t, "host", hostConfig(taken, true))
@@ -21,17 +19,6 @@ func TestPortFallback(t *testing.T) {
 	if st.Port == taken || st.Port == 0 || st.ConfiguredPort != taken {
 		t.Fatalf("status = %+v, with %d taken", st, taken)
 	}
-	var saved struct {
-		Port struct{ Configured, Port int }
-	}
-	b, err := os.ReadFile(host.p.RemoteHostState())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(b, &saved); err != nil || saved.Port.Port != st.Port || saved.Port.Configured != taken {
-		t.Errorf("remote-host.json = %s (%v)", b, err)
-	}
-
 	laptop := newMachine(t, "laptop", clientConfig)
 	laptop.start()
 	laptop.pair("studio", host)

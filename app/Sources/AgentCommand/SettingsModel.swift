@@ -1,8 +1,9 @@
 import AppKit
 import Observation
 
-/// acmd's settings, from config.toml, as `acmd config show --json` gives them.
-struct AcmdSettings: Decodable, Equatable {
+/// acmd's settings, as config.get gives them: their values, typed, and what's wrong
+/// with config.toml if anything is.
+struct AcmdSettings: Equatable {
     struct Values: Decodable, Equatable {
         var claudeCommand = "claude"
         var claudeArgs: [String] = []
@@ -83,6 +84,17 @@ struct AcmdSettings: Decodable, Equatable {
     var path = ""
     var settings = Values()
     var voices: [String] = []
+    var problem: ConfigProblem?
+
+    init() {}
+
+    init(state: ConfigState) {
+        path = state.path
+        let json = (try? JSONEncoder().encode(state.values)) ?? Data("{}".utf8)
+        settings = (try? JSONDecoder().decode(Values.self, from: json)) ?? Values()
+        voices = state.settings.first { $0.key == "speech.voice" }?.suggestions ?? []
+        problem = state.problem
+    }
 }
 
 /// Lengths of time as Go writes them: "10s", "1m30s", "2h0m0s".
@@ -151,8 +163,9 @@ enum ShellWords {
     }
 }
 
-/// The Settings window's state. acmd's settings go through `acmd config set`, so the
-/// app, the command line and the daemon agree; the app's own are stored as before.
+/// The Settings window's state. acmd's settings go through the daemon (config.get,
+/// config.set), so the app, the command line and the daemon agree; the app's own are
+/// stored as before.
 @Observable final class SettingsModel {
     private(set) var acmd = AcmdSettings()
     private(set) var loaded = false
@@ -163,9 +176,27 @@ enum ShellWords {
     /// The setting being changed, so its control can wait.
     private(set) var busy: String?
     /// The section on show.
-    var section = SettingsSection.general
+    var section = SettingsSection.general {
+        didSet { if Self.hostSections.contains(section) != Self.hostSections.contains(oldValue) && host != nil { load() } }
+    }
+    /// The Remote host whose settings show, in the sections a host has: nil is this Mac.
+    var host: String? {
+        didSet {
+            guard host != oldValue else { return }
+            error = nil
+            load()
+        }
+    }
 
-    /// Runs acmd; tests swap it.
+    /// The sections that show a host's settings when one is chosen. The rest are this Mac's.
+    static let hostSections: Set<SettingsSection> = [.claude, .antigravity, .notifications]
+
+    /// Whose settings the page on show changes: nil is this Mac.
+    var target: String? { Self.hostSections.contains(section) ? host : nil }
+
+    /// The daemon's settings ops; tests swap its calls.
+    @ObservationIgnored var client = SettingsClient()
+    /// Runs acmd, for what isn't a setting yet (the sample voice, doctor, wake); tests swap it.
     @ObservationIgnored var runAcmd: (_ args: [String], _ done: @escaping @MainActor (Bool, String) -> Void) -> Void = Acmd.run
     /// The app's Ghostty config: read, written, and applied once written.
     @ObservationIgnored var readGhostty: () -> String = {
@@ -187,39 +218,59 @@ enum ShellWords {
     var values: AcmdSettings.Values { acmd.settings }
 
     func load() {
-        runAcmd(["config", "show", "--json"]) { [weak self] ok, output in
-            guard let self else { return }
-            guard ok, let data = output.data(using: .utf8),
-                  let decoded = try? JSONDecoder().decode(AcmdSettings.self, from: data)
-            else {
-                self.error = output.isEmpty ? "Couldn't read acmd's settings." : output
-                return
+        let whose = target
+        client.get(host: whose) { [weak self] result in
+            guard let self, whose == self.target else { return } // another host was chosen meanwhile
+            switch result {
+            case .success(let state):
+                self.acmd = AcmdSettings(state: state)
+                self.loaded = true
+            case .failure(let failure):
+                self.error = whose.map { "Couldn't read \($0)'s settings: \(errorText(failure))" } ?? "Couldn't read acmd's settings: \(errorText(failure))"
             }
-            self.acmd = decoded
-            self.loaded = true
         }
     }
 
-    /// Sets one of acmd's settings, then reads them all back.
-    func set(_ key: String, _ value: String, then: @escaping () -> Void = {}) {
-        command(["config", "set", "--", key, value], key: key, then: then)
+    /// Changes settings, all or none, then shows them as they are.
+    func set(_ values: [String: SettingValue], then: @escaping () -> Void = {}) {
+        guard let key = values.keys.sorted().first else { return }
+        busy = key
+        error = nil
+        let whose = target
+        client.set(values, host: whose) { [weak self] result in
+            guard let self else { return }
+            self.busy = nil
+            switch result {
+            case .success(let state):
+                if whose == self.target { self.acmd = AcmdSettings(state: state) }
+                if whose == nil { HostSettings.shared.values = state.values }
+                then()
+            case .failure(let failure):
+                let why = errorText(failure)
+                self.error = why.isEmpty ? "Couldn't change \(key)." : why
+                self.load()
+            }
+        }
     }
 
-    /// Sets several, one after another: two writes at once could lose one.
+    /// Sets one setting from text as it's typed ("on", "10s", "7500").
+    func set(_ key: String, _ value: String, then: @escaping () -> Void = {}) {
+        set([key: .string(value)], then: then)
+    }
+
+    /// Sets several at once: all of them, or none.
     func setAll(_ changes: [(String, String)]) {
-        guard let (key, value) = changes.first else { return }
-        set(key, value) { [weak self] in self?.setAll(Array(changes.dropFirst())) }
+        guard !changes.isEmpty else { return }
+        set(Dictionary(changes.map { ($0.0, SettingValue.string($0.1)) }, uniquingKeysWith: { _, last in last }))
     }
 
     func set(_ key: String, _ on: Bool) {
-        set(key, on ? "on" : "off")
+        set([key: .bool(on)])
     }
 
     /// Sets an agent's extra arguments (claude_args, agy_args) from shell words.
     func setArgs(_ text: String, key: String = "claude_args") {
-        let words = ShellWords.split(text)
-        let json = (try? JSONEncoder().encode(words)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
-        set(key, json)
+        set([key: .list(ShellWords.split(text))])
     }
 
     func setVoice(_ voice: String) {
@@ -233,10 +284,11 @@ enum ShellWords {
         return list.sorted()
     }
 
-    /// vscode, cursor, zed or idea, or custom with its command.
+    /// vscode, cursor, zed or idea, or custom with its command. The daemon finds it,
+    /// and says if it isn't installed.
     func setEditor(_ preset: String, command words: [String] = []) {
-        let args = preset == "custom" ? ["editor", "set", "custom", "--"] + words : ["editor", "set", preset]
-        command(args, key: "editor.preset")
+        set(["editor.preset": .string(preset), "editor.command": .list(preset == "custom" ? words : []),
+             "editor.run_in": .string("background")])
     }
 
     func playSample() {
@@ -254,16 +306,14 @@ enum ShellWords {
         command(["doctor"], key: "doctor", keepsOutput: true)
     }
 
-    private func command(_ args: [String], key: String, keepsOutput: Bool = false, then: @escaping () -> Void = {}) {
+    private func command(_ args: [String], key: String, keepsOutput: Bool = false) {
         busy = key
         error = nil
         runAcmd(args) { [weak self] ok, output in
             guard let self else { return }
             self.busy = nil
             if keepsOutput { self.report = output }
-            if ok {
-                then()
-            } else if !keepsOutput {
+            if !ok && !keepsOutput {
                 self.error = output.isEmpty ? "Couldn't change \(key)." : output
             }
             self.load()

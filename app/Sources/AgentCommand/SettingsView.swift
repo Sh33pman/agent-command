@@ -67,6 +67,27 @@ struct SettingsView: View {
             .navigationSplitViewColumnWidth(190)
         } detail: {
             VStack(spacing: 0) {
+                if SettingsModel.hostSections.contains(section), !store.remoteHosts.isEmpty {
+                    Picker("Settings for", selection: $model.host) {
+                        Text("This Mac").tag(String?.none)
+                        ForEach(store.remoteHosts) { host in
+                            Text(host.name).tag(Optional(host.name))
+                        }
+                    }
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                }
+                if let problem = model.acmd.problem {
+                    Label {
+                        Text("\(problem.text). The last good settings stay in effect, and changes wait until the file is fixed.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                    }
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                }
                 if let error = model.error {
                     Text(error)
                         .foregroundStyle(.red)

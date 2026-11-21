@@ -71,11 +71,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 				logger.Printf("config: %v (notifications off)", err)
 			}
 			cfg.ConfigFile = p.Config()
-			if changed, err := setup.RetireOld(p.Config()); err != nil {
-				logger.Printf("config: taking out acmd v1's settings: %v", err)
-			} else if changed {
-				logger.Printf("config: took out acmd v1's unused settings")
-			}
+			cfg.ResolveEditor = resolveEditor
 			// Sessions run Claude or agy, whichever is there: starting a host checks
 			// for the one it runs.
 			cfg.Hosts = execHosts{paths: p}

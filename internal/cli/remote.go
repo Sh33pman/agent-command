@@ -5,9 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/brettmostert/agent-command/internal/config"
-	"github.com/brettmostert/agent-command/internal/paths"
-	"github.com/brettmostert/agent-command/internal/setup"
+	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
 // `acmd agent-remote-control [on|off]`: whether agent sessions start with
@@ -41,17 +39,14 @@ func agentRemoteControlCmd(name string, deprecated bool) *cobra.Command {
 					return err
 				}
 			}
-			p, err := paths.Default()
-			if err != nil {
-				return err
-			}
 			out := cmd.OutOrStdout()
 			if len(args) == 0 {
-				cfg, err := config.Load(p.Config())
+				st, err := configCall(cmd.Context(), ipc.OpConfigGet, nil)
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprintln(out, onOff(cfg.AgentRemoteControl))
+				on, _ := st.Values["agent_remote_control"].(bool)
+				_, err = fmt.Fprintln(out, onOff(on))
 				return err
 			}
 			var on bool
@@ -62,10 +57,10 @@ func agentRemoteControlCmd(name string, deprecated bool) *cobra.Command {
 			default:
 				return fmt.Errorf("use on or off, not %q", args[0])
 			}
-			if err := setup.SaveSetting(p.Config(), "", "agent_remote_control", on); err != nil {
+			if _, err := setSettings(cmd.Context(), map[string]any{"agent_remote_control": on}); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(out, "Agent Remote Control is %s for sessions started or resumed from now on.\n", onOff(on))
+			_, err := fmt.Fprintf(out, "Agent Remote Control is %s for sessions started or resumed from now on.\n", onOff(on))
 			return err
 		},
 	}

@@ -14,7 +14,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
-	"github.com/brettmostert/agent-command/internal/setup"
 )
 
 func TestHostingOps(t *testing.T) {
@@ -26,7 +25,7 @@ func TestHostingOps(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	if err := setup.SaveSetting(p.Config(), "remote.host", "port", port); err != nil {
+	if err := writeSetting(p.Config(), "remote.host", "port", port); err != nil {
 		t.Fatal(err)
 	}
 	start(t, p, func(c *Config) { c.ConfigFile = p.Config(); c.ReconcileEvery = 20 * time.Millisecond })
@@ -105,19 +104,27 @@ func TestHostingOps(t *testing.T) {
 	if err := call(ipc.OpRemoteRevoke, ipc.RemoteRef{Client: other.Fingerprint()}, &rc); err != nil || rc.Name != "desk" {
 		t.Errorf("revoke = %+v, %v", rc, err)
 	}
-	cfg, err := config.Load(p.Config())
-	if err != nil || len(cfg.Remote.AuthorizedClients) != 1 || cfg.Remote.AuthorizedClients[0].Name != "laptop" {
-		t.Errorf("config = %+v, %v", cfg.Remote.AuthorizedClients, err)
+	// They're kept in state.db, not config.toml.
+	var kept []ipc.RemoteClient
+	if err := call(ipc.OpRemoteClients, nil, &kept); err != nil || len(kept) != 1 || kept[0].Name != "laptop" || kept[0].InConfig {
+		t.Errorf("clients = %+v, %v", kept, err)
+	}
+	if cfg, err := config.Load(p.Config()); err != nil || len(cfg.Remote.AuthorizedClients) != 0 {
+		t.Errorf("config.toml = %+v, %v", cfg.Remote.AuthorizedClients, err)
+	}
+	// Renamed through the daemon.
+	if err := call(ipc.OpRemoteRename, ipc.RemoteRef{Client: "laptop", Name: "work"}, &rc); err != nil || rc.Name != "work" {
+		t.Errorf("rename = %+v, %v", rc, err)
 	}
 
 	// A change to config.toml is picked up by itself, or at once with a reload.
-	if err := setup.SaveSetting(p.Config(), "remote.host", "enabled", false); err != nil {
+	if err := writeSetting(p.Config(), "remote.host", "enabled", false); err != nil {
 		t.Fatal(err)
 	}
 	if err := call(ipc.OpRemoteReload, nil, &st); err != nil || st.Listening {
 		t.Errorf("reload = %+v, %v", st, err)
 	}
-	if err := setup.SaveSetting(p.Config(), "remote.host", "enabled", true); err != nil {
+	if err := writeSetting(p.Config(), "remote.host", "enabled", true); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().Add(time.Second)

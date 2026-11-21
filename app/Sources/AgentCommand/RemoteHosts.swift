@@ -35,11 +35,14 @@ struct RemoteHost: Decodable, Equatable, Identifiable {
     var hostVersion = ""
     /// Sessions added here from it, archived ones aside.
     var sessions = 0
+    /// Listed in config.toml: edited there, not here.
+    var inConfig = false
 
     var id: String { name }
 
     enum CodingKeys: String, CodingKey {
         case name, address, fingerprint, cert, error, since, seen, sessions
+        case inConfig = "in_config"
         case stateName = "state", retryAt = "retry_at", ourFingerprint = "our_fingerprint"
         case hostName = "host_name", hostVersion = "host_version"
     }
@@ -63,6 +66,7 @@ struct RemoteHost: Decodable, Equatable, Identifiable {
         hostName = c.value(.hostName, "")
         hostVersion = c.value(.hostVersion, "")
         sessions = c.value(.sessions, 0)
+        inConfig = c.value(.inConfig, false)
     }
 
     /// An unknown state reads as an error, which says what the daemon said.
@@ -468,28 +472,9 @@ enum RemoteWarning {
 // MARK: New sessions
 
 enum RemoteDefaults {
-    /// `[remote] new_sessions_remote` in acmd's config.toml: what ⌘N does, and
-    /// where the Remote checkbox starts. Missing or unreadable is off.
-    static func newSessionsRemote(inConfig text: String) -> Bool {
-        var section = ""
-        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = raw.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first
-                .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
-            if line.hasPrefix("[") {
-                section = line.trimmingCharacters(in: CharacterSet(charactersIn: "[] "))
-                continue
-            }
-            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            guard parts.count == 2 else { continue }
-            let key = section.isEmpty ? parts[0] : section + "." + parts[0]
-            if key == "remote.new_sessions_remote" { return parts[1] == "true" }
-        }
-        return false
-    }
-
-    static var newSessionsRemote: Bool {
-        newSessionsRemote(inConfig: (try? String(contentsOfFile: AgentRemoteControlSetting.configPath, encoding: .utf8)) ?? "")
-    }
+    /// The daemon's `remote.new_sessions_remote`: what ⌘N does, and where the
+    /// Remote checkbox starts.
+    static var newSessionsRemote: Bool { HostSettings.shared.bool("remote.new_sessions_remote") }
 }
 
 /// Connections attached to each session, from Hosting's clients: one client can

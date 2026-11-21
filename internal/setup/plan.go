@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,30 @@ type Change struct {
 	Secret  bool        // never show the content; always enforce Mode
 	Summary string
 	Detail  []string // shown indented under the summary; never secrets
+	// Settings are config.toml's changes by key, for a running daemon to make
+	// (config.set) in place of writing the file: it's the file's only writer
+	// while it runs.
+	Settings map[string]any
+}
+
+// TakeSettings, when daemon is true, takes config.toml's change out of the
+// plan and returns it by key, for the running daemon to make. Otherwise the
+// plan writes the file itself, as nothing else does.
+func (p *Plan) TakeSettings(daemon bool) map[string]any {
+	if !daemon {
+		return nil
+	}
+	out := map[string]any{}
+	kept := p.Changes[:0]
+	for _, c := range p.Changes {
+		if c.Settings != nil {
+			maps.Copy(out, c.Settings)
+			continue
+		}
+		kept = append(kept, c)
+	}
+	p.Changes = kept
+	return out
 }
 
 // Action is what applying the change does: create, modify, remove or

@@ -14,19 +14,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
-	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
 // remoteEnv starts a daemon that follows config.toml, with Hosting set to a
 // free port, and returns its paths and that port.
 func remoteEnv(t *testing.T) (paths.Paths, int) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	must(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	_ = ln.Close()
+	p := daemonEnv(t, func(p paths.Paths) {
+		must(t, os.MkdirAll(p.ConfigDir, 0o700))
+		must(t, os.WriteFile(p.Config(), []byte("[remote.host]\nport = "+strconv.Itoa(port)+"\n"), 0o600))
+	})
+	return p, port
+}
+
+// daemonEnv starts a daemon with its own folders and config.toml, after
+// before (when set) has written what it starts with, and returns its paths.
+func daemonEnv(t *testing.T, before ...func(paths.Paths)) paths.Paths {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "acmdr") // short: sockets have a length limit
 	must(t, err)
@@ -38,18 +51,15 @@ func remoteEnv(t *testing.T) (paths.Paths, int) {
 	orig := spawnDaemon
 	spawnDaemon = func(paths.Paths) error { return errors.New("tests start the daemon themselves") }
 	t.Cleanup(func() { spawnDaemon = orig })
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	must(t, err)
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
-	must(t, setup.SaveSetting(p.Config(), "remote.host", "port", port))
+	for _, fn := range before {
+		fn(p)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- daemon.Run(ctx, daemon.Config{Paths: p, Version: version.Get().Version, Log: log.New(io.Discard, "", 0),
-			ConfigFile: p.Config(), TailEvery: time.Hour})
+			ConfigFile: p.Config(), TailEvery: time.Hour, ResolveEditor: resolveEditor})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -68,7 +78,7 @@ func remoteEnv(t *testing.T) (paths.Paths, int) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	return p, port
+	return p
 }
 
 func TestRemoteHostingCommands(t *testing.T) {
@@ -172,10 +182,10 @@ func TestRemoteHostingCommands(t *testing.T) {
 	if out := mustRun(t, "remote", "revoke", "third"); !strings.Contains(out, `Revoked "third" (`+third.Fingerprint()+")") {
 		t.Errorf("revoke: %q", out)
 	}
-	cfg, err := config.Load(p.Config())
-	must(t, err)
-	if len(cfg.Remote.AuthorizedClients) != 2 {
-		t.Errorf("authorized = %+v", cfg.Remote.AuthorizedClients)
+	var authorized []ipc.RemoteClient
+	must(t, json.Unmarshal([]byte(mustRun(t, "remote", "clients", "--json")), &authorized))
+	if len(authorized) != 2 {
+		t.Errorf("authorized = %+v", authorized)
 	}
 
 	// A request that's denied.
@@ -249,8 +259,8 @@ func TestRemoteIdentityRoles(t *testing.T) {
 	own, err := identity.Ensure(filepath.Join(t.TempDir(), "own"))
 	must(t, err)
 	file := filepath.Join(cfgDir, "config.toml")
-	must(t, setup.SaveSetting(file, "remote.client", "cert", own.CertPath))
-	must(t, setup.SaveSetting(file, "remote.client", "key", own.KeyPath))
+	must(t, writeSetting(file, "remote.client", "cert", own.CertPath))
+	must(t, writeSetting(file, "remote.client", "key", own.KeyPath))
 	out := mustRun(t, "remote", "identity")
 	gen, err := identity.Ensure(filepath.Join(cfgDir, "identity"))
 	must(t, err)
@@ -266,11 +276,11 @@ func TestRemoteIdentityRoles(t *testing.T) {
 		t.Errorf("--json = %+v", got)
 	}
 	// Half a cert is an error that names the role.
-	must(t, setup.SaveSetting(file, "remote.client", "key", ""))
+	must(t, writeSetting(file, "remote.client", "key", ""))
 	if _, err := acmd(t, "remote", "identity"); err == nil || !strings.Contains(err.Error(), "[remote.client]") {
 		t.Errorf("half a cert: %v", err)
 	}
-	must(t, setup.SaveSetting(file, "remote.host", "key", "/x"))
+	must(t, writeSetting(file, "remote.host", "key", "/x"))
 	if _, err := acmd(t, "remote", "identity"); err == nil || !strings.Contains(err.Error(), "[remote.host]") {
 		t.Errorf("half a host cert: %v", err)
 	}

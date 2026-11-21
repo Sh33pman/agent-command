@@ -4,7 +4,6 @@ import (
 	"context"
 	"slices"
 
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/hostapi"
@@ -39,7 +38,8 @@ func (b hostBackend) Changes() (uint64, <-chan struct{}) { return b.d.changes.cu
 // claude_args or agy_args before the client's.
 func (b hostBackend) NewSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
 	d := b.d
-	if c, err := d.loadConfig(); err == nil {
+	{
+		c := d.config()
 		var own []string
 		switch req.Harness {
 		case "", core.HarnessClaude:
@@ -86,17 +86,13 @@ func (b hostBackend) Harnesses() ([]string, string) {
 	if d.cfg.Harnesses != nil {
 		installed = d.cfg.Harnesses()
 	}
-	def := ""
-	if c, err := d.loadConfig(); err == nil {
-		def = c.DefaultHarness
-	}
-	return installed, def
+	return installed, d.config().DefaultHarness
 }
 
-// loadConfig reads config.toml afresh, so a change applies at once.
-func (d *Daemon) loadConfig() (config.Config, error) {
-	if d.cfg.ConfigFile == "" {
-		return config.Default(), nil
-	}
-	return config.Load(d.cfg.ConfigFile)
+// Config is the host's settings, for its clients.
+func (b hostBackend) Config() ipc.ConfigState { return b.d.configState() }
+
+// SetConfig changes the host's settings for a client (config.set).
+func (b hostBackend) SetConfig(values map[string]any) (ipc.ConfigState, error) {
+	return b.d.setConfig(values)
 }

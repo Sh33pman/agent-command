@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/store"
 )
@@ -92,15 +91,7 @@ func (d *Daemon) newSessionsRemote(want *bool) bool {
 	if want != nil {
 		return *want
 	}
-	if d.cfg.ConfigFile == "" {
-		return false
-	}
-	c, err := config.Load(d.cfg.ConfigFile)
-	if err != nil {
-		d.cfg.Log.Printf("config: %v (new sessions aren't Remote)", err)
-		return false
-	}
-	return c.Remote.NewSessionsRemote
+	return d.config().Remote.NewSessionsRemote
 }
 
 // remoteCount counts the Remote sessions that aren't archived.

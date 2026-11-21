@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/store"
@@ -65,7 +66,8 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 		remote = &st
 	}
 	return ipc.Snapshot{Sessions: sessions, Groups: groups, Sets: wireSets(sets), ViewState: vs, Notices: d.notices(), Inbox: d.withHostInbox(queue),
-		Jobs: jobs, Wake: d.wakeState(ctx), Remote: remote, RemoteHosts: d.remoteHosts()}, nil
+		Jobs: jobs, Wake: d.wakeState(ctx), Remote: remote, RemoteHosts: d.remoteHosts(),
+		Settings: config.Values(d.config()), Health: d.health()}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.

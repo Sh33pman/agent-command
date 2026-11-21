@@ -4,161 +4,180 @@ import Testing
 
 @testable import AgentCommand
 
-/// The Settings window's model, with acmd played by the test: nothing reaches the
-/// person's real config.
+/// The Settings window's model, with the daemon and acmd played by the test: nothing
+/// reaches the person's real config.
 @MainActor
 private final class FakeAcmd {
     var calls: [[String]] = []
     var fail: Set<String> = []
-    var show = """
-        {"path": "/tmp/x/config.toml", "voices": ["af_heart", "am_adam"], "settings": {
-          "claude_command": "/bin/claude", "claude_args": ["--model", "opus"], "agent_remote_control": true,
-          "agy_command": "/bin/agy", "agy_args": ["--x"],
-          "notify.enabled": true, "notify.on_waiting": true, "notify.on_error": false, "notify.on_done": true,
-          "notify.on_paused": false, "notify.done_min_duration": "1m0s", "notify.cooldown": "20s", "notify.sound": "",
-          "speech.voice": "af_heart:0.6,af_bella:0.4", "speech.speed": 1.25, "editor.preset": "zed",
-          "editor.command": [], "editor.run_in": "background", "editor.target": "git_root"}}
-        """
     var said = "ok"
 
     func run(_ args: [String], _ done: @escaping @MainActor (Bool, String) -> Void) {
         calls.append(args)
-        if args == ["config", "show", "--json"] {
-            done(!fail.contains("show"), fail.contains("show") ? "" : show)
-        } else {
-            done(!fail.contains(args.first ?? ""), said)
-        }
+        done(!fail.contains(args.first ?? ""), said)
     }
-
-    var changes: [[String]] { calls.filter { $0 != ["config", "show", "--json"] } }
 }
 
+/// config.get's answer, as the daemon gives it.
+private func configState(_ values: [String: Any], path: String = "/tmp/x/config.toml", problem: [String: Any]? = nil) -> [String: Any] {
+    var out: [String: Any] = ["path": path, "values": values, "settings": [
+        ["key": "speech.voice", "type": "string", "where": "device", "suggestions": ["af_heart", "am_adam"]],
+        ["key": "claude_command", "type": "string", "where": "host", "runs_code": true],
+    ]]
+    if let problem { out["problem"] = problem }
+    return out
+}
+
+private let fullValues: [String: Any] = [
+    "claude_command": "/bin/claude", "claude_args": ["--model", "opus"], "agent_remote_control": true,
+    "agy_command": "/bin/agy", "agy_args": ["--x"],
+    "notify.enabled": true, "notify.on_waiting": true, "notify.on_error": false, "notify.on_done": true,
+    "notify.on_paused": false, "notify.done_min_duration": "1m0s", "notify.cooldown": "20s", "notify.sound": "",
+    "speech.voice": "af_heart:0.6,af_bella:0.4", "speech.speed": 1.25, "editor.preset": "zed",
+    "editor.command": [String](), "editor.run_in": "background", "editor.target": "git_root",
+]
+
 @MainActor
-private func model(_ acmd: FakeAcmd) -> SettingsModel {
+private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel {
+    let acmd = given ?? FakeAcmd()
     let m = SettingsModel()
+    m.client = SettingsClient(calls: fake)
     m.runAcmd = { args, done in acmd.run(args, done) }
+    fake.replies["config.get"] = configState(fullValues)
+    fake.replies["config.set"] = configState(fullValues)
     return m
 }
 
-@MainActor @Test func settingsReadWhatAcmdSays() {
-    let acmd = FakeAcmd()
-    let m = model(acmd)
+@MainActor @Test func settingsReadWhatTheDaemonSays() {
+    let fake = FakeCalls()
+    let m = model(fake)
     #expect(!m.loaded)
     m.load()
     let v = m.values
-    #expect(m.loaded && m.acmd.path == "/tmp/x/config.toml" && m.acmd.voices == ["af_heart", "am_adam"])
+    #expect(fake.ops == ["config.get"])
+    #expect(m.loaded && m.acmd.path == "/tmp/x/config.toml" && m.acmd.voices == ["af_heart", "am_adam"] && m.acmd.problem == nil)
     #expect(v.claudeCommand == "/bin/claude" && v.claudeArgs == ["--model", "opus"] && v.agentRemoteControl)
     #expect(v.agyCommand == "/bin/agy" && v.agyArgs == ["--x"])
     #expect(!v.onError && v.doneMin == "1m0s" && v.sound.isEmpty && v.speed == 1.25 && v.editorTarget == "git_root")
 
-    acmd.show = #"{"path": "p", "voices": [], "settings": {"notify.cooldown": "5s"}}"#
+    fake.replies["config.get"] = configState(["notify.cooldown": "5s"], path: "p", problem: ["line": 3, "message": "expected a value"])
     m.load()
     #expect(m.values.cooldown == "5s" && m.values.claudeCommand == "claude" && m.values.agyCommand == "agy" && m.values.agyArgs.isEmpty,
             "what's missing is the default")
+    #expect(m.acmd.problem?.text == "config.toml, line 3: expected a value")
 
-    acmd.fail = ["show"]
+    fake.failures["config.get"] = "daemon not reachable"
     m.load()
-    #expect(m.error == "Couldn't read acmd's settings.")
+    #expect(m.error == "Couldn't read acmd's settings: daemon not reachable")
 }
 
-@MainActor @Test func aChangeGoesThroughAcmdConfig() {
-    let acmd = FakeAcmd()
-    let m = model(acmd)
+@MainActor @Test func aChangeGoesThroughTheDaemon() {
+    let fake = FakeCalls()
+    let m = model(fake)
     m.set("notify.on_error", true)
+    #expect(fake.last["values"] as? [String: Bool] == ["notify.on_error": true])
     m.set("notify.cooldown", "60s")
+    #expect(fake.last["values"] as? [String: String] == ["notify.cooldown": "60s"], "as typed: the daemon reads it")
     m.setArgs(#"--model opus --append-system-prompt "be brief""#)
-    m.setArgs("")
-    m.set("agy_command", "/Users/me/.local/bin/agy")
-    m.setArgs("--flag 'two words'", key: "agy_args")
-    #expect(acmd.changes.suffix(2) == [
-        ["config", "set", "--", "agy_command", "/Users/me/.local/bin/agy"],
-        ["config", "set", "--", "agy_args", #"["--flag","two words"]"#],
-    ])
-    acmd.calls.removeLast(4)
-    #expect(acmd.changes == [
-        ["config", "set", "--", "notify.on_error", "on"],
-        ["config", "set", "--", "notify.cooldown", "60s"],
-        ["config", "set", "--", "claude_args", #"["--model","opus","--append-system-prompt","be brief"]"#],
-        ["config", "set", "--", "claude_args", "[]"],
-    ])
-    #expect(acmd.calls.count == 8, "each change reads the settings back")
-    #expect(m.busy == nil && m.error == nil)
+    #expect(fake.last["values"] as? [String: [String]] == ["claude_args": ["--model", "opus", "--append-system-prompt", "be brief"]])
+    m.setArgs("", key: "agy_args")
+    #expect(fake.last["values"] as? [String: [String]] == ["agy_args": []])
+    #expect(fake.ops == ["config.set", "config.set", "config.set", "config.set"], "one call each, and the reply is the settings")
+    #expect(m.busy == nil && m.error == nil && m.values.claudeCommand == "/bin/claude")
+    #expect(HostSettings.shared.values["claude_command"] == .string("/bin/claude"), "this Mac's settings follow")
 
-    acmd.fail = ["config"]
-    acmd.said = "notify.cooldown is a length of time like 10s or 2m, not \"soon\""
+    // Several at once: one call, all or none.
+    m.setAll([("remote.host.port", "7500"), ("remote.host.port_fallback", "off")])
+    #expect(fake.ops.last == "config.set" && fake.last["values"] as? [String: String] == ["remote.host.port": "7500", "remote.host.port_fallback": "off"])
+    m.setAll([])
+    #expect(fake.ops.count == 5, "nothing to change")
+
+    fake.failures["config.set"] = "notify.cooldown is a length of time like 10s or 2m, not \"soon\""
     m.set("notify.cooldown", "soon")
-    #expect(m.error == acmd.said)
-    acmd.said = ""
+    #expect(m.error == fake.failures["config.set"] && fake.ops.last == "config.get", "it reads them back")
+    fake.failures["config.set"] = ""
     m.set("notify.cooldown", "soon")
     #expect(m.error == "Couldn't change notify.cooldown.")
 }
 
-@MainActor @Test func remoteSettingsReadAndChangeInTurn() {
-    let acmd = FakeAcmd()
-    let m = model(acmd)
-    m.load()
-    #expect(!m.values.newSessionsRemote && m.values.hostListen == "localhost" && m.values.hostPort == 7433)
-    #expect(m.values.hostPortFallback && !m.values.hostEnabled && m.values.hostCert.isEmpty && m.values.clientCert.isEmpty)
-    acmd.show = """
-        {"path": "p", "voices": [], "settings": {"remote.new_sessions_remote": true, "remote.host.enabled": true,
-          "remote.host.listen": "all", "remote.host.port": 7500, "remote.host.port_fallback": false,
-          "remote.host.cert": "/h.pem", "remote.client.cert": "/c.pem"}}
-        """
-    m.load()
-    let v = m.values
-    #expect(v.newSessionsRemote && v.hostEnabled && v.hostListen == "all" && v.hostPort == 7500 && !v.hostPortFallback)
-    #expect(v.hostCert == "/h.pem" && v.clientCert == "/c.pem")
+@MainActor @Test func aHostsSettingsAreItsOwn() {
+    let fake = FakeCalls()
+    let m = model(fake)
+    fake.replies["remote.config.get"] = configState(["claude_command": "/opt/claude"], path: "/home/me/config.toml")
+    fake.replies["remote.config.set"] = configState(["claude_command": "/opt/claude2"], path: "/home/me/config.toml")
+    m.section = .claude
+    m.host = "studio"
+    #expect(fake.ops.last == "remote.config.get" && fake.last["host"] as? String == "studio")
+    #expect(m.target == "studio" && m.values.claudeCommand == "/opt/claude")
+    m.set("claude_command", "/opt/claude2")
+    #expect(fake.ops.last == "remote.config.set" && fake.last["host"] as? String == "studio")
+    #expect(m.values.claudeCommand == "/opt/claude2")
+    let before = HostSettings.shared.values["claude_command"]
+    #expect(HostSettings.shared.values["claude_command"] == before, "a host's change isn't this Mac's")
 
-    acmd.calls = []
-    m.setAll([("remote.host.port", "7500"), ("remote.host.port_fallback", "off")])
-    #expect(acmd.changes == [
-        ["config", "set", "--", "remote.host.port", "7500"], ["config", "set", "--", "remote.host.port_fallback", "off"],
-    ], "one after the other")
-    acmd.calls = []
-    acmd.fail = ["config"]
-    m.setAll([("remote.host.port", "1"), ("remote.host.port_fallback", "off")])
-    #expect(acmd.changes == [["config", "set", "--", "remote.host.port", "1"]], "stops at the first that fails")
-    m.setAll([])
+    // The editor is this Mac's, whichever host is chosen.
+    m.section = .editor
+    #expect(m.target == nil && fake.ops.last == "config.get")
+    m.section = .speech
+    #expect(fake.ops.filter { $0 == "config.get" }.count == 1, "no reload between two of this Mac's pages")
+    m.section = .notifications
+    #expect(fake.ops.last == "remote.config.get")
+
+    fake.failures["remote.config.get"] = "studio isn't connected"
+    m.load()
+    #expect(m.error == "Couldn't read studio's settings: studio isn't connected")
+    // An answer for a host no longer chosen is dropped.
+    fake.holding = true
+    m.load()
+    m.host = nil
+    fake.release()
+    #expect(m.target == nil && m.values.claudeCommand == "/bin/claude")
 }
 
 @MainActor @Test func aNewVoiceIsDownloadedOnceSaved() {
+    let fake = FakeCalls()
     let acmd = FakeAcmd()
-    let m = model(acmd)
+    let m = model(fake, acmd)
     var changed = 0
     m.voiceChanged = { changed += 1 }
     m.setVoice("am_adam")
-    #expect(changed == 1 && acmd.changes.last == ["config", "set", "--", "speech.voice", "am_adam"])
-    acmd.fail = ["config"]
+    #expect(changed == 1 && fake.last["values"] as? [String: String] == ["speech.voice": "am_adam"])
+    fake.failures["config.set"] = "can't use voice bf_emma"
     m.setVoice("bf_emma")
     #expect(changed == 1, "not when it wasn't saved")
     m.playSample()
-    #expect(acmd.changes.last == ["speech", "say", SettingsModel.voiceSample])
+    #expect(acmd.calls.last == ["speech", "say", SettingsModel.voiceSample])
     acmd.fail = ["speech"]
     acmd.said = ""
     m.playSample()
     #expect(m.error == "Couldn't read the sample.")
 }
 
-@MainActor @Test func theEditorWakingAndSetupUseTheirOwnCommands() {
+@MainActor @Test func theEditorWakingAndSetup() {
+    let fake = FakeCalls()
     let acmd = FakeAcmd()
-    let m = model(acmd)
+    let m = model(fake, acmd)
     m.setEditor("zed")
+    #expect(fake.last["values"] as? [String: AnyHashable] == ["editor.preset": "zed", "editor.command": [String](), "editor.run_in": "background"])
     m.setEditor("custom", command: ["nvim", "{dir}"])
+    #expect((fake.last["values"] as? [String: Any])?["editor.command"] as? [String] == ["nvim", "{dir}"])
     m.setWake(true)
     m.setWake(false)
     m.setWakeAll(false)
-    #expect(acmd.changes == [
-        ["editor", "set", "zed"], ["editor", "set", "custom", "--", "nvim", "{dir}"],
-        ["schedule", "wake", "on"], ["schedule", "wake", "off"], ["schedule", "wake", "on", "--all=false"],
-    ])
+    #expect(acmd.calls == [["schedule", "wake", "on"], ["schedule", "wake", "off"], ["schedule", "wake", "on", "--all=false"]])
+    acmd.fail = ["schedule"]
+    acmd.said = ""
+    m.setWake(true)
+    #expect(m.error == "Couldn't change wake.")
     acmd.said = "hooks: ok"
+    acmd.fail = []
     m.checkSetup()
-    #expect(m.report == "hooks: ok" && acmd.changes.last == ["doctor"])
+    #expect(m.report == "hooks: ok" && acmd.calls.last == ["doctor"])
     acmd.fail = ["doctor"]
     acmd.said = "hooks: missing"
     m.repairSetup()
     #expect(m.report == "hooks: missing" && m.error == nil, "doctor's report says what's wrong")
-    #expect(acmd.changes.last == ["doctor", "--fix"])
+    #expect(acmd.calls.last == ["doctor", "--fix"])
 }
 
 @MainActor @Test func theFontIsSetInTheAppsGhosttyConfig() {

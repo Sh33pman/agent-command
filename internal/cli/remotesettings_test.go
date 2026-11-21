@@ -2,7 +2,6 @@ package cli
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,15 +12,14 @@ import (
 )
 
 func TestConfigSetsRemote(t *testing.T) {
-	dir := isolate(t)
-	file := filepath.Join(dir, "config.toml")
+	file := daemonEnv(t).Config()
 
-	var view configView
+	var view ipc.ConfigState
 	must(t, json.Unmarshal([]byte(mustRun(t, "config", "show", "--json")), &view))
-	if view.Settings["remote.host.port"] != float64(7433) || view.Settings["remote.host.listen"] != "localhost" ||
-		view.Settings["remote.host.port_fallback"] != true || view.Settings["remote.new_sessions_remote"] != false ||
-		view.Settings["remote.host.cert"] != "" || view.Settings["remote.client.key"] != "" {
-		t.Fatalf("defaults: %+v", view.Settings)
+	if view.Values["remote.host.port"] != float64(7433) || view.Values["remote.host.listen"] != "localhost" ||
+		view.Values["remote.host.port_fallback"] != true || view.Values["remote.new_sessions_remote"] != false ||
+		view.Values["remote.host.cert"] != "" || view.Values["remote.client.key"] != "" {
+		t.Fatalf("defaults: %+v", view.Values)
 	}
 	for _, c := range [][2]string{
 		{"remote.new_sessions_remote", "on"}, {"remote.host.listen", "all"}, {"remote.host.port", "7500"},
@@ -40,14 +38,10 @@ func TestConfigSetsRemote(t *testing.T) {
 			t.Errorf("%s = %q accepted", bad[0], bad[1])
 		}
 	}
-	if _, err := acmd(t, "config", "set", "remote.host.cert", "/x"); err == nil || !strings.Contains(err.Error(), "acmd remote cert host") {
-		t.Errorf("cert: %v", err)
-	}
 }
 
 func TestRemoteCert(t *testing.T) {
-	dir := isolate(t)
-	file := filepath.Join(dir, "config.toml")
+	file := daemonEnv(t).Config()
 	mine, err := identity.Ensure(filepath.Join(t.TempDir(), "mine"))
 	must(t, err)
 
@@ -117,7 +111,7 @@ func TestRemoteRename(t *testing.T) {
 	for _, c := range clients {
 		names = append(names, c.Name)
 	}
-	if strings.Join(names, ",") != "desk,travel" {
+	if strings.Join(names, ",") != "travel,desk" { // it keeps its place
 		t.Errorf("clients = %v", names)
 	}
 	if out := mustRun(t, "remote", "rename", desk.Fingerprint(), "office"); !strings.Contains(out, `to "office"`) {
@@ -127,10 +121,6 @@ func TestRemoteRename(t *testing.T) {
 		if _, err := acmd(t, append([]string{"remote", "rename"}, args...)...); err == nil {
 			t.Errorf("rename %v accepted", args)
 		}
-	}
-	must(t, os.WriteFile(p.Config(), []byte("x = "), 0o600))
-	if _, err := acmd(t, "remote", "rename", "travel", "y"); err == nil {
-		t.Error("renamed in a config that doesn't parse")
 	}
 }
 

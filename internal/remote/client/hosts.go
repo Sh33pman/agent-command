@@ -5,29 +5,98 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
-	"github.com/brettmostert/agent-command/internal/setup"
 )
 
-// Known hosts are [[remote.hosts]] in config.toml. These change them,
-// keeping the rest of the file and its comments, and follow the change at
-// once.
+// Known hosts are config.toml's [[remote.hosts]], read-only, and the ones
+// added through ops, kept in Data. These change the second kind, and follow
+// the change at once.
 
-// knownHosts reads [[remote.hosts]] from config.toml (c.cfgMu is held).
-func (c *Client) knownHosts() ([]config.KnownHost, error) {
-	if c.o.ConfigFile == "" {
-		return nil, errors.New("no config.toml to keep Remote hosts in")
+// Data is where the hosts added through ops are kept.
+type Data interface {
+	// KnownHosts are the hosts added, oldest first.
+	KnownHosts() ([]config.KnownHost, error)
+	// SaveKnownHost adds h, or replaces the host named replace with it.
+	SaveKnownHost(replace string, h config.KnownHost) error
+	// RemoveKnownHost forgets a host, and says whether it was there.
+	RemoveKnownHost(name string) (bool, error)
+}
+
+// MemoryData is Data kept in memory, for tests and a Client with nowhere to
+// keep it.
+type MemoryData struct {
+	mu    sync.Mutex
+	Hosts []config.KnownHost
+	// Fail, when set, fails every change, as a full disk would.
+	Fail error
+}
+
+func (m *MemoryData) KnownHosts() ([]config.KnownHost, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return slices.Clone(m.Hosts), nil
+}
+
+func (m *MemoryData) SaveKnownHost(replace string, h config.KnownHost) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Fail != nil {
+		return m.Fail
 	}
-	cfg, err := config.Load(c.o.ConfigFile)
+	if replace != "" {
+		for i := range m.Hosts {
+			if m.Hosts[i].Name == replace {
+				m.Hosts[i] = h
+				return nil
+			}
+		}
+		return fmt.Errorf("no known host %q", replace)
+	}
+	m.Hosts = append(m.Hosts, h)
+	return nil
+}
+
+func (m *MemoryData) RemoveKnownHost(name string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Fail != nil {
+		return false, m.Fail
+	}
+	n := len(m.Hosts)
+	m.Hosts = slices.DeleteFunc(m.Hosts, func(h config.KnownHost) bool { return h.Name == name })
+	return len(m.Hosts) != n, nil
+}
+
+// ErrInConfig is a change to a host that config.toml lists: it's changed by
+// editing the file.
+var ErrInConfig = errors.New("set in config.toml: edit the file to change it")
+
+// knownHosts are every known host: config.toml's and the added ones (c.cfgMu
+// is held).
+func (c *Client) knownHosts() ([]config.KnownHost, error) {
+	added, err := c.o.Data.KnownHosts()
 	if err != nil {
 		return nil, err
 	}
-	return cfg.Remote.Hosts, nil
+	var hosts []config.KnownHost
+	if c.o.Settings != nil {
+		hosts = c.o.Settings().Hosts
+	}
+	return append(slices.Clone(hosts), added...), nil
+}
+
+func (c *Client) isInConfig(name string) bool {
+	if c.o.Settings == nil {
+		return false
+	}
+	return slices.ContainsFunc(c.o.Settings().Hosts, func(h config.KnownHost) bool { return h.Name == name })
 }
 
 // AddHost adds a known host. It's pinned by its fingerprint, given or read
@@ -43,10 +112,10 @@ func (c *Client) AddHost(e ipc.RemoteHostEdit) (ipc.RemoteHost, error) {
 	if err != nil {
 		return ipc.RemoteHost{}, err
 	}
-	if err := setup.SetKnownHost(c.o.ConfigFile, "", kh); err != nil {
+	if err := c.o.Data.SaveKnownHost("", kh); err != nil {
 		return ipc.RemoteHost{}, err
 	}
-	if err := c.reloadLocked(true); err != nil {
+	if err := c.reloadLocked(); err != nil {
 		return ipc.RemoteHost{}, err
 	}
 	return c.Host(kh.Name)
@@ -70,6 +139,9 @@ func (c *Client) EditHost(ctx context.Context, e ipc.RemoteHostEdit) (ipc.Remote
 	}
 	if !found {
 		return ipc.RemoteHost{}, fmt.Errorf("there's no Remote host named %q", e.Host)
+	}
+	if c.isInConfig(e.Host) {
+		return ipc.RemoteHost{}, fmt.Errorf("%q is %w", e.Host, ErrInConfig)
 	}
 	if e.Name != "" {
 		kh.Name = e.Name
@@ -95,10 +167,10 @@ func (c *Client) EditHost(ctx context.Context, e ipc.RemoteHostEdit) (ipc.Remote
 		}
 		c.mu.Unlock()
 	}
-	if err := setup.SetKnownHost(c.o.ConfigFile, e.Host, kh); err != nil {
+	if err := c.o.Data.SaveKnownHost(e.Host, kh); err != nil {
 		return ipc.RemoteHost{}, err
 	}
-	if err := c.reloadLocked(true); err != nil {
+	if err := c.reloadLocked(); err != nil {
 		return ipc.RemoteHost{}, err
 	}
 	return c.Host(kh.Name)
@@ -109,11 +181,14 @@ func (c *Client) EditHost(ctx context.Context, e ipc.RemoteHostEdit) (ipc.Remote
 func (c *Client) RemoveHost(ctx context.Context, name string) error {
 	c.cfgMu.Lock()
 	defer c.cfgMu.Unlock()
-	n, err := setup.RemoveKnownHost(c.o.ConfigFile, name)
+	if c.isInConfig(name) {
+		return fmt.Errorf("%q is %w", name, ErrInConfig)
+	}
+	ok, err := c.o.Data.RemoveKnownHost(name)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	if !ok {
 		return fmt.Errorf("there's no Remote host named %q", name)
 	}
 	c.mu.Lock()
@@ -127,7 +202,7 @@ func (c *Client) RemoveHost(ctx context.Context, name string) error {
 		}
 		c.forget(a.ID)
 	}
-	errs = append(errs, c.reloadLocked(true))
+	errs = append(errs, c.reloadLocked())
 	return errors.Join(errs...)
 }
 

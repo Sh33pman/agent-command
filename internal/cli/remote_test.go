@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/paths"
 )
 
 // acmdErr runs acmd and returns its stdout and stderr.
@@ -31,11 +32,7 @@ func TestAgentRemoteControlCommand(t *testing.T) {
 		{"remote-control", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			t.Setenv("ACMD_CONFIG_DIR", dir)
-			t.Setenv("ACMD_STATE_DIR", filepath.Join(dir, "s"))
-			t.Setenv("ACMD_RUNTIME_DIR", filepath.Join(dir, "r"))
-			file := filepath.Join(dir, "config.toml")
+			file := daemonEnv(t).Config()
 			load := func() config.Config {
 				t.Helper()
 				c, err := config.Load(file)
@@ -67,6 +64,8 @@ func TestAgentRemoteControlCommand(t *testing.T) {
 			b, err := os.ReadFile(file)
 			must(t, err)
 			must(t, os.WriteFile(file, append(b, []byte("# mine\n")...), 0o600))
+			later := time.Now().Add(time.Minute)
+			must(t, os.Chtimes(file, later, later))
 			_, _, err = acmdErr(t, tc.name, "off")
 			must(t, err)
 			if load().AgentRemoteControl {
@@ -87,12 +86,10 @@ func TestAgentRemoteControlCommand(t *testing.T) {
 
 // An old config's remote_control is read, and renamed when a setting is next saved.
 func TestAgentRemoteControlMigrates(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("ACMD_CONFIG_DIR", dir)
-	t.Setenv("ACMD_STATE_DIR", filepath.Join(dir, "s"))
-	t.Setenv("ACMD_RUNTIME_DIR", filepath.Join(dir, "r"))
-	file := filepath.Join(dir, "config.toml")
-	must(t, os.WriteFile(file, []byte("# mine\nremote_control = true # kept\n\n[notify]\ncooldown = \"5s\"\n"), 0o600))
+	file := daemonEnv(t, func(p paths.Paths) {
+		must(t, os.MkdirAll(p.ConfigDir, 0o700))
+		must(t, os.WriteFile(p.Config(), []byte("# mine\nremote_control = true # kept\n\n[notify]\ncooldown = \"5s\"\n"), 0o600))
+	}).Config()
 
 	if out := mustRun(t, "agent-remote-control"); strings.TrimSpace(out) != "on" {
 		t.Fatalf("old key: %q, want on", out)

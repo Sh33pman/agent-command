@@ -9,7 +9,8 @@ import Testing
 private final class Board {
     let store = SessionStore()
     let model: ScheduledModel
-    var picked: [String?] = []
+    /// The daemon, for folders and prompt files.
+    let fake = FakeCalls()
     var closed = false
     var shown: String?
 
@@ -21,7 +22,8 @@ private final class Board {
         model = ScheduledModel(store: store)
         model.checkDelay = 0
         model.runAcmd = { _, done in done(false, "tests don't run acmd") }
-        model.choosePath = { [unowned self] _, _ in self.picked.isEmpty ? nil : self.picked.removeFirst() }
+        model.calls = fake
+        model.folders = RemoteHostsClient(calls: fake)
         model.close = { [unowned self] in self.closed = true }
         model.goToSession = { [unowned self] in self.shown = $0 }
         model.start()
@@ -122,44 +124,82 @@ private func job(_ id: String, _ name: String, cwd: String = "/w") -> Job {
     #expect(model.saving || model.error != nil)
 }
 
-@MainActor @Test func pathsComeFromThePicker() throws {
+/// Folders and files are chosen with the daemon's folder ops: the same chooser
+/// as for a host.
+@MainActor @Test func pathsComeFromTheDaemonsChooser() throws {
     let board = try Board(jobs: [])
     let model = board.model
     model.newJob()
-    board.picked = ["/w/notes", "/w/notes/brief.md", "/a", "/b", nil]
+    board.fake.replies["folders.recent"] = ["home": "/Users/me", "folders": [["name": "notes", "path": "/w/notes"]]]
+    board.fake.replies["folders.list"] = ["path": "/w/notes", "home": "/Users/me", "folders": [[String: Any]](),
+                                          "files": [["name": "brief.md", "path": "/w/notes/brief.md"]]]
+
     model.chooseFolder()
+    let folder = try #require(model.chooser)
+    #expect(!folder.picksFile && model.chooserTitle == "Choose the job's folder" && folder.host == nil && folder.hostName == "this Mac")
+    folder.start()
+    folder.submit() // the recent folder
+    #expect(model.draft?.cwd == "/w/notes" && model.chooser == nil)
+
     model.choosePromptFile()
-    #expect(model.draft?.cwd == "/w/notes" && model.draft?.promptFile == "/w/notes/brief.md" && model.draft?.promptSource == .file)
+    let file = try #require(model.chooser)
+    file.start()
+    file.submit() // a recent folder opens when choosing a file
+    #expect(board.fake.ops.last == "folders.list" && board.fake.last["files"] as? Bool == true)
+    file.select(.file(RemoteFolder(name: "brief.md", path: "/w/notes/brief.md")))
+    file.submit()
+    #expect(model.draft?.promptFile == "/w/notes/brief.md" && model.draft?.promptSource == .file)
+
     model.addPath(to: "add-dir", directory: true)
+    model.chooser?.choose("/a")
     model.addPath(to: "add-dir", directory: true)
+    model.chooser?.choose("/b")
     #expect(model.draft?.settings["add-dir"] == "/a\n/b")
-    model.chooseFolder() // cancelled
-    #expect(model.draft?.cwd == "/w/notes")
+    var chosen = ""
+    model.chooseSettingFile { chosen = $0 }
+    #expect(model.chooser?.fileExts == [".json"])
+    model.chooser?.choose("/w/mcp.json")
+    #expect(chosen == "/w/mcp.json")
+    model.chooseFolder()
+    model.closeChooser() // cancelled
+    #expect(model.draft?.cwd == "/w/notes" && model.chooser == nil)
 }
 
-@MainActor @Test func promptFilesAreEditedInPlace() throws {
-    let board = try Board(jobs: [])
+/// A prompt file is read and written through the daemon: a saved job's own by
+/// its id, a draft's by its folder and path.
+@MainActor @Test func promptFilesGoThroughTheDaemon() throws {
+    var saved = job("J", "brief")
+    saved.promptFile = "brief.md"
+    saved.prompt = ""
+    let board = try Board(jobs: [saved])
     let model = board.model
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("acmd-jobs-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: dir) }
-    try "# Brief".write(to: dir.appendingPathComponent("brief.md"), atomically: true, encoding: .utf8)
-
     model.newJob()
-    #expect(model.promptFilePath == nil && model.readPromptFile() == nil && !model.writePromptFile("x"))
-    model.draft?.cwd = dir.path
-    model.draft?.promptFile = "brief.md"
-    #expect(model.promptFilePath == dir.appendingPathComponent("brief.md").path, "relative to the folder")
-    #expect(model.readPromptFile() == "# Brief")
-    #expect(model.writePromptFile("# Changed"))
-    #expect(model.readPromptFile() == "# Changed")
-    model.draft?.promptFile = dir.appendingPathComponent("brief.md").path
-    #expect(model.readPromptFile() == "# Changed", "or a full path")
-    model.draft?.promptFile = "/no/such/folder/x.md"
-    #expect(!model.writePromptFile("x") && model.error?.contains("Couldn't save") == true)
-    model.draft?.cwd = ""
-    model.draft?.promptFile = "relative.md"
-    #expect(model.promptFilePath == nil)
+    #expect(model.promptFileRef == nil)
+    model.loadPromptFile()
+    #expect(model.promptFile == nil && board.fake.ops.isEmpty, "no file: nothing to read")
+    model.draft?.cwd = "/w"
+    model.draft?.promptFile = "notes.md"
+    #expect(model.promptFileRef == PromptFileRef(cwd: "/w", path: "notes.md"))
+    board.fake.replies["job.prompt.read"] = ["path": "/w/notes.md", "text": "# Notes", "exists": true]
+    model.loadPromptFile()
+    #expect(model.promptFile == PromptFile(path: "/w/notes.md", text: "# Notes", exists: true))
+    board.fake.replies["job.prompt.write"] = ["path": "/w/notes.md", "text": "# Changed", "exists": true]
+    model.savePromptFile("# Changed")
+    #expect(board.fake.last["text"] as? String == "# Changed" && model.promptFile?.text == "# Changed")
+    board.fake.failures["job.prompt.write"] = "a prompt file is Markdown or text"
+    model.savePromptFile("x")
+    #expect(model.error == "Couldn't save the prompt file: a prompt file is Markdown or text")
+    board.fake.failures["job.prompt.read"] = "gone"
+    model.loadPromptFile()
+    #expect(model.promptFile == nil)
+
+    // A saved job's own file, while the form still names it: by its id.
+    model.cancel()
+    model.select("J")
+    model.edit()
+    #expect(model.promptFileRef == PromptFileRef(job_id: "J"))
+    model.draft?.promptFile = "other.md"
+    #expect(model.promptFileRef == PromptFileRef(cwd: "/w", path: "other.md"), "a new path is a draft's")
 }
 
 @MainActor @Test func namesForTheDetail() throws {

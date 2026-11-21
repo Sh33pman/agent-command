@@ -29,9 +29,12 @@ struct Job: Codable, Identifiable, Equatable {
     var createdAt = ""
     var nextRun = ""
     var lastRun: JobRun?
+    /// The schedule as the form's controls show it, from the daemon; sent back
+    /// with a check or a save in place of cron.
+    var form: ScheduleForm?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, description, harness, schedule, prompt, cwd, settings, cron, once, words, summary, paused, wake
+        case id, name, description, harness, schedule, prompt, cwd, settings, cron, once, words, summary, paused, wake, form
         case groupID = "group_id", promptFile = "prompt_file", place = "where", sessionID = "session_id"
         case runMissed = "run_missed", createdAt = "created_at", nextRun = "next_run", lastRun = "last_run"
     }
@@ -63,6 +66,7 @@ struct Job: Codable, Identifiable, Equatable {
         createdAt = try text(.createdAt)
         nextRun = try text(.nextRun)
         lastRun = try c.decodeIfPresent(JobRun.self, forKey: .lastRun)
+        form = try? c.decodeIfPresent(ScheduleForm.self, forKey: .form)
     }
 
     /// Only what you set: the daemon works out the rest.
@@ -82,6 +86,7 @@ struct Job: Codable, Identifiable, Equatable {
         try c.encode(settings, forKey: .settings)
         try c.encode(runMissed, forKey: .runMissed)
         try c.encode(wake, forKey: .wake)
+        try c.encodeIfPresent(form, forKey: .form)
     }
 
     var next: Date? { JobTime.parse(nextRun) }
@@ -188,6 +193,8 @@ struct JobRun: Codable, Identifiable, Equatable {
 
 /// What the daemon makes of a job before it's saved (internal/ipc.JobCheck).
 struct JobCheck: Decodable, Equatable {
+    /// The schedule as the daemon read it, for the form's controls.
+    var form: ScheduleForm?
     var cron = ""
     var words = ""
     /// The schedule in English, also for cron with no words.
@@ -195,12 +202,13 @@ struct JobCheck: Decodable, Equatable {
     var next: [String] = []
     var errors: [String: String] = [:]
 
-    enum CodingKeys: String, CodingKey { case cron, words, summary, next, errors }
+    enum CodingKeys: String, CodingKey { case form, cron, words, summary, next, errors }
 
     init() {}
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        form = try? c.decodeIfPresent(ScheduleForm.self, forKey: .form)
         cron = try c.decodeIfPresent(String.self, forKey: .cron) ?? ""
         words = try c.decodeIfPresent(String.self, forKey: .words) ?? ""
         summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? words
@@ -292,10 +300,8 @@ struct JobDraft: Equatable {
     var groupID = ""
     /// The agent it runs. Set it with setHarness, which drops what was the other agent's.
     var harness = Harness.claude
-    /// Cron, or a one-off ("once on 2026-12-01 at 14:00"). ScheduleBuilder edits it.
-    var schedule = "0 9 * * 1-5"
-    /// Custom was chosen: show the cron as typed, even when the controls could show it.
-    var customSchedule = false
+    /// The schedule as the controls set it. The daemon turns it into cron.
+    var builder = ScheduleBuilder()
     var promptSource = PromptSource.text
     var prompt = ""
     var promptFile = ""
@@ -317,16 +323,8 @@ struct JobDraft: Equatable {
         description = job.description
         groupID = job.groupID
         harness = job.harnessKind
-        if !job.cron.isEmpty {
-            schedule = job.cron
-        } else if let once = JobTime.parse(job.once) {
-            var b = ScheduleBuilder()
-            b.kind = .once
-            b.once = once
-            schedule = b.schedule()
-        } else {
-            schedule = job.schedule
-        }
+        builder = job.form.map { ScheduleBuilder(form: $0) } ?? .custom(job.cron.isEmpty ? job.schedule : job.cron)
+        builder.pinned = builder.kind == .custom
         promptSource = job.promptFile.isEmpty ? .text : .file
         prompt = job.prompt
         promptFile = job.promptFile
@@ -348,20 +346,17 @@ struct JobDraft: Equatable {
         sessionID = ""
     }
 
-    /// The schedule as the form's controls show it.
-    var builder: ScheduleBuilder {
-        get {
-            var b = ScheduleBuilder(schedule: schedule)
-            if customSchedule, b.kind != .custom {
-                b.cron = schedule
-                b.kind = .custom
-            }
-            return b
-        }
-        set {
-            customSchedule = newValue.kind == .custom
-            schedule = newValue.schedule()
-        }
+    /// Cron typed into the cron field: Custom until the daemon reads it, when the
+    /// controls follow (takeForm), unless Custom was chosen.
+    mutating func typeCron(_ cron: String) {
+        if builder.kind == .custom { builder.cron = cron } else { builder = .custom(cron) }
+    }
+
+    /// Takes the daemon's reading of the schedule: typed cron the controls can show
+    /// moves them there.
+    mutating func takeForm(_ form: ScheduleForm) {
+        guard builder.kind == .custom, !builder.pinned, form.kind != "custom" else { return }
+        builder = ScheduleBuilder(form: form)
     }
 
     /// The job to check or save.
@@ -373,7 +368,8 @@ struct JobDraft: Equatable {
         j.groupID = groupID
         // Claude's as before: no harness.
         j.harness = harness == .claude ? "" : harness.rawValue
-        j.schedule = schedule
+        j.schedule = builder.kind == .custom ? builder.cron : ""
+        j.form = builder.form()
         j.prompt = promptSource == .text ? prompt : ""
         j.promptFile = promptSource == .file ? promptFile : ""
         j.place = place.rawValue

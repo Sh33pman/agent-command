@@ -363,6 +363,9 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	if isJobOp(req.Op) {
 		return d.handleJob(ctx, req)
 	}
+	if isFolderOp(req.Op) {
+		return d.handleFolders(ctx, req)
+	}
 	if isHealthOp(req.Op) {
 		return d.handleHealth(ctx, req)
 	}

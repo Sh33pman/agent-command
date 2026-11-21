@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/schedule"
 )
 
 // Proto is bumped only on incompatible protocol changes.
@@ -39,8 +40,15 @@ const (
 	OpInbox         = "inbox"        // inbox items, newest first (InboxRequest → []core.InboxItem)
 	OpInboxAnswer   = "inbox.answer" // types an answer into the item's session (InboxAnswer)
 	// Scheduled jobs. The snapshot lists them; these change them.
-	OpJobSave       = "job.save"       // adds or edits a job (core.Job: ID "" adds) → *core.Job
-	OpJobCheck      = "job.check"      // checks a job without saving it (core.Job) → JobCheck
+	OpJobSave        = "job.save"         // adds or edits a job (core.Job: ID "" adds) → *core.Job
+	OpJobCheck       = "job.check"        // checks a job without saving it (JobCheckRequest) → JobCheck
+	OpJobPromptRead  = "job.prompt.read"  // a job's own prompt file (PromptFileRef) → PromptFile
+	OpJobPromptWrite = "job.prompt.write" // writes a job's own prompt file (PromptFileRef with Text) → PromptFile
+	// This machine's folders, as the Remote API serves a host's: every client
+	// chooses folders and prompt files with them.
+	OpFoldersRecent = "folders.recent" // no arguments → api.FolderList
+	OpFoldersList   = "folders.list"   // api.FolderPath → api.FolderList
+	OpFoldersMkdir  = "folders.mkdir"  // api.FolderPath → api.Folder
 	OpJobDelete     = "job.delete"     // JobRef.ID
 	OpJobPause      = "job.pause"      // JobRef.ID, Paused
 	OpJobRun        = "job.run"        // runs it now (JobRef.ID) → core.JobRun
@@ -194,8 +202,10 @@ type WakeState struct {
 // "schedule", "prompt", "where", "cwd", "session", "settings", "group",
 // "harness").
 type JobCheck struct {
-	Cron  string `json:"cron,omitempty"`
-	Words string `json:"words,omitempty"`
+	// Form is the schedule as the form's controls show it (schedule.Form).
+	Form  *schedule.Form `json:"form,omitempty"`
+	Cron  string         `json:"cron,omitempty"`
+	Words string         `json:"words,omitempty"`
 	// Summary is the schedule in English, also for cron with no Words.
 	Summary string            `json:"summary,omitempty"`
 	Next    []time.Time       `json:"next,omitempty"`
@@ -595,4 +605,29 @@ func (r Results) Failed() int {
 		}
 	}
 	return n
+}
+
+// JobCheckRequest is a job to check or save. With Form and no Schedule, its
+// schedule is the form's, so a client maps no cron itself; a Schedule as
+// typed wins.
+type JobCheckRequest struct {
+	core.Job
+	Form *schedule.Form `json:"form,omitempty"`
+}
+
+// PromptFileRef names a prompt file: a saved job's own, by JobID, or a
+// draft's, by its folder and path (a Markdown or text file only). Text is
+// what to write.
+type PromptFileRef struct {
+	JobID string `json:"job_id,omitempty"`
+	Cwd   string `json:"cwd,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Text  string `json:"text,omitempty"`
+}
+
+// PromptFile is a prompt file's full path and text.
+type PromptFile struct {
+	Path   string `json:"path"`
+	Text   string `json:"text"`
+	Exists bool   `json:"exists"`
 }

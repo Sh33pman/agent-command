@@ -34,6 +34,12 @@ struct ScheduledView: View {
         .foregroundStyle(theme.fg)
         .background(theme.bg)
         .onChange(of: model.jobs) { model.jobsChanged() }
+        .sheet(isPresented: Binding(get: { model.chooser != nil }, set: { if !$0 { model.closeChooser() } })) {
+            if let chooser = model.chooser {
+                RemoteFolderView(model: chooser, title: model.chooserTitle, close: { model.closeChooser() })
+                    .frame(minWidth: 560)
+            }
+        }
     }
 
     private var footer: some View {
@@ -395,10 +401,13 @@ private struct JobForm: View {
     private func scheduleField(_ draft: Binding<JobDraft>) -> some View {
         field("When", error: model.problem("schedule")) {
             VStack(alignment: .leading, spacing: 8) {
-                SchedulePicker(builder: draft.builder)
+                SchedulePicker(builder: draft.builder, cron: model.check.cron)
                 HStack(spacing: 8) {
                     Text(draft.wrappedValue.builder.kind == .once ? "One-off" : "Cron").foregroundStyle(theme.dim)
-                    TextField("", text: draft.schedule, prompt: hint("minute hour day month weekday, like 0 9 * * 1-5"))
+                    TextField("", text: Binding(
+                        get: { draft.wrappedValue.builder.kind == .custom ? draft.wrappedValue.builder.cron : model.check.cron },
+                        set: { draft.wrappedValue.typeCron($0) }
+                    ), prompt: hint("minute hour day month weekday, like 0 9 * * 1-5"))
                         .textFieldStyle(.plain)
                         .font(.system(size: 13, design: .monospaced))
                         .padding(6).overlay { outline(model.problem("schedule") != nil) }
@@ -441,25 +450,28 @@ private struct JobForm: View {
             Button("Choose…") { model.choosePromptFile() }
         }
         Text("Read at each run, so editing the file changes the next run.").font(AppFont.ui(11)).foregroundStyle(theme.dim)
-        if let path = model.promptFilePath, FileManager.default.fileExists(atPath: path) {
+        Color.clear.frame(height: 0)
+            .onAppear { model.loadPromptFile() }
+            .onChange(of: model.promptFileRef) { model.loadPromptFile() }
+        if let file = model.promptFile, file.exists {
             MarkdownEditor(text: $fileText)
                 .frame(minHeight: 200)
                 .overlay { outline(false) }
-                .onAppear { load(path) }
-                .onChange(of: path) { _, p in load(p) }
+                .onAppear { load(file) }
+                .onChange(of: file) { _, f in load(f) }
             HStack {
                 Spacer()
-                Button("Save File") { _ = model.writePromptFile(fileText) }
-                    .disabled(fileText == (model.readPromptFile() ?? fileText))
-                    .help("Write your edits back to \(JobTime.tilde(path))")
+                Button("Save File") { model.savePromptFile(fileText) }
+                    .disabled(fileText == file.text)
+                    .help("Write your edits back to \(JobTime.tilde(file.path))")
             }
         }
     }
 
-    private func load(_ path: String) {
-        guard fileLoaded != path else { return }
-        fileLoaded = path
-        fileText = model.readPromptFile() ?? ""
+    private func load(_ file: PromptFile) {
+        guard fileLoaded != file.path || fileText == "" else { return }
+        fileLoaded = file.path
+        fileText = file.text
     }
 
     private func placeField(_ draft: Binding<JobDraft>) -> some View {
@@ -544,7 +556,7 @@ private struct JobForm: View {
                     .padding(6).overlay { outline(false) }
                 if setting.kind == "path" {
                     Button("Choose…") {
-                        if let path = model.choosePath(false, draft.wrappedValue.cwd) { value.wrappedValue = path }
+                        model.chooseSettingFile { value.wrappedValue = $0 }
                     }
                 }
             }
@@ -576,12 +588,14 @@ private struct JobForm: View {
 /// How often a job runs, chosen rather than typed: it writes the cron.
 private struct SchedulePicker: View {
     @Binding var builder: ScheduleBuilder
+    /// The cron the daemon last read, which Custom starts from.
+    var cron = ""
     private var theme: AppTheme { .shared }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Picker("", selection: Binding(get: { builder.kind }, set: { builder.change(to: $0) })) {
+                Picker("", selection: Binding(get: { builder.kind }, set: { builder.change(to: $0, cron: cron) })) {
                     ForEach(ScheduleBuilder.Kind.allCases) { Text($0.label).tag($0) }
                 }
                 .labelsHidden().fixedSize()

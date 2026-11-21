@@ -5,15 +5,24 @@ import SwiftUI
 /// lists and does is in RemoteFolderChooser.
 struct RemoteFolderView: View {
     let model: RemoteFolderChooser
-    let harness: Harness
+    /// What it's for, in its title: "Claude on studio: choose its folder".
+    var title: String
     let close: () -> Void
+
+    init(model: RemoteFolderChooser, harness: Harness, close: @escaping () -> Void) {
+        self.init(model: model, title: "\(harness.title) on \(model.hostName): choose its folder", close: close)
+    }
+
+    init(model: RemoteFolderChooser, title: String, close: @escaping () -> Void) {
+        (self.model, self.title, self.close) = (model, title, close)
+    }
 
     private var theme: AppTheme { .shared }
 
     var body: some View {
         let rows = model.rows
         PopupBox(
-            title: "\(harness.title) on \(model.host): choose its folder",
+            title: title,
             placeholder: model.naming ? "The new folder's name, then return" : "Search, or choose a folder",
             search: Binding(get: { model.search }, set: { model.setSearch($0) }),
             close: {
@@ -77,7 +86,9 @@ struct RemoteFolderView: View {
         case .here: ("Start here", model.place)
         case .up(let path): ("..", "up to \((path as NSString).lastPathComponent.isEmpty ? path : (path as NSString).lastPathComponent)")
         case .folder(let folder):
-            (model.mode == .recent ? folder.path : folder.name + "/", model.mode == .recent ? "start here" : (folder.hidden ? "hidden" : ""))
+            (model.mode == .recent ? folder.path : folder.name + "/",
+             model.mode == .recent && !model.picksFile ? "start here" : (folder.hidden ? "hidden" : ""))
+        case .file(let file): (file.name, "use this file")
         case .browse: ("Browse folders…", "from the home folder")
         case .newFolder: ("New Folder…", "⌘N")
         }

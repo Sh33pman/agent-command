@@ -41,6 +41,8 @@ struct RemoteHostsClient {
         let host: String
         let path: String
         var hidden: Bool?
+        var files: Bool?
+        var exts: [String]?
     }
 
     private struct NewRequest: Encodable {
@@ -110,17 +112,25 @@ struct RemoteHostsClient {
 
     // MARK: Folders and harnesses
 
-    func recentFolders(host: String, done: @escaping (Result<RemoteFolderList, Error>) -> Void) {
-        call("remote.folders.recent", Ref(host: host), done)
+    /// The folders of recent sessions: a host's, or (host nil) this Mac's.
+    func recentFolders(host: String?, done: @escaping (Result<RemoteFolderList, Error>) -> Void) {
+        if let host {
+            call("remote.folders.recent", Ref(host: host), done)
+        } else {
+            call("folders.recent", Ref(), done)
+        }
     }
 
-    /// A folder's subfolders: path is absolute, or from the host's home ("" is home).
-    func listFolders(host: String, path: String, hidden: Bool = false, done: @escaping (Result<RemoteFolderList, Error>) -> Void) {
-        call("remote.folders.list", FolderRequest(host: host, path: path, hidden: hidden ? true : nil), done)
+    /// A folder's subfolders, and with files its Markdown and text files: path is
+    /// absolute, or from home ("" is home). host nil is this Mac.
+    func listFolders(host: String?, path: String, hidden: Bool = false, files: Bool = false, exts: [String]? = nil,
+                     done: @escaping (Result<RemoteFolderList, Error>) -> Void) {
+        let request = FolderRequest(host: host ?? "", path: path, hidden: hidden ? true : nil, files: files ? true : nil, exts: exts)
+        call(host == nil ? "folders.list" : "remote.folders.list", request, done)
     }
 
-    func makeFolder(host: String, path: String, done: @escaping (Result<RemoteFolder, Error>) -> Void) {
-        call("remote.folders.mkdir", FolderRequest(host: host, path: path), done)
+    func makeFolder(host: String?, path: String, done: @escaping (Result<RemoteFolder, Error>) -> Void) {
+        call(host == nil ? "folders.mkdir" : "remote.folders.mkdir", FolderRequest(host: host ?? "", path: path), done)
     }
 
     func harnesses(host: String, done: @escaping (Result<RemoteHarnesses, Error>) -> Void) {

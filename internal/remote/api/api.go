@@ -115,6 +115,10 @@ type FolderPath struct {
 	// Hidden lists hidden subfolders (".git") too, flagged Hidden; folders.list
 	// leaves them out otherwise.
 	Hidden bool `json:"hidden,omitempty"`
+	// Files lists its Markdown and text files too, for choosing a prompt file;
+	// with Exts, its files with those extensions (".json") instead.
+	Files bool     `json:"files,omitempty"`
+	Exts  []string `json:"exts,omitempty"`
 }
 
 // Folder is a folder on the host.
@@ -131,6 +135,8 @@ type FolderList struct {
 	Parent  string   `json:"parent,omitempty"`
 	Home    string   `json:"home"` // the host's home folder
 	Folders []Folder `json:"folders"`
+	// Files are its Markdown and text files, with FolderPath.Files.
+	Files []Folder `json:"files,omitempty"`
 }
 
 // Harness is something the host can run in a session.

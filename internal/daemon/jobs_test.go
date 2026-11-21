@@ -16,6 +16,8 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/api"
+	"github.com/brettmostert/agent-command/internal/schedule"
 	"github.com/brettmostert/agent-command/internal/store"
 )
 
@@ -697,5 +699,163 @@ func TestHasFlag(t *testing.T) {
 	}
 	if hasFlag("  --model  Model", "--mode") {
 		t.Error("--mode found in --model")
+	}
+}
+
+// The schedule form goes through job.check: the daemon maps it to and from
+// cron, so the app has none of that logic.
+func TestJobCheckTakesTheForm(t *testing.T) {
+	p := testPaths(t)
+	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p}; c.ScheduleEvery = time.Hour; c.Location = time.UTC })
+	c := dial(t, p)
+	dir := t.TempDir()
+	var check ipc.JobCheck
+	req := ipc.JobCheckRequest{Job: folderJob(dir), Form: &schedule.Form{Kind: schedule.FormWeekly, Hour: 9, Minute: 30, WeekDays: []int{1, 3}}}
+	req.Schedule = "" // the app sends the form, not cron
+	must(t, c.Call(ipc.OpJobCheck, req, &check))
+	if check.Cron != "30 9 * * 1,3" || check.Form == nil || check.Form.Kind != schedule.FormWeekly || len(check.Errors) != 0 {
+		t.Errorf("weekly: %+v %+v", check, check.Form)
+	}
+	// A schedule as typed wins over a form sent with it (the CLI's edits).
+	typed := req
+	typed.Schedule = "0 8 * * *"
+	must(t, c.Call(ipc.OpJobCheck, typed, &check))
+	if check.Cron != "0 8 * * *" {
+		t.Errorf("typed = %+v", check)
+	}
+	// Saved from the form; the snapshot's job carries it.
+	var saved core.Job
+	must(t, c.Call(ipc.OpJobSave, req, &saved))
+	if saved.Cron != "30 9 * * 1,3" || saved.Form == nil || saved.Form.Kind != schedule.FormWeekly {
+		t.Errorf("saved = %+v", saved)
+	}
+	if jobs := snapshot(t, c).Jobs; len(jobs) != 1 || jobs[0].Form == nil || len(jobs[0].Form.WeekDays) != 2 {
+		t.Errorf("snapshot's job = %+v", jobs)
+	}
+	// Typed as words, it comes back as the form.
+	j := folderJob(dir)
+	j.Schedule = "weekdays at 07:15"
+	must(t, c.Call(ipc.OpJobCheck, ipc.JobCheckRequest{Job: j}, &check))
+	if check.Form == nil || check.Form.Kind != schedule.FormWeekdays || check.Form.Hour != 7 || check.Form.Minute != 15 {
+		t.Errorf("weekdays: %+v", check.Form)
+	}
+	// A form that doesn't parse stays as it was, with the error.
+	req.Form = &schedule.Form{Kind: schedule.FormCustom, Cron: "nonsense"}
+	req.Schedule = ""
+	must(t, c.Call(ipc.OpJobCheck, req, &check))
+	if check.Errors["schedule"] == "" || check.Form == nil || check.Form.Cron != "nonsense" {
+		t.Errorf("custom: %+v", check)
+	}
+}
+
+// Prompt files: a saved job's own, by id, and a draft's Markdown or text
+// file. Nothing else.
+func TestPromptFileOps(t *testing.T) {
+	p := testPaths(t)
+	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p}; c.ScheduleEvery = time.Hour })
+	c := dial(t, p)
+	dir := t.TempDir()
+	must(t, os.WriteFile(filepath.Join(dir, "brief.md"), []byte("# Brief"), 0o600))
+	must(t, os.WriteFile(filepath.Join(dir, "secret.key"), []byte("k"), 0o600))
+
+	// A draft's file, relative to its folder.
+	var f ipc.PromptFile
+	must(t, c.Call(ipc.OpJobPromptRead, ipc.PromptFileRef{Cwd: dir, Path: "brief.md"}, &f))
+	if f.Text != "# Brief" || !f.Exists || f.Path != filepath.Join(dir, "brief.md") {
+		t.Errorf("read = %+v", f)
+	}
+	must(t, c.Call(ipc.OpJobPromptRead, ipc.PromptFileRef{Cwd: dir, Path: "new.md"}, &f))
+	if f.Exists || f.Text != "" {
+		t.Errorf("a new file = %+v", f)
+	}
+	must(t, c.Call(ipc.OpJobPromptWrite, ipc.PromptFileRef{Cwd: dir, Path: "new.md", Text: "# New"}, &f))
+	if b, _ := os.ReadFile(filepath.Join(dir, "new.md")); string(b) != "# New" {
+		t.Errorf("written = %q", b)
+	}
+	for _, bad := range []ipc.PromptFileRef{
+		{Cwd: dir, Path: "secret.key"}, // not a prompt file
+		{Path: "brief.md"},             // relative, with no folder
+		{},                             // nothing named
+		{Cwd: dir, Path: "../" + filepath.Base(dir) + "/secret.key"},
+	} {
+		if err := c.Call(ipc.OpJobPromptRead, bad, nil); err == nil {
+			t.Errorf("read %+v", bad)
+		}
+		if err := c.Call(ipc.OpJobPromptWrite, bad, nil); err == nil {
+			t.Errorf("wrote %+v", bad)
+		}
+	}
+	link := filepath.Join(dir, "link.md")
+	must(t, os.Symlink(filepath.Join(dir, "secret.key"), link))
+	if err := c.Call(ipc.OpJobPromptRead, ipc.PromptFileRef{Cwd: dir, Path: "link.md"}, nil); err == nil {
+		t.Error("followed a link")
+	}
+
+	// A saved job's own file, by id: the path it names is ignored.
+	j := folderJob(dir)
+	j.Prompt, j.PromptFile = "", "brief.md"
+	var job core.Job
+	must(t, c.Call(ipc.OpJobSave, j, &job))
+	must(t, c.Call(ipc.OpJobPromptRead, ipc.PromptFileRef{JobID: job.ID, Path: "/etc/passwd"}, &f))
+	if f.Text != "# Brief" {
+		t.Errorf("by id = %+v", f)
+	}
+	must(t, c.Call(ipc.OpJobPromptWrite, ipc.PromptFileRef{JobID: job.ID, Text: "# Changed"}, &f))
+	if b, _ := os.ReadFile(filepath.Join(dir, "brief.md")); string(b) != "# Changed" {
+		t.Errorf("by id written = %q", b)
+	}
+	inline := folderJob(dir)
+	must(t, c.Call(ipc.OpJobSave, inline, &job))
+	if err := c.Call(ipc.OpJobPromptRead, ipc.PromptFileRef{JobID: job.ID}, nil); err == nil {
+		t.Error("a job whose prompt is inline has no file")
+	}
+	if err := c.Call(ipc.OpJobPromptRead, ipc.PromptFileRef{JobID: "nope"}, nil); err == nil {
+		t.Error("a job that isn't there")
+	}
+	if err := c.Call(ipc.OpJobPromptWrite, ipc.PromptFileRef{Cwd: dir, Path: "big.md", Text: strings.Repeat("x", maxPromptFile+1)}, nil); err == nil {
+		t.Error("over 1 MB")
+	}
+}
+
+// This machine's folders, served as the Remote API serves a host's.
+func TestLocalFolderOps(t *testing.T) {
+	p := testPaths(t)
+	home := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(home, "proj", "sub"), 0o750))
+	must(t, os.WriteFile(filepath.Join(home, "proj", "notes.md"), nil, 0o600))
+	must(t, os.WriteFile(filepath.Join(home, "proj", "main.go"), nil, 0o600))
+	start(t, p, func(c *Config) { c.Home = home })
+	c := dial(t, p)
+	var list api.FolderList
+	must(t, c.Call(ipc.OpFoldersList, api.FolderPath{Path: "~/proj", Files: true}, &list))
+	if len(list.Folders) != 1 || list.Folders[0].Name != "sub" || len(list.Files) != 1 || list.Files[0].Name != "notes.md" {
+		t.Errorf("list = %+v", list)
+	}
+	must(t, os.WriteFile(filepath.Join(home, "proj", "mcp.json"), nil, 0o600))
+	list = api.FolderList{}
+	must(t, c.Call(ipc.OpFoldersList, api.FolderPath{Path: "~/proj", Files: true, Exts: []string{".JSON"}}, &list))
+	if len(list.Files) != 1 || list.Files[0].Name != "mcp.json" {
+		t.Errorf("json files = %+v", list.Files)
+	}
+	list = api.FolderList{}
+	must(t, c.Call(ipc.OpFoldersList, api.FolderPath{Path: "~/proj"}, &list))
+	if len(list.Files) != 0 {
+		t.Error("files without asking")
+	}
+	var made api.Folder
+	must(t, c.Call(ipc.OpFoldersMkdir, api.FolderPath{Path: "proj/new"}, &made))
+	if made.Path != filepath.Join(home, "proj", "new") {
+		t.Errorf("made = %+v", made)
+	}
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"f1","source":"startup","cwd":"`+filepath.Join(home, "proj")+`"}`, time.Now(), ipc.HookContext{}), nil))
+	must(t, c.Call(ipc.OpFoldersRecent, nil, &list))
+	if len(list.Folders) != 1 || list.Folders[0].Name != "proj" {
+		t.Errorf("recent = %+v", list)
+	}
+	if err := c.Call(ipc.OpFoldersList, api.FolderPath{Path: "~/nope"}, nil); err == nil {
+		t.Error("listed a folder that isn't there")
+	}
+	if err := c.Call(ipc.OpFoldersMkdir, api.FolderPath{}, nil); err == nil {
+		t.Error("made nothing")
 	}
 }

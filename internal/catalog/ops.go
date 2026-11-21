@@ -119,7 +119,12 @@ func localOps() []Op {
 		// Scheduled jobs. Jobs run agents on the host, so they need the whole
 		// host, never a share.
 		act(ipc.OpJobSave, "Adds or edits a scheduled job.", host, core.Job{}, core.Job{}).runsCode(),
-		read(ipc.OpJobCheck, "Checks a job without saving it: its schedule in words and its next runs.", host, core.Job{}, ipc.JobCheck{}),
+		read(ipc.OpJobCheck, "Checks a job without saving it: its schedule in words and its next runs.", host, ipc.JobCheckRequest{}, ipc.JobCheck{}),
+		act(ipc.OpJobPromptRead, "Reads a job's own prompt file, by job id, or a draft's Markdown or text file.", host, ipc.PromptFileRef{}, ipc.PromptFile{}),
+		act(ipc.OpJobPromptWrite, "Writes a job's own prompt file, by job id, or a draft's Markdown or text file.", host, ipc.PromptFileRef{}, ipc.PromptFile{}),
+		read(ipc.OpFoldersRecent, "Lists the folders of recent sessions here.", host, nil, api.FolderList{}),
+		read(ipc.OpFoldersList, "Lists a folder's subfolders here, and with files its Markdown and text files.", host, api.FolderPath{}, api.FolderList{}),
+		act(ipc.OpFoldersMkdir, "Makes a folder here.", host, api.FolderPath{}, api.Folder{}),
 		act(ipc.OpJobDelete, "Deletes a scheduled job.", host, ipc.JobRef{}, nil).destructive(),
 		act(ipc.OpJobPause, "Pauses or resumes a scheduled job.", host, ipc.JobRef{}, nil),
 		act(ipc.OpJobRun, "Runs a scheduled job now.", host, ipc.JobRef{}, core.JobRun{}).runsCode(),

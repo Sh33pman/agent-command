@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"time"
+
+	"github.com/brettmostert/agent-command/internal/schedule"
+)
 
 // Where a scheduled job runs.
 const (
@@ -60,6 +64,9 @@ type Job struct {
 	// NextRun is when it runs next (zero: never again, or paused).
 	NextRun time.Time `json:"next_run,omitzero"`
 	LastRun *JobRun   `json:"last_run,omitempty"`
+	// Form is the schedule as a form's controls show it, for clients: the
+	// daemon fills it in from Cron or Once. Nothing stores it.
+	Form *schedule.Form `json:"form,omitempty"`
 }
 
 // Results of a job's run.

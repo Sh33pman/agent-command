@@ -22,15 +22,18 @@ const maxRecent = 20
 
 // resolve makes path absolute on the host: "~" and relative paths are from
 // its home.
-func (a *API) resolve(path string) string {
+func (a *API) resolve(path string) string { return Resolve(a.home, path) }
+
+// Resolve makes path absolute: "~" and relative paths are from home.
+func Resolve(home, path string) string {
 	path = strings.TrimSpace(path)
 	switch {
 	case path == "" || path == "~":
-		return a.home
+		return home
 	case strings.HasPrefix(path, "~/"):
-		return filepath.Join(a.home, path[2:])
+		return filepath.Join(home, path[2:])
 	case !filepath.IsAbs(path):
-		return filepath.Join(a.home, path)
+		return filepath.Join(home, path)
 	}
 	return filepath.Clean(path)
 }
@@ -53,8 +56,10 @@ func fsError(path string, err error) error {
 }
 
 // folder is path resolved, as long as it's a folder.
-func (a *API) folder(path string) (string, error) {
-	dir := a.resolve(path)
+func (a *API) folder(path string) (string, error) { return folderAt(a.home, path) }
+
+func folderAt(home, path string) (string, error) {
+	dir := Resolve(home, path)
 	info, err := os.Stat(dir)
 	if err != nil {
 		return "", fsError(dir, err)
@@ -72,15 +77,39 @@ func (a *API) listFolders(_ context.Context, c *wire.Call) (any, error) {
 	if err := c.Decode(&p); err != nil {
 		return nil, err
 	}
-	dir, err := a.folder(p.Path)
+	return ListFolders(a.home, p)
+}
+
+// PromptExts are the files a folder listing offers with Files: Markdown and
+// plain text, what a prompt file can be.
+var PromptExts = []string{".md", ".markdown", ".txt"}
+
+// IsPromptFile says whether name is one a prompt file can be.
+func IsPromptFile(name string) bool {
+	return slices.Contains(PromptExts, strings.ToLower(filepath.Ext(name)))
+}
+
+// hasExt says whether a file is one a listing offers: one of exts, or with
+// none, a prompt file.
+func hasExt(name string, exts []string) bool {
+	if len(exts) == 0 {
+		return IsPromptFile(name)
+	}
+	return slices.ContainsFunc(exts, func(e string) bool { return strings.EqualFold(filepath.Ext(name), e) })
+}
+
+// ListFolders lists a folder's subfolders, and with p.Files its Markdown and
+// text files, for a chooser. home is where "~" starts.
+func ListFolders(home string, p api.FolderPath) (api.FolderList, error) {
+	dir, err := folderAt(home, p.Path)
 	if err != nil {
-		return nil, err
+		return api.FolderList{}, err
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fsError(dir, err)
+		return api.FolderList{}, fsError(dir, err)
 	}
-	out := api.FolderList{Path: dir, Home: a.home, Folders: []api.Folder{}}
+	out := api.FolderList{Path: dir, Home: home, Folders: []api.Folder{}}
 	if parent := filepath.Dir(dir); parent != dir {
 		out.Parent = parent
 	}
@@ -95,11 +124,14 @@ func (a *API) listFolders(_ context.Context, c *wire.Call) (any, error) {
 			info, err := os.Stat(full)
 			isDir = err == nil && info.IsDir()
 		}
-		if isDir {
+		switch {
+		case isDir:
 			out.Folders = append(out.Folders, api.Folder{Name: name, Path: full, Hidden: hidden(name)})
+		case p.Files && e.Type().IsRegular() && hasExt(name, p.Exts):
+			out.Files = append(out.Files, api.Folder{Name: name, Path: full, Hidden: hidden(name)})
 		}
 	}
-	slices.SortFunc(out.Folders, func(x, y api.Folder) int {
+	byName := func(x, y api.Folder) int {
 		if x.Hidden != y.Hidden {
 			if x.Hidden {
 				return 1
@@ -110,7 +142,9 @@ func (a *API) listFolders(_ context.Context, c *wire.Call) (any, error) {
 			return c
 		}
 		return strings.Compare(x.Name, y.Name)
-	})
+	}
+	slices.SortFunc(out.Folders, byName)
+	slices.SortFunc(out.Files, byName)
 	return out, nil
 }
 
@@ -119,12 +153,17 @@ func (a *API) mkdir(_ context.Context, c *wire.Call) (any, error) {
 	if err := c.Decode(&p); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(p.Path) == "" {
-		return nil, wire.Errorf(wire.CodeBadRequest, "no folder to make")
+	return MakeFolder(a.home, p.Path)
+}
+
+// MakeFolder makes a folder, from home when path is relative.
+func MakeFolder(home, path string) (api.Folder, error) {
+	if strings.TrimSpace(path) == "" {
+		return api.Folder{}, wire.Errorf(wire.CodeBadRequest, "no folder to make")
 	}
-	dir := a.resolve(p.Path)
+	dir := Resolve(home, path)
 	if err := os.Mkdir(dir, 0o750); err != nil {
-		return nil, fsError(dir, err)
+		return api.Folder{}, fsError(dir, err)
 	}
 	name := filepath.Base(dir)
 	return api.Folder{Name: name, Path: dir, Hidden: hidden(name)}, nil
@@ -137,9 +176,15 @@ func (a *API) recentFolders(ctx context.Context, _ *wire.Call) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	sessions := slices.Clone(st.Sessions)
+	return RecentFolders(a.home, st.Sessions), nil
+}
+
+// RecentFolders are the folders of these sessions, the most recently active
+// first, leaving out ones that have gone.
+func RecentFolders(home string, all []*core.Session) api.FolderList {
+	sessions := slices.Clone(all)
 	slices.SortStableFunc(sessions, func(x, y *core.Session) int { return lastActive(y).Compare(lastActive(x)) })
-	out := api.FolderList{Home: a.home, Folders: []api.Folder{}}
+	out := api.FolderList{Home: home, Folders: []api.Folder{}}
 	seen := map[string]bool{}
 	for _, s := range sessions {
 		dir := s.Cwd
@@ -153,5 +198,5 @@ func (a *API) recentFolders(ctx context.Context, _ *wire.Call) (any, error) {
 		name := filepath.Base(dir)
 		out.Folders = append(out.Folders, api.Folder{Name: name, Path: dir, Hidden: hidden(name)})
 	}
-	return out, nil
+	return out
 }

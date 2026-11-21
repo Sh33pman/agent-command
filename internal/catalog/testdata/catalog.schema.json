@@ -86,6 +86,51 @@
       }
     },
     {
+      "name": "folders.list",
+      "description": "Lists a folder's subfolders here, and with files its Markdown and text files.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "folders.list"
+      },
+      "input": {
+        "$ref": "#/$defs/api.FolderPath"
+      },
+      "output": {
+        "$ref": "#/$defs/api.FolderList"
+      }
+    },
+    {
+      "name": "folders.mkdir",
+      "description": "Makes a folder here.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "folders.mkdir"
+      },
+      "input": {
+        "$ref": "#/$defs/api.FolderPath"
+      },
+      "output": {
+        "$ref": "#/$defs/api.Folder"
+      }
+    },
+    {
+      "name": "folders.recent",
+      "description": "Lists the folders of recent sessions here.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "folders.recent"
+      },
+      "output": {
+        "$ref": "#/$defs/api.FolderList"
+      }
+    },
+    {
       "name": "group.archive",
       "description": "Archives a group and its sessions.",
       "scope": "act",
@@ -352,7 +397,7 @@
         "op": "job.check"
       },
       "input": {
-        "$ref": "#/$defs/core.Job"
+        "$ref": "#/$defs/ipc.JobCheckRequest"
       },
       "output": {
         "$ref": "#/$defs/ipc.JobCheck"
@@ -382,6 +427,38 @@
       },
       "input": {
         "$ref": "#/$defs/ipc.JobRef"
+      }
+    },
+    {
+      "name": "job.prompt.read",
+      "description": "Reads a job's own prompt file, by job id, or a draft's Markdown or text file.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "job.prompt.read"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.PromptFileRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.PromptFile"
+      }
+    },
+    {
+      "name": "job.prompt.write",
+      "description": "Writes a job's own prompt file, by job id, or a draft's Markdown or text file.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "job.prompt.write"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.PromptFileRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.PromptFile"
       }
     },
     {
@@ -1388,12 +1465,41 @@
             "$ref": "#/$defs/api.Folder"
           },
           "type": "array"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/api.Folder"
+          },
+          "type": "array"
         }
       },
       "type": "object",
       "required": [
         "home",
         "folders"
+      ]
+    },
+    "api.FolderPath": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "boolean"
+        },
+        "exts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "path"
       ]
     },
     "api.Harness": {
@@ -1685,6 +1791,9 @@
         },
         "last_run": {
           "$ref": "#/$defs/core.JobRun"
+        },
+        "form": {
+          "$ref": "#/$defs/schedule.Form"
         }
       },
       "type": "object",
@@ -2312,6 +2421,9 @@
     },
     "ipc.JobCheck": {
       "properties": {
+        "form": {
+          "$ref": "#/$defs/schedule.Form"
+        },
         "cron": {
           "type": "string"
         },
@@ -2336,6 +2448,108 @@
         }
       },
       "type": "object"
+    },
+    "ipc.JobCheckRequest": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "group_id": {
+          "type": "string"
+        },
+        "harness": {
+          "type": "string"
+        },
+        "schedule": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "prompt_file": {
+          "type": "string"
+        },
+        "where": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "run_missed": {
+          "type": "boolean"
+        },
+        "wake": {
+          "type": "boolean"
+        },
+        "cron": {
+          "type": "string"
+        },
+        "once": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "words": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_due": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "next_run": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_run": {
+          "$ref": "#/$defs/core.JobRun"
+        },
+        "form": {
+          "$ref": "#/$defs/schedule.Form"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "schedule",
+        "where",
+        "once",
+        "created_at",
+        "updated_at",
+        "last_due",
+        "next_run"
+      ]
     },
     "ipc.JobRef": {
       "properties": {
@@ -2495,6 +2709,42 @@
         "session_id",
         "kind"
       ]
+    },
+    "ipc.PromptFile": {
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "exists": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "path",
+        "text",
+        "exists"
+      ]
+    },
+    "ipc.PromptFileRef": {
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "ipc.RemoteBrowse": {
       "properties": {
@@ -3288,6 +3538,46 @@
       "type": "object",
       "required": [
         "rev"
+      ]
+    },
+    "schedule.Form": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "every": {
+          "type": "integer"
+        },
+        "hour": {
+          "type": "integer"
+        },
+        "minute": {
+          "type": "integer"
+        },
+        "week_days": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "month_days": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "date": {
+          "type": "string"
+        },
+        "cron": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "kind",
+        "hour",
+        "minute"
       ]
     }
   }

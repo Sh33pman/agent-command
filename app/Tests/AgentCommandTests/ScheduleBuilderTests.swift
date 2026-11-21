@@ -9,109 +9,83 @@ private var utc: Calendar {
     return c
 }
 
-/// Cron the controls can show reads into them, and writes back the same.
-@Test func cronReadsIntoTheControlsAndBack() {
-    for (cron, kind) in [
-        ("* * * * *", ScheduleBuilder.Kind.minutes),
-        ("*/15 * * * *", .minutes),
-        ("30 * * * *", .hours),
-        ("5 */6 * * *", .hours),
-        ("0 9 * * *", .daily),
-        ("30 8 * * 1-5", .weekdays),
-        ("0 17 * * 1,5", .weekly),
-        ("0 10 * * 0,6", .weekly),
-        ("0 7 1,15 * *", .monthly),
-    ] {
-        let b = ScheduleBuilder(schedule: cron)
-        #expect(b.kind == kind, "\(cron)")
-        #expect(b.schedule() == cron, "\(cron) round trip")
+/// The controls read the daemon's form and write it back the same: the daemon
+/// does the cron.
+@Test func theFormReadsIntoTheControlsAndBack() {
+    let forms = [
+        ScheduleForm(kind: "minutes", every: 15, hour: 0, minute: 0),
+        ScheduleForm(kind: "hours", every: 6, hour: 0, minute: 5),
+        ScheduleForm(kind: "daily", hour: 9, minute: 0),
+        ScheduleForm(kind: "weekdays", hour: 8, minute: 30),
+        ScheduleForm(kind: "weekly", hour: 17, minute: 0, weekDays: [1, 5]),
+        ScheduleForm(kind: "monthly", hour: 7, minute: 0, monthDays: [1, 15]),
+        ScheduleForm(kind: "custom", hour: 0, minute: 0, cron: "0 9 1 * 1"),
+    ]
+    for f in forms {
+        #expect(ScheduleBuilder(form: f).form() == f, "\(f.kind)")
     }
-    let fri = ScheduleBuilder(schedule: "45 7 * * 1-3,5")
-    #expect(fri.kind == .weekly && fri.weekDays == [1, 2, 3, 5] && fri.hour == 7 && fri.minute == 45)
-    #expect(fri.schedule() == "45 7 * * 1,2,3,5")
-    #expect(ScheduleBuilder(schedule: "0 9 * * 7").weekDays == [0], "7 is Sunday")
-    #expect(ScheduleBuilder(schedule: "0 9 1-3 * *").monthDays == [1, 2, 3])
+    #expect(ScheduleBuilder(form: ScheduleForm(kind: "fortnightly")).kind == .custom, "a kind the app doesn't know")
 }
 
-/// Cron they can't show is Custom, as typed.
-@Test func otherCronIsCustom() {
-    for cron in ["*/7 * * * *", "0,30 9 * * *", "0 9 1 * 1", "0 9 * 6 *", "0 */5 * * *", "0 9 * * x", "0 9 31-1 * *",
-                 "0 9 * * 1-2-3", "61 9 * * *", "not cron", "", "0 9 * *"] {
-        let b = ScheduleBuilder(schedule: cron)
-        #expect(b.kind == .custom, "\(cron)")
-        #expect(b.schedule() == cron.trimmingCharacters(in: .whitespaces))
-    }
-}
-
-@Test func theControlsWriteCron() {
-    var b = ScheduleBuilder()
-    #expect(b.schedule() == "0 9 * * 1-5", "weekdays at 09:00 to start")
-    b.change(to: .minutes)
-    #expect(b.schedule() == "*/15 * * * *", "a step that divides the hour")
-    b.every = 1
-    #expect(b.schedule() == "* * * * *")
-    b.change(to: .hours)
-    b.minute = 30
-    #expect(b.schedule() == "30 * * * *")
-    b.every = 2
-    #expect(b.schedule() == "30 */2 * * *")
-    b.change(to: .daily)
-    b.hour = 17
-    #expect(b.schedule() == "30 17 * * *", "keeps the time")
-    b.change(to: .weekly)
-    b.weekDays = [5, 1]
-    #expect(b.schedule() == "30 17 * * 1,5")
-    b.weekDays = []
-    #expect(b.schedule() == "30 17 * * 1", "never no days")
-    b.change(to: .monthly)
-    b.monthDays = [15, 1]
-    #expect(b.schedule() == "30 17 1,15 * *")
-    b.monthDays = []
-    #expect(b.schedule() == "30 17 1 * *")
-    b.change(to: .custom)
-    #expect(b.schedule() == "30 17 1 * *", "custom starts from what was chosen")
-    #expect(b.usesTime == false)
-    var steps = ScheduleBuilder()
-    steps.change(to: .minutes)
-    steps.change(to: .hours)
-    #expect(steps.every == 1, "15 isn't an hour step, so it becomes 1")
-    #expect(ScheduleBuilder.Kind.allCases.allSatisfy { !$0.label.isEmpty })
-}
-
-@Test func oneOffs() throws {
-    let b = ScheduleBuilder(schedule: "once on 2026-12-01 at 14:30", calendar: utc)
-    #expect(b.kind == .once && b.hour == 14 && b.minute == 30)
-    #expect(b.schedule(calendar: utc) == "once on 2026-12-01 at 14:30")
+@Test func oneOffsCarryTheirDayAndTime() {
+    let f = ScheduleForm(kind: "once", hour: 14, minute: 30, date: "2026-12-01")
+    let b = ScheduleBuilder(form: f, calendar: utc)
+    #expect(b.kind == .once && b.form(calendar: utc) == f)
     var next = ScheduleBuilder()
     next.hour = 0
     next.minute = 0
     next.change(to: .once)
     #expect(next.once > Date(), "a new one-off is in the future")
-    #expect(ScheduleBuilder(schedule: "once on someday").kind == .custom)
 }
 
-/// The form keeps Custom once chosen, even for cron the controls could show.
-@Test func theDraftKeepsCustom() throws {
+@Test func switchingKeepsWhatWasChosen() {
+    var b = ScheduleBuilder()
+    b.change(to: .minutes)
+    #expect(b.every == 15, "a step that divides the hour")
+    b.change(to: .hours)
+    #expect(b.every == 1, "15 isn't an hour step, so it becomes 1")
+    b.change(to: .daily)
+    b.hour = 17
+    #expect(b.form() == ScheduleForm(kind: "daily", hour: 17, minute: 0), "keeps the time")
+    b.change(to: .custom, cron: "0 17 * * *")
+    #expect(b.cron == "0 17 * * *" && b.pinned, "custom starts from the cron the daemon read")
+    b.change(to: .weekly)
+    #expect(!b.pinned && !b.usesTime == false)
+    #expect(ScheduleBuilder.Kind.allCases.allSatisfy { !$0.label.isEmpty })
+}
+
+/// Typed cron is Custom until the daemon reads it; then the controls follow,
+/// unless Custom was chosen.
+@Test func typedCronMovesTheControlsOnceTheDaemonReadsIt() throws {
     var draft = JobDraft()
     #expect(draft.builder.kind == .weekdays)
-    var b = draft.builder
-    b.change(to: .custom)
-    draft.builder = b
-    #expect(draft.customSchedule && draft.builder.kind == .custom && draft.schedule == "0 9 * * 1-5")
-    b = draft.builder
-    b.change(to: .daily)
-    draft.builder = b
-    #expect(!draft.customSchedule && draft.schedule == "0 9 * * *")
-    draft.schedule = "0 8 * * 1,5" // typed into the cron field
-    #expect(draft.builder.kind == .weekly && draft.builder.weekDays == [1, 5], "typing cron sets the controls")
+    draft.typeCron("0 8 * * 1,5")
+    #expect(draft.builder.kind == .custom && draft.job.schedule == "0 8 * * 1,5")
+    draft.takeForm(ScheduleForm(kind: "weekly", hour: 8, minute: 0, weekDays: [1, 5]))
+    #expect(draft.builder.kind == .weekly && draft.builder.weekDays == [1, 5], "the daemon's reading sets the controls")
+    #expect(draft.job.schedule.isEmpty && draft.job.form?.kind == "weekly", "a form, not cron, is sent")
 
-    // A saved job opens as its cron, or its one-off.
+    var pinned = draft.builder
+    pinned.change(to: .custom, cron: "0 8 * * 1,5")
+    draft.builder = pinned
+    draft.typeCron("0 9 * * 1")
+    draft.takeForm(ScheduleForm(kind: "weekly", hour: 9, minute: 0, weekDays: [1]))
+    #expect(draft.builder.kind == .custom && draft.builder.cron == "0 9 * * 1", "chosen Custom stays as typed")
+
+    // A saved job opens as the daemon's form, or as its cron when there's none.
     var job = Job()
-    job.cron = "0 7 * * 1"
-    job.schedule = "every Monday at 07:00"
-    #expect(JobDraft(job).schedule == "0 7 * * 1")
-    job.cron = ""
-    job.once = "2026-12-01T14:30:00Z"
-    let once = JobDraft(job)
-    #expect(once.builder.kind == .once && once.schedule.hasPrefix("once on 2026-12-0"))
+    job.form = ScheduleForm(kind: "daily", hour: 7, minute: 0)
+    #expect(JobDraft(job).builder.kind == .daily)
+    job.form = nil
+    job.cron = "0 9 1 * 1"
+    #expect(JobDraft(job).builder.kind == .custom && JobDraft(job).builder.cron == "0 9 1 * 1")
+}
+
+@Test func theFormDecodesWhatTheDaemonSends() throws {
+    let f = try JSONDecoder().decode(ScheduleForm.self, from: Data(#"{"kind": "weekly", "hour": 9, "minute": 30, "week_days": [1, 3]}"#.utf8))
+    #expect(f == ScheduleForm(kind: "weekly", hour: 9, minute: 30, weekDays: [1, 3]))
+    let bare = try JSONDecoder().decode(ScheduleForm.self, from: Data("{}".utf8))
+    #expect(bare.kind == "custom" && bare.hour == 0)
+    let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(f)) as? [String: Any]
+    #expect(encoded?["week_days"] as? [Int] == [1, 3] && encoded?["kind"] as? String == "weekly")
 }

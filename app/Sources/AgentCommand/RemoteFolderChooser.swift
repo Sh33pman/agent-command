@@ -91,6 +91,8 @@ import Observation
         case here(String)
         case up(String)
         case folder(RemoteFolder)
+        /// A prompt file, when the chooser picks one.
+        case file(RemoteFolder)
         /// Browse from the host's home.
         case browse
         case newFolder
@@ -100,13 +102,19 @@ import Observation
             case .here(let path): "here:" + path
             case .up(let path): "up:" + path
             case .folder(let folder): "folder:" + folder.path
+            case .file(let file): "file:" + file.path
             case .browse: "browse"
             case .newFolder: "new"
             }
         }
     }
 
-    let host: String
+    /// The host whose folders these are; nil is this Mac's.
+    let host: String?
+    /// It picks a file in a folder, rather than a folder: a Markdown or text one,
+    /// or one with fileExts.
+    let picksFile: Bool
+    let fileExts: [String]?
     @ObservationIgnored let client: RemoteHostsClient
     private(set) var mode = Mode.recent
     private(set) var recent: [RemoteFolder] = []
@@ -123,10 +131,15 @@ import Observation
     /// Called with the folder chosen, on the host.
     @ObservationIgnored var choose: (String) -> Void = { _ in }
 
-    init(host: String, client: RemoteHostsClient = RemoteHostsClient()) {
+    init(host: String?, picksFile: Bool = false, fileExts: [String]? = nil, client: RemoteHostsClient = RemoteHostsClient()) {
         self.host = host
+        self.picksFile = picksFile
+        self.fileExts = fileExts
         self.client = client
     }
+
+    /// Where the folders are: a host, or this Mac.
+    var hostName: String { host ?? "this Mac" }
 
     /// Recent folders first; with none, the home folder.
     func start() {
@@ -163,7 +176,7 @@ import Observation
     func browse(_ path: String) {
         loading = true
         let mine = next()
-        client.listFolders(host: host, path: path, hidden: showsHidden) { [weak self] result in
+        client.listFolders(host: host, path: path, hidden: showsHidden, files: picksFile, exts: fileExts) { [weak self] result in
             guard let self, mine == self.generation else { return }
             self.loading = false
             switch result {
@@ -181,7 +194,7 @@ import Observation
 
     /// The folder that's listed, as "~/src" when it's in the host's home.
     var place: String {
-        guard mode == .browse, let listing else { return "Recent folders on \(host)" }
+        guard mode == .browse, let listing else { return "Recent folders on \(hostName)" }
         return Self.abbreviate(listing.path, home: listing.home)
     }
 
@@ -202,9 +215,10 @@ import Observation
             return matching(recent) + [.browse]
         case .browse:
             guard let listing else { return [] }
-            var list: [Row] = [.here(listing.path)]
+            var list: [Row] = picksFile ? [] : [.here(listing.path)]
             if !listing.parent.isEmpty, listing.parent != listing.path { list.append(.up(listing.parent)) }
-            return list + matching(listing.folders) + [.newFolder]
+            let files = listing.files.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }.map { Row.file($0) }
+            return list + matching(listing.folders) + files + [.newFolder]
         }
     }
 
@@ -235,7 +249,8 @@ import Observation
         switch row {
         case .here(let path): choose(path)
         case .up(let path): browse(path)
-        case .folder(let folder): mode == .recent ? choose(folder.path) : browse(folder.path)
+        case .folder(let folder): mode == .recent && !picksFile ? choose(folder.path) : browse(folder.path)
+        case .file(let file): choose(file.path)
         case .browse: browse("")
         case .newFolder: startNaming()
         }

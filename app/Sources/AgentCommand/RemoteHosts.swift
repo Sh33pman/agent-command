@@ -259,11 +259,13 @@ struct RemoteFolderList: Decodable, Equatable {
     /// The host's home folder.
     var home = ""
     var folders: [RemoteFolder] = []
+    /// Its Markdown and text files, when they were asked for.
+    var files: [RemoteFolder] = []
 
-    enum CodingKeys: String, CodingKey { case path, parent, home, folders }
+    enum CodingKeys: String, CodingKey { case path, parent, home, folders, files }
 
-    init(path: String = "", parent: String = "", home: String = "", folders: [RemoteFolder] = []) {
-        (self.path, self.parent, self.home, self.folders) = (path, parent, home, folders)
+    init(path: String = "", parent: String = "", home: String = "", folders: [RemoteFolder] = [], files: [RemoteFolder] = []) {
+        (self.path, self.parent, self.home, self.folders, self.files) = (path, parent, home, folders, files)
     }
 
     init(from decoder: Decoder) throws {
@@ -272,6 +274,7 @@ struct RemoteFolderList: Decodable, Equatable {
         parent = c.value(.parent, "")
         home = c.value(.home, "")
         folders = c.value(.folders, [])
+        files = c.value(.files, [])
     }
 }
 

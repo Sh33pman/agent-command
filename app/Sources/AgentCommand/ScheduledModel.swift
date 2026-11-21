@@ -37,7 +37,15 @@ final class ScheduledModel {
     @ObservationIgnored var close: () -> Void = {}
     @ObservationIgnored var goToSession: (String) -> Void = { _ in }
     /// Picks a folder or a file; nil when cancelled. Tests replace it.
-    @ObservationIgnored var choosePath: (_ directory: Bool, _ start: String) -> String? = ScheduledModel.openPanel
+    /// The folder or prompt file being chosen, with the daemon's folders: the
+    /// same chooser on this Mac as for a host.
+    var chooser: RemoteFolderChooser?
+    private(set) var chooserTitle = ""
+    /// The draft's prompt file as the daemon read it; nil until it's read.
+    private(set) var promptFile: PromptFile?
+    /// The daemon's folder and prompt-file ops; tests swap them.
+    @ObservationIgnored var folders = RemoteHostsClient()
+    @ObservationIgnored var calls: DaemonCalls = DaemonSocketCalls()
     /// How long the form waits after a change before checking it.
     @ObservationIgnored var checkDelay: TimeInterval = 0.3
     @ObservationIgnored private var checkToken = 0
@@ -217,6 +225,7 @@ final class ScheduledModel {
                 guard let self, token == self.checkToken else { return }
                 self.check = check ?? JobCheck()
                 self.error = check == nil ? "Couldn't reach acmd's background service to check the job." : nil
+                if let form = check?.form { self.draft?.takeForm(form) } // typed cron moves the controls
             }
         }
     }
@@ -235,7 +244,7 @@ final class ScheduledModel {
         guard let draft, let original, draft.isNew, !triedSaving else { return message }
         let changed: Bool = switch field {
         case "name": draft.name != original.name
-        case "schedule": draft.schedule != original.schedule
+        case "schedule": draft.builder != original.builder
         case "prompt": draft.prompt != original.prompt || draft.promptFile != original.promptFile
         case "cwd": draft.cwd != original.cwd
         case "session": draft.sessionID != original.sessionID
@@ -246,62 +255,85 @@ final class ScheduledModel {
     }
 
     func chooseFolder() {
-        guard let path = choosePath(true, draft?.cwd ?? "") else { return }
-        draft?.cwd = path
+        choose("Choose the job's folder", file: false) { [weak self] in self?.draft?.cwd = $0 }
     }
 
     func choosePromptFile() {
-        guard let path = choosePath(false, draft?.cwd ?? "") else { return }
-        draft?.promptFile = path
-        draft?.promptSource = .file
-    }
-
-    /// Adds a folder to a setting that takes several (Extra folders).
-    func addPath(to key: String, directory: Bool) {
-        guard let path = choosePath(directory, draft?.cwd ?? "") else { return }
-        let current = draft?.settings[key] ?? ""
-        draft?.settings[key] = current.isEmpty ? path : current + "\n" + path
-    }
-
-    private static func openPanel(directory: Bool, start: String) -> String? {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = directory
-        panel.canChooseFiles = !directory
-        panel.canCreateDirectories = directory
-        panel.allowsMultipleSelection = false
-        if !directory { panel.allowedContentTypes = [.init(filenameExtension: "md")!, .plainText] }
-        if !start.isEmpty { panel.directoryURL = URL(fileURLWithPath: start) }
-        return panel.runModal() == .OK ? panel.url?.path : nil
-    }
-
-    // MARK: Prompt files
-
-    /// The prompt file's text, to edit it in place; nil when it can't be read.
-    func readPromptFile() -> String? {
-        guard let path = promptFilePath else { return nil }
-        return try? String(contentsOfFile: path, encoding: .utf8)
-    }
-
-    /// Writes the editor's text back to the prompt file.
-    func writePromptFile(_ text: String) -> Bool {
-        guard let path = promptFilePath else { return false }
-        do {
-            try text.write(toFile: path, atomically: true, encoding: .utf8)
-            scheduleCheck()
-            return true
-        } catch {
-            self.error = "Couldn't save \(JobTime.tilde(path)): \(error.localizedDescription)"
-            return false
+        choose("Choose the prompt file: Markdown or text", file: true) { [weak self] path in
+            self?.draft?.promptFile = path
+            self?.draft?.promptSource = .file
         }
     }
 
-    /// The prompt file's full path: a relative one is from the job's folder.
-    var promptFilePath: String? {
+    /// Chooses an agent setting's file (a settings or MCP config file).
+    func chooseSettingFile(then: @escaping (String) -> Void) {
+        choose("Choose the file", file: true, exts: [".json"], then: then)
+    }
+
+    /// Adds a folder or file to a setting that takes several (Extra folders, MCP config).
+    func addPath(to key: String, directory: Bool) {
+        choose(directory ? "Add a folder" : "Add a file", file: !directory, exts: directory ? nil : [".json"]) { [weak self] path in
+            let current = self?.draft?.settings[key] ?? ""
+            self?.draft?.settings[key] = current.isEmpty ? path : current + "\n" + path
+        }
+    }
+
+    private func choose(_ title: String, file: Bool, exts: [String]? = nil, then: @escaping (String) -> Void) {
+        let c = RemoteFolderChooser(host: nil, picksFile: file, fileExts: exts, client: folders)
+        c.choose = { [weak self] path in
+            then(path)
+            self?.chooser = nil
+        }
+        chooserTitle = title
+        chooser = c
+    }
+
+    func closeChooser() { chooser = nil }
+
+    // MARK: Prompt files
+
+    /// What names the draft's prompt file to the daemon: the saved job's own,
+    /// while it's the one the job has, or the draft's folder and path.
+    var promptFileRef: PromptFileRef? {
         guard let draft, !draft.promptFile.isEmpty else { return nil }
-        let file = (draft.promptFile as NSString).expandingTildeInPath
-        if file.hasPrefix("/") { return file }
-        guard !draft.cwd.isEmpty else { return nil }
-        return ((draft.cwd as NSString).expandingTildeInPath as NSString).appendingPathComponent(file)
+        if !draft.isNew, let original, original.promptFile == draft.promptFile, original.cwd == draft.cwd {
+            return PromptFileRef(job_id: draft.id)
+        }
+        return PromptFileRef(cwd: draft.cwd, path: draft.promptFile)
+    }
+
+    /// Reads the draft's prompt file through the daemon, to edit it in place.
+    func loadPromptFile() {
+        guard let ref = promptFileRef else { return promptFile = nil }
+        call("job.prompt.read", ref) { [weak self] (result: Result<PromptFile, Error>) in
+            switch result {
+            case .success(let file): self?.promptFile = file
+            case .failure: self?.promptFile = nil
+            }
+        }
+    }
+
+    /// Writes the editor's text back to the prompt file, through the daemon.
+    func savePromptFile(_ text: String) {
+        guard var ref = promptFileRef else { return }
+        ref.text = text
+        call("job.prompt.write", ref) { [weak self] (result: Result<PromptFile, Error>) in
+            guard let self else { return }
+            switch result {
+            case .success(let file):
+                self.promptFile = file
+                self.scheduleCheck()
+            case .failure(let failure):
+                self.error = "Couldn't save the prompt file: \(errorText(failure))"
+            }
+        }
+    }
+
+    private func call<Out: Decodable>(_ op: String, _ input: some Encodable, _ done: @escaping (Result<Out, Error>) -> Void) {
+        let data = (try? JSONEncoder().encode(input)) ?? Data("{}".utf8)
+        calls.call(op, data) { result in
+            done(result.flatMap { reply in Result { try JSONDecoder().decode(Out.self, from: reply) } })
+        }
     }
 
     // MARK: Actions on the selected job
@@ -448,4 +480,20 @@ final class ScheduledModel {
         }
         return true
     }
+}
+
+/// Names a prompt file to the daemon: a saved job's own by id, or a draft's
+/// folder and path (internal/ipc.PromptFileRef).
+struct PromptFileRef: Encodable, Equatable {
+    var job_id: String?
+    var cwd: String?
+    var path: String?
+    var text: String?
+}
+
+/// A prompt file as the daemon read or wrote it.
+struct PromptFile: Decodable, Equatable {
+    var path = ""
+    var text = ""
+    var exists = false
 }

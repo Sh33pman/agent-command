@@ -395,6 +395,8 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 			j.Schedule = j.Cron
 		}
 		check.Cron, check.Words, check.Summary = j.Cron, j.Words, s.Summary(d.cfg.Location)
+		form := schedule.FormOf(s, d.cfg.Location)
+		check.Form = &form
 		check.Next = s.NextN(d.cfg.Now(), d.cfg.Location, nextRuns)
 		if len(check.Next) == 0 {
 			errs["schedule"] = "It never runs."
@@ -582,6 +584,7 @@ func (d *Daemon) saveJob(ctx context.Context, j core.Job) (*core.Job, error) {
 		return nil, err
 	}
 	d.withNextRun(out)
+	d.withForm(out)
 	return out, nil
 }
 
@@ -620,6 +623,7 @@ func (d *Daemon) jobs(ctx context.Context) ([]*core.Job, error) {
 	jobs, err := d.store.Jobs(ctx)
 	for _, j := range jobs {
 		d.withNextRun(j)
+		d.withForm(j)
 	}
 	return jobs, err
 }
@@ -649,17 +653,27 @@ func (d *Daemon) runJobNow(ctx context.Context, id string) (core.JobRun, error) 
 func (d *Daemon) handleJob(ctx context.Context, req ipc.Request) (any, error) {
 	switch req.Op {
 	case ipc.OpJobSave:
-		j, err := decode[core.Job](req.Data)
+		r, err := decode[ipc.JobCheckRequest](req.Data)
 		if err != nil {
 			return nil, err
 		}
-		return d.saveJob(ctx, j)
+		if r.Form != nil && strings.TrimSpace(r.Schedule) == "" {
+			r.Schedule = r.Form.Schedule() // a schedule as typed wins
+		}
+		return d.saveJob(ctx, r.Job)
 	case ipc.OpJobCheck:
-		j, err := decode[core.Job](req.Data)
+		r, err := decode[ipc.JobCheckRequest](req.Data)
 		if err != nil {
 			return nil, err
 		}
-		return d.checkJob(ctx, &j), nil
+		if r.Form != nil && strings.TrimSpace(r.Schedule) == "" {
+			r.Schedule = r.Form.Schedule() // a schedule as typed wins
+		}
+		check := d.checkJob(ctx, &r.Job)
+		if check.Form == nil && r.Form != nil {
+			check.Form = r.Form // it doesn't parse: the form stays as it was
+		}
+		return check, nil
 	case ipc.OpWakeSet:
 		w, err := decode[ipc.WakeRef](req.Data)
 		if err != nil {
@@ -703,4 +717,14 @@ func isJobOp(op string) bool {
 		return true
 	}
 	return false
+}
+
+// withForm fills in the job's schedule as a form shows it.
+func (d *Daemon) withForm(j *core.Job) {
+	loc := d.cfg.Location
+	if loc == nil {
+		loc = time.Local
+	}
+	f := schedule.FormOf(schedule.Schedule{Cron: j.Cron, Once: j.Once}, loc)
+	j.Form = &f
 }

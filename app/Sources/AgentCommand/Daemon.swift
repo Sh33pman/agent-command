@@ -19,9 +19,13 @@ struct Snapshot: Decodable {
     var settings: [String: SettingValue]? = nil
     /// What's wrong with the host, or worth knowing.
     var health: [HealthItem]? = nil
+    /// The health ids this app dismissed (it sends its client id).
+    var dismissed: [String]? = nil
+    var features: HostFeatures? = nil
+    var update: UpdateState? = nil
 
     enum CodingKeys: String, CodingKey {
-        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health
+        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health, dismissed, features, update
         case remoteHosts = "remote_hosts"
     }
 }
@@ -34,9 +38,14 @@ struct HealthItem: Decodable, Equatable {
     var detail = ""
     var fix: Fix? = nil
 
+    /// An op to call with data, or on this Mac an acmd command (one that asks for a
+    /// password, say), with what a button for it says.
     struct Fix: Decodable, Equatable {
         var op: String? = nil
+        var data: [String: SettingValue]? = nil
+        var command: [String]? = nil
         var step: String? = nil
+        var title: String? = nil
     }
 
     enum CodingKeys: String, CodingKey { case id, severity, title, detail, fix }
@@ -397,44 +406,6 @@ struct Conversation: Decodable, Identifiable, Hashable {
     }
 }
 
-/// What launch does about the agents' hooks: nothing, refresh them quietly with
-/// `acmd init` (the app has moved), or offer to add the missing ones.
-enum SetupNeed: Equatable {
-    case none, refresh
-    /// Ask first. claude: Claude Code's hooks are missing; antigravity: agy is
-    /// installed and its hook is missing.
-    case offer(claude: Bool, antigravity: Bool)
-
-    init(claudeHooked: Bool, claudeCurrent: Bool, agyInstalled: Bool, agyHooked: Bool, agyCurrent: Bool) {
-        let agyMissing = agyInstalled && !agyHooked
-        if !claudeHooked || agyMissing {
-            self = .offer(claude: !claudeHooked, antigravity: agyMissing)
-        } else if !claudeCurrent || (agyInstalled && !agyCurrent) {
-            self = .refresh
-        } else {
-            self = .none
-        }
-    }
-
-    /// The offer's words: where the hooks go.
-    var offerText: String {
-        guard case .offer(let claude, let antigravity) = self else { return "" }
-        let places = [claude ? "your Claude Code settings" : nil, antigravity ? "Antigravity's hooks.json" : nil]
-            .compactMap { $0 }.joined(separator: " and ")
-        return """
-            This adds hook entries to \(places), so sessions can show when they're busy, waiting \
-            or done. It backs the file up first, and keeps your other settings. It also saves your login shell's \
-            environment for the sessions it starts.
-            """
-    }
-
-    /// First-time setup, rather than an agent installed since: it also offers waking the Mac.
-    var isFirstSetup: Bool {
-        if case .offer(claude: true, _) = self { return true }
-        return false
-    }
-}
-
 struct DaemonError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
@@ -461,72 +432,6 @@ enum DaemonPaths {
     static func stateDir(_ env: [String: String]) -> String {
         if let dir = env["ACMD_STATE_DIR"], !dir.isEmpty { return dir }
         return NSString(string: "~/.local/state/agent-command").expandingTildeInPath
-    }
-
-    /// Claude's settings, where internal/setup adds and marks the hooks.
-    private static var claudeSettings: String {
-        let env = ProcessInfo.processInfo.environment
-        let dir = env["CLAUDE_CONFIG_DIR"].flatMap { $0.isEmpty ? nil : $0 }
-            ?? NSString(string: "~/.claude").expandingTildeInPath
-        let settings = (dir as NSString).appendingPathComponent("settings.json")
-        return (try? String(contentsOfFile: settings, encoding: .utf8)) ?? ""
-    }
-
-    /// internal/setup's HookMarker, at the end of each hook command acmd writes.
-    static let hookMarker = "# managed by acmd"
-
-    static var hooksInstalled: Bool { claudeSettings.contains(hookMarker) }
-
-    /// The hooks run this binary, rather than one from before the app moved.
-    static var hooksCurrent: Bool { claudeSettings.contains(acmd) }
-
-    /// agy's shared hooks.json, where internal/setup adds its named hook.
-    private static var agyHooksFile: String {
-        let path = NSString(string: "~/.gemini/config/hooks.json").expandingTildeInPath
-        return (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-    }
-
-    /// What the app needs to do about the hooks, from what's on this Mac.
-    static var setupNeed: SetupNeed {
-        let agy = agyPath(ProcessInfo.processInfo.environment, home: NSHomeDirectory()) {
-            FileManager.default.isExecutableFile(atPath: $0)
-        }
-        let hooks = agyHooks(agyHooksFile)
-        return SetupNeed(
-            claudeHooked: hooksInstalled, claudeCurrent: hooksCurrent,
-            agyInstalled: agy != nil, agyHooked: hooks.contains { $0.contains(hookMarker) },
-            agyCurrent: hooks.contains { $0.contains(acmd) })
-    }
-
-    /// Where agy is, if it's installed: on PATH, or where its installer and Homebrew put
-    /// it, as an app started from the Dock gets a short PATH.
-    static func agyPath(_ env: [String: String], home: String, isExecutable: (String) -> Bool) -> String? {
-        let path = (env["PATH"] ?? "").split(separator: ":").map(String.init)
-        let usual = [(home as NSString).appendingPathComponent(".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"]
-        return (path + usual).lazy
-            .filter { !$0.isEmpty }
-            .map { ($0 as NSString).appendingPathComponent("agy") }
-            .first(where: isExecutable)
-    }
-
-    /// The handler commands of acmd's named hook ("agent-command") in agy's hooks.json; none
-    /// when the file or the hook isn't there.
-    static func agyHooks(_ file: String) -> [String] {
-        let text = file.hasPrefix("\u{FEFF}") ? String(file.dropFirst()) : file
-        guard let data = text.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hook = root["agent-command"]
-        else { return [] }
-        // Handlers sit under each event, flat or in matcher groups: find their commands.
-        func commands(_ value: Any) -> [String] {
-            switch value {
-            case let list as [Any]: list.flatMap(commands)
-            case let object as [String: Any]:
-                object.flatMap { key, value in key == "command" ? [value as? String].compactMap { $0 } : commands(value) }
-            default: []
-            }
-        }
-        return commands(hook)
     }
 
     /// The binary inside the app, which always matches it.

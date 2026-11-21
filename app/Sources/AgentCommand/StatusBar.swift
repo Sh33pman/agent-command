@@ -94,8 +94,8 @@ struct StatusBarView: View {
                 .font(AppFont.ui(11))
                 .lineLimit(1)
                 .help(Keymap.shared.tip("Open the Inbox", .inbox))
-                if let latest = UpdateChecker.shared.available {
-                    updateIndicator(latest)
+                if let update = store.update, let latest = update.latest {
+                    updateIndicator(latest, url: update.releaseURL)
                 }
                 Text(version)
                     .font(AppFont.ui(11))
@@ -110,9 +110,9 @@ struct StatusBarView: View {
     }
 
     /// A dot beside the version while a newer one is out. Clicking opens its release.
-    private func updateIndicator(_ latest: String) -> some View {
+    private func updateIndicator(_ latest: String, url: URL?) -> some View {
         Button {
-            if let url = UpdateChecker.shared.releaseURL { NSWorkspace.shared.open(url) }
+            if let url { NSWorkspace.shared.open(url) }
         } label: {
             Image(systemName: "arrow.up.circle.fill").foregroundStyle(theme.blue)
         }

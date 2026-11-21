@@ -26,7 +26,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var popupReturn: (cursor: String?, marks: Set<String>)?
     private let sidebarKeys = SidebarKeyView()
     private let notifier = AppNotifier()
-    private let hookHealth = HookHealth()
     /// Hosting, its clients and requests: alive with the app, so a request badges and notifies.
     private let remote = RemoteSettingsModel()
     /// The Remote hosts this Mac connects to, for Settings.
@@ -145,21 +144,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }
         notifier.isLooking = { [weak store] id in store?.isInMainWindow == true && store?.visibleIDs.contains(id) == true }
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
+        // The daemon says what's wrong, for this Mac and its clients alike.
         notifier.moreWarnings = { [weak store, weak self] in
-            var list: [AppWarning] = []
-            if let store, let advice = WakeAdvice.check(store.wake, jobs: store.jobs) {
-                list.append(AppWarning(
-                    id: "wake", title: advice.title, detail: advice.detail,
-                    fix: "Turn on waking the Mac: macOS asks for your password once.",
-                    actionTitle: advice.actionTitle, action: { self?.turnWakeOn(advice.args) }))
-            }
-            if let self { list += hookHealth.warnings(setUp: { [weak self] in self?.setUpHooks() }) }
-            if let store, let hosting = RemoteWarning.check(
-                sessions: store.sessions, hosting: store.remote, turnOn: { self?.remote.setHosting(true) }) {
-                list.append(hosting)
-            }
-            return list
+            HealthWarnings.warnings(store?.health ?? []) { fix in self?.runFix(fix) }
         }
+        notifier.dismissed = { [weak store] in store?.dismissed ?? [] }
+        notifier.onDismiss = { [weak store] id, on in store?.setDismissed(id, on) }
+        notifier.onRestore = { [weak store] in store?.restoreDismissed() }
+        store.onFirstHealth = { [weak self] health in self?.offerSetup(health) }
         notifier.start()
         store.onNotices = { [weak notifier] notices in notifier?.receive(notices) }
         store.onRemote = { [weak remote] status in remote?.update(status) }
@@ -169,9 +161,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         setUpPopup()
         SpeechController.shared.checkSetup()
         let args = CommandLine.arguments
-        offerSetup()
-        hookHealth.start()
-        UpdateChecker.shared.start(current: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String)
         store.start()
 
         NSApp.mainMenu = makeMenu()
@@ -217,72 +206,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         #endif
     }
 
-    /// Offers to add the hooks that live status needs (Claude Code's, and agy's once
-    /// it's installed), if they're missing.
-    /// Runs `acmd init` for a hooks warning, then checks again so it goes away.
-    private func setUpHooks() {
-        Acmd.run(["init"]) { [weak self] ok, output in
-            if !ok {
-                let failed = NSAlert()
-                failed.messageText = "Setup didn't finish"
-                failed.informativeText = output.isEmpty ? "Run \(DaemonPaths.acmd) init in a terminal to see why." : output
-                failed.runModal()
-            }
-            self?.hookHealth.check(force: true)
+    /// A warning's fix: its op, through the daemon, or on this Mac an acmd command
+    /// that needs you there (macOS asks for the password to wake the Mac).
+    private func runFix(_ fix: HealthItem.Fix) {
+        if let command = fix.command {
+            return runAcmdStep(command)
         }
-    }
-
-    private func offerSetup() {
-        let need = DaemonPaths.setupNeed
-        switch need {
-        case .none: return
-        case .refresh:
-            // The hooks were accepted before, and the app has since moved.
-            _ = runInit()
-            return
-        case .offer: break
-        }
-        let alert = NSAlert()
-        alert.messageText = "Set up Agent Command?"
-        alert.informativeText = need.offerText
-        // Opt-in: it adds a sudoers rule, so macOS asks for the password too.
-        let wake = NSButton(checkboxWithTitle: "Also let scheduled jobs wake the Mac (asks for your password)", target: nil, action: nil)
-        wake.state = .off
-        if need.isFirstSetup { alert.accessoryView = wake }
-        alert.addButton(withTitle: "Set Up")
-        alert.addButton(withTitle: "Not Now")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        if runInit() {
-            if wake.state == .on { turnWakeOn(["schedule", "wake", "on", "--all"]) }
-            return
-        }
-        let failed = NSAlert()
-        failed.messageText = "Setup didn't finish"
-        failed.informativeText = "Run \(DaemonPaths.acmd) init in a terminal to see why."
-        failed.runModal()
-    }
-
-    /// Runs `acmd schedule wake on ...`; macOS asks for the password.
-    private func turnWakeOn(_ args: [String]) {
-        Acmd.run(args) { ok, output in
-            guard !ok, !output.contains("canceled") else { return }
+        guard let op = fix.op else { return }
+        if op == "init" { return setUp(quietly: false) }
+        store.healthClient.fix(op, data: fix.data ?? [:]) { failure in
+            guard let failure else { return }
             let failed = NSAlert()
-            failed.messageText = "Couldn't turn on waking the Mac"
-            failed.informativeText = output.isEmpty ? "Run acmd schedule wake on in a terminal to see why." : output
+            failed.messageText = "That didn't work"
+            failed.informativeText = errorText(failure)
             failed.runModal()
         }
     }
 
-    private func runInit() -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: DaemonPaths.acmd)
-        process.arguments = ["init"]
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
+    /// Sets acmd up: the daemon runs what `acmd init` does. A quiet one says nothing
+    /// unless it fails.
+    private func setUp(quietly: Bool, then: @escaping (Bool) -> Void = { _ in }) {
+        store.healthClient.setUp { result in
+            switch result {
+            case .success(let done) where done.done:
+                then(true)
+            case .success(let done):
+                if !quietly { Self.setupFailed(done.output) }
+                then(false)
+            case .failure(let failure):
+                Self.setupFailed(errorText(failure))
+                then(false)
+            }
+        }
+    }
+
+    private static func setupFailed(_ why: String) {
+        let failed = NSAlert()
+        failed.messageText = "Setup didn't finish"
+        failed.informativeText = why.isEmpty ? "Run \(DaemonPaths.acmd) init in a terminal to see why." : why
+        failed.runModal()
+    }
+
+    /// At launch, from the daemon's first word on health: offer to add the hooks
+    /// live status needs, or set up again quietly when the app has moved.
+    private func offerSetup(_ health: [HealthItem]) {
+        if health.contains(where: { $0.id == "setup.refresh" }) && !health.contains(where: { $0.id == "setup.offer" }) {
+            return setUp(quietly: true)
+        }
+        guard let offer = health.first(where: { $0.id == "setup.offer" }) else { return }
+        let alert = NSAlert()
+        alert.messageText = offer.title
+        alert.informativeText = offer.detail
+        // Opt-in: it adds a sudoers rule, so macOS asks for the password too.
+        let wake = NSButton(checkboxWithTitle: "Also let scheduled jobs wake the Mac (asks for your password)", target: nil, action: nil)
+        wake.state = .off
+        let canWake = store.features?.host.wake == true && store.wake?.allowed == false
+        if canWake { alert.accessoryView = wake }
+        alert.addButton(withTitle: "Set Up")
+        alert.addButton(withTitle: "Not Now")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        setUp(quietly: false) { [weak self] done in
+            if done && canWake && wake.state == .on { self?.runAcmdStep(["schedule", "wake", "on", "--all"]) }
+        }
+    }
+
+    /// Runs an acmd step that needs you at this Mac, such as `acmd schedule wake on`,
+    /// where macOS asks for the password.
+    private func runAcmdStep(_ args: [String]) {
+        Acmd.run(args) { ok, output in
+            guard !ok, !output.contains("canceled") else { return }
+            let failed = NSAlert()
+            failed.messageText = "That didn't work"
+            failed.informativeText = output.isEmpty ? "Run acmd \(args.joined(separator: " ")) in a terminal to see why." : output
+            failed.runModal()
         }
     }
 
@@ -1364,7 +1360,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        hookHealth.check() // a fix or an install made elsewhere shows on coming back
         popupWindow.appBecameActive()
         notifier.refreshPermission()
         GhosttyRuntime.shared.setFocus(true)

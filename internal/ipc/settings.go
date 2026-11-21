@@ -52,15 +52,112 @@ const (
 	HealthWarning = "warning"
 )
 
-// HealthFix is an op a client can offer to call, or a step to take on the
-// host.
+// HealthFix is how to put it right: an op a client can offer to call (with
+// Data as its input), or, on the host itself, an acmd command to run
+// (Command: one that needs the person there, such as a password), and Step
+// in words either way.
 type HealthFix struct {
-	Op   string `json:"op,omitempty"`
-	Step string `json:"step,omitempty"`
+	Op      string         `json:"op,omitempty"`
+	Data    map[string]any `json:"data,omitempty"`
+	Command []string       `json:"command,omitempty"`
+	Step    string         `json:"step,omitempty"`
+	// Title is what a button for it says.
+	Title string `json:"title,omitempty"`
 }
 
-// Health ids.
-const HealthConfigInvalid = "config.invalid"
+// Health ids. An agent's hooks are HealthHooks + its harness name.
+const (
+	HealthConfigInvalid = "config.invalid"
+	// HealthSetupOffer: hooks acmd needs are missing, so it offers to add them.
+	HealthSetupOffer = "setup.offer"
+	// HealthSetupRefresh: the hooks run an acmd that isn't this one (it moved):
+	// setting up again fixes it without asking.
+	HealthSetupRefresh = "setup.refresh"
+	HealthHooks        = "hooks."
+	HealthWake         = "wake"
+	HealthHostingOff   = "remote.hosting_off"
+)
+
+// Severities, from the most serious: HealthError, HealthWarning, HealthInfo.
+const HealthInfo = "info"
+
+// Health ops.
+const (
+	OpHealthDismiss = "health.dismiss" // HealthRef: a client stops showing a warning → []string (its dismissed ids)
+	OpHealthRestore = "health.restore" // HealthRef.ClientID: it shows them all again → []string
+	OpInit          = "init"           // sets acmd up as `acmd init` does → InitResult
+	OpReportDetails = "report.details" // ReportRequest.Kind → ReportDetails
+	OpReportPage    = "report.page"    // ReportRequest → ReportPage
+)
+
+// HealthRef names a client and, to dismiss, a warning.
+type HealthRef struct {
+	ClientID string `json:"client_id"`
+	ID       string `json:"id,omitempty"`
+}
+
+// SnapshotRequest is the snapshot's optional input: the client asking, for
+// what it dismissed.
+type SnapshotRequest struct {
+	ClientID string `json:"client_id,omitempty"`
+}
+
+// InitResult is what setting up did, as acmd init says it.
+type InitResult struct {
+	Output string `json:"output"`
+	Done   bool   `json:"done"`
+}
+
+// ReportRequest asks for a report: bug or feature, and for a page, its
+// title and body.
+type ReportRequest struct {
+	Kind  string `json:"kind"`
+	Title string `json:"title,omitempty"`
+	Body  string `json:"body,omitempty"`
+}
+
+// ReportDetails is what a report adds about the host: its version and OS,
+// and for a bug, the end of its log, cleaned of secrets.
+type ReportDetails struct {
+	Details string `json:"details"`
+}
+
+// ReportPage is GitHub's page with the report filled in. Body is the full
+// cleaned text, and Cut says the page holds less than that.
+type ReportPage struct {
+	PageURL string `json:"page_url"`
+	Body    string `json:"body"`
+	Cut     bool   `json:"cut,omitempty"`
+}
+
+// Features say what the host, and the device the daemon runs on, can do, so
+// a client shows only what works.
+type Features struct {
+	Host   HostFeatures   `json:"host"`
+	Device DeviceFeatures `json:"device"`
+}
+
+// HostFeatures: its OS, the agents installed, and whether it can wake for
+// jobs and host Remote sessions.
+type HostFeatures struct {
+	OS      string   `json:"os"`     // runtime.GOOS: "darwin", "linux"
+	Agents  []string `json:"agents"` // harnesses installed: claude, antigravity, terminal
+	Wake    bool     `json:"wake"`
+	Hosting bool     `json:"hosting"`
+}
+
+// DeviceFeatures: what the machine in front of the person can do.
+type DeviceFeatures struct {
+	Speech bool `json:"speech"` // the speech helper is there
+	Editor bool `json:"editor"` // an editor is chosen
+}
+
+// Update is acmd's own version, and the newest release when it's newer.
+type Update struct {
+	Current string `json:"current"`
+	Latest  string `json:"latest,omitempty"`
+	URL     string `json:"url,omitempty"`
+}
 
 // ConfigOf is f's settings as config.get answers.
 func ConfigOf(f *config.File) ConfigState {

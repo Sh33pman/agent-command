@@ -25,7 +25,7 @@ var minimums = map[string]float64{
 	"AppLog.swift":              60, // the rest points the app's own output at the log
 	"Daemon.swift":              85,
 	"Harness.swift":             95,
-	"HookHealth.swift":          90,
+	"Health.swift":              90,
 	"HostSettings.swift":        90,
 	"DefaultHarness.swift":      80,
 	"InboxModel.swift":          90,

@@ -41,9 +41,9 @@ Mark a session Remote, and another Agent Command can open it, type in it and get
 brew install --cask brettmostert/tap/agent-command
 ```
 
-The install adds the app's Claude Code hooks, removing any old ones first. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it. Upgrade with `brew upgrade --cask agent-command`.
+The install adds the app's Claude Code hooks, removing any old ones first. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it. Upgrade with `brew upgrade --cask agent-command`. The background service looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
 
-`acmd doctor` checks the setup, and `acmd doctor --fix` re-adds the hooks and replaces a stale background service.
+`acmd doctor` checks the setup, and `acmd doctor --fix` re-adds the hooks and replaces a stale background service. `acmd doctor --json` prints the background service's health list: the same warnings the app shows, each with its fix.
 
 `brew uninstall --cask agent-command` ends running sessions, stops the background service, removes the hooks and asks whether to keep your sessions and settings. `brew uninstall --zap --cask agent-command` always deletes them. Upgrades leave sessions running. After an uninstall, Claude conversations can still be resumed, and with your data kept, terminals come back as new shells in the same folders.
 

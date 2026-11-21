@@ -46,6 +46,7 @@ type initOptions struct {
 	ask        bool // show the plan and ask before applying (automatic first run)
 	refreshEnv bool
 	hookBinary string // the path hooks run, when it isn't this binary's yet
+	noWake     bool   // don't offer waking the Mac afterwards (nobody's there to answer)
 }
 
 // gather collects everything planning needs.
@@ -191,7 +192,7 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 		fmt.Fprintln(out, a)
 	}
 	// Homebrew's install has no terminal to ask in (it passes --hook-binary).
-	if o.hookBinary == "" {
+	if o.hookBinary == "" && !o.noWake {
 		if err := offerWake(ctx, in, out); err != nil {
 			return true, err
 		}

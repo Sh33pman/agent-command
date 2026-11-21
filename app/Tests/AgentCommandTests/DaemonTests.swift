@@ -81,51 +81,8 @@ private func iso(_ secondsAgo: TimeInterval) -> String {
     #expect(gravity.matches("antigrav") && !older.matches("antigrav"), "the agent's name finds it")
 }
 
-@Test func setupOffersTheHooksThatAreMissing() {
-    func need(_ claude: Bool, _ claudeCurrent: Bool = true, agy: Bool = false, hooked: Bool = false, current: Bool = false) -> SetupNeed {
-        SetupNeed(claudeHooked: claude, claudeCurrent: claudeCurrent, agyInstalled: agy, agyHooked: hooked, agyCurrent: current)
-    }
-    #expect(need(true) == .none, "no agy: nothing about it")
-    #expect(need(true, false) == .refresh, "the app moved")
-    #expect(need(false) == .offer(claude: true, antigravity: false))
-    #expect(need(false, agy: true) == .offer(claude: true, antigravity: true))
-    #expect(need(true, agy: true) == .offer(claude: false, antigravity: true), "agy installed since")
-    #expect(need(true, agy: true, hooked: true, current: true) == .none)
-    #expect(need(true, agy: true, hooked: true, current: false) == .refresh, "agy's hook runs an old acmd")
-    #expect(need(true, agy: false, hooked: true, current: false) == .none, "agy's gone: leave its hook be")
 
-    #expect(need(false).offerText.contains("to your Claude Code settings, so"))
-    #expect(need(false, agy: true).offerText.contains("to your Claude Code settings and Antigravity's hooks.json, so"))
-    #expect(need(true, agy: true).offerText.contains("to Antigravity's hooks.json, so"))
-    #expect(need(true).offerText.isEmpty && need(true, false).offerText.isEmpty)
-    #expect(need(false).isFirstSetup && need(false, agy: true).isFirstSetup)
-    #expect(!need(true, agy: true).isFirstSetup && !need(true).isFirstSetup, "waking the Mac was offered the first time")
-}
 
-@Test func agyIsFoundWhereItsInstalled() {
-    let home = "/Users/me"
-    let there: Set<String> = ["/Users/me/.local/bin/agy"]
-    #expect(DaemonPaths.agyPath(["PATH": "/usr/bin:/bin"], home: home) { there.contains($0) } == "/Users/me/.local/bin/agy",
-            "the Dock's short PATH doesn't have it, the installer's folder does")
-    #expect(DaemonPaths.agyPath(["PATH": "/opt/x::/usr/bin"], home: home) { $0 == "/opt/x/agy" } == "/opt/x/agy", "PATH first")
-    #expect(DaemonPaths.agyPath([:], home: home) { $0 == "/opt/homebrew/bin/agy" } == "/opt/homebrew/bin/agy")
-    #expect(DaemonPaths.agyPath([:], home: home) { _ in false } == nil)
-}
-
-@Test func agysHooksAreReadFromItsNamedHook() {
-    let ours = """
-        \u{FEFF}{"mine": {"Stop": [{"type": "command", "command": "say hi # managed by acmd"}]},
-         "agent-command": {"enabled": true, "SessionStart": [{"type": "command", "timeout": 5,
-           "command": "[ -x /A/acmd ] && /A/acmd hook antigravity:SessionStart || echo '{}' # managed by acmd"}],
-           "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "/A/acmd hook antigravity:PostToolUse"}]}]}}
-        """
-    let commands = DaemonPaths.agyHooks(ours)
-    #expect(commands.count == 2 && commands.contains { $0.contains(DaemonPaths.hookMarker) })
-    #expect(commands.allSatisfy { !$0.hasPrefix("say") }, "another named hook isn't ours, even with the marker")
-    #expect(DaemonPaths.agyHooks(#"{"mine": {}}"#).isEmpty)
-    #expect(DaemonPaths.agyHooks("").isEmpty && DaemonPaths.agyHooks("not json").isEmpty)
-    #expect(DaemonPaths.agyHooks(#"{"agent-command": 3}"#).isEmpty)
-}
 
 extension UsesSharedSpeech {
     /// The real connection against a stand-in for the daemon.

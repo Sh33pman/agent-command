@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
@@ -70,5 +71,51 @@ func TestAgentsProblems(t *testing.T) {
 		if len(p) != 1 || p[0].Severity != "warn" || !strings.Contains(p[0].Text, "not this acmd") {
 			t.Errorf("%s with another acmd = %+v", name, p)
 		}
+	}
+}
+
+func healthIDs(h []ipc.Health) string {
+	var ids []string
+	for _, e := range h {
+		ids = append(ids, e.ID)
+	}
+	return strings.Join(ids, ",")
+}
+
+func TestHealth(t *testing.T) {
+	f := newFake(t)
+	ctx := context.Background()
+	if h := Health(ctx, f.Env()); len(h) != 0 {
+		t.Fatalf("healthy: %+v", h)
+	}
+
+	// No hooks anywhere, with agy installed: an offer naming both, and each agent's warning.
+	f.write(filepath.Join(f.home, "bin", "agy"), "#!/bin/sh\n", 0o755)
+	f.write(filepath.Join(f.home, ".claude/settings.json"), `{"model":"opus"}`, 0o600)
+	h := Health(ctx, f.Env())
+	if healthIDs(h) != "hooks.claude,hooks.antigravity,setup.offer" {
+		t.Fatalf("ids = %s", healthIDs(h))
+	}
+	if h[0].Severity != ipc.HealthError || h[0].Title != "Claude Code's hooks aren't set up" || h[0].Fix.Op != ipc.OpInit ||
+		!strings.Contains(h[0].Detail, "No acmd hooks") {
+		t.Errorf("claude = %+v", h[0])
+	}
+	if !strings.Contains(h[2].Detail, "your Claude Code settings and Antigravity's hooks.json") {
+		t.Errorf("offer = %+v", h[2])
+	}
+
+	// Hooks that run another acmd that works: set up again, without asking.
+	f2 := newFake(t)
+	other := filepath.Join(f2.home, "old", "acmd")
+	f2.write(other, "#!/bin/sh\n", 0o755)
+	settings, _, err := setup.AddHooks([]byte(`{}`), other)
+	must(t, err)
+	f2.write(filepath.Join(f2.home, ".claude/settings.json"), string(settings), 0o600)
+	h = Health(ctx, f2.Env())
+	if !strings.HasSuffix(healthIDs(h), ipc.HealthSetupRefresh) {
+		t.Errorf("stale: %s", healthIDs(h))
+	}
+	if sentence("") != "" || sentence("ok.") != "Ok." {
+		t.Error("sentence")
 	}
 }

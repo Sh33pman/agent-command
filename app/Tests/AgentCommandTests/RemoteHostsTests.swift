@@ -247,27 +247,6 @@ func makeRemoteSession(
 
 // MARK: Hosting off
 
-@Test func remoteSessionsWithHostingOffWarn() throws {
-    var hosting = RemoteStatus()
-    var turnedOn = false
-    let one = [try makeRemoteSession(id: "api", remote: true), try makeRemoteSession(id: "plain")]
-    let warning = try #require(RemoteWarning.check(sessions: one, hosting: hosting) { turnedOn = true })
-    #expect(warning.id == "remote-hosting" && warning.title == "Hosting is off" && warning.actionTitle == "Turn On Hosting")
-    #expect(warning.detail == "api is a Remote session, but Hosting is off, so no other Agent Command can use it.")
-    warning.action()
-    #expect(turnedOn)
-
-    let two = one + [try makeRemoteSession(id: "web", remote: true)]
-    #expect(RemoteWarning.check(sessions: two, hosting: hosting) {}?.detail.hasPrefix("2 sessions are Remote") == true)
-
-    let archived = [try makeRemoteSession(id: "old", remote: true, status: "archived")]
-    #expect(RemoteWarning.check(sessions: archived, hosting: hosting) {} == nil, "archived sessions don't count")
-    let fromHost = [try makeRemoteSession(id: "x", host: "studio")]
-    #expect(RemoteWarning.check(sessions: fromHost, hosting: hosting) {} == nil, "another host's sessions aren't this Mac's to share")
-    #expect(RemoteWarning.check(sessions: one, hosting: nil) {} == nil, "a daemon without Hosting")
-    hosting.enabled = true
-    #expect(RemoteWarning.check(sessions: one, hosting: hosting) {} == nil)
-}
 
 // MARK: New sessions
 

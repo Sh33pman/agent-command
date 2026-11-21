@@ -43,6 +43,38 @@ final class SessionStore {
     private(set) var remoteHosts: [RemoteHost] = []
     /// What's wrong with the host, from the daemon: config.toml with a mistake, for one.
     private(set) var health: [HealthItem] = []
+    /// The health ids this app dismissed: the daemon keeps them, by client id.
+    private(set) var dismissed: Set<String> = []
+    /// What the host and this Mac can do.
+    private(set) var features: HostFeatures?
+    /// acmd's version, and a newer release if there is one.
+    private(set) var update: UpdateState?
+    /// Told once, with the first snapshot's health: launch's setup offer.
+    @ObservationIgnored var onFirstHealth: (([HealthItem]) -> Void)?
+    @ObservationIgnored private var healthArrived = false
+    /// The daemon's health, setup and report ops.
+    @ObservationIgnored var healthClient = HealthClient()
+
+    /// Stops showing a warning in this app, or shows it again.
+    func setDismissed(_ id: String, _ on: Bool) {
+        if on { dismissed.insert(id) } else { dismissed.remove(id) }
+        let keep = dismissed
+        if on {
+            healthClient.dismiss(id, client: clientID)
+        } else {
+            // Restoring one: restore all, then dismiss the rest again.
+            healthClient.dismiss(nil, client: clientID) { [weak self] _ in
+                guard let self else { return }
+                for other in keep { self.healthClient.dismiss(other, client: self.clientID) }
+            }
+        }
+    }
+
+    /// Shows every warning again.
+    func restoreDismissed() {
+        dismissed = []
+        healthClient.dismiss(nil, client: clientID)
+    }
     /// Which sessions the sidebar lists; kept for next time.
     var filter = SidebarFilter.load() {
         didSet { if filter != oldValue { filter.save(defaults) } }
@@ -375,6 +407,7 @@ final class SessionStore {
         struct Watched: Decodable {
             let rev: UInt64
         }
+        struct SnapshotRequest: Encodable { let client_id: String }
         var startedDaemon = false
         var loadedLayout = false
         while true {
@@ -382,7 +415,7 @@ final class SessionStore {
                 let conn = try DaemonConnection(socket: DaemonPaths.socket)
                 // The state first: a daemon with no changes yet holds a watch
                 // from revision 0 until it times out.
-                let first: Snapshot = try conn.call("snapshot")
+                let first: Snapshot = try conn.call("snapshot", SnapshotRequest(client_id: clientID))
                 publish(first)
                 if !loadedLayout {
                     struct Layout: Codable {
@@ -401,7 +434,7 @@ final class SessionStore {
                     let watched: Watched = try conn.call(
                         "watch", Watch(rev: rev, wait_ms: 25_000, app: true))
                     rev = watched.rev
-                    let snapshot: Snapshot = try conn.call("snapshot")
+                    let snapshot: Snapshot = try conn.call("snapshot", SnapshotRequest(client_id: clientID))
                     publish(snapshot)
                 }
             } catch {
@@ -444,6 +477,14 @@ final class SessionStore {
             if let settings = snapshot.settings, settings != HostSettings.shared.values { HostSettings.shared.values = settings }
             let health = snapshot.health ?? []
             if health != self.health { self.health = health }
+            let dismissed = Set(snapshot.dismissed ?? [])
+            if dismissed != self.dismissed { self.dismissed = dismissed }
+            if snapshot.features != self.features { self.features = snapshot.features }
+            if snapshot.update != self.update { self.update = snapshot.update }
+            if !self.healthArrived {
+                self.healthArrived = true
+                self.onFirstHealth?(health)
+            }
             let queue = snapshot.inbox ?? []
             if queue != self.queue {
                 self.queue = queue

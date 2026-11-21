@@ -201,6 +201,44 @@
       }
     },
     {
+      "name": "health.dismiss",
+      "description": "Stops showing a warning to one client.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "health.dismiss"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.HealthRef"
+      },
+      "output": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "health.restore",
+      "description": "Shows a client every warning it dismissed again.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "health.restore"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.HealthRef"
+      },
+      "output": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    {
       "name": "hello",
       "description": "Exchanges protocol and binary versions. Sent first on every connection, in both directions.",
       "scope": "read",
@@ -275,6 +313,20 @@
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
+      }
+    },
+    {
+      "name": "init",
+      "description": "Sets acmd up as acmd init does: the agents' hooks, the settings, and the login shell's environment.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "init"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.InitResult"
       }
     },
     {
@@ -876,6 +928,38 @@
       }
     },
     {
+      "name": "report.details",
+      "description": "Returns what a report adds about the host: its version, OS, and for a bug the end of its log, cleaned of secrets.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "report.details"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.ReportRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ReportDetails"
+      }
+    },
+    {
+      "name": "report.page",
+      "description": "Makes the GitHub page for a report from its title and body, cleaned of secrets.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "report.page"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.ReportRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ReportPage"
+      }
+    },
+    {
       "name": "resume",
       "description": "Resumes a paused background session.",
       "scope": "act",
@@ -1093,12 +1177,15 @@
     },
     {
       "name": "snapshot",
-      "description": "Returns the sessions, groups, view state, notices, Inbox, jobs, wake state and Remote state.",
+      "description": "Returns the sessions, groups, view state, notices, Inbox, jobs, wake state, Remote state, settings, health, features and updates. A client id says which warnings it dismissed.",
       "scope": "read",
       "kind": "read",
       "grant": "entities",
       "transport": {
         "op": "snapshot"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.SnapshotRequest"
       },
       "output": {
         "$ref": "#/$defs/ipc.Snapshot"
@@ -1917,6 +2004,36 @@
         "updated_at"
       ]
     },
+    "ipc.DeviceFeatures": {
+      "properties": {
+        "speech": {
+          "type": "boolean"
+        },
+        "editor": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "speech",
+        "editor"
+      ]
+    },
+    "ipc.Features": {
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/ipc.HostFeatures"
+        },
+        "device": {
+          "$ref": "#/$defs/ipc.DeviceFeatures"
+        }
+      },
+      "type": "object",
+      "required": [
+        "host",
+        "device"
+      ]
+    },
     "ipc.Health": {
       "properties": {
         "id": {
@@ -1947,11 +2064,37 @@
         "op": {
           "type": "string"
         },
+        "data": {
+          "type": "object"
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "step": {
+          "type": "string"
+        },
+        "title": {
           "type": "string"
         }
       },
       "type": "object"
+    },
+    "ipc.HealthRef": {
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "client_id"
+      ]
     },
     "ipc.Hello": {
       "properties": {
@@ -2004,6 +2147,32 @@
         "context"
       ]
     },
+    "ipc.HostFeatures": {
+      "properties": {
+        "os": {
+          "type": "string"
+        },
+        "agents": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "wake": {
+          "type": "boolean"
+        },
+        "hosting": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "os",
+        "agents",
+        "wake",
+        "hosting"
+      ]
+    },
     "ipc.InboxAnswer": {
       "properties": {
         "id": {
@@ -2028,6 +2197,21 @@
         }
       },
       "type": "object"
+    },
+    "ipc.InitResult": {
+      "properties": {
+        "output": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "output",
+        "done"
+      ]
     },
     "ipc.JobCheck": {
       "properties": {
@@ -2711,6 +2895,52 @@
         "pending"
       ]
     },
+    "ipc.ReportDetails": {
+      "properties": {
+        "details": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "details"
+      ]
+    },
+    "ipc.ReportPage": {
+      "properties": {
+        "page_url": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "cut": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "page_url",
+        "body"
+      ]
+    },
+    "ipc.ReportRequest": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "kind"
+      ]
+    },
     "ipc.Set": {
       "properties": {
         "type": {
@@ -2794,6 +3024,18 @@
             "$ref": "#/$defs/ipc.Health"
           },
           "type": "array"
+        },
+        "dismissed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "features": {
+          "$ref": "#/$defs/ipc.Features"
+        },
+        "update": {
+          "$ref": "#/$defs/ipc.Update"
         }
       },
       "type": "object",
@@ -2802,6 +3044,14 @@
         "groups",
         "view_state"
       ]
+    },
+    "ipc.SnapshotRequest": {
+      "properties": {
+        "client_id": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "ipc.Status": {
       "properties": {
@@ -2827,6 +3077,23 @@
         "pid",
         "sessions",
         "events"
+      ]
+    },
+    "ipc.Update": {
+      "properties": {
+        "current": {
+          "type": "string"
+        },
+        "latest": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "current"
       ]
     },
     "ipc.WakeRef": {

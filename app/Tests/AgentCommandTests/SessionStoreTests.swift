@@ -468,7 +468,6 @@ extension UsesSharedSpeech {
         }
 
         @Test func warningsFollowThePermissions() throws {
-            UserDefaults.standard.removeObject(forKey: "warnings.dismissed")
             let n = AppNotifier()
             #expect(n.warnings.isEmpty)
             n.setPermission(turnedOff: true, badgeOff: true)
@@ -479,20 +478,23 @@ extension UsesSharedSpeech {
             #expect(n.warnings.isEmpty, "fixed, so it's gone")
         }
 
-        @Test func aDismissedWarningStaysListedAndIsRemembered() throws {
-            UserDefaults.standard.removeObject(forKey: "warnings.dismissed")
-            defer { UserDefaults.standard.removeObject(forKey: "warnings.dismissed") }
+        @Test func aDismissedWarningStaysListedAndIsKeptByTheDaemon() throws {
+            var kept: Set<String> = []
+            var restored = 0
             let n = AppNotifier()
+            n.dismissed = { kept }
+            n.onDismiss = { id, on in if on { kept.insert(id) } else { kept.remove(id) } }
+            n.onRestore = { kept = []; restored += 1 }
             n.setPermission(turnedOff: false, badgeOff: true)
             let warning = try #require(n.warnings.first)
             #expect(!n.isDismissed(warning))
             n.setDismissed(warning, true)
-            #expect(n.isDismissed(warning) && n.warnings.count == 1)
-            let later = AppNotifier()
-            later.setPermission(turnedOff: false, badgeOff: true)
-            #expect(later.isDismissed(try #require(later.warnings.first)))
+            #expect(n.isDismissed(warning) && n.warnings.count == 1 && n.dismissedWarnings == ["dock-badge"])
             n.setDismissed(warning, false)
             #expect(!n.isDismissed(warning))
+            n.setDismissed(warning, true)
+            n.restoreDismissedWarnings()
+            #expect(!n.isDismissed(warning) && restored == 1)
         }
     }
 }

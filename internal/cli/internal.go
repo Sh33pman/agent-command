@@ -77,6 +77,14 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			cfg.Hosts = execHosts{paths: p}
 			cfg.Harnesses = installedHarnesses(p)
 			cfg.AgentHelp = agentHelp(p)
+			cfg.CheckHealth = checkHealth
+			cfg.HealthFiles = healthFiles()
+			cfg.Init = daemonInit
+			cfg.OSVersion = macOSVersion
+			cfg.Speech = func() bool {
+				e, err := speechEngine()
+				return err == nil && e.Supported()
+			}
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)
 				cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli

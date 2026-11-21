@@ -26,7 +26,7 @@ func TestBackgroundWorkIsNotifiedWhenItFinishes(t *testing.T) {
 	}
 	row := func() *core.Session {
 		t.Helper()
-		snap, err := d.snapshot(ctx)
+		snap, err := d.snapshot(ctx, "")
 		must(t, err)
 		if len(snap.Sessions) != 1 {
 			t.Fatalf("sessions: %d", len(snap.Sessions))

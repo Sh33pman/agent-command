@@ -26,7 +26,9 @@ type Stopper interface {
 
 var validSorts = map[string]bool{"created": true, "name": true, "activity": true, "status": true, "cwd": true}
 
-func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
+// snapshot is everything the apps show. clientID, when set, says which
+// client asks, for the warnings it dismissed.
+func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	sessions, err := d.store.Sessions(ctx, true)
@@ -65,9 +67,15 @@ func (d *Daemon) snapshot(ctx context.Context) (ipc.Snapshot, error) {
 		st := d.remote.Status()
 		remote = &st
 	}
+	wake := d.wakeState(ctx)
+	dismissed, err := d.dismissed(ctx, clientID)
+	if err != nil {
+		return ipc.Snapshot{}, err
+	}
 	return ipc.Snapshot{Sessions: sessions, Groups: groups, Sets: wireSets(sets), ViewState: vs, Notices: d.notices(), Inbox: d.withHostInbox(queue),
-		Jobs: jobs, Wake: d.wakeState(ctx), Remote: remote, RemoteHosts: d.remoteHosts(),
-		Settings: config.Values(d.config()), Health: d.health()}, nil
+		Jobs: jobs, Wake: wake, Remote: remote, RemoteHosts: d.remoteHosts(),
+		Settings: config.Values(d.config()), Health: d.health(sessions, jobs, wake, remote), Dismissed: dismissed,
+		Features: d.features(), Update: d.update()}, nil
 }
 
 // mutate applies one client change. It returns a value for group.create.

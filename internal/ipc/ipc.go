@@ -229,6 +229,13 @@ type Snapshot struct {
 	Settings map[string]any `json:"settings,omitempty"`
 	// Health is what's wrong with the host, or worth knowing.
 	Health []Health `json:"health,omitempty"`
+	// Dismissed are the health ids the asking client dismissed
+	// (SnapshotRequest.ClientID).
+	Dismissed []string `json:"dismissed,omitempty"`
+	// Features say what the host and this device can do.
+	Features *Features `json:"features,omitempty"`
+	// Update is this daemon's version, and a newer release if there is one.
+	Update *Update `json:"update,omitempty"`
 }
 
 // Notice is a notification the daemon decided on. Emitter is the view

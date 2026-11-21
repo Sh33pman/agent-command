@@ -7,6 +7,8 @@ import SwiftUI
 struct ReportView: View {
     let kind: ReportKind
     let close: () -> Void
+    /// The daemon builds the report, from the host's own log.
+    var client = HealthClient()
 
     private enum Field { case title, description }
     private enum Outcome {
@@ -113,31 +115,20 @@ struct ReportView: View {
     }
 
     private func loadDetails() {
-        let arguments = draft.detailsArguments
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = Self.run(arguments, input: nil)
-            DispatchQueue.main.async {
-                if result.status == 0 {
-                    draft.details = String(decoding: result.output, as: UTF8.self)
-                } else {
-                    outcome = .failed("Couldn't read this install's details.")
-                }
+        client.reportDetails(draft.kind) { result in
+            switch result {
+            case .success(let details): draft.details = details
+            case .failure: outcome = .failed("Couldn't read this install's details.")
             }
         }
     }
 
     private func openPage() {
-        let body = draft.body
-        let arguments = draft.pageArguments
         opening = true
         outcome = nil
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = Self.run(arguments, input: Data(body.utf8))
-            let page = ReportPage.from(status: result.status, output: result.output)
-            DispatchQueue.main.async {
-                opening = false
-                finish(page)
-            }
+        client.reportPage(draft) { result in
+            opening = false
+            finish(try? result.get())
         }
     }
 
@@ -154,8 +145,4 @@ struct ReportView: View {
         outcome = .opened(cut: page.wasCut)
     }
 
-    /// Runs acmd, which can take a while. Call it off the main thread.
-    private static func run(_ arguments: [String], input: Data?) -> (status: Int32, output: Data) {
-        ReportProcess.run("/usr/bin/env", [DaemonPaths.acmd] + arguments, input: input)
-    }
 }

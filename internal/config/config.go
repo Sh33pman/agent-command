@@ -34,11 +34,19 @@ type Config struct {
 	// DefaultHarness is what a plain new session runs (⌘N, `acmd new` without
 	// --harness): "claude" or "antigravity". "" isn't chosen yet: the app asks,
 	// and `acmd new` starts Claude.
-	DefaultHarness string `toml:"default_harness"`
-	Editor         Editor `toml:"editor"`
-	Notify         Notify `toml:"notify"`
-	Speech         Speech `toml:"speech"`
-	Remote         Remote `toml:"remote"`
+	DefaultHarness string  `toml:"default_harness"`
+	Editor         Editor  `toml:"editor"`
+	Notify         Notify  `toml:"notify"`
+	Speech         Speech  `toml:"speech"`
+	Remote         Remote  `toml:"remote"`
+	Updates        Updates `toml:"updates"`
+}
+
+// Updates is the [updates] section.
+type Updates struct {
+	// Check looks for newer releases of acmd, every few hours. Off makes no
+	// request at all.
+	Check bool `toml:"check"`
 }
 
 // Retired are what config.toml may still have and nothing reads any more: acmd
@@ -101,9 +109,10 @@ func Default() Config {
 		AgyCommand:    "agy",
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
 			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default"},
-		Editor: Editor{RunIn: "background", Target: "cwd"},
-		Speech: Speech{Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
-		Remote: DefaultRemote(),
+		Editor:  Editor{RunIn: "background", Target: "cwd"},
+		Speech:  Speech{Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
+		Remote:  DefaultRemote(),
+		Updates: Updates{Check: true},
 	}
 }
 
@@ -194,6 +203,11 @@ sound = "default"
 # voices only (af_, am_). Run "acmd speech install" after changing it.
 voice = "af_heart:0.6,af_bella:0.4"
 speed = 1.0
+
+[updates]
+# Look for newer releases of acmd every few hours, and say when there is one.
+# Off makes no request at all.
+check = true
 
 # Remote sessions: use sessions on another acmd. Hosting ([remote.host]) lets
 # the clients in [[remote.authorized_clients]] connect; acmd remote hosting on

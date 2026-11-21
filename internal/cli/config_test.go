@@ -101,3 +101,22 @@ func TestConfigShowAndSet(t *testing.T) {
 		t.Errorf("a missing file starts from the template:\n%s", b)
 	}
 }
+
+// doctor --json prints the daemon's health list, or with no daemon, the
+// setup checks it would make.
+func TestDoctorJSONIsTheHealthList(t *testing.T) {
+	isolate(t)
+	var out struct{ Health []ipc.Health }
+	must(t, json.Unmarshal([]byte(mustRun(t, "doctor", "--json")), &out))
+	if out.Health == nil {
+		t.Fatal("no health list")
+	}
+	daemonEnv(t)
+	must(t, json.Unmarshal([]byte(mustRun(t, "doctor", "--json")), &out))
+	if out.Health == nil {
+		t.Fatal("no health list from the daemon")
+	}
+	if len(healthFiles()) != 2 {
+		t.Error(healthFiles())
+	}
+}

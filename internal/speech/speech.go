@@ -66,6 +66,13 @@ type record struct {
 	At    string `json:"at"`
 }
 
+// Supported says whether this machine has the speech helper: whether speech
+// can work here at all.
+func (e *Engine) Supported() bool {
+	_, err := e.helper()
+	return err == nil
+}
+
 // Status says whether speech is set up for e's voice: "" when it is,
 // otherwise what's missing.
 func (e *Engine) Status() string {

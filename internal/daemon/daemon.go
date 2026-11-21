@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -102,6 +103,22 @@ type Config struct {
 	Harnesses func() []string
 	// Home is where the host API's folders start (default: $HOME).
 	Home string
+
+	// CheckHealth checks acmd's setup (doctor.Health): the agents' hooks,
+	// and whether to offer to set up. nil checks nothing.
+	CheckHealth func(ctx context.Context) []ipc.Health
+	// HealthFiles are the agents' settings files: a change checks again.
+	HealthFiles []string
+	// Init sets acmd up as `acmd init` does (the init op). nil refuses.
+	Init func(ctx context.Context) (ipc.InitResult, error)
+	// OSVersion is the OS's version, for reports ("" when unknown).
+	OSVersion func(ctx context.Context) string
+	// Speech says whether the speech helper is here (a device feature).
+	Speech func() bool
+	// ReleasesURL is where updates are looked for (the Homebrew tap's
+	// releases), and HTTP what asks. "" is the tap.
+	ReleasesURL string
+	HTTP        *http.Client
 }
 
 // Daemon is a running daemon.
@@ -122,6 +139,9 @@ type Daemon struct {
 
 	settingsOnce sync.Once
 	settingsFile *config.File // config.toml (settings.go)
+
+	healthy healthState // the setup checks' last word (health.go)
+	updates updateState // the newest release (update.go)
 
 	agentSince map[string]time.Time // front.go: since when an agent without hooks is in front
 	agentSeen  map[string]uint64    // agentstate.go: the last OSC 7501 report applied, per session
@@ -225,6 +245,8 @@ func Run(ctx context.Context, cfg Config) error {
 	d.startRemoteHosts(ctx)
 	defer d.client.Close()
 	d.startSettings(ctx)
+	d.startHealth(ctx)
+	d.startUpdates(ctx)
 
 	if err := d.drainSpool(ctx); err != nil {
 		cfg.Log.Printf("drain spool: %v", err)
@@ -341,6 +363,9 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	if isJobOp(req.Op) {
 		return d.handleJob(ctx, req)
 	}
+	if isHealthOp(req.Op) {
+		return d.handleHealth(ctx, req)
+	}
 	if isConfigOp(req.Op) {
 		return d.handleConfig(ctx, req)
 	}
@@ -362,7 +387,14 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		}
 		return nil, d.ApplyHook(ctx, ev)
 	case ipc.OpSnapshot:
-		return d.snapshot(ctx)
+		var sr ipc.SnapshotRequest
+		if len(req.Data) > 0 {
+			var err error
+			if sr, err = decode[ipc.SnapshotRequest](req.Data); err != nil {
+				return nil, err
+			}
+		}
+		return d.snapshot(ctx, sr.ClientID)
 	case ipc.OpMutate:
 		var m ipc.Mutation
 		if err := json.Unmarshal(req.Data, &m); err != nil {

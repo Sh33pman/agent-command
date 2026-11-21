@@ -190,41 +190,6 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
     #expect(WakeState(allowed: true).nextLine == "Wakes only for jobs set to wake the Mac.")
 }
 
-@Test func theWakeWarningSaysWhatToTurnOn() throws {
-    var due = Job()
-    due.name = "Brief"
-    due.nextRun = "2026-11-14T08:00:00Z"
-    var paused = due
-    paused.paused = true
-    var done = due
-    done.nextRun = ""
-
-    // Nothing to warn about: no daemon waker, waking on, or no job that will run.
-    #expect(WakeAdvice.check(nil, jobs: [due]) == nil)
-    #expect(WakeAdvice.check(WakeState(allowed: true), jobs: [due]) == nil)
-    #expect(WakeAdvice.check(WakeState(), jobs: []) == nil)
-    #expect(WakeAdvice.check(WakeState(), jobs: [paused, done]) == nil)
-
-    // Jobs, none set to wake: turn it on for every job.
-    let all = try #require(WakeAdvice.check(WakeState(), jobs: [due, paused]))
-    #expect(all.title == "Scheduled jobs can't wake the Mac" && all.args == ["schedule", "wake", "on", "--all"])
-
-    // Jobs set to wake: turn it on for them.
-    var waking = due
-    waking.wake = true
-    let one = try #require(WakeAdvice.check(WakeState(), jobs: [due, waking]))
-    #expect(one.args == ["schedule", "wake", "on"] && one.detail.hasPrefix("Brief is set to wake the Mac"))
-    let two = try #require(WakeAdvice.check(WakeState(), jobs: [waking, waking]))
-    #expect(two.detail.hasPrefix("2 jobs are set to wake the Mac"))
-
-    // On, but setting the wake failed: said, for jobs that wake the Mac.
-    let failed = WakeState(allowed: true, error: "set a wake: sudo: a password is required")
-    let retry = try #require(WakeAdvice.check(failed, jobs: [waking]))
-    #expect(retry.actionTitle == "Set Up Again…" && retry.detail.hasSuffix("sudo: a password is required"))
-    #expect(WakeAdvice.check(failed, jobs: [due]) == nil, "no job wakes the Mac")
-    #expect(WakeAdvice.check(WakeState(allowed: true, all: true, error: "x"), jobs: [due]) != nil, "every job does")
-    #expect(one.actionTitle == "Turn On…")
-}
 
 @Test func aSessionAJobStartedOrContinuesIsMarkedScheduled() throws {
     func session(_ id: String, _ extra: [String: Any] = [:]) throws -> Session {

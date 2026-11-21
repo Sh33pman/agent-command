@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,11 +55,15 @@ func newDoctorCmd() *cobra.Command {
 				return err
 			}
 			if asJSON {
-				// For the app: each agent, whether it's installed, and what's wrong
-				// with its hooks. It always succeeds: the problems are the answer.
+				// The daemon's health list, which the apps show: the same checks.
+				// It always succeeds: the problems are the answer.
+				health, err := daemonHealth(cmd.Context(), env)
+				if err != nil {
+					return err
+				}
 				b, err := json.MarshalIndent(struct {
-					Agents []doctor.AgentHooks `json:"agents"`
-				}{doctor.Agents(cmd.Context(), env)}, "", "  ")
+					Health []ipc.Health `json:"health"`
+				}{health}, "", "  ")
 				if err != nil {
 					return err
 				}
@@ -74,7 +79,7 @@ func newDoctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&fix, "fix", false, "fix what it can: re-add the hooks and replace a stale daemon")
-	cmd.Flags().BoolVar(&asJSON, "json", false, "print each agent's hook setup as JSON: installed, and its problems")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the health list as JSON: what the apps warn about, each with its fix")
 	return cmd
 }
 
@@ -169,4 +174,62 @@ func processBinary(pid int) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// checkHealth is the daemon's setup checks (daemon.Config.CheckHealth).
+func checkHealth(ctx context.Context) []ipc.Health {
+	env, err := doctorEnv()
+	if err != nil {
+		return nil
+	}
+	return doctor.Health(ctx, env)
+}
+
+// healthFiles are the agents' settings files the daemon watches, so a hook
+// added or lost shows at once.
+func healthFiles() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return []string{
+		filepath.Join(setup.ClaudeConfigDir(home, os.Getenv), "settings.json"),
+		filepath.Join(setup.AntigravityConfigDir(home), "hooks.json"),
+	}
+}
+
+// daemonInit is the init op: acmd init, run by the daemon for a client, with
+// the login shell's environment captured afresh (a daemon started by launchd
+// has a minimal one). Nobody's there to answer questions.
+func daemonInit(ctx context.Context) (ipc.InitResult, error) {
+	var out bytes.Buffer
+	done, err := runInit(ctx, strings.NewReader(""), &out, initOptions{refreshEnv: true, noWake: true})
+	return ipc.InitResult{Output: out.String(), Done: done}, err
+}
+
+// daemonHealth is the running daemon's health list, or, with none running,
+// the setup checks it would make: doctor --json starts no daemon.
+func daemonHealth(ctx context.Context, env doctor.Env) ([]ipc.Health, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := ipc.Dial(ctx, env.Paths.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	if err != nil {
+		if conn != nil {
+			_ = conn.Close()
+		}
+		h := doctor.Health(ctx, env)
+		if h == nil {
+			h = []ipc.Health{}
+		}
+		return h, nil
+	}
+	defer conn.Close()
+	var s ipc.Snapshot
+	if err := conn.Call(ipc.OpSnapshot, nil, &s); err != nil {
+		return nil, err
+	}
+	if s.Health == nil {
+		s.Health = []ipc.Health{}
+	}
+	return s.Health, nil
 }

@@ -133,8 +133,8 @@ func (d *Daemon) withEditor(values map[string]any) (map[string]any, error) {
 	return out, nil
 }
 
-// health is what's wrong with the host, for the snapshot.
-func (d *Daemon) health() []ipc.Health {
+// configHealth is what's wrong with config.toml, for the health list.
+func (d *Daemon) configHealth() []ipc.Health {
 	var out []ipc.Health
 	if p := d.settings().Problem(); p != nil {
 		step := "Fix config.toml (" + d.settings().Path() + ")."

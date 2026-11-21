@@ -13,18 +13,22 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     @ObservationIgnored var popupShows: (String) -> Bool = { _ in false }
     /// Called with the session of a clicked notification.
     @ObservationIgnored var onOpen: ((String) -> Void)?
-    /// Warnings from elsewhere in the app (scheduled jobs that can't wake the Mac).
+    /// Warnings from elsewhere: the daemon's health list.
     @ObservationIgnored var moreWarnings: () -> [AppWarning] = { [] }
+    /// The warnings dismissed in this app, which the daemon keeps by its client id,
+    /// and what dismissing one, showing it again, and showing them all again do.
+    @ObservationIgnored var dismissed: () -> Set<String> = { [] }
+    @ObservationIgnored var onDismiss: (String, Bool) -> Void = { _, _ in }
+    @ObservationIgnored var onRestore: () -> Void = {}
     /// Whether notifications are turned off for the app in System Settings.
     private(set) var isTurnedOff = false
     /// Whether the Dock icon can't show its count. Only you can change that, in System
     /// Settings: macOS doesn't let an app turn it on.
     private(set) var isBadgeOff = false
     /// The warnings you've dismissed, which stay listed, greyed out.
-    private(set) var dismissedWarnings = Set(UserDefaults.standard.stringArray(forKey: AppNotifier.dismissedKey) ?? [])
+    var dismissedWarnings: Set<String> { dismissed() }
 
     @ObservationIgnored private var lastSeq: UInt64?
-    private static let dismissedKey = "warnings.dismissed"
 
     /// Only an app bundle can post, so a development build shows nothing.
     private var center: UNUserNotificationCenter? {
@@ -136,14 +140,12 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func setDismissed(_ warning: AppWarning, _ dismissed: Bool) {
-        if dismissed { dismissedWarnings.insert(warning.id) } else { dismissedWarnings.remove(warning.id) }
-        UserDefaults.standard.set(Array(dismissedWarnings), forKey: Self.dismissedKey)
+        onDismiss(warning.id, dismissed)
     }
 
     /// Shows every warning again, dismissed or not.
     func restoreDismissedWarnings() {
-        dismissedWarnings = []
-        UserDefaults.standard.removeObject(forKey: Self.dismissedKey)
+        onRestore()
     }
 
     /// Opens the app's page in System Settings.

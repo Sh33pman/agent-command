@@ -450,25 +450,6 @@ enum SidebarFilter: Hashable, Identifiable {
     }
 }
 
-// MARK: Hosting off
-
-enum RemoteWarning {
-    /// Remote sessions with Hosting off can't be reached by anyone: say so, with
-    /// a way to turn it on. Nothing from a daemon without Hosting.
-    static func check(sessions: [Session], hosting: RemoteStatus?, turnOn: @escaping () -> Void) -> AppWarning? {
-        guard let hosting, !hosting.enabled else { return nil }
-        let shared = sessions.filter { $0.isRemote && !$0.isOnHost && !$0.isArchived }
-        guard !shared.isEmpty else { return nil }
-        let which = shared.count == 1 ? "\(shared[0].displayName) is a Remote session" : "\(shared.count) sessions are Remote"
-        return AppWarning(
-            id: "remote-hosting",
-            title: "Hosting is off",
-            detail: "\(which), but Hosting is off, so no other Agent Command can use \(shared.count == 1 ? "it" : "them").",
-            fix: "Turn on Hosting in Settings → Remote, or turn Remote off for \(shared.count == 1 ? "it" : "them").",
-            actionTitle: "Turn On Hosting", action: turnOn)
-    }
-}
-
 // MARK: New sessions
 
 enum RemoteDefaults {

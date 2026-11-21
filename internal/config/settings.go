@@ -170,6 +170,10 @@ var Specs = []Spec{
 	{Key: "editor.target", Type: TypeChoice, Default: "cwd", Choices: []string{"cwd", "git_root"}, Where: WhereDevice,
 		Description: "Open the session's folder, or its git repository's root.", get: func(c Config) any { return c.Editor.Target }},
 
+	{Key: "updates.check", Type: TypeBool, Default: true, Where: WhereHost,
+		Description: "Look for newer releases of acmd every few hours. Off makes no request at all.",
+		get:         func(c Config) any { return c.Updates.Check }},
+
 	{Key: "remote.new_sessions_remote", Type: TypeBool, Default: false, Where: WhereHost,
 		Description: "Whether a new session is Remote unless it says otherwise.",
 		get:         func(c Config) any { return c.Remote.NewSessionsRemote }},

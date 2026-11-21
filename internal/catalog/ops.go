@@ -64,7 +64,8 @@ func localOps() []Op {
 		act(ipc.OpEvent, "Delivers an agent's hook event from `acmd hook`.", host, ipc.HookEvent{}, nil).hostOnly(),
 
 		// State.
-		read(ipc.OpSnapshot, "Returns the sessions, groups, view state, notices, Inbox, jobs, wake state and Remote state.", entities, nil, ipc.Snapshot{}),
+		read(ipc.OpSnapshot, "Returns the sessions, groups, view state, notices, Inbox, jobs, wake state, Remote state, settings, health, features and updates. A client id says which warnings it dismissed.",
+			entities, ipc.SnapshotRequest{}, ipc.Snapshot{}),
 		read(ipc.OpWatch, "Waits until something changes, or a timeout passes. A view's heartbeat while it's open.", entities, ipc.WatchRequest{}, ipc.WatchResponse{}),
 		read(ipc.OpLayout, "Returns a client's saved pane layout.", host, ipc.Layout{}, ipc.Layout{}),
 		act(ipc.OpSetLayout, "Saves a client's pane layout.", host, ipc.Layout{}, nil),
@@ -159,6 +160,16 @@ func localOps() []Op {
 		read(ipc.OpRemoteFoldersList, "Lists a folder on a host.", host, ipc.RemoteFolderRequest{}, api.FolderList{}),
 		act(ipc.OpRemoteFoldersMkdir, "Makes a folder on a host.", host, ipc.RemoteFolderRequest{}, api.Folder{}),
 		read(ipc.OpRemoteHarnesses, "Lists the harnesses a host can start.", host, ipc.RemoteHostRef{}, api.Harnesses{}),
+
+		// Health: what's wrong with the host, and putting it right.
+		act(ipc.OpHealthDismiss, "Stops showing a warning to one client.", host, ipc.HealthRef{}, []string{}),
+		act(ipc.OpHealthRestore, "Shows a client every warning it dismissed again.", host, ipc.HealthRef{}, []string{}),
+		admin(ipc.OpInit, "Sets acmd up as acmd init does: the agents' hooks, the settings, and the login shell's environment.",
+			host, nil, ipc.InitResult{}).runsCode(),
+		read(ipc.OpReportDetails, "Returns what a report adds about the host: its version, OS, and for a bug the end of its log, cleaned of secrets.",
+			host, ipc.ReportRequest{}, ipc.ReportDetails{}),
+		read(ipc.OpReportPage, "Makes the GitHub page for a report from its title and body, cleaned of secrets.",
+			host, ipc.ReportRequest{}, ipc.ReportPage{}),
 
 		// Settings: config.toml, which the daemon alone writes.
 		read(ipc.OpConfigGet, "Describes every setting (type, default, allowed values, host or device, whether it runs code) and returns the values in effect.",

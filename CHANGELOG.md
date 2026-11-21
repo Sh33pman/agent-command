@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.0](https://github.com/brettmostert/agent-command/compare/v0.68.0...v0.69.0) (2026-11-21)
+
+
+### Features
+
+* jobs' schedule form, prompt files and folders through the daemon ([#110](https://github.com/brettmostert/agent-command/issues/110)) ([b312466](https://github.com/brettmostert/agent-command/commit/b3124665eb30fc076617668fa26eb75c8569673a))
+
 ## [0.68.0](https://github.com/brettmostert/agent-command/compare/v0.67.0...v0.68.0) (2026-11-21)
 
 

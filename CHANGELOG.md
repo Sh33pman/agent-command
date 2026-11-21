@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.64.0](https://github.com/brettmostert/agent-command/compare/v0.63.0...v0.64.0) (2026-11-21)
+
+
+### Features
+
+* settings through the daemon, and Remote's data in state.db ([#100](https://github.com/brettmostert/agent-command/issues/100)) ([496d06e](https://github.com/brettmostert/agent-command/commit/496d06e4d35955c4ad6142292bcc89c4413cb124))
+
 ## [0.63.0](https://github.com/brettmostert/agent-command/compare/v0.62.0...v0.63.0) (2026-11-20)
 
 

@@ -521,10 +521,20 @@ func TestAttach(t *testing.T) {
 	must(t, err)
 	b, err := c.Open(ctx, "attach", map[string]string{"Session": "s2"}, nil)
 	must(t, err)
+	again, err := c.Open(ctx, "attach", map[string]string{"Session": "s2"}, nil)
+	must(t, err)
 	eventually(t, "the attaches", func() bool {
+		f.h.mu.Lock()
+		n := len(f.h.attachments)
+		f.h.mu.Unlock()
 		cl := f.h.Clients()
-		return len(cl[0].Connections) == 1 && strings.Join(cl[0].Connections[0].Sessions, ",") == "s1,s2"
+		return n == 3 && len(cl[0].Connections) == 1 && strings.Join(cl[0].Connections[0].Sessions, ",") == "s1,s2"
 	})
+	// The status counts connections attached to each session: twice is once.
+	if got := f.h.Status().Attached; len(got) != 2 || got["s1"] != 1 || got["s2"] != 1 {
+		t.Errorf("attached = %v", got)
+	}
+	_ = again.Close()
 
 	// Turning Remote off on s1 closes its stream.
 	if n := f.h.CloseSession("s1"); n != 1 {
@@ -537,6 +547,7 @@ func TestAttach(t *testing.T) {
 	<-released
 	eventually(t, "the release", func() bool { return strings.Join(f.h.Clients()[0].Connections[0].Sessions, ",") == "s2" })
 	_ = b.Close()
+	eventually(t, "no attaches", func() bool { return f.h.Status().Attached == nil })
 
 	// On a connection that has gone, an attach is closed at once.
 	closed := &closer{}

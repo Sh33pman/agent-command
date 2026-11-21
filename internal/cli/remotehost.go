@@ -2,9 +2,7 @@ package cli
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
@@ -237,24 +235,7 @@ func clientFingerprint(arg string) (fp, name string, err error) {
 }
 
 // certName is the common name of the first cert in a PEM file ("" if none).
-func certName(path string) string {
-	b, err := os.ReadFile(path) //nolint:gosec // G304: a cert file the user named
-	if err != nil {
-		return ""
-	}
-	for {
-		var block *pem.Block
-		if block, b = pem.Decode(b); block == nil {
-			return ""
-		}
-		if block.Type == "CERTIFICATE" {
-			if c, err := x509.ParseCertificate(block.Bytes); err == nil {
-				return c.Subject.CommonName
-			}
-			return ""
-		}
-	}
-}
+func certName(path string) string { return identity.CommonNameFromPEMFile(path) }
 
 func newRemoteRevokeCmd() *cobra.Command {
 	return &cobra.Command{

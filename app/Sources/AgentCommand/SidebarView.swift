@@ -16,8 +16,6 @@ struct SidebarView: View {
     let clickRow: (Session) -> Void
     /// A double click, like return, shows the session.
     let openRow: (Session) -> Void
-    /// Hosting's clients, for how many are attached to a Remote session.
-    var remote: RemoteSettingsModel? = nil
     /// Turns Remote on or off for a session on this Mac.
     var setRemote: (Session, Bool) -> Void = { _, _ in }
     /// Removes a session added from a host, here only.
@@ -63,7 +61,8 @@ struct SidebarView: View {
         return true
     }
 
-    private var attached: [String: Int] { RemoteAttached.counts(remote?.clients ?? []) }
+    /// From the daemon's snapshot: it changes as clients attach.
+    private var attached: [String: Int] { store.remote?.attached ?? [:] }
 
     /// All, Local, Remote or a host: only once there's a host to tell apart.
     @ViewBuilder private var filterMenu: some View {

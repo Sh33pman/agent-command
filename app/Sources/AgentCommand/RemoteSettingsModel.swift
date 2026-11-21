@@ -47,8 +47,8 @@ enum RemoteRequestResponse: Equatable {
 
 /// Hosting, its clients and its requests, for Settings, the palette and
 /// notifications. The app lives with one for as long as it runs: a request
-/// that arrives while Settings is closed still badges and notifies. Every
-/// change goes through acmd, which keeps config.toml's comments.
+/// that arrives while Settings is closed still badges and notifies. It calls
+/// the daemon's remote.* ops directly: no acmd process.
 @Observable final class RemoteSettingsModel {
     /// From the daemon's snapshot; nil when it has no Hosting.
     private(set) var status: RemoteStatus?
@@ -62,8 +62,8 @@ enum RemoteRequestResponse: Equatable {
     /// The request a notification opened Settings at.
     var highlighted: String?
 
-    /// Runs acmd; tests swap it.
-    @ObservationIgnored var runAcmd: (_ args: [String], _ done: @escaping @MainActor (Bool, String) -> Void) -> Void = Acmd.run
+    /// The daemon; tests swap it.
+    @ObservationIgnored var calls: DaemonCalls = DaemonSocketCalls()
     /// Told about requests that arrived since the last look, not ones from before the app started.
     @ObservationIgnored var onNewRequests: ([RemoteRequest]) -> Void = { _ in }
     /// After a change: Settings reads acmd's settings again.
@@ -91,21 +91,24 @@ enum RemoteRequestResponse: Equatable {
     }
 
     func loadLists() {
-        runAcmd(["remote", "clients", "--json"]) { [weak self] ok, output in
-            if ok, let list: [RemoteClient] = Self.decode(output) { self?.clients = list }
+        call("remote.clients", Nothing()) { [weak self] (result: Result<[RemoteClient], Error>) in
+            if case .success(let list) = result { self?.clients = list }
         }
-        runAcmd(["remote", "requests", "--json"]) { [weak self] ok, output in
-            if ok, let list: [RemoteRequest] = Self.decode(output) { self?.receive(requests: list) }
+        call("remote.requests", Nothing()) { [weak self] (result: Result<[RemoteRequest], Error>) in
+            if case .success(let list) = result { self?.receive(requests: list) }
         }
     }
 
     func loadIdentity() {
-        runAcmd(["remote", "identity", "--json"]) { [weak self] ok, output in
+        call("remote.identity", Nothing()) { [weak self] (result: Result<RemoteIdentity, Error>) in
             guard let self else { return }
-            if ok, let id: RemoteIdentity = Self.decode(output) {
-                self.identity = id
-            } else if !ok, self.error == nil { // a change's own error says more
-                self.error = output.isEmpty ? "Couldn't read this Mac's identity." : output
+            switch result {
+            case .success(let id): self.identity = id
+            case .failure(let failure):
+                if self.error == nil { // a change's own error says more
+                    let why = errorText(failure)
+                    self.error = why.isEmpty ? "Couldn't read this Mac's identity." : why
+                }
             }
         }
     }
@@ -125,11 +128,11 @@ enum RemoteRequestResponse: Equatable {
     // MARK: Changes
 
     func setHosting(_ on: Bool) {
-        command(["remote", "hosting", on ? "on" : "off"], key: "hosting")
+        change("remote.hosting", Ref(enabled: on), key: "hosting")
     }
 
     func approve(_ request: RemoteRequest, name: String = "") {
-        command(["remote", "requests", "approve", request.id] + Self.nameArgs(name), key: "request:\(request.id)")
+        change("remote.approve", Ref(id: request.id, name: Self.trimmed(name)), key: "request:\(request.id)")
     }
 
     /// Approves by id, as a notification's Approve button does.
@@ -138,51 +141,99 @@ enum RemoteRequestResponse: Equatable {
     }
 
     func deny(_ request: RemoteRequest) {
-        command(["remote", "requests", "deny", request.id], key: "request:\(request.id)")
+        change("remote.deny", Ref(id: request.id), key: "request:\(request.id)")
     }
 
     /// Authorizes a client by its cert file or the fingerprint it shows.
     func authorize(_ certOrFingerprint: String, name: String = "") {
         let what = certOrFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !what.isEmpty else { return }
-        command(["remote", "authorize", what] + Self.nameArgs(name), key: "authorize")
+        var ref = Ref(name: Self.trimmed(name))
+        if what.hasPrefix("/") || what.hasPrefix("~") {
+            ref.cert = (what as NSString).expandingTildeInPath
+        } else {
+            ref.fingerprint = what
+        }
+        change("remote.authorize", ref, key: "authorize")
     }
 
     func rename(_ client: RemoteClient, to name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != client.name else { return }
-        command(["remote", "rename", client.fingerprint, name], key: "client:\(client.fingerprint)")
+        change("remote.rename", Ref(client: client.fingerprint, name: name), key: "client:\(client.fingerprint)")
     }
 
     func revoke(_ client: RemoteClient) {
-        command(["remote", "revoke", client.fingerprint], key: "client:\(client.fingerprint)")
+        change("remote.revoke", Ref(client: client.fingerprint), key: "client:\(client.fingerprint)")
     }
 
     func disconnect(_ client: RemoteClient) {
-        command(["remote", "disconnect", client.fingerprint], key: "client:\(client.fingerprint)")
+        change("remote.disconnect", Ref(client: client.fingerprint), key: "client:\(client.fingerprint)")
     }
 
-    /// Your own cert and key for a role; acmd checks they belong together first.
+    /// Your own cert and key for a role; the daemon checks they belong together first.
     func useOwnCert(_ role: RemoteRole, cert: String, key: String) {
-        command(["remote", "cert", role.rawValue, cert, key], key: "cert:\(role.rawValue)")
+        change("remote.cert", Cert(role: role.rawValue, cert: cert, key: key), key: "cert:\(role.rawValue)")
     }
 
     func useAcmdIdentity(_ role: RemoteRole) {
-        command(["remote", "cert", role.rawValue, "--default"], key: "cert:\(role.rawValue)")
+        change("remote.cert", Cert(role: role.rawValue, isDefault: true), key: "cert:\(role.rawValue)")
     }
 
     /// A new identity: every peer that trusts this Mac must trust the new fingerprint.
     func regenerate() {
-        command(["remote", "identity", "--regenerate", "--yes"], key: "regenerate")
+        change("remote.identity.regenerate", Nothing(), key: "regenerate")
     }
 
-    private func command(_ args: [String], key: String) {
+    // MARK: The daemon
+
+    /// remote.*'s argument (internal/ipc.RemoteRef): what's nil isn't sent.
+    struct Ref: Encodable, Equatable {
+        var id: String?
+        var client: String?
+        var name: String?
+        var fingerprint: String?
+        var cert: String?
+        var enabled: Bool?
+    }
+
+    struct Cert: Encodable, Equatable {
+        let role: String
+        var cert: String?
+        var key: String?
+        var isDefault: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case role, cert, key
+            case isDefault = "default"
+        }
+    }
+
+    private struct Nothing: Codable {}
+
+    private func call<Out: Decodable>(_ op: String, _ input: some Encodable, _ done: @escaping (Result<Out, Error>) -> Void) {
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(input)
+        } catch {
+            return done(.failure(error))
+        }
+        calls.call(op, data) { result in
+            done(result.flatMap { reply in Result { try JSONDecoder().decode(Out.self, from: reply) } })
+        }
+    }
+
+    /// A change: the control waits, and then everything is read again.
+    private func change(_ op: String, _ input: some Encodable, key: String) {
         busy = key
         error = nil
-        runAcmd(args) { [weak self] ok, output in
+        calls.call(op, (try? JSONEncoder().encode(input)) ?? Data("{}".utf8)) { [weak self] result in
             guard let self else { return }
             self.busy = nil
-            if !ok { self.error = output.isEmpty ? "Couldn't change it." : output }
+            if case .failure(let failure) = result {
+                let why = errorText(failure)
+                self.error = why.isEmpty ? "Couldn't change it." : why
+            }
             self.refresh()
             self.onChange()
         }
@@ -234,12 +285,9 @@ enum RemoteRequestResponse: Equatable {
 
     static let defaultPort = 7433
 
-    static func nameArgs(_ name: String) -> [String] {
+    /// A name typed in, or nil when there's none.
+    static func trimmed(_ name: String) -> String? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? [] : ["--name", name]
-    }
-
-    static func decode<T: Decodable>(_ output: String) -> T? {
-        output.data(using: .utf8).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+        return name.isEmpty ? nil : name
     }
 }

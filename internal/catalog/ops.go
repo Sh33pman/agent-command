@@ -134,10 +134,16 @@ func localOps() []Op {
 			Scope: ScopeAdmin, Kind: KindRead, Grant: host, Output: []ipc.RemoteRequest{}},
 		admin(ipc.OpRemoteApprove, "Authorizes a pending request's client.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 		admin(ipc.OpRemoteDeny, "Drops a pending request.", host, ipc.RemoteRef{}, nil),
-		admin(ipc.OpRemoteAuthorize, "Authorizes a client by its fingerprint.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
+		admin(ipc.OpRemoteAuthorize, "Authorizes a client by its fingerprint, or by its cert file.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 		admin(ipc.OpRemoteRevoke, "Un-authorizes a client and drops its connections.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 		admin(ipc.OpRemoteDisconnect, "Drops a client's connections, or one connection.", host, ipc.RemoteRef{}, ipc.RemoteDisconnected{}),
 		admin(ipc.OpRemoteRename, "Renames an authorized client. It stays authorized and connected.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
+		{Name: ipc.OpRemoteIdentity, Description: "Returns this machine's identity: as a host, and as a client when that's another one.",
+			Scope: ScopeAdmin, Kind: KindRead, Grant: host, Output: ipc.RemoteIdentity{}},
+		admin(ipc.OpRemoteRegenerate, "Makes a new identity and uses it. Every peer that trusts this machine must trust the new fingerprint.",
+			host, nil, ipc.RemoteIdentity{}).destructive().hostOnly(),
+		admin(ipc.OpRemoteCert, "Uses a cert and key of your own for a role, once they're checked to belong together, or acmd's identity again.",
+			host, ipc.RemoteCert{}, ipc.RemoteIdentity{}).hostOnly(),
 
 		// Remote hosts: the other acmds this machine uses sessions on.
 		read(ipc.OpRemoteHosts, "Lists the known hosts and their connections.", host, nil, []ipc.RemoteHost{}),

@@ -102,3 +102,23 @@ func parseCerts(path string, b []byte) ([]*x509.Certificate, error) {
 	}
 	return certs, nil
 }
+
+// CommonNameFromPEMFile is the name in the first cert of a PEM file, or "".
+func CommonNameFromPEMFile(path string) string {
+	b, err := os.ReadFile(path) // #nosec G304 -- a cert file the user named
+	if err != nil {
+		return ""
+	}
+	for {
+		var block *pem.Block
+		if block, b = pem.Decode(b); block == nil {
+			return ""
+		}
+		if block.Type == "CERTIFICATE" {
+			if c, err := x509.ParseCertificate(block.Bytes); err == nil {
+				return c.Subject.CommonName
+			}
+			return ""
+		}
+	}
+}

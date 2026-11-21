@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/ipc"
-	"github.com/brettmostert/agent-command/internal/remote/identity"
 )
 
 // `acmd remote cert` and `acmd remote rename`: a cert and its key, checked
@@ -17,7 +16,7 @@ import (
 // daemon.
 
 // certRoles are the sections that name a cert and key of your own.
-var certRoles = map[string]string{"host": "remote.host", "client": "remote.client"}
+var certRoles = map[string]bool{"host": true, "client": true}
 
 func newRemoteCertCmd() *cobra.Command {
 	var useDefault bool
@@ -32,35 +31,33 @@ func newRemoteCertCmd() *cobra.Command {
 		Args:      cobra.RangeArgs(1, 3),
 		ValidArgs: []string{"host", "client"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			section, ok := certRoles[args[0]]
-			if !ok {
+			if _, ok := certRoles[args[0]]; !ok {
 				return fmt.Errorf("say host or client, not %q", args[0])
 			}
-			var cert, key string
+			req := ipc.RemoteCert{Role: args[0], Default: useDefault}
 			switch {
 			case useDefault && len(args) == 1:
 			case !useDefault && len(args) == 3:
 				var err error
-				if cert, err = filepath.Abs(args[1]); err != nil {
+				if req.Cert, err = filepath.Abs(args[1]); err != nil {
 					return err
 				}
-				if key, err = filepath.Abs(args[2]); err != nil {
-					return err
-				}
-				if _, err := identity.Load(cert, key); err != nil {
+				if req.Key, err = filepath.Abs(args[2]); err != nil {
 					return err
 				}
 			default:
 				return fmt.Errorf("give a cert file and a key file, or --default")
 			}
-			if _, err := setSettings(cmd.Context(), map[string]any{section + ".cert": cert, section + ".key": key}); err != nil {
+			// The daemon checks the pair belongs together, then saves both.
+			var id ipc.RemoteIdentity
+			if err := remoteCall(cmd, ipc.OpRemoteCert, req, &id); err != nil {
 				return err
 			}
 			role := map[string]string{"host": "Hosting", "client": "Connecting to hosts"}[args[0]]
-			if cert == "" {
+			if req.Cert == "" {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s uses acmd's identity.\n", role)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s uses %s.\n", role, cert)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s uses %s.\n", role, req.Cert)
 			}
 			return nil
 		},

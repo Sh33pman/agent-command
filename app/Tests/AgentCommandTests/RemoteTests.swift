@@ -109,77 +109,64 @@ private let fp = "SHA256:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/abcde"
     #expect(RemoteTime.ago("", now: now) == "")
 }
 
-/// acmd played by the test: it answers the --json reads, and records the rest.
+/// The daemon played by the test: it answers the reads, and records the rest.
 @MainActor
-private final class FakeRemoteAcmd {
-    var calls: [[String]] = []
-    var clients = "[]"
-    var requests = "[]"
-    var identity = #"{"fingerprint": "SHA256:mine", "common_name": "mac", "cert": "/c", "key": "/k"}"#
-    var fail = false
-    var said = ""
-
-    func run(_ args: [String], _ done: @escaping @MainActor (Bool, String) -> Void) {
-        calls.append(args)
-        switch args {
-        case ["remote", "clients", "--json"]: done(true, clients)
-        case ["remote", "requests", "--json"]: done(true, requests)
-        case ["remote", "identity", "--json"]: done(!fail, fail ? said : identity)
-        default: done(!fail, said)
-        }
-    }
-
-    var changes: [[String]] { calls.filter { $0.last != "--json" } }
-}
-
-@MainActor
-private func remoteModel(_ acmd: FakeRemoteAcmd) -> RemoteSettingsModel {
+private func remoteModel(_ fake: FakeCalls) -> RemoteSettingsModel {
     let m = RemoteSettingsModel()
-    m.runAcmd = { args, done in acmd.run(args, done) }
+    m.calls = fake
+    fake.replies["remote.clients"] = [[String: Any]]()
+    fake.replies["remote.requests"] = [[String: Any]]()
+    fake.replies["remote.identity"] = ["fingerprint": "SHA256:mine", "common_name": "mac", "cert": "/c", "key": "/k"]
     return m
 }
 
+private func changes(_ fake: FakeCalls) -> [String] {
+    fake.ops.filter { !["remote.clients", "remote.requests", "remote.identity"].contains($0) }
+}
+
 @MainActor @Test func remoteModelReadsTheListsWhenTheStatusChanges() {
-    let acmd = FakeRemoteAcmd()
-    acmd.clients = #"[{"name": "laptop", "fingerprint": "SHA256:l"}]"#
-    let m = remoteModel(acmd)
+    let fake = FakeCalls()
+    let m = remoteModel(fake)
+    fake.replies["remote.clients"] = [["name": "laptop", "fingerprint": "SHA256:l"]]
     #expect(!m.hostingOn && m.pendingCount == 0)
     m.update(nil)
-    #expect(acmd.calls.count == 2 && m.clients.map(\.name) == ["laptop"], "the first look reads them, even with no Hosting")
+    #expect(fake.ops == ["remote.clients", "remote.requests"] && m.clients.map(\.name) == ["laptop"],
+            "the first look reads them, even with no Hosting")
     m.update(nil)
-    #expect(acmd.calls.count == 2, "nothing changed")
+    #expect(fake.ops.count == 2, "nothing changed")
 
     var on = RemoteStatus()
     on.enabled = true
     m.update(on)
-    #expect(m.hostingOn && acmd.calls.count == 4)
+    #expect(m.hostingOn && fake.ops.count == 4)
     m.update(on)
-    #expect(acmd.calls.count == 4)
+    #expect(fake.ops.count == 4)
+    // A client attaching changes the status, so who's attached is read again.
+    on.attached = ["s1": 1]
+    m.update(on)
+    #expect(fake.ops.count == 6)
 
     m.refresh()
-    #expect(m.identity?.host.fingerprint == "SHA256:mine" && acmd.calls.count == 7)
+    #expect(m.identity?.host.fingerprint == "SHA256:mine" && fake.ops.count == 9)
 
-    acmd.clients = "not json"
+    fake.replies["remote.clients"] = "not a list"
     m.loadLists()
     #expect(m.clients.map(\.name) == ["laptop"], "a bad answer leaves the list")
-    acmd.fail = true
-    acmd.said = "the identity can't be read"
+    fake.failures["remote.identity"] = "the identity can't be read"
     m.loadIdentity()
     #expect(m.error == "the identity can't be read")
-    acmd.said = ""
+    fake.failures["remote.identity"] = ""
     m.loadIdentity()
     #expect(m.error == "the identity can't be read", "the first error stays")
-    acmd.fail = false
     m.setHosting(true) // a change clears it
-    acmd.fail = true
     m.loadIdentity()
     #expect(m.error == "Couldn't read this Mac's identity.")
 }
 
 @MainActor @Test func newRequestsAreNewsOnlyOnce() {
-    let acmd = FakeRemoteAcmd()
-    acmd.requests = #"[{"id": "r1", "fingerprint": "SHA256:a"}]"#
-    let m = remoteModel(acmd)
+    let fake = FakeCalls()
+    let m = remoteModel(fake)
+    fake.replies["remote.requests"] = [["id": "r1", "fingerprint": "SHA256:a"]]
     var told: [[String]] = []
     m.onNewRequests = { told.append($0.map(\.id)) }
     m.update(nil)
@@ -187,7 +174,7 @@ private func remoteModel(_ acmd: FakeRemoteAcmd) -> RemoteSettingsModel {
 
     var status = RemoteStatus()
     status.pending = 2
-    acmd.requests = #"[{"id": "r1", "fingerprint": "SHA256:a"}, {"id": "r2", "fingerprint": "SHA256:b", "common_name": "desk"}]"#
+    fake.replies["remote.requests"] = [["id": "r1", "fingerprint": "SHA256:a"], ["id": "r2", "fingerprint": "SHA256:b", "common_name": "desk"]]
     m.update(status)
     #expect(told == [["r2"]] && m.pendingCount == 2)
     m.loadLists()
@@ -201,66 +188,83 @@ private func remoteModel(_ acmd: FakeRemoteAcmd) -> RemoteSettingsModel {
     #expect(told == [["r2"]])
 }
 
-@MainActor @Test func eachChangeRunsAcmd() {
-    let acmd = FakeRemoteAcmd()
-    let m = remoteModel(acmd)
+@MainActor @Test func eachChangeCallsTheDaemon() throws {
+    let fake = FakeCalls()
+    let m = remoteModel(fake)
     var changed = 0
     m.onChange = { changed += 1 }
     let laptop = RemoteClient(name: "laptop", fingerprint: "SHA256:l")
     let request = RemoteRequest(id: "r1", fingerprint: "SHA256:a", commonName: "Stranger")
-    m.setHosting(true)
-    m.setHosting(false)
-    m.approve(request)
-    m.approve(request, name: "  desk ")
-    m.approve(id: "r2")
-    m.deny(request)
-    m.authorize("  \(fp) ")
-    m.authorize("/certs/laptop.pem", name: "laptop")
-    m.authorize("  ")
-    m.rename(laptop, to: " travel ")
-    m.rename(laptop, to: "laptop")
-    m.rename(laptop, to: "")
-    m.revoke(laptop)
-    m.disconnect(laptop)
-    m.useOwnCert(.host, cert: "/mine.pem", key: "/mine-key.pem")
-    m.useOwnCert(.client, cert: "/c.pem", key: "/k.pem")
-    m.useAcmdIdentity(.client)
-    m.regenerate()
-    #expect(acmd.changes == [
-        ["remote", "hosting", "on"], ["remote", "hosting", "off"],
-        ["remote", "requests", "approve", "r1"], ["remote", "requests", "approve", "r1", "--name", "desk"],
-        ["remote", "requests", "approve", "r2"], ["remote", "requests", "deny", "r1"],
-        ["remote", "authorize", fp], ["remote", "authorize", "/certs/laptop.pem", "--name", "laptop"],
-        ["remote", "rename", "SHA256:l", "travel"], ["remote", "revoke", "SHA256:l"], ["remote", "disconnect", "SHA256:l"],
-        ["remote", "cert", "host", "/mine.pem", "/mine-key.pem"], ["remote", "cert", "client", "/c.pem", "/k.pem"],
-        ["remote", "cert", "client", "--default"], ["remote", "identity", "--regenerate", "--yes"],
+    var sent: [(String, [String: Any])] = []
+    func step(_ action: () -> Void) {
+        let before = fake.asked.count
+        action()
+        if let first = fake.asked.dropFirst(before).first { sent.append((first.op, first.input)) }
+    }
+    step { m.setHosting(true) }
+    step { m.approve(request) }
+    step { m.approve(request, name: "  desk ") }
+    step { m.approve(id: "r2") }
+    step { m.deny(request) }
+    step { m.authorize("  \(fp) ") }
+    step { m.authorize("/certs/laptop.pem", name: "laptop") }
+    step { m.authorize("  ") }
+    step { m.rename(laptop, to: " travel ") }
+    step { m.rename(laptop, to: "laptop") }
+    step { m.rename(laptop, to: "") }
+    step { m.revoke(laptop) }
+    step { m.disconnect(laptop) }
+    step { m.useOwnCert(.host, cert: "/mine.pem", key: "/mine-key.pem") }
+    step { m.useAcmdIdentity(.client) }
+    step { m.regenerate() }
+    #expect(sent.map(\.0) == [
+        "remote.hosting", "remote.approve", "remote.approve", "remote.approve", "remote.deny",
+        "remote.authorize", "remote.authorize", "remote.rename", "remote.revoke", "remote.disconnect",
+        "remote.cert", "remote.cert", "remote.identity.regenerate",
     ])
-    #expect(changed == 15 && m.busy == nil && m.error == nil, "each change reads everything again")
+    let inputs = sent.map(\.1)
+    #expect(inputs[0]["enabled"] as? Bool == true)
+    #expect(inputs[1] as? [String: String] == ["id": "r1"] && inputs[2] as? [String: String] == ["id": "r1", "name": "desk"])
+    #expect(inputs[5] as? [String: String] == ["fingerprint": fp])
+    #expect(inputs[6] as? [String: String] == ["cert": "/certs/laptop.pem", "name": "laptop"])
+    #expect(inputs[7] as? [String: String] == ["client": "SHA256:l", "name": "travel"])
+    #expect(inputs[8] as? [String: String] == ["client": "SHA256:l"])
+    #expect(inputs[10] as? [String: String] == ["role": "host", "cert": "/mine.pem", "key": "/mine-key.pem"])
+    #expect(inputs[11]["role"] as? String == "client" && inputs[11]["default"] as? Bool == true)
+    #expect(changed == 13 && m.busy == nil && m.error == nil, "each change reads everything again")
+    #expect(!fake.ops.contains("acmd"), "no process")
 
-    acmd.fail = true
-    acmd.said = "the cert and key don't belong together"
+    fake.failures["remote.cert"] = "the cert and key don't belong together"
     m.useOwnCert(.host, cert: "/a", key: "/b")
     #expect(m.error == "the cert and key don't belong together")
-    acmd.said = ""
+    fake.failures["remote.revoke"] = ""
     m.revoke(laptop)
     #expect(m.error == "Couldn't change it.")
+    #expect(RemoteSettingsModel.trimmed("  ") == nil && RemoteSettingsModel.trimmed(" a ") == "a")
 }
 
 @MainActor @Test func whoIsAttachedToWhat() throws {
-    let acmd = FakeRemoteAcmd()
-    acmd.clients = """
-        [{"name": "laptop", "fingerprint": "SHA256:l", "connections": [
-           {"id": "c1", "addr": "10.0.0.5:51000", "sessions": ["s1", "gone"]}, {"id": "c2", "addr": "10.0.0.5:51001"}]},
-         {"name": "", "fingerprint": "\(fp)", "connections": [{"addr": "10.0.0.6:1", "since": "2026-11-18T03:00:00Z"}]},
-         {"name": "desk", "fingerprint": "SHA256:d"}]
-        """
-    let m = remoteModel(acmd)
+    let fake = FakeCalls()
+    let m = remoteModel(fake)
+    fake.replies["remote.clients"] = [
+        ["name": "laptop", "fingerprint": "SHA256:l", "connections": [
+            ["id": "c1", "addr": "10.0.0.5:51000", "sessions": ["s1", "gone"]], ["id": "c2", "addr": "10.0.0.5:51001"],
+        ]],
+        ["name": "", "fingerprint": fp, "connections": [["addr": "10.0.0.6:1", "since": "2026-11-18T03:00:00Z"]]],
+        ["name": "desk", "fingerprint": "SHA256:d"],
+    ]
     m.loadLists()
     let rows = m.connectionRows { $0 == "s1" ? "api" : nil }
     #expect(rows.map(\.id) == ["c1", "c2", fp])
     #expect(rows[0] == RemoteConnectionRow(id: "c1", client: "laptop", from: "10.0.0.5:51000", sessions: "Attached to api, gone"))
     #expect(rows[1].sessions == "Not attached to a session")
     #expect(rows[2].client == "SHA256:AbCdEfGh…bcde" && rows[2].from.hasPrefix("10.0.0.6:1, connected "))
+}
+
+@Test func theSnapshotSaysWhoIsAttached() throws {
+    let st = try JSONDecoder().decode(RemoteStatus.self, from: Data(#"{"enabled": true, "attached": {"s1": 2}}"#.utf8))
+    #expect(st.attached == ["s1": 2])
+    #expect(try JSONDecoder().decode(RemoteStatus.self, from: Data("{}".utf8)).attached.isEmpty)
 }
 
 @Test func remoteWords() {

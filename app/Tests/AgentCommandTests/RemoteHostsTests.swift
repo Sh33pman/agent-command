@@ -271,17 +271,6 @@ func makeRemoteSession(
 
 // MARK: New sessions
 
-@Test func attachedCountsAreConnectionsBySession() {
-    let clients = [
-        RemoteClient(name: "a", fingerprint: "1", connections: [
-            RemoteConnection(id: "c1", sessions: ["s1", "s2", "s1"]), RemoteConnection(id: "c2", sessions: ["s1"]),
-        ]),
-        RemoteClient(name: "b", fingerprint: "2", connections: [RemoteConnection(id: "c3", sessions: ["s2"])]),
-        RemoteClient(name: "c", fingerprint: "3"),
-    ]
-    #expect(RemoteAttached.counts(clients) == ["s1": 2, "s2": 2])
-    #expect(RemoteAttached.counts([]).isEmpty)
-}
 
 @Test func inboxNewsCountsBothWays() throws {
     let start = InboxNews([try makeItem(4, session: "a"), try makeItem(-2, session: "b")])

@@ -41,6 +41,18 @@ func isRemoteOp(op string) bool {
 }
 
 func (d *Daemon) handleRemote(req ipc.Request) (any, error) {
+	switch req.Op {
+	case ipc.OpRemoteIdentity:
+		return d.remoteIdentity()
+	case ipc.OpRemoteRegenerate:
+		return d.regenerate()
+	case ipc.OpRemoteCert:
+		c, err := decode[ipc.RemoteCert](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.setCert(c)
+	}
 	var ref ipc.RemoteRef
 	if len(req.Data) > 0 {
 		var err error
@@ -69,6 +81,10 @@ func (d *Daemon) handleRemote(req ipc.Request) (any, error) {
 	case ipc.OpRemoteDeny:
 		return nil, h.Deny(ref.ID)
 	case ipc.OpRemoteAuthorize:
+		ref, err := clientByCert(ref)
+		if err != nil {
+			return nil, err
+		}
 		return h.Authorize(ref.Fingerprint, ref.Name)
 	case ipc.OpRemoteRevoke:
 		return h.Revoke(ref.Client)

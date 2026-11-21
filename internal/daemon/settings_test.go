@@ -261,3 +261,74 @@ func TestChoosingAnEditorFindsIt(t *testing.T) {
 		t.Errorf("asked %d times", len(asked))
 	}
 }
+
+// This Mac's identity, its own certs, a new identity, and authorizing a
+// client by its cert file: all through the daemon.
+func TestIdentityOps(t *testing.T) {
+	p := settingsPaths(t)
+	start(t, p, withConfig(p))
+	c := dial(t, p)
+
+	var id ipc.RemoteIdentity
+	must(t, c.Call(ipc.OpRemoteIdentity, nil, &id))
+	if id.Fingerprint == "" || id.Client != nil || strings.Join(id.UsedFor, ",") != "hosting,client" || id.Address != "" {
+		t.Fatalf("identity = %+v", id)
+	}
+	first := id.Fingerprint
+
+	// A cert of your own for connecting to hosts: two identities now.
+	own, err := identity.Ensure(filepath.Join(filepath.Dir(p.StateDir), "own"))
+	must(t, err)
+	must(t, c.Call(ipc.OpRemoteCert, ipc.RemoteCert{Role: "client", Cert: own.CertPath, Key: own.KeyPath}, &id))
+	if id.Client == nil || id.Client.Fingerprint != own.Fingerprint() || id.Fingerprint != first {
+		t.Errorf("own client cert = %+v", id)
+	}
+	if cfg, _ := config.Load(p.Config()); cfg.Remote.Client.Cert != own.CertPath || cfg.Remote.Client.Key != own.KeyPath {
+		t.Errorf("config.toml = %+v", cfg.Remote.Client)
+	}
+	other, err := identity.Ensure(filepath.Join(filepath.Dir(p.StateDir), "other"))
+	must(t, err)
+	for _, bad := range []ipc.RemoteCert{
+		{Role: "host", Cert: own.CertPath, Key: other.KeyPath}, // not a pair
+		{Role: "server", Default: true},
+		{Role: "host", Cert: own.CertPath},
+		{Role: "host", Cert: "cert.pem", Key: "key.pem"},
+	} {
+		if err := c.Call(ipc.OpRemoteCert, bad, nil); err == nil {
+			t.Errorf("%+v accepted", bad)
+		}
+	}
+	id = ipc.RemoteIdentity{}
+	must(t, c.Call(ipc.OpRemoteCert, ipc.RemoteCert{Role: "client", Default: true}, &id))
+	if id.Client != nil {
+		t.Errorf("back to acmd's = %+v", id)
+	}
+
+	// A new identity.
+	must(t, c.Call(ipc.OpRemoteRegenerate, nil, &id))
+	if id.Fingerprint == first || id.Fingerprint == "" {
+		t.Errorf("regenerated = %+v", id)
+	}
+
+	// Authorizing by cert file names the client after its cert.
+	var rc ipc.RemoteClient
+	must(t, c.Call(ipc.OpRemoteAuthorize, ipc.RemoteRef{Cert: own.CertPath}, &rc))
+	if rc.Fingerprint != own.Fingerprint() || rc.Name != own.CommonName {
+		t.Errorf("authorized = %+v", rc)
+	}
+	if err := c.Call(ipc.OpRemoteAuthorize, ipc.RemoteRef{Cert: "/nowhere.pem"}, nil); err == nil {
+		t.Error("authorized a missing cert")
+	}
+	if err := c.Call(ipc.OpRemoteCert, "nope", nil); err == nil {
+		t.Error("took a cert that isn't one")
+	}
+
+	// A broken cert in the settings is said.
+	must(t, writeSetting(p.Config(), "remote.host", "cert", "/nowhere.pem"))
+	must(t, writeSetting(p.Config(), "remote.host", "key", "/nowhere-key.pem"))
+	later := time.Now().Add(time.Minute)
+	must(t, os.Chtimes(p.Config(), later, later))
+	if err := c.Call(ipc.OpRemoteIdentity, nil, &id); err == nil || !strings.Contains(err.Error(), "Hosting identity") {
+		t.Errorf("broken host cert: %v", err)
+	}
+}

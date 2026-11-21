@@ -48,17 +48,20 @@ const (
 	OpAgentSettings = "agent.settings" // an agent's settings for jobs (JobRef.Harness) → []harness.Setting
 	OpWakeSet       = "wake.set"       // wakes the Mac for every job or not (WakeRef), checking the sudoers rule again → WakeState
 	// Remote sessions: Hosting, this machine's listener for other acmds.
-	OpRemoteStatus     = "remote.status"     // → RemoteStatus
-	OpRemoteHosting    = "remote.hosting"    // turns Hosting on or off (RemoteRef.Enabled) → RemoteStatus
-	OpRemoteReload     = "remote.reload"     // reads config.toml again and applies [remote] → RemoteStatus
-	OpRemoteClients    = "remote.clients"    // the authorized clients, with their connections → []RemoteClient
-	OpRemoteRequests   = "remote.requests"   // pending requests from unknown clients → []RemoteRequest
-	OpRemoteApprove    = "remote.approve"    // authorizes a request's client (RemoteRef.ID, Name) → RemoteClient
-	OpRemoteDeny       = "remote.deny"       // drops a request (RemoteRef.ID)
-	OpRemoteAuthorize  = "remote.authorize"  // authorizes a client (RemoteRef.Fingerprint, Name) → RemoteClient
-	OpRemoteRevoke     = "remote.revoke"     // un-authorizes a client and drops it (RemoteRef.Client) → RemoteClient
-	OpRemoteDisconnect = "remote.disconnect" // drops a client's connections (RemoteRef.Client) → RemoteDisconnected
-	OpRemoteRename     = "remote.rename"     // renames an authorized client (RemoteRef.Client, Name) → RemoteClient
+	OpRemoteStatus     = "remote.status"              // → RemoteStatus
+	OpRemoteHosting    = "remote.hosting"             // turns Hosting on or off (RemoteRef.Enabled) → RemoteStatus
+	OpRemoteReload     = "remote.reload"              // reads config.toml again and applies [remote] → RemoteStatus
+	OpRemoteClients    = "remote.clients"             // the authorized clients, with their connections → []RemoteClient
+	OpRemoteRequests   = "remote.requests"            // pending requests from unknown clients → []RemoteRequest
+	OpRemoteApprove    = "remote.approve"             // authorizes a request's client (RemoteRef.ID, Name) → RemoteClient
+	OpRemoteDeny       = "remote.deny"                // drops a request (RemoteRef.ID)
+	OpRemoteAuthorize  = "remote.authorize"           // authorizes a client (RemoteRef.Fingerprint, Name) → RemoteClient
+	OpRemoteRevoke     = "remote.revoke"              // un-authorizes a client and drops it (RemoteRef.Client) → RemoteClient
+	OpRemoteDisconnect = "remote.disconnect"          // drops a client's connections (RemoteRef.Client) → RemoteDisconnected
+	OpRemoteRename     = "remote.rename"              // renames an authorized client (RemoteRef.Client, Name) → RemoteClient
+	OpRemoteIdentity   = "remote.identity"            // this machine's identity, for both roles → RemoteIdentity
+	OpRemoteRegenerate = "remote.identity.regenerate" // makes a new identity, and uses it → RemoteIdentity
+	OpRemoteCert       = "remote.cert"                // a cert and key of your own for a role, or acmd's again (RemoteCert) → RemoteIdentity
 )
 
 // RemoteRef names what a remote.* op acts on. Client is an authorized
@@ -69,7 +72,10 @@ type RemoteRef struct {
 	Client      string `json:"client,omitempty"`
 	Name        string `json:"name,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
-	Enabled     bool   `json:"enabled,omitempty"`
+	// Cert is a client's cert file, in place of Fingerprint, to authorize it
+	// by (named after the cert when Name is "").
+	Cert    string `json:"cert,omitempty"`
+	Enabled bool   `json:"enabled,omitempty"`
 }
 
 // RemoteStatus is Hosting: whether it's on, where it listens, and why not
@@ -94,6 +100,33 @@ type RemoteStatus struct {
 	Authorized  int    `json:"authorized"`
 	Connected   int    `json:"connected"` // connections
 	Pending     int    `json:"pending"`   // requests waiting for approval
+	// Attached is how many client connections are attached to each session,
+	// by its id. It changes as they attach, so it reaches clients without
+	// their asking.
+	Attached map[string]int `json:"attached,omitempty"`
+}
+
+// RemoteIdentity is the identity this machine shows: as a host, and, in
+// Client, as a client when that's another one.
+type RemoteIdentity struct {
+	Fingerprint string          `json:"fingerprint"`
+	CommonName  string          `json:"common_name"`
+	Cert        string          `json:"cert"`
+	Key         string          `json:"key"`
+	UsedFor     []string        `json:"used_for"` // "hosting", "client"
+	Client      *RemoteIdentity `json:"client,omitempty"`
+	// Address is where Hosting listens now ("" when it doesn't).
+	Address string `json:"address,omitempty"`
+}
+
+// RemoteCert names a cert and key of your own for a role ("host" or
+// "client"), or, with Default, goes back to acmd's identity. The pair is
+// checked before it's saved.
+type RemoteCert struct {
+	Role    string `json:"role"`
+	Cert    string `json:"cert,omitempty"`
+	Key     string `json:"key,omitempty"`
+	Default bool   `json:"default,omitempty"`
 }
 
 // RemoteClient is an authorized client, and its connections.

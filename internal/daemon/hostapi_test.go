@@ -120,6 +120,12 @@ func TestHostAPI(t *testing.T) {
 			t.Fatal("not attached")
 		}
 	}
+	// The snapshot says so, without asking for the clients.
+	var withAttach ipc.Snapshot
+	must(t, c.Call(ipc.OpSnapshot, nil, &withAttach))
+	if withAttach.Remote == nil || withAttach.Remote.Attached[s.ID] != 1 {
+		t.Errorf("snapshot's attached = %+v", withAttach.Remote)
+	}
 	var harnesses api.Harnesses
 	must(t, conn.Call(ctx, api.OpHarnessesList, nil, &harnesses))
 	if len(harnesses.Harnesses) != 2 || harnesses.Default != core.HarnessTerminal {

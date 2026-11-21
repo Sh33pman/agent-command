@@ -446,7 +446,7 @@
     },
     {
       "name": "remote.authorize",
-      "description": "Authorizes a client by its fingerprint.",
+      "description": "Authorizes a client by its fingerprint, or by its cert file.",
       "scope": "admin",
       "kind": "change",
       "grant": "host",
@@ -474,6 +474,23 @@
       },
       "output": {
         "$ref": "#/$defs/ipc.RemoteBrowse"
+      }
+    },
+    {
+      "name": "remote.cert",
+      "description": "Uses a cert and key of your own for a role, once they're checked to belong together, or acmd's identity again.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "remote.cert"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteCert"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteIdentity"
       }
     },
     {
@@ -709,6 +726,33 @@
       },
       "output": {
         "$ref": "#/$defs/ipc.RemoteHost"
+      }
+    },
+    {
+      "name": "remote.identity",
+      "description": "Returns this machine's identity: as a host, and as a client when that's another one.",
+      "scope": "admin",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "remote.identity"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteIdentity"
+      }
+    },
+    {
+      "name": "remote.identity.regenerate",
+      "description": "Makes a new identity and uses it. Every peer that trusts this machine must trust the new fingerprint.",
+      "scope": "admin",
+      "kind": "destructive",
+      "grant": "host",
+      "host_only": true,
+      "transport": {
+        "op": "remote.identity.regenerate"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteIdentity"
       }
     },
     {
@@ -2247,6 +2291,26 @@
         "added"
       ]
     },
+    "ipc.RemoteCert": {
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "cert": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "role"
+      ]
+    },
     "ipc.RemoteClient": {
       "properties": {
         "name": {
@@ -2444,6 +2508,42 @@
       },
       "type": "object"
     },
+    "ipc.RemoteIdentity": {
+      "properties": {
+        "fingerprint": {
+          "type": "string"
+        },
+        "common_name": {
+          "type": "string"
+        },
+        "cert": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "used_for": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "client": {
+          "$ref": "#/$defs/ipc.RemoteIdentity"
+        },
+        "address": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "fingerprint",
+        "common_name",
+        "cert",
+        "key",
+        "used_for"
+      ]
+    },
     "ipc.RemoteNewRequest": {
       "properties": {
         "host": {
@@ -2492,6 +2592,9 @@
           "type": "string"
         },
         "fingerprint": {
+          "type": "string"
+        },
+        "cert": {
           "type": "string"
         },
         "enabled": {
@@ -2586,6 +2689,12 @@
         },
         "pending": {
           "type": "integer"
+        },
+        "attached": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
         }
       },
       "type": "object",

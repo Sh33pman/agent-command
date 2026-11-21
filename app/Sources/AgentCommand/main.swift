@@ -34,7 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// The Remote Hosts browser, while it's open.
     private var browser: RemoteBrowserModel?
     /// Reads who's attached to Remote sessions while anyone is connected.
-    private var attachedTimer: Timer?
     private var inbox: InboxModel?
     private var scheduled: ScheduledModel?
     private lazy var popupWindow = PopupController(store: store)
@@ -85,7 +84,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 openSet: { [weak self] session in self?.pane?.showSet(containing: session.id) },
                 clickRow: { [weak self] session in self?.clickSidebarRow(session) },
                 openRow: { [weak self] session in self?.openSidebarRow(session.id) },
-                remote: remote,
                 setRemote: { [weak self] session, on in
                     guard let self else { return }
                     self.store.setRemote(self.store.actionTargets(forRow: session), on)
@@ -168,12 +166,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         remote.onNewRequests = { [weak notifier] requests in notifier?.notify(requests) }
         remote.onChange = { [weak self] in self?.settingsModel?.load() }
         notifier.onRemoteRequest = { [weak self] answer in self?.answerRemoteRequest(answer) }
-        // A client attaching to a session doesn't change Hosting's status: while
-        // anyone's connected, read who's attached, for the sidebar's counts.
-        attachedTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            guard let self, (self.remote.status?.connected ?? 0) > 0, self.store.sessions.contains(where: \.isRemote) else { return }
-            self.remote.loadLists()
-        }
         setUpPopup()
         SpeechController.shared.checkSetup()
         let args = CommandLine.arguments

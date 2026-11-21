@@ -34,9 +34,11 @@ struct RemoteStatus: Decodable, Equatable {
     var connected = 0
     /// Requests waiting for approval.
     var pending = 0
+    /// How many client connections are attached to each session, by id.
+    var attached: [String: Int] = [:]
 
     enum CodingKeys: String, CodingKey {
-        case enabled, listening, listen, address, port, since, error, fingerprint, name, authorized, connected, pending
+        case enabled, listening, listen, address, port, since, error, fingerprint, name, authorized, connected, pending, attached
         case configuredPort = "configured_port", portFallback = "port_fallback"
     }
 
@@ -58,6 +60,7 @@ struct RemoteStatus: Decodable, Equatable {
         name = c.value(.name, d.name)
         authorized = c.value(.authorized, d.authorized)
         connected = c.value(.connected, d.connected)
+        attached = c.value(.attached, d.attached)
         pending = c.value(.pending, d.pending)
     }
 

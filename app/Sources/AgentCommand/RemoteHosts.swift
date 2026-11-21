@@ -477,18 +477,6 @@ enum RemoteDefaults {
     static var newSessionsRemote: Bool { HostSettings.shared.bool("remote.new_sessions_remote") }
 }
 
-/// Connections attached to each session, from Hosting's clients: one client can
-/// attach to a session more than once.
-enum RemoteAttached {
-    static func counts(_ clients: [RemoteClient]) -> [String: Int] {
-        var counts: [String: Int] = [:]
-        for conn in clients.flatMap(\.connections) {
-            for id in Set(conn.sessions) { counts[id, default: 0] += 1 }
-        }
-        return counts
-    }
-}
-
 /// New inbox items since the last look. The daemon's own ids count up; items
 /// from hosts have negative ids that count down.
 struct InboxNews: Equatable {

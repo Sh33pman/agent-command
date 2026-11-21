@@ -408,7 +408,8 @@ func (h *Host) Status() ipc.RemoteStatus {
 	h.pruneLocked(h.o.Now())
 	hc := h.remote.Host
 	s := ipc.RemoteStatus{Enabled: hc.Enabled, Listen: hc.Listen, ConfiguredPort: hc.Port, PortFallback: hc.PortFallback,
-		Error: h.err, Proto: wire.Proto, Authorized: len(h.clientsLocked()), Connected: len(h.conns), Pending: len(h.st.Requests)}
+		Error: h.err, Proto: wire.Proto, Authorized: len(h.clientsLocked()), Connected: len(h.conns), Pending: len(h.st.Requests),
+		Attached: h.attachedLocked()}
 	if h.ln != nil {
 		s.Listening, s.Since = true, h.since
 		if a, ok := h.ln.Addr().(*net.TCPAddr); ok {
@@ -422,6 +423,26 @@ func (h *Host) Status() ipc.RemoteStatus {
 		s.Fingerprint, s.Name, s.Cert = h.id.Fingerprint(), h.id.CommonName, h.id.CertPath
 	}
 	return s
+}
+
+// attachedLocked counts, by session, the connections attached to it (h.mu is
+// held). A connection attached twice counts once.
+func (h *Host) attachedLocked() map[string]int {
+	seen := map[*conn]map[string]bool{}
+	out := map[string]int{}
+	for a := range h.attachments {
+		if seen[a.conn] == nil {
+			seen[a.conn] = map[string]bool{}
+		}
+		if !seen[a.conn][a.session] {
+			seen[a.conn][a.session] = true
+			out[a.session]++
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // Attach records that the client on c is attached to a session through

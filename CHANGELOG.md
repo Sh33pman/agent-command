@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.68.0](https://github.com/brettmostert/agent-command/compare/v0.67.0...v0.68.0) (2026-11-21)
+
+
+### Features
+
+* ops on many sessions, with a result for each ([#108](https://github.com/brettmostert/agent-command/issues/108)) ([adeb558](https://github.com/brettmostert/agent-command/commit/adeb5588c55073961a1dd7ee68e0cbdc39d8fbbd))
+
 ## [0.67.0](https://github.com/brettmostert/agent-command/compare/v0.66.0...v0.67.0) (2026-11-21)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.67.0](https://github.com/brettmostert/agent-command/compare/v0.66.0...v0.67.0) (2026-11-21)
+
+
+### Features
+
+* the daemon says what each session runs and can do, and lists the harnesses ([#106](https://github.com/brettmostert/agent-command/issues/106)) ([cf64505](https://github.com/brettmostert/agent-command/commit/cf645057670cf14547a400a5aa19442a894884bb))
+
 ## [0.66.0](https://github.com/brettmostert/agent-command/compare/v0.65.0...v0.66.0) (2026-11-21)
 
 

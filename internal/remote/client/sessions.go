@@ -109,8 +109,8 @@ func (c *Client) Config(ctx context.Context, host string) (ipc.ConfigState, erro
 }
 
 // SetConfig changes a host's settings, all or none.
-func (c *Client) SetConfig(ctx context.Context, host string, values map[string]any) (ipc.ConfigState, error) {
+func (c *Client) SetConfig(ctx context.Context, host string, set ipc.ConfigSet) (ipc.ConfigState, error) {
 	var out ipc.ConfigState
-	err := c.call(ctx, host, api.OpConfigSet, ipc.ConfigSet{Values: values}, &out)
+	err := c.call(ctx, host, api.OpConfigSet, set, &out)
 	return out, err
 }

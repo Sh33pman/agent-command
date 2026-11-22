@@ -81,9 +81,11 @@ struct ConfigState: Decodable {
     var path = ""
     var settings: [SettingSpec] = []
     var values: [String: SettingValue] = [:]
+    /// Each setting's version, sent back with a change to it (config.set).
+    var versions: [String: String] = [:]
     var problem: ConfigProblem? = nil
 
-    enum CodingKeys: String, CodingKey { case path, settings, values, problem }
+    enum CodingKeys: String, CodingKey { case path, settings, values, versions, problem }
 
     init() {}
 
@@ -92,6 +94,7 @@ struct ConfigState: Decodable {
         path = try c.decodeIfPresent(String.self, forKey: .path) ?? ""
         settings = try c.decodeIfPresent([SettingSpec].self, forKey: .settings) ?? []
         values = try c.decodeIfPresent([String: SettingValue].self, forKey: .values) ?? [:]
+        versions = try c.decodeIfPresent([String: String].self, forKey: .versions) ?? [:]
         problem = try c.decodeIfPresent(ConfigProblem.self, forKey: .problem)
     }
 }
@@ -106,6 +109,7 @@ struct SettingsClient {
     private struct Change: Encodable {
         var host: String?
         let values: [String: SettingValue]
+        var versions: [String: String]?
     }
     private struct Nothing: Encodable {}
 
@@ -118,9 +122,11 @@ struct SettingsClient {
         }
     }
 
-    /// Changes settings, all or none.
-    func set(_ values: [String: SettingValue], host: String? = nil, done: @escaping (Result<ConfigState, Error>) -> Void) {
-        call(host == nil ? "config.set" : "remote.config.set", Change(host: host, values: values), done)
+    /// Changes settings, all or none. versions are theirs as they were loaded:
+    /// one changed since refuses the change ("conflict"); nil applies whatever.
+    func set(_ values: [String: SettingValue], host: String? = nil, versions: [String: String]? = nil,
+             done: @escaping (Result<ConfigState, Error>) -> Void) {
+        call(host == nil ? "config.set" : "remote.config.set", Change(host: host, values: values, versions: versions), done)
     }
 
     private func call(_ op: String, _ input: some Encodable, _ done: @escaping (Result<ConfigState, Error>) -> Void) {

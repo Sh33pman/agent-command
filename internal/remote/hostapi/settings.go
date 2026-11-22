@@ -2,11 +2,13 @@ package hostapi
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
 )
 
@@ -15,7 +17,7 @@ import (
 
 // hostOnly is st without the device settings.
 func hostOnly(st ipc.ConfigState) ipc.ConfigState {
-	out := ipc.ConfigState{Path: st.Path, Problem: st.Problem, Values: map[string]any{}}
+	out := ipc.ConfigState{Path: st.Path, Problem: st.Problem, Values: map[string]any{}, Versions: map[string]string{}}
 	for _, s := range st.Settings {
 		if s.Where != config.WhereHost {
 			continue
@@ -23,6 +25,9 @@ func hostOnly(st ipc.ConfigState) ipc.ConfigState {
 		out.Settings = append(out.Settings, s)
 		if v, ok := st.Values[s.Key]; ok {
 			out.Values[s.Key] = v
+		}
+		if v, ok := st.Versions[s.Key]; ok {
+			out.Versions[s.Key] = v
 		}
 	}
 	return out
@@ -48,8 +53,11 @@ func (a *API) configSet(_ context.Context, c *wire.Call) (any, error) {
 		return nil, wire.Errorf(wire.CodeBadRequest, "%s belong to the host's own machine: change them there",
 			strings.Join(device, ", "))
 	}
-	st, err := a.b.SetConfig(req.Values)
-	if err != nil {
+	st, err := a.b.SetConfig(req)
+	switch {
+	case errors.Is(err, config.ErrChanged):
+		return nil, wire.Errorf(api.CodeConflict, "%s", err.Error())
+	case err != nil:
 		return nil, wire.Errorf(wire.CodeBadRequest, "%s", err.Error())
 	}
 	return hostOnly(st), nil

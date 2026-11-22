@@ -108,7 +108,8 @@ func TestJSONErrorsAndExitCodes(t *testing.T) {
 		t.Errorf("a bad flag: %d %v", ExitCode(err), err)
 	}
 	for code, exit := range map[string]int{ipc.CodeNotFound: exitNotFound, ipc.CodeInvalid: exitInvalid, "forbidden": exitNotSupported,
-		ipc.CodeNotRunning: exitNotRunning, ipc.CodeHostUnreachable: exitUnreachable, "something new": exitFailed} {
+		ipc.CodeNotRunning: exitNotRunning, ipc.CodeHostUnreachable: exitUnreachable, ipc.CodeConflict: exitConflict,
+		ipc.CodePermission: exitNotSupported, ipc.CodeBadRequest: exitInvalid, "something new": exitFailed} {
 		re := &ipc.RemoteError{Msg: "x", Code: code}
 		if ExitCode(re) != exit {
 			t.Errorf("%s exits %d, want %d", code, ExitCode(re), exit)

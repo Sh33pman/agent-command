@@ -78,7 +78,7 @@ func (d *Daemon) setCert(c ipc.RemoteCert) (ipc.RemoteIdentity, error) {
 			return ipc.RemoteIdentity{}, err
 		}
 	}
-	if _, err := d.setConfig(map[string]any{section + ".cert": cert, section + ".key": key}); err != nil {
+	if _, err := d.setConfig(ipc.ConfigSet{Values: map[string]any{section + ".cert": cert, section + ".key": key}}); err != nil {
 		return ipc.RemoteIdentity{}, err
 	}
 	return d.remoteIdentity()

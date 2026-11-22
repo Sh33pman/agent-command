@@ -90,6 +90,7 @@ const (
 	CodeExists     = errcode.Exists
 	CodeNotFolder  = errcode.NotFolder
 	CodeForbidden  = errcode.Forbidden
+	CodeConflict   = errcode.Conflict
 )
 
 // Session is a Remote session, as a client sees it.

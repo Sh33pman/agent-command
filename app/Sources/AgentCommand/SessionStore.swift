@@ -56,6 +56,8 @@ final class SessionStore {
     @ObservationIgnored var healthClient = HealthClient()
     /// Where changes to many sessions go (mutate with ids); tests swap it.
     @ObservationIgnored var mutations: DaemonCalls = DaemonSocketCalls()
+    /// Where job saves go: the daemon, or a test's fake.
+    @ObservationIgnored var jobCalls: DaemonCalls = DaemonSocketCalls()
 
     /// Stops showing a warning in this app, or shows it again.
     func setDismissed(_ id: String, _ on: Bool) {
@@ -791,20 +793,22 @@ final class SessionStore {
 
     /// Saves a job, new or edited. done gets the saved job, or why it wasn't saved.
     func saveJob(_ job: Job, done: @escaping (Result<Job, Error>) -> Void) {
-        calls.async {
-            let result = Result { () throws -> Job in
-                try DaemonConnection(socket: DaemonPaths.socket).call("job.save", job)
-            }
-            DispatchQueue.main.async {
-                if case .success(let saved) = result {
-                    if let i = self.jobs.firstIndex(where: { $0.id == saved.id }) {
-                        self.jobs[i] = saved
-                    } else {
-                        self.jobs.append(saved)
-                    }
+        let input: Data
+        do {
+            input = try JSONEncoder().encode(job)
+        } catch {
+            return done(.failure(error))
+        }
+        jobCalls.call("job.save", input) { reply in
+            let result = reply.flatMap { data in Result { try JSONDecoder().decode(Job.self, from: data) } }
+            if case .success(let saved) = result {
+                if let i = self.jobs.firstIndex(where: { $0.id == saved.id }) {
+                    self.jobs[i] = saved
+                } else {
+                    self.jobs.append(saved)
                 }
-                done(result)
             }
+            done(result)
         }
     }
 

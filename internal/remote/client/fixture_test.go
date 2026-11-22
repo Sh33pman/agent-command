@@ -172,8 +172,8 @@ func (b *daemon) Call(_ context.Context, op string, data json.RawMessage) (json.
 	return json.Marshal(map[string]string{"op": op})
 }
 
-func (b *daemon) SetConfig(values map[string]any) (ipc.ConfigState, error) {
-	_, err := b.file.Set(values)
+func (b *daemon) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
+	_, err := b.file.SetIf(set.Values, set.Versions)
 	return ipc.ConfigOf(b.file), err
 }
 

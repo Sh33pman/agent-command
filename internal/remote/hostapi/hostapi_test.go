@@ -138,8 +138,8 @@ func (b *backend) HostSocket(id string) string {
 
 func (b *backend) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
 
-func (b *backend) SetConfig(values map[string]any) (ipc.ConfigState, error) {
-	_, err := b.file.Set(values)
+func (b *backend) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
+	_, err := b.file.SetIf(set.Values, set.Versions)
 	return ipc.ConfigOf(b.file), err
 }
 

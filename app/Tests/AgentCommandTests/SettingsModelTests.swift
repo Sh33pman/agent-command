@@ -237,3 +237,30 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     pref.shown = true
     #expect(told == 2 && MenuBarPreference(defaults: defaults).shown)
 }
+
+/// A change sends the version of each setting it makes; one refused because
+/// the setting changed since shows the settings as they are now, and Use
+/// Mine makes it over them.
+@MainActor @Test func aRefusedSettingCanStillBeMade() {
+    let fake = FakeCalls()
+    let m = model(fake)
+    var state = configState(fullValues)
+    state["versions"] = ["claude_command": "v1", "notify.on_done": "n1"]
+    fake.replies["config.get"] = state
+    m.load()
+    fake.failures["config.set"] = "claude_command changed since you loaded it"
+    fake.codes["config.set"] = "conflict"
+    m.set("claude_command", "my-claude")
+    let sent = fake.asked.last { $0.op == "config.set" }?.input
+    #expect(sent?["versions"] as? [String: String] == ["claude_command": "v1"], "only the changed key's")
+    #expect(m.refused != nil && m.error?.contains("Use Mine") == true && fake.ops.last == "config.get", "it shows them as they are")
+
+    state["versions"] = ["claude_command": "v2", "notify.on_done": "n1"]
+    fake.replies["config.get"] = state
+    m.load()
+    fake.failures = [:]
+    m.useMine()
+    let again = fake.asked.last { $0.op == "config.set" }?.input
+    #expect(again?["versions"] as? [String: String] == ["claude_command": "v2"] && m.refused == nil)
+    #expect((again?["values"] as? [String: Any])?["claude_command"] as? String == "my-claude")
+}

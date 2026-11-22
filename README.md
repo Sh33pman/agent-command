@@ -57,6 +57,7 @@ Every command that reads or changes state takes `--json`, which prints the answe
 | 11 | Not supported: the host can't do that, or a paired machine may not |
 | 12 | Not running: the session's terminal has ended |
 | 13 | Partial: some of several sessions didn't change |
+| 14 | Conflict: it changed while acmd was saving it; run the command again |
 
 `acmd --help` lists them too.
 

@@ -78,12 +78,15 @@ func (d *Daemon) configState() ipc.ConfigState {
 
 // setConfig is config.set: the changes, all or none. Choosing an editor
 // finds its launcher, as acmd editor set does.
-func (d *Daemon) setConfig(values map[string]any) (ipc.ConfigState, error) {
-	values, err := d.withEditor(values)
+func (d *Daemon) setConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
+	values, err := d.withEditor(set.Values)
 	if err != nil {
 		return d.configState(), err
 	}
-	_, err = d.settings().Set(values, config.AllowReadOnly)
+	_, err = d.settings().SetIf(values, set.Versions, config.AllowReadOnly)
+	if errors.Is(err, config.ErrChanged) {
+		err = &codedError{code: ipc.CodeConflict, err: err}
+	}
 	if err == nil {
 		d.followSettings() // now, so the reply shows it in effect
 		d.changes.bump()
@@ -158,7 +161,7 @@ func (d *Daemon) handleConfig(ctx context.Context, req ipc.Request) (any, error)
 		if err != nil {
 			return nil, err
 		}
-		return d.setConfig(set.Values)
+		return d.setConfig(set)
 	case ipc.OpRemoteConfigGet:
 		ref, err := decode[ipc.RemoteHostRef](req.Data)
 		if err != nil {
@@ -174,7 +177,7 @@ func (d *Daemon) handleConfig(ctx context.Context, req ipc.Request) (any, error)
 		}
 		ctx, cancel := context.WithTimeout(ctx, remoteCallTimeout)
 		defer cancel()
-		return d.client.SetConfig(ctx, set.Host, set.Values)
+		return d.client.SetConfig(ctx, set.Host, ipc.ConfigSet{Values: set.Values, Versions: set.Versions})
 	}
 	return nil, fmt.Errorf("unknown op %q", req.Op)
 }

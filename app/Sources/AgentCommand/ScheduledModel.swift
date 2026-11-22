@@ -21,6 +21,10 @@ final class ScheduledModel {
     private(set) var saving = false
     /// Why the last save, run or check failed.
     private(set) var error: String?
+    /// The save was refused: the job changed since the form opened. The form
+    /// keeps your changes, and takes the job's new version when it arrives,
+    /// so Save again replaces it.
+    private(set) var conflicted = false
     /// What just happened, for a moment.
     private(set) var notice: String?
     private(set) var runs: [JobRun] = []
@@ -144,6 +148,7 @@ final class ScheduledModel {
 
     /// The jobs changed under the view (the daemon, or the CLI).
     func jobsChanged() {
+        if conflicted { adoptLatest() }
         if let id = selectedID, !jobs.contains(where: { $0.id == id }), !isEditing {
             select(jobs.first?.id)
         } else if let id = selectedID, !isEditing {
@@ -191,6 +196,7 @@ final class ScheduledModel {
         draft = nil
         original = nil
         error = nil
+        conflicted = false
         check = JobCheck()
     }
 
@@ -207,12 +213,43 @@ final class ScheduledModel {
             case .success(let job):
                 self.draft = nil
                 self.original = nil
+                self.conflicted = false
                 self.select(job.id)
                 self.show(draft.isNew ? "Added \(job.name)." : "Saved \(job.name).")
+            case .failure(let failure as DaemonError) where failure.code == "conflict":
+                self.conflicted = true
+                self.adoptLatest()
             case .failure(let failure):
                 self.error = failure.localizedDescription
             }
         }
+    }
+
+    /// After a refused save: the job as it is now becomes what the form is
+    /// measured against, its version goes with the next save, and the error
+    /// says what changed. Your edits stay as they are.
+    private func adoptLatest() {
+        guard let draft, let before = original else { return }
+        let name = draft.name.isEmpty ? "This job" : draft.name
+        guard let latest = jobs.first(where: { $0.id == draft.id }) else {
+            error = "\(name) was deleted while you were editing it. Save adds it again."
+            self.draft?.id = ""
+            self.draft?.version = ""
+            conflicted = false
+            return
+        }
+        guard latest.version != draft.version else {
+            error = "\(name) changed while you were editing it. Getting the latest…"
+            return // its new version is on its way in the stream
+        }
+        let now = JobDraft(latest)
+        let changed = before.changes(to: now)
+        let what = changed.isEmpty ? "" : " (its \(changed.joined(separator: ", ")))"
+        error = "\(name) changed while you were editing it\(what), on another device or by hand. "
+            + "Your changes are still here: Save again to replace it, or Cancel to keep it as it is now."
+        original = now
+        self.draft?.version = latest.version
+        conflicted = false
     }
 
     /// Checks the draft a moment after it last changed.

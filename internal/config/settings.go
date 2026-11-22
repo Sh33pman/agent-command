@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/etag"
 	"github.com/brettmostert/agent-command/internal/speech"
 )
 
@@ -236,6 +237,40 @@ func Values(c Config) map[string]any {
 		out[s.Key] = s.get(c)
 	}
 	return out
+}
+
+// Versions are each setting's version in c, by key: a hash of its value, so
+// a client can say which it loaded (File.SetIf).
+func Versions(c Config) map[string]string {
+	out := make(map[string]string, len(Specs))
+	for key, v := range Values(c) {
+		out[key] = etag.Of(v)
+	}
+	return out
+}
+
+// ErrChanged is a setting that changed since the client loaded it: by
+// another client, or by hand in config.toml.
+var ErrChanged = errors.New("changed since you loaded it")
+
+// changedSince is ErrChanged, naming the settings whose version in c isn't
+// the one in versions.
+func changedSince(c Config, versions map[string]string) error {
+	if len(versions) == 0 {
+		return nil
+	}
+	now := Versions(c)
+	var keys []string
+	for key, v := range versions {
+		if now[key] != v {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	slices.Sort(keys)
+	return fmt.Errorf("%s %w", strings.Join(keys, ", "), ErrChanged)
 }
 
 // ErrUnknownSetting is a key that isn't a setting.

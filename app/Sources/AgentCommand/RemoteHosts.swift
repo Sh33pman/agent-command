@@ -38,10 +38,13 @@ struct RemoteHost: Decodable, Equatable, Identifiable {
     /// Listed in config.toml: edited there, not here.
     var inConfig = false
 
+    /// What an edit sends back: one from an older version is refused.
+    var version = ""
+
     var id: String { name }
 
     enum CodingKeys: String, CodingKey {
-        case name, address, fingerprint, cert, error, since, seen, sessions
+        case name, address, fingerprint, cert, error, since, seen, sessions, version
         case inConfig = "in_config"
         case stateName = "state", retryAt = "retry_at", ourFingerprint = "our_fingerprint"
         case hostName = "host_name", hostVersion = "host_version"
@@ -54,6 +57,7 @@ struct RemoteHost: Decodable, Equatable, Identifiable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = c.value(.name, "")
+        version = c.value(.version, "")
         address = c.value(.address, "")
         fingerprint = c.value(.fingerprint, "")
         cert = c.value(.cert, "")

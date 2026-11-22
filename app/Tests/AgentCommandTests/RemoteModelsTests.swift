@@ -10,6 +10,8 @@ final class FakeCalls: DaemonCalls {
     private(set) var asked: [(op: String, input: [String: Any])] = []
     var replies: [String: Any] = [:]
     var failures: [String: String] = [:]
+    /// The code each failure in failures has (internal/errcode).
+    var codes: [String: String] = [:]
     var holding = false
     private var held: [() -> Void] = []
 
@@ -17,7 +19,7 @@ final class FakeCalls: DaemonCalls {
         asked.append((op, (try? JSONSerialization.jsonObject(with: input)) as? [String: Any] ?? [:]))
         let answer: Result<Data, Error>
         if let failure = failures[op] {
-            answer = .failure(DaemonError(message: failure))
+            answer = .failure(DaemonError(message: failure, code: codes[op] ?? ""))
         } else {
             let data = (try? JSONSerialization.data(withJSONObject: replies[op] ?? [String: Any](), options: .fragmentsAllowed)) ?? Data()
             answer = .success(data)
@@ -517,6 +519,38 @@ struct KnownHostsModelTests {
         var f = KnownHostForm()
         (f.name, f.address, f.fingerprint) = ("studio", "s:7433", "SHA256:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/abcde")
         return f
+    }
+
+    /// An edit sends the version the sheet loaded; refused because the host
+    /// changed since, it says what's there now, and Save again goes from it.
+    @Test func aRefusedEditCanBeSavedAgain() {
+        let fake = FakeCalls()
+        let m = KnownHostsModel()
+        m.client = client(fake)
+        var host = RemoteHost(name: "studio", address: "s:7433")
+        host.version = "h1"
+        host.fingerprint = ready().fingerprint
+        var form = KnownHostForm(host: host)
+        form.address = "mine:7433"
+        fake.failures["remote.hosts.edit"] = "studio changed since you opened it"
+        fake.codes["remote.hosts.edit"] = "conflict"
+        fake.replies["remote.hosts"] = [["name": "studio", "address": "theirs:7433", "version": "h2"]]
+        var done: [Bool] = []
+        m.edit(host, form) { done.append($0) }
+        #expect(fake.asked.first?.input["version"] as? String == "h1" && fake.asked.first?.input["address"] as? String == "mine:7433")
+        #expect(done == [false] && fake.ops.last == "remote.hosts" && m.busy == nil)
+        #expect(m.error == "studio changed while you were editing it: it's now at theirs:7433. Your changes are still here: Save again to replace it.")
+
+        fake.failures = [:]
+        fake.replies["remote.hosts.edit"] = ["name": "studio", "address": "mine:7433", "version": "h3"]
+        m.edit(host, form) { done.append($0) } // the sheet still has the host it opened with
+        #expect(fake.last["version"] as? String == "h2" && fake.last["address"] as? String == "mine:7433" && done.last == true)
+
+        // Gone meanwhile: it says so.
+        fake.failures["remote.hosts.edit"] = "changed"
+        fake.replies["remote.hosts"] = [[String: Any]]()
+        m.edit(host, form) { done.append($0) }
+        #expect(m.error == "studio was removed or renamed while you were editing it.")
     }
 
     @Test func addEditRemoveAndRetryGoThroughTheDaemon() {

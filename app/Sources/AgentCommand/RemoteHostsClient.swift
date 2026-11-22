@@ -24,6 +24,9 @@ struct RemoteHostEdit: Encodable, Equatable {
     var address: String?
     var fingerprint: String?
     var cert: String?
+    /// The host's version as the form loaded it: an edit from an older one
+    /// is refused ("conflict").
+    var version: String?
 }
 
 /// The client daemon's Remote host ops (internal/ipc/remotehosts.go). The app
@@ -75,6 +78,11 @@ struct RemoteHostsClient {
 
     func editHost(_ edit: RemoteHostEdit, done: @escaping (Result<RemoteHost, Error>) -> Void) {
         call("remote.hosts.edit", edit, done)
+    }
+
+    /// The known hosts, as they are now.
+    func hosts(done: @escaping (Result<[RemoteHost], Error>) -> Void) {
+        call("remote.hosts", Ref(), done)
     }
 
     /// Forgets a host, and removes the sessions added from it here (not on the host).

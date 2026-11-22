@@ -83,6 +83,7 @@ const (
 	exitNotSupported = 11 // the host can't do that, or a paired device may not
 	exitNotRunning   = 12 // the session's terminal has ended
 	exitPartial      = 13 // some of several ids didn't change
+	exitConflict     = 14 // it changed since it was loaded
 )
 
 // exitCodesHelp lists the exit codes, for acmd --help.
@@ -101,13 +102,14 @@ const exitCodesHelp = "Exit codes:\n" +
 	"  11  not supported: the host can't do that, or this client may not\n" +
 	"  12  not running: the session's terminal has ended\n" +
 	"  13  partial: some of several sessions didn't change\n" +
+	"  14  conflict: it changed while acmd was saving it: run the command again\n" +
 	"With --json, an error is {\"error\": {\"code\": …, \"message\": …}} on stderr."
 
 // codedExits are the daemon's error codes and their exit codes.
 var codedExits = map[string]int{
 	ipc.CodeNotFound: exitNotFound, ipc.CodeInvalid: exitInvalid, ipc.CodeBadRequest: exitInvalid,
 	ipc.CodeNotSupported: exitNotSupported, errcode.Forbidden: exitNotSupported, ipc.CodeUnknownOp: exitNotSupported,
-	ipc.CodePermission: exitNotSupported,
+	ipc.CodePermission: exitNotSupported, ipc.CodeConflict: exitConflict,
 	ipc.CodeNotRunning: exitNotRunning, ipc.CodeHostUnreachable: exitUnreachable,
 }
 
@@ -116,7 +118,7 @@ var exitNames = map[int]string{
 	exitFailed: ipc.CodeInternal, exitUsage: "usage", exitUnreachable: ipc.CodeHostUnreachable, exitPending: "pending",
 	exitUnauthorized: "unauthorized", exitFingerprint: "fingerprint", exitVersion: "version", exitPortTaken: "port_taken",
 	exitNotFound: ipc.CodeNotFound, exitInvalid: ipc.CodeInvalid, exitNotSupported: ipc.CodeNotSupported,
-	exitNotRunning: ipc.CodeNotRunning, exitPartial: "partial",
+	exitNotRunning: ipc.CodeNotRunning, exitPartial: "partial", exitConflict: ipc.CodeConflict,
 }
 
 // usageError is a command line that doesn't make sense.

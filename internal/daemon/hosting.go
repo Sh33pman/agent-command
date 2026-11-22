@@ -17,7 +17,7 @@ import (
 func (d *Daemon) startRemote() {
 	d.remote = host.New(host.Options{
 		Settings:    func() config.Remote { return d.config().Remote },
-		SetSettings: func(m map[string]any) error { _, err := d.setConfig(m); return err },
+		SetSettings: func(m map[string]any) error { _, err := d.setConfig(ipc.ConfigSet{Values: m}); return err },
 		Data:        hostData{d},
 		IdentityDir: d.cfg.Paths.RemoteIdentityDir(),
 		Version:     d.cfg.Version,

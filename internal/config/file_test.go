@@ -300,3 +300,37 @@ func TestNoPathRefusesWrites(t *testing.T) {
 		t.Fatal("defaults")
 	}
 }
+
+// A change that names the versions it loaded is refused, all of it, when
+// any of those settings changed since, on disk or through another Set.
+func TestSetIfRefusesAChangedSetting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	f := OpenFile(path)
+	loaded := Versions(f.Config())
+	if len(loaded) != len(Specs) || loaded["default_harness"] == "" {
+		t.Fatalf("versions = %v", loaded)
+	}
+	if _, err := f.SetIf(map[string]any{"default_harness": "antigravity"}, map[string]string{"default_harness": loaded["default_harness"]}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.SetIf(map[string]any{"default_harness": "claude", "notify.on_done": false},
+		map[string]string{"default_harness": loaded["default_harness"], "notify.on_done": loaded["notify.on_done"]})
+	if !errors.Is(err, ErrChanged) || !strings.HasPrefix(err.Error(), "default_harness ") {
+		t.Fatalf("a stale change: %v", err)
+	}
+	if c := f.Config(); c.DefaultHarness != "antigravity" || !c.Notify.OnDone {
+		t.Errorf("part of a refused change was made: %+v", c)
+	}
+	// By hand counts too.
+	now := Versions(f.Config())
+	if err := os.WriteFile(path, []byte("[notify]\non_done = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.SetIf(map[string]any{"notify.on_done": true}, map[string]string{"notify.on_done": now["notify.on_done"]}); !errors.Is(err, ErrChanged) {
+		t.Errorf("after a hand edit: %v", err)
+	}
+	// A version for every key, unchanged: fine.
+	if _, err := f.SetIf(map[string]any{"notify.on_done": true}, Versions(f.Config())); err != nil {
+		t.Errorf("as loaded: %v", err)
+	}
+}

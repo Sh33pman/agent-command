@@ -89,11 +89,17 @@ struct SettingsView: View {
                     .padding(10)
                 }
                 if let error = model.error {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                        Spacer()
+                        if model.refused != nil {
+                            Button("Use Mine") { model.useMine() }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
                 }
                 page
             }

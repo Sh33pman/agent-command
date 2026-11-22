@@ -46,7 +46,7 @@ type Backend interface {
 	Harnesses() (installed []string, def string)
 	// Config is the settings, and SetConfig changes them (config.set).
 	Config() ipc.ConfigState
-	SetConfig(values map[string]any) (ipc.ConfigState, error)
+	SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error)
 	// Call runs a daemon op as a client on its socket would, and answers its
 	// data as the socket sends it. Callable has already allowed op; an
 	// error with a code (a *wire.CallError) keeps it.

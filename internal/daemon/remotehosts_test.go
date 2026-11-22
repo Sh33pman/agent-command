@@ -184,8 +184,8 @@ func (b *otherDaemon) calls() []string {
 	return slices.Clone(b.ran)
 }
 
-func (b *otherDaemon) SetConfig(values map[string]any) (ipc.ConfigState, error) {
-	_, err := b.file.Set(values)
+func (b *otherDaemon) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
+	_, err := b.file.SetIf(set.Values, set.Versions)
 	return ipc.ConfigOf(b.file), err
 }
 

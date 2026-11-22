@@ -174,6 +174,13 @@ const AllowReadOnly SetOption = 1
 // and written into the file as it is on disk now, keeping everything else.
 // Nothing is written when nothing changes. It returns the settings in effect.
 func (f *File) Set(changes map[string]any, opts ...SetOption) (Config, error) {
+	return f.SetIf(changes, nil, opts...)
+}
+
+// SetIf is Set, refused with ErrChanged when any setting in versions isn't
+// at that version (Versions) in the file as it is on disk now: a form edit
+// doesn't overwrite a change made since it loaded.
+func (f *File) SetIf(changes map[string]any, versions map[string]string, opts ...SetOption) (Config, error) {
 	readOnlyOK := slices.Contains(opts, AllowReadOnly)
 	type change struct {
 		spec  Spec
@@ -214,6 +221,9 @@ func (f *File) Set(changes map[string]any, opts ...SetOption) (Config, error) {
 		f.loadLocked()
 		if f.problem != nil {
 			err = fmt.Errorf("%w (%s)", ErrBadFile, f.problem.Error())
+			break
+		}
+		if err = changedSince(f.cur, versions); err != nil {
 			break
 		}
 		read := f.stamp

@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/etag"
 )
 
 // runsKept is how many runs of each job are kept.
@@ -195,6 +196,7 @@ func scanJob(row scanner) (*core.Job, error) {
 	}
 	j.Once, j.Paused = fromMS(once), paused != 0
 	j.CreatedAt, j.UpdatedAt, j.LastDue = fromMS(created), fromMS(updated), fromMS(lastDue)
+	j.Version = JobVersion(&j)
 	return &j, nil
 }
 
@@ -219,3 +221,7 @@ func sortJobs(jobs []*core.Job) {
 		return jobs[a].CreatedAt.Before(jobs[b].CreatedAt)
 	})
 }
+
+// JobVersion is a hash of what the job form edits: its spec and schedule.
+// Pausing it, and its runs, leave it as it was.
+func JobVersion(j *core.Job) string { return etag.Of([]any{j.JobSpec, j.Cron, j.Once}) }

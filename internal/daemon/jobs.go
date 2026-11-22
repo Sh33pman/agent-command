@@ -574,6 +574,11 @@ func (d *Daemon) saveJob(ctx context.Context, j core.Job) (*core.Job, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Edited from what it was when the form loaded it, or not at all:
+		// another client's change, or one by hand, isn't lost silently.
+		if j.Version != "" && j.Version != old.Version {
+			return nil, conflict("%s changed since you opened it", old.Name)
+		}
 		saved.Paused = old.Paused
 	}
 	if err := d.store.SaveJob(ctx, saved); err != nil {

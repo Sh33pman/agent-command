@@ -4,6 +4,9 @@ import Foundation
 /// happened with it.
 struct Job: Codable, Identifiable, Equatable {
     var id = ""
+    /// What the form loaded, sent back with a save: the daemon refuses the
+    /// save ("conflict") when the job changed since.
+    var version = ""
     var name = ""
     var description = ""
     var groupID = ""
@@ -34,7 +37,7 @@ struct Job: Codable, Identifiable, Equatable {
     var form: ScheduleForm?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, description, harness, schedule, prompt, cwd, settings, cron, once, words, summary, paused, wake, form
+        case id, version, name, description, harness, schedule, prompt, cwd, settings, cron, once, words, summary, paused, wake, form
         case groupID = "group_id", promptFile = "prompt_file", place = "where", sessionID = "session_id"
         case runMissed = "run_missed", createdAt = "created_at", nextRun = "next_run", lastRun = "last_run"
     }
@@ -45,6 +48,7 @@ struct Job: Codable, Identifiable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) throws -> String { try c.decodeIfPresent(String.self, forKey: key) ?? "" }
         id = try text(.id)
+        version = try text(.version)
         name = try text(.name)
         description = try text(.description)
         groupID = try text(.groupID)
@@ -73,6 +77,7 @@ struct Job: Codable, Identifiable, Equatable {
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         if !id.isEmpty { try c.encode(id, forKey: .id) }
+        if !version.isEmpty { try c.encode(version, forKey: .version) }
         try c.encode(name, forKey: .name)
         try c.encode(description, forKey: .description)
         try c.encode(groupID, forKey: .groupID)
@@ -295,6 +300,8 @@ struct JobDraft: Equatable {
     }
 
     var id = ""
+    /// The job's version when the form loaded it (Job.version).
+    var version = ""
     var name = ""
     var description = ""
     var groupID = ""
@@ -319,6 +326,7 @@ struct JobDraft: Equatable {
 
     init(_ job: Job) {
         id = job.id
+        version = job.version
         name = job.name
         description = job.description
         groupID = job.groupID
@@ -337,6 +345,21 @@ struct JobDraft: Equatable {
     }
 
     var isNew: Bool { id.isEmpty }
+
+    /// What's different in other, by the form's names for it.
+    func changes(to other: JobDraft) -> [String] {
+        var out: [String] = []
+        if name != other.name { out.append("name") }
+        if description != other.description { out.append("description") }
+        if groupID != other.groupID { out.append("group") }
+        if harness != other.harness { out.append("agent") }
+        if builder.form() != other.builder.form() || builder.cron != other.builder.cron { out.append("schedule") }
+        if prompt != other.prompt || promptFile != other.promptFile || promptSource != other.promptSource { out.append("prompt") }
+        if place != other.place || cwd != other.cwd || sessionID != other.sessionID { out.append("where it runs") }
+        if settings != other.settings { out.append("settings") }
+        if runMissed != other.runMissed || wake != other.wake { out.append("options") }
+        return out
+    }
 
     /// Changes the agent. The settings and the session were the other agent's, so they go.
     mutating func setHarness(_ agent: Harness) {
@@ -363,6 +386,7 @@ struct JobDraft: Equatable {
     var job: Job {
         var j = Job()
         j.id = id
+        j.version = version
         j.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         j.description = description.trimmingCharacters(in: .whitespacesAndNewlines)
         j.groupID = groupID
@@ -390,6 +414,7 @@ struct JobDraft: Equatable {
     func duplicate() -> JobDraft {
         var copy = self
         copy.id = ""
+        copy.version = ""
         copy.name = name + " copy"
         return copy
     }

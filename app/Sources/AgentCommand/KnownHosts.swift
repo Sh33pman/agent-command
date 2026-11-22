@@ -51,6 +51,7 @@ struct KnownHostForm: Equatable {
     func changes(from host: RemoteHost) -> RemoteHostEdit? {
         var edit = RemoteHostEdit(host: host.name)
         let name = Self.trim(name), address = Self.trim(address)
+        edit.version = host.version.isEmpty ? nil : host.version
         if name != host.name { edit.name = name }
         if address != host.address { edit.address = address }
         if byFile {
@@ -60,7 +61,9 @@ struct KnownHostForm: Equatable {
             let fingerprint = Self.trim(fingerprint)
             if fingerprint != host.fingerprint || !host.cert.isEmpty { edit.fingerprint = fingerprint }
         }
-        return edit == RemoteHostEdit(host: host.name) ? nil : edit
+        var none = RemoteHostEdit(host: host.name)
+        none.version = edit.version
+        return edit == none ? nil : edit
     }
 }
 
@@ -91,11 +94,39 @@ struct KnownHostForm: Equatable {
             error = form.problem
             return done(false)
         }
+        // After a refused edit, measured against the host as it is now.
+        let host = newer[host.name] ?? host
         guard let changes = form.changes(from: host) else { return done(true) }
         start(host.name)
         client.editHost(changes) { [weak self] result in
-            self?.finish(result.failure)
+            guard let self else { return }
+            if case .failure(let failure as DaemonError) = result, failure.code == "conflict" {
+                self.refused(host)
+                return done(false)
+            }
+            self.newer[host.name] = nil
+            self.finish(result.failure)
             done(result.failure == nil)
+        }
+    }
+
+    /// The hosts as they were after an edit was refused, by name: the next
+    /// save goes from them, so it replaces what changed on purpose.
+    private var newer: [String: RemoteHost] = [:]
+
+    /// An edit refused because the host changed since the sheet opened: the
+    /// sheet keeps your changes, and says what's there now.
+    private func refused(_ host: RemoteHost) {
+        client.hosts { [weak self] result in
+            guard let self else { return }
+            self.busy = nil
+            guard let now = (try? result.get())?.first(where: { $0.name == host.name }) else {
+                self.error = "\(host.name) was removed or renamed while you were editing it."
+                return
+            }
+            self.newer[host.name] = now
+            self.error = "\(host.name) changed while you were editing it: it's now at \(now.address). "
+                + "Your changes are still here: Save again to replace it."
         }
     }
 

@@ -56,6 +56,8 @@ const (
 
 // RemoteHost is a known host ([[remote.hosts]]) and its connection.
 type RemoteHost struct {
+	// Version is what an edit sends back (RemoteHostEdit.Version).
+	Version     string `json:"version"`
 	Name        string `json:"name"`
 	Address     string `json:"address"`
 	Fingerprint string `json:"fingerprint"`    // pinned
@@ -91,6 +93,9 @@ type RemoteHostEdit struct {
 	Address     string `json:"address,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
 	Cert        string `json:"cert,omitempty"`
+	// Version is the host's, as the client loaded it: an edit from an older
+	// one is refused with errcode.Conflict. "" applies whatever it is.
+	Version string `json:"version,omitempty"`
 }
 
 // RemoteHostRef names a known host, and for some ops a session: the host's

@@ -1891,6 +1891,9 @@
         "id": {
           "type": "string"
         },
+        "version": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -2187,6 +2190,12 @@
       "properties": {
         "values": {
           "type": "object"
+        },
+        "versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
         }
       },
       "type": "object",
@@ -2208,6 +2217,12 @@
         "values": {
           "type": "object"
         },
+        "versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
         "problem": {
           "$ref": "#/$defs/config.Problem"
         }
@@ -2216,7 +2231,8 @@
       "required": [
         "path",
         "settings",
-        "values"
+        "values",
+        "versions"
       ]
     },
     "ipc.Conversation": {
@@ -2605,6 +2621,9 @@
     "ipc.JobCheckRequest": {
       "properties": {
         "id": {
+          "type": "string"
+        },
+        "version": {
           "type": "string"
         },
         "name": {
@@ -3072,6 +3091,12 @@
         },
         "values": {
           "type": "object"
+        },
+        "versions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
         }
       },
       "type": "object",
@@ -3151,6 +3176,9 @@
     },
     "ipc.RemoteHost": {
       "properties": {
+        "version": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
@@ -3198,6 +3226,7 @@
       },
       "type": "object",
       "required": [
+        "version",
         "name",
         "address",
         "fingerprint",
@@ -3222,6 +3251,9 @@
           "type": "string"
         },
         "cert": {
+          "type": "string"
+        },
+        "version": {
           "type": "string"
         }
       },

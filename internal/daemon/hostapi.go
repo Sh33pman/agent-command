@@ -130,6 +130,6 @@ func (b hostBackend) Subscribe(ctx context.Context, req ipc.SubscribeRequest, se
 }
 
 // SetConfig changes the host's settings for a client (config.set).
-func (b hostBackend) SetConfig(values map[string]any) (ipc.ConfigState, error) {
-	return b.d.setConfig(values)
+func (b hostBackend) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
+	return b.d.setConfig(set)
 }

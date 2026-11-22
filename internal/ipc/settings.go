@@ -16,12 +16,17 @@ const (
 // text as it's typed ("on", "8080").
 type ConfigSet struct {
 	Values map[string]any `json:"values"`
+	// Versions are the versions (ConfigState.Versions) of the settings the
+	// client changes, as it loaded them: a key changed since refuses the
+	// whole save with errcode.Conflict. A key left out applies whatever it is.
+	Versions map[string]string `json:"versions,omitempty"`
 }
 
 // RemoteConfigSet changes a Remote host's settings.
 type RemoteConfigSet struct {
-	Host   string         `json:"host"`
-	Values map[string]any `json:"values"`
+	Host     string            `json:"host"`
+	Values   map[string]any    `json:"values"`
+	Versions map[string]string `json:"versions,omitempty"`
 }
 
 // ConfigState is the settings: what each one is, and its value in effect.
@@ -32,6 +37,8 @@ type ConfigState struct {
 	// Values are in effect: a config.toml with a mistake leaves the last
 	// good ones.
 	Values map[string]any `json:"values"`
+	// Versions are each setting's version, to send back with a change.
+	Versions map[string]string `json:"versions"`
 	// Problem is what's wrong with config.toml, while changes are refused.
 	Problem *config.Problem `json:"problem,omitempty"`
 }
@@ -187,7 +194,8 @@ type Update struct {
 
 // ConfigOf is f's settings as config.get answers.
 func ConfigOf(f *config.File) ConfigState {
-	return ConfigState{Path: f.Path(), Settings: config.Specs, Values: config.Values(f.Config()), Problem: f.Problem()}
+	c := f.Config()
+	return ConfigState{Path: f.Path(), Settings: config.Specs, Values: config.Values(c), Versions: config.Versions(c), Problem: f.Problem()}
 }
 
 // OpHarnesses lists what new sessions can run here (as the Remote API's

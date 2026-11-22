@@ -44,6 +44,11 @@ func badRequest(format string, a ...any) error {
 	return &codedError{code: ipc.CodeBadRequest, err: fmt.Errorf(format, a...)}
 }
 
+// conflict is a save of something that changed since the client loaded it.
+func conflict(format string, a ...any) error {
+	return &codedError{code: ipc.CodeConflict, err: fmt.Errorf(format, a...)}
+}
+
 // errCoder is an error that knows its own code (a catalog.ProtoError).
 type errCoder interface{ Code() string }
 

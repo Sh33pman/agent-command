@@ -23,6 +23,7 @@ private final class Board {
         model.checkDelay = 0
         model.runAcmd = { _, done in done(false, "tests don't run acmd") }
         model.calls = fake
+        store.jobCalls = fake
         model.folders = RemoteHostsClient(calls: fake)
         model.close = { [unowned self] in self.closed = true }
         model.goToSession = { [unowned self] in self.shown = $0 }
@@ -120,7 +121,7 @@ private func job(_ id: String, _ name: String, cwd: String = "/w") -> Job {
     #expect(model.error?.contains("background service") == true)
     #expect(model.problem("name") == nil)
     try board.press(1, "s", flags: .command)
-    #expect(model.saving || model.error != nil)
+    #expect(board.fake.ops.last == "job.save" && board.fake.last["name"] as? String == "x", "⌘S saves")
 }
 
 /// Folders and files are chosen with the daemon's folder ops: the same chooser
@@ -403,4 +404,55 @@ extension UsesSharedSpeech {
             #expect(daemon.received("agent.settings").count == 2, "each agent's are asked for once")
         }
     }
+}
+
+/// A save refused because the job changed since the form opened keeps your
+/// changes, says what changed once the job's new version arrives, and the
+/// next save sends that version, replacing it on purpose.
+@MainActor @Test func aRefusedSaveKeepsYourChanges() throws {
+    var loaded = job("A", "alpha")
+    loaded.version = "v1"
+    let board = try Board(jobs: [loaded])
+    let model = board.model
+    model.edit()
+    model.draft?.name = "Mine"
+    board.fake.failures["job.save"] = "alpha changed since you opened it"
+    board.fake.codes["job.save"] = "conflict"
+    model.save()
+    #expect(board.fake.last["version"] as? String == "v1", "it sends the version it loaded")
+    #expect(model.isEditing && model.draft?.name == "Mine" && model.error?.hasSuffix("Getting the latest…") == true)
+
+    // The job as it is now arrives.
+    var theirs = loaded
+    theirs.version = "v2"
+    theirs.name = "Theirs"
+    theirs.prompt = "# New"
+    board.store.jobs = [theirs]
+    model.jobsChanged()
+    #expect(model.draft?.name == "Mine" && model.draft?.version == "v2")
+    #expect(model.error?.contains("(its name, prompt)") == true && model.error?.contains("Save again") == true)
+    #expect(model.isDirty, "measured against the job as it is now")
+
+    board.fake.failures = [:]
+    var saved = theirs
+    saved.name = "Mine"
+    saved.version = "v3"
+    board.fake.replies["job.save"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved))
+    model.save()
+    #expect(board.fake.last["version"] as? String == "v2" && !model.isEditing && model.error == nil)
+}
+
+/// A job deleted while you edit it: Save adds it again.
+@MainActor @Test func aJobDeletedWhileYouEditItIsAddedAgain() throws {
+    var loaded = job("A", "alpha")
+    loaded.version = "v1"
+    let board = try Board(jobs: [loaded])
+    let model = board.model
+    model.edit()
+    board.store.jobs = []
+    board.fake.failures["job.save"] = "changed"
+    board.fake.codes["job.save"] = "conflict"
+    model.save()
+    #expect(model.error?.contains("was deleted") == true && model.draft?.isNew == true && model.draft?.version == "")
+    #expect(JobDraft(loaded).duplicate().version == "", "a copy is a new job")
 }

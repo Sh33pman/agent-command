@@ -7,6 +7,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/brettmostert/agent-command/internal/etag"
 )
 
 // Remote is the [remote] section: Remote sessions, used from another acmd.
@@ -71,6 +73,10 @@ type KnownHost struct {
 	Fingerprint string `toml:"fingerprint"`
 	Cert        string `toml:"cert"` // a path to the host's cert, in place of Fingerprint
 }
+
+// Version is a hash of what editing a known host changes, so an edit from
+// a form that loaded an older one is refused.
+func (h KnownHost) Version() string { return etag.Of(h) }
 
 // Where Hosting listens.
 const (

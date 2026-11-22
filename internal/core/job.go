@@ -48,6 +48,10 @@ type JobSpec struct {
 // what's happened with it.
 type Job struct {
 	ID string `json:"id"`
+	// Version is a hash of what the job form edits (its spec and schedule),
+	// as the client loaded it. A job.save that sends it back is refused with
+	// errcode.Conflict when the job changed since; one with none applies.
+	Version string `json:"version,omitempty"`
 	JobSpec
 	Cron  string    `json:"cron,omitempty"` // "" for a one-off
 	Once  time.Time `json:"once,omitzero"`  // a one-off's time

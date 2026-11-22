@@ -12,7 +12,9 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
+	"github.com/brettmostert/agent-command/internal/remote/wire"
 )
 
 // Known hosts are config.toml's [[remote.hosts]], read-only, and the ones
@@ -138,10 +140,14 @@ func (c *Client) EditHost(_ context.Context, e ipc.RemoteHostEdit) (ipc.RemoteHo
 		}
 	}
 	if !found {
-		return ipc.RemoteHost{}, fmt.Errorf("there's no Remote host named %q", e.Host)
+		return ipc.RemoteHost{}, wire.Errorf(wire.CodeNotFound, "there's no Remote host named %q", e.Host)
 	}
 	if c.isInConfig(e.Host) {
 		return ipc.RemoteHost{}, fmt.Errorf("%q is %w", e.Host, ErrInConfig)
+	}
+	// From the host as the form loaded it: a change made since isn't lost.
+	if e.Version != "" && e.Version != kh.Version() {
+		return ipc.RemoteHost{}, wire.Errorf(api.CodeConflict, "%s changed since you opened it", e.Host)
 	}
 	if e.Name != "" {
 		kh.Name = e.Name

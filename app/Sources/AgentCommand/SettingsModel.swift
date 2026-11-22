@@ -83,6 +83,8 @@ struct AcmdSettings: Equatable {
 
     var path = ""
     var settings = Values()
+    /// Each setting's version as loaded, to send back with a change.
+    var versions: [String: String] = [:]
     var voices: [String] = []
     var problem: ConfigProblem?
 
@@ -90,6 +92,7 @@ struct AcmdSettings: Equatable {
 
     init(state: ConfigState) {
         path = state.path
+        versions = state.versions
         let json = (try? JSONEncoder().encode(state.values)) ?? Data("{}".utf8)
         settings = (try? JSONDecoder().decode(Values.self, from: json)) ?? Values()
         voices = state.settings.first { $0.key == "speech.voice" }?.suggestions ?? []
@@ -175,6 +178,10 @@ enum ShellWords {
     private(set) var report: String?
     /// The setting being changed, so its control can wait.
     private(set) var busy: String?
+    /// A change refused because the settings changed since they were shown
+    /// (by hand, or from another device): the settings show as they are now,
+    /// and useMine makes this change over them.
+    private(set) var refused: [String: SettingValue]?
     /// The section on show.
     var section = SettingsSection.general {
         didSet { if Self.hostSections.contains(section) != Self.hostSections.contains(oldValue) && host != nil { load() } }
@@ -237,7 +244,9 @@ enum ShellWords {
         busy = key
         error = nil
         let whose = target
-        client.set(values, host: whose) { [weak self] result in
+        refused = nil
+        let versions = acmd.versions.filter { values[$0.key] != nil }
+        client.set(values, host: whose, versions: versions) { [weak self] result in
             guard let self else { return }
             self.busy = nil
             switch result {
@@ -245,12 +254,24 @@ enum ShellWords {
                 if whose == self.target { self.acmd = AcmdSettings(state: state) }
                 if whose == nil { HostSettings.shared.values = state.values }
                 then()
+            case .failure(let failure as DaemonError) where failure.code == "conflict":
+                let names = values.keys.sorted().joined(separator: ", ")
+                self.error = "\(names) changed while Settings was open, by hand or from another device. "
+                    + "It shows as it is now: Use Mine to make your change anyway."
+                self.refused = values
+                self.load()
             case .failure(let failure):
                 let why = errorText(failure)
                 self.error = why.isEmpty ? "Couldn't change \(key)." : why
                 self.load()
             }
         }
+    }
+
+    /// Makes the refused change over the settings as they are now.
+    func useMine() {
+        guard let values = refused else { return }
+        set(values)
     }
 
     /// Sets one setting from text as it's typed ("on", "10s", "7500").

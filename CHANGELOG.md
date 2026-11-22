@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.73.0](https://github.com/brettmostert/agent-command/compare/v0.72.0...v0.73.0) (2026-11-22)
+
+
+### Features
+
+* a client registry, presence, and notices routed to the client you use ([#120](https://github.com/brettmostert/agent-command/issues/120)) ([223c865](https://github.com/brettmostert/agent-command/commit/223c865ae9acaf79cf8b50a9789c56adaa80c2c5))
+
 ## [0.72.0](https://github.com/brettmostert/agent-command/compare/v0.71.0...v0.72.0) (2026-11-21)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.78.0](https://github.com/brettmostert/agent-command/compare/v0.77.1...v0.78.0) (2026-11-22)
+
+
+### Features
+
+* one list of error codes, and request ids for safe retries ([#134](https://github.com/brettmostert/agent-command/issues/134)) ([1ba4a11](https://github.com/brettmostert/agent-command/commit/1ba4a1150763ce171275d99aeee86ca20c1c7a11))
+
 ## [0.77.1](https://github.com/brettmostert/agent-command/compare/v0.77.0...v0.77.1) (2026-11-22)
 
 

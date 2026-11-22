@@ -535,6 +535,9 @@ final class DaemonConnection {
     private let fd: Int32
     private var pending = Data()
 
+    /// Once fd is open, a throw below leaves closing it to deinit, which
+    /// runs for an init that throws: closing it here too would close it
+    /// twice, and the second time the number can be another socket's.
     init(socket path: String) throws {
         fd = Foundation.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw DaemonError(message: "socket failed") }
@@ -546,7 +549,6 @@ final class DaemonConnection {
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)
         guard bytes.count < MemoryLayout.size(ofValue: addr.sun_path) else {
-            close(fd)
             throw DaemonError(message: "socket path too long")
         }
         withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: bytes) }
@@ -556,7 +558,6 @@ final class DaemonConnection {
             }
         }
         guard status == 0 else {
-            close(fd)
             throw DaemonError(message: "daemon not reachable")
         }
         struct Hello: Codable {
@@ -566,7 +567,6 @@ final class DaemonConnection {
         }
         let theirs: Hello = try call("hello", Hello(proto: Self.proto, version: "app", client: ClientIdentity.hello()))
         guard theirs.proto == Self.proto else {
-            close(fd)
             throw DaemonError(message: "daemon speaks protocol \(theirs.proto), the app \(Self.proto)")
         }
     }

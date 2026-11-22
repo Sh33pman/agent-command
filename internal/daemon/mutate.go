@@ -84,10 +84,17 @@ func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, e
 // mutate applies one client change. It returns a value for group.create.
 func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	if isBatch(m) {
-		return d.mutateMany(ctx, m)
+		res, err := d.mutateMany(ctx, m)
+		// One session that couldn't change is an error, with its code; for
+		// several, each has its result.
+		if err == nil && len(m.LocalIDs) == 1 && len(res.Results) == 1 && !res.Results[0].OK {
+			r := res.Results[0]
+			return nil, &codedError{code: r.Code, err: errors.New(r.Error)}
+		}
+		return res, err
 	}
 	if m.Kind == ipc.MutRemote { // takes d.mu itself: its subscribers run without it
-		return nil, d.setRemote(ctx, m.ID, m.Flag)
+		return nil, d.setRemote(ctx, m.LocalID, m.Flag)
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -97,12 +104,12 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	}
 	switch m.Kind {
 	case ipc.MutSeen:
-		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
+		return nil, d.updateSession(ctx, m.LocalID, func(s *core.Session) error {
 			s.Unseen = false
 			return nil
 		})
 	case ipc.MutRename:
-		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
+		return nil, d.updateSession(ctx, m.LocalID, func(s *core.Session) error {
 			name := strings.TrimSpace(m.Text)
 			if name == "" {
 				return invalid("name is empty")
@@ -111,16 +118,16 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			return nil
 		})
 	case ipc.MutDescribe:
-		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
+		return nil, d.updateSession(ctx, m.LocalID, func(s *core.Session) error {
 			s.Description = strings.TrimSpace(m.Text)
 			return nil
 		})
 	case ipc.MutArchive:
-		return nil, d.archive(ctx, m.ID)
+		return nil, d.archive(ctx, m.LocalID)
 	case ipc.MutFinish:
-		return nil, d.finish(ctx, m.ID)
+		return nil, d.finish(ctx, m.LocalID)
 	case ipc.MutUnarchive:
-		return nil, d.updateSession(ctx, m.ID, func(s *core.Session) error {
+		return nil, d.updateSession(ctx, m.LocalID, func(s *core.Session) error {
 			if s.IsTerminal() {
 				return invalid("an archived terminal's shell has ended: start a new one")
 			}
@@ -128,7 +135,7 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			return nil
 		})
 	case ipc.MutMove:
-		return nil, st.MoveSessions(ctx, m.GroupID, m.IDs...)
+		return nil, st.MoveSessions(ctx, m.GroupID, m.LocalIDs...)
 	case ipc.MutGroupCreate:
 		return st.CreateGroup(ctx, m.Text, m.Color)
 	case ipc.MutGroupRename:
@@ -185,10 +192,10 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 		}
 		return nil, nil
 	case ipc.MutPurge:
-		if m.ID == "" {
+		if m.LocalID == "" {
 			return nil, invalid("purge takes ids")
 		}
-		return nil, d.purge(ctx, m.ID)
+		return nil, d.purge(ctx, m.LocalID)
 	case ipc.MutGroupMove:
 		return nil, d.moveGroup(ctx, m.GroupID, m.After, m.Before)
 	case ipc.MutViewMode:
@@ -208,17 +215,9 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	case ipc.MutViewFocus:
 		return nil, d.focus(ctx, m.GroupID)
 	case ipc.MutInboxRead:
-		local, hosts := splitInboxIDs(m.ItemIDs)
-		if len(hosts) > 0 {
-			d.client.SetInboxRead(hosts, m.Flag)
-		}
-		return nil, d.store.SetInboxRead(ctx, local, m.Flag)
+		return nil, d.store.SetInboxRead(ctx, m.LocalItemIDs, m.Flag)
 	case ipc.MutInboxDismiss:
-		local, hosts := splitInboxIDs(m.ItemIDs)
-		if len(hosts) > 0 {
-			d.client.HandleInbox(hosts)
-		}
-		for _, id := range local {
+		for _, id := range m.LocalItemIDs {
 			if err := d.store.HandleInboxItem(ctx, id, core.InboxDismissed); err != nil && !errors.Is(err, store.ErrNotFound) {
 				return nil, err
 			}

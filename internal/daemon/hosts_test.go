@@ -83,7 +83,7 @@ func TestHostedSessionLifecycle(t *testing.T) {
 	}
 
 	// Finishing hangs up the host and keeps the row.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, ID: s.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(s.ID)})
 	waitHost(t, p, s.ID, false)
 	if got := snapshot(t, c).Sessions[0]; got.Status != core.StatusFinished {
 		t.Errorf("after finish: %v", got.Status)
@@ -91,7 +91,7 @@ func TestHostedSessionLifecycle(t *testing.T) {
 
 	// Showing a stopped hosted session resumes it in a new host.
 	var rs ipc.Session
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &rs))
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(s.ID)}, &rs))
 	waitHost(t, p, s.ID, true)
 	r = fh.requests()
 	if len(r) != 2 || r[1].Resume != s.ClaudeSessionID || r[1].Dir != "/w/api" || r[1].ClaudeSession != "" {
@@ -102,7 +102,7 @@ func TestHostedSessionLifecycle(t *testing.T) {
 	}
 
 	// Archiving hangs the host up too.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)})
 	waitHost(t, p, s.ID, false)
 }
 
@@ -201,7 +201,7 @@ func TestResumeLegacyBackground(t *testing.T) {
 		t.Fatalf("kind %v", s.Kind)
 	}
 	var r ipc.Session
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(s.ID)}, &r))
 	reqs := fh.requests()
 	if len(reqs) != 1 || reqs[0].Resume != "cafe0001-x" || reqs[0].Dir != "/w" {
 		t.Errorf("host request: %+v", reqs)
@@ -210,13 +210,13 @@ func TestResumeLegacyBackground(t *testing.T) {
 		t.Errorf("resumed: %+v", r)
 	}
 	// Running hosted sessions are left alone; archived and unknown ones are refused.
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &r))
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(s.ID)}, &r))
 	if len(fh.requests()) != 1 {
 		t.Error("resumed a running session")
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)})
 	for _, id := range []string{s.ID, "nope"} {
-		if err := c.Call(ipc.OpResume, ipc.Mutation{ID: id}, nil); err == nil {
+		if err := c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(id)}, nil); err == nil {
 			t.Errorf("resumed %s", id)
 		}
 	}
@@ -241,11 +241,11 @@ func TestTerminalSessionLifecycle(t *testing.T) {
 	}
 
 	// Archiving ends it for good.
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)}, nil))
 	if got := sessionByID(t, c, s.ID); got.Status != core.StatusArchived {
 		t.Fatalf("archived: %+v", got)
 	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, ID: s.ID}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, Targets: ipc.Here(s.ID)}, nil); err == nil {
 		t.Error("an archived terminal was unarchived")
 	}
 	if got := sessionByID(t, c, s.ID); got.Status != core.StatusArchived {
@@ -263,17 +263,17 @@ func TestUnarchiveDoesNotStartAnAgent(t *testing.T) {
 	// Hosts start in the background: wait for the new session's, so it isn't
 	// counted as one the unarchive started.
 	waitFor(t, "the new session's host", func() bool { return len(fh.requests()) == 1 })
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)}, nil))
 	waitHost(t, p, s.ID, false)
 	before := len(fh.requests())
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, ID: s.ID}, nil))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, Targets: ipc.Here(s.ID)}, nil))
 	if got := sessionByID(t, c, s.ID); got.Status != core.StatusPaused {
 		t.Errorf("after unarchive: %+v", got)
 	}
 	if n := len(fh.requests()); n != before {
 		t.Errorf("unarchive started %d hosts", n-before)
 	}
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, nil))
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(s.ID)}, nil))
 	waitFor(t, "the resumed session's host", func() bool { return len(fh.requests()) > before })
 	r := fh.requests()
 	if len(r) != before+1 || r[before].Resume != s.ClaudeSessionID {
@@ -371,7 +371,7 @@ func TestResumeConversation(t *testing.T) {
 	}
 
 	// An archived one comes back rather than being duplicated.
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)}, nil))
 	back := newSess(t, c, ipc.NewRequest{Resume: idle})
 	if back.ID != s.ID || back.Status == core.StatusArchived {
 		t.Errorf("after archive: %+v", back)
@@ -517,7 +517,7 @@ func TestAgentInTerminalShowsOnItsRow(t *testing.T) {
 	expect("second agent", core.StatusDone, "a2")
 
 	// An archived terminal stays archived.
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)}, nil))
 	send("SessionStart", `{"session_id":"a3","source":"startup"}`, 60)
 	if got := sessionByID(t, c, s.ID); got.Status != core.StatusArchived {
 		t.Errorf("archived terminal changed: %+v", got)
@@ -729,9 +729,9 @@ func TestHostedAntigravitySession(t *testing.T) {
 		t.Errorf("a stray agy hook made a row: %d sessions", n)
 	}
 
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, ID: s.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(s.ID)})
 	waitHost(t, p, s.ID, false)
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: s.ID}, nil))
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(s.ID)}, nil))
 	waitHost(t, p, s.ID, true)
 	if r := fh.requests(); len(r) != 2 || r[1].Resume != "conv-1" || r[1].Harness != core.HarnessAntigravity {
 		t.Errorf("resume request: %+v", r)
@@ -739,9 +739,9 @@ func TestHostedAntigravitySession(t *testing.T) {
 
 	// No conversation yet: resuming starts a new agy.
 	n := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity})
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, ID: n.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(n.ID)})
 	waitHost(t, p, n.ID, false)
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: n.ID}, nil))
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(n.ID)}, nil))
 	waitHost(t, p, n.ID, true)
 	if r := fh.requests(); len(r) != 4 || r[3].Resume != "" || r[3].ID != n.ID {
 		t.Errorf("fresh request: %+v", r)

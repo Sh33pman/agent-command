@@ -197,7 +197,6 @@ func (c *Client) RemoveHost(_ context.Context, name string) error {
 	c.mu.Lock()
 	for _, a := range c.sortedAddedLocked(name) {
 		c.closeProxyLocked(a)
-		c.inbox.set(a.ID, name, nil)
 		delete(c.added, a.ID)
 	}
 	c.mu.Unlock()

@@ -114,3 +114,13 @@ func (c *Client) SetConfig(ctx context.Context, host string, set ipc.ConfigSet) 
 	err := c.call(ctx, host, api.OpConfigSet, set, &out)
 	return out, err
 }
+
+// Knows says whether host is a known host's name.
+func (c *Client) Knows(host string) bool {
+	if c == nil || host == "" {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.hosts[host] != nil
+}

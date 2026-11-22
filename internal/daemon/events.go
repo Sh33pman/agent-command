@@ -35,7 +35,9 @@ var (
 	eventWriteTimeout = 30 * time.Second
 )
 
-type entityKey struct{ typ, id string }
+// entityKey names an entity: its type, and its id on its host (ids are
+// unique only within their host, design 7.4).
+type entityKey struct{ typ, host, id string }
 
 type entity struct {
 	key  entityKey
@@ -47,26 +49,27 @@ type entity struct {
 func entitiesOf(s ipc.Snapshot) ([]entity, error) {
 	var out []entity
 	var err error
-	add := func(typ, id string, v any) {
+	addOn := func(typ, host, id string, v any) {
 		if err != nil {
 			return
 		}
 		var b []byte
 		if b, err = json.Marshal(onTheWire(v)); err == nil {
-			out = append(out, entity{entityKey{typ, id}, b})
+			out = append(out, entity{entityKey{typ, host, id}, b})
 		}
 	}
+	add := func(typ, id string, v any) { addOn(typ, "", id, v) }
 	for _, x := range s.Sessions {
-		add(ipc.EntitySession, x.ID, x)
+		addOn(ipc.EntitySession, x.Host, x.ID, x)
 	}
 	for _, x := range s.Groups {
-		add(ipc.EntityGroup, x.ID, x)
+		addOn(ipc.EntityGroup, x.Host, x.ID, x)
 	}
 	for _, x := range s.Sets {
-		add(ipc.EntitySet, x.ID, x)
+		addOn(ipc.EntitySet, x.Host, x.ID, x)
 	}
 	for _, x := range s.Inbox {
-		add(ipc.EntityInbox, strconv.FormatInt(x.ID, 10), x)
+		addOn(ipc.EntityInbox, x.Host, strconv.FormatInt(x.ID, 10), x)
 	}
 	for _, x := range s.Jobs {
 		add(ipc.EntityJob, x.ID, x)
@@ -165,14 +168,14 @@ func (e *eventStream) publish(snap ipc.Snapshot) error {
 		old, had := e.last[en.key]
 		switch {
 		case !had && e.built:
-			evs = append(evs, ipc.Event{Type: ipc.EventAdded, Entity: en.key.typ, ID: en.key.id, Data: en.data})
+			evs = append(evs, ipc.Event{Type: ipc.EventAdded, Entity: en.key.typ, Host: en.key.host, ID: en.key.id, Data: en.data})
 		case had && string(old) != string(en.data):
-			evs = append(evs, ipc.Event{Type: ipc.EventUpdated, Entity: en.key.typ, ID: en.key.id, Data: en.data})
+			evs = append(evs, ipc.Event{Type: ipc.EventUpdated, Entity: en.key.typ, Host: en.key.host, ID: en.key.id, Data: en.data})
 		}
 	}
 	for k := range e.last {
 		if !seen[k] {
-			evs = append(evs, ipc.Event{Type: ipc.EventRemoved, Entity: k.typ, ID: k.id})
+			evs = append(evs, ipc.Event{Type: ipc.EventRemoved, Entity: k.typ, Host: k.host, ID: k.id})
 		}
 	}
 	e.last, e.snap = next, snap

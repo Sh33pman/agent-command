@@ -500,7 +500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         closePopup()
         showPopup(GroupNameView(title: "Rename \(group.name)", name: group.name, close: { [weak self] in self?.closePopup() }) {
             [weak self] name in
-            self?.store.renameGroup(group.id, to: name)
+            self?.store.renameGroup(group.key, to: name)
             self?.closePopup()
         })
     }

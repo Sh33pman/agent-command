@@ -2308,6 +2308,9 @@
         "entity": {
           "type": "string"
         },
+        "host": {
+          "type": "string"
+        },
         "id": {
           "type": "string"
         },
@@ -2562,6 +2565,9 @@
     },
     "ipc.InboxAnswer": {
       "properties": {
+        "host": {
+          "type": "string"
+        },
         "id": {
           "type": "integer"
         },
@@ -2597,6 +2603,9 @@
     },
     "ipc.InboxRequest": {
       "properties": {
+        "host": {
+          "type": "string"
+        },
         "session_id": {
           "type": "string"
         },
@@ -2622,6 +2631,20 @@
       "required": [
         "output",
         "done"
+      ]
+    },
+    "ipc.ItemTarget": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
       ]
     },
     "ipc.JobCheck": {
@@ -2854,18 +2877,15 @@
         "kind": {
           "type": "string"
         },
-        "id": {
-          "type": "string"
-        },
-        "ids": {
+        "targets": {
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/ipc.Target"
           },
           "type": "array"
         },
-        "item_ids": {
+        "items": {
           "items": {
-            "type": "integer"
+            "$ref": "#/$defs/ipc.ItemTarget"
           },
           "type": "array"
         },
@@ -3606,6 +3626,9 @@
     },
     "ipc.Result": {
       "properties": {
+        "host": {
+          "type": "string"
+        },
         "id": {
           "type": "string"
         },
@@ -3664,6 +3687,9 @@
     },
     "ipc.ScreenRequest": {
       "properties": {
+        "host": {
+          "type": "string"
+        },
         "id": {
           "type": "string"
         },
@@ -4003,6 +4029,20 @@
         }
       },
       "type": "object"
+    },
+    "ipc.Target": {
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
+      ]
     },
     "ipc.Update": {
       "properties": {

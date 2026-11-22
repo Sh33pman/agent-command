@@ -63,22 +63,22 @@ func TestMutations(t *testing.T) {
 	bg, ex := byClaude(snap, "bg"), byClaude(snap, "ext")
 
 	// Rename / describe.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutRename, ID: bg.ID, Text: "  fix it  "})
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutDescribe, ID: bg.ID, Text: "PROJ-9"})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here(bg.ID), Text: "  fix it  "})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutDescribe, Targets: ipc.Here(bg.ID), Text: "PROJ-9"})
 	if s := byClaude(snapshot(t, c), "bg"); s.Name != "fix it" || s.NameSource != core.NameUser || s.Description != "PROJ-9" {
 		t.Errorf("rename/describe: %+v", s)
 	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: bg.ID, Text: " "}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here(bg.ID), Text: " "}, nil); err == nil {
 		t.Error("empty name accepted")
 	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: "missing", Text: "x"}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here("missing"), Text: "x"}, nil); err == nil {
 		t.Error("missing session accepted")
 	}
 
 	// Groups, move, collapse, view state, focus.
 	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "PROJ-1"}, &g))
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{bg.ID, ex.ID}, GroupID: g.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(bg.ID, ex.ID), GroupID: g.ID})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupRename, GroupID: g.ID, Text: "PROJ-1 auth"})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupColor, GroupID: g.ID, Color: "red"})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupCollapse, GroupID: g.ID, Flag: true})
@@ -120,8 +120,7 @@ func TestMutations(t *testing.T) {
 		{Kind: ipc.MutViewMode, Text: "tree"},
 		{Kind: ipc.MutViewSort, Text: "size"},
 		{Kind: ipc.MutViewFocus, GroupID: "nope"},
-		{Kind: "nope"},
-	} {
+		{Kind: "nope"}} {
 		if err := c.Call(ipc.OpMutate, bad, nil); err == nil {
 			t.Errorf("%+v accepted", bad)
 		}
@@ -159,10 +158,10 @@ func TestArchiveRules(t *testing.T) {
 	snap := snapshot(t, c)
 
 	// External: archived without any stop call (never killed).
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: byClaude(snap, "ext").ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "ext").ID)})
 	// Running background: claude stop, then archived.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: byClaude(snap, "run").ID})
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: byClaude(snap, "run").ID}) // idempotent
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "run").ID)})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "run").ID)}) // idempotent
 	if strings.Join(st.ids, ",") != "rrrrrrrr" {
 		t.Errorf("stop calls = %v", st.ids)
 	}
@@ -175,7 +174,7 @@ func TestArchiveRules(t *testing.T) {
 
 	// A failing stop leaves the session unarchived.
 	st.err = context.DeadlineExceeded
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: byClaude(snap, "grp").ID}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "grp").ID)}, nil); err == nil {
 		t.Error("archive should fail when claude stop fails")
 	}
 	if s := byClaude(snapshot(t, c), "grp"); s.Status == core.StatusArchived {
@@ -186,7 +185,7 @@ func TestArchiveRules(t *testing.T) {
 	// Group archive / unarchive with sessions.
 	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "G"}, &g))
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{byClaude(snap, "grp").ID}, GroupID: g.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(byClaude(snap, "grp").ID), GroupID: g.ID})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupArchive, GroupID: g.ID})
 	if s := byClaude(snapshot(t, c), "grp"); s.Status != core.StatusArchived {
 		t.Errorf("group archive: %+v", s)
@@ -200,7 +199,7 @@ func TestArchiveRules(t *testing.T) {
 	if s := byClaude(snapshot(t, c), "grp"); s.Status != core.StatusPaused {
 		t.Errorf("unarchive --sessions: %+v", s)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutUnarchive, ID: byClaude(snap, "ext").ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutUnarchive, Targets: ipc.Here(byClaude(snap, "ext").ID)})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupDelete, GroupID: g.ID})
 	if s := byClaude(snapshot(t, c), "grp"); s.GroupID != "default" {
 		t.Errorf("group delete should move sessions to Default: %+v", s)
@@ -213,7 +212,7 @@ func TestArchiveWithoutClaude(t *testing.T) {
 	c := dial(t, p)
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg","source":"startup"}`, time.Now(), ipc.HookContext{}), nil))
 	// Without a short id there is nothing to stop: archiving works.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: byClaude(snapshot(t, c), "bg").ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snapshot(t, c), "bg").ID)})
 }
 
 func bgAgent(sid, id string, status *string, pid *int) claudecli.Agent {
@@ -248,7 +247,7 @@ func TestFinish(t *testing.T) {
 	}
 	run := byClaude(snapshot(t, c), "run00000-x")
 
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, ID: run.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(run.ID)})
 	if strings.Join(st.ids, ",") != "rrrrrrrr" {
 		t.Errorf("stop calls = %v", st.ids)
 	}
@@ -263,12 +262,12 @@ func TestFinish(t *testing.T) {
 		t.Errorf("after finish: %s", s.Status)
 	}
 	// External sessions can't be finished; resuming brings it back.
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutFinish, ID: byClaude(snap, "ext").ID}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(byClaude(snap, "ext").ID)}, nil); err == nil {
 		t.Error("finished an external session")
 	}
 	agents.add(bgAgent("run00000-x", "run00000", &idle, &pid)) // Claude runs it again
 	var r ipc.Session
-	must(t, c.Call(ipc.OpResume, ipc.Mutation{ID: run.ID}, &r))
+	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(run.ID)}, &r))
 	if r.Status != core.StatusStarting {
 		t.Errorf("resume: %s", r.Status)
 	}

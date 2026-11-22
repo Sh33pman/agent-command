@@ -55,11 +55,11 @@ func makeSession(
 }
 
 func makeItem(
-    _ id: Int64, session: String, kind: String = "done", options: [String] = [], read: Bool = false
+    _ id: Int64, session: String, kind: String = "done", options: [String] = [], read: Bool = false, host: String = ""
 ) throws -> InboxItem {
     let fields: [String: Any] = [
         "id": id, "session_id": session, "kind": kind, "text": "message \(id)", "options": options,
-        "read": read, "state": "open",
+        "read": read, "state": "open", "host": host,
     ]
     return try JSONDecoder().decode(InboxItem.self, from: JSONSerialization.data(withJSONObject: fields))
 }
@@ -208,4 +208,24 @@ final class FakeDaemon: @unchecked Sendable {
             }
         }
     }
+}
+
+/// In tests, a number is this Mac's Inbox item with that id.
+extension InboxKey: @retroactive ExpressibleByIntegerLiteral {
+    public init(integerLiteral id: Int64) { self.init(host: "", id: id) }
+}
+
+/// The ids a mutation targets, as sent: [{host?, id}].
+func targetIDs(_ m: [String: Any]) -> [String]? {
+    (m["targets"] as? [[String: Any]])?.compactMap { $0["id"] as? String }
+}
+
+/// The hosts a mutation's targets are on ("" for this Mac).
+func targetHosts(_ m: [String: Any]) -> [String]? {
+    (m["targets"] as? [[String: Any]])?.map { $0["host"] as? String ?? "" }
+}
+
+/// The Inbox items a mutation names, by id.
+func itemIDs(_ m: [String: Any]) -> [Int]? {
+    (m["items"] as? [[String: Any]])?.compactMap { $0["id"] as? Int }
 }

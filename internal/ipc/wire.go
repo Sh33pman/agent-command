@@ -181,7 +181,7 @@ func (p *PaneLoc) Core() *core.PaneLoc {
 
 // GroupOf is g on the wire.
 func GroupOf(g *core.Group) *Group {
-	w := &Group{ID: g.ID, Type: "group", Name: g.Name, Color: g.Color, IsDefault: g.IsDefault,
+	w := &Group{ID: g.ID, Type: "group", Host: g.Host, Name: g.Name, Color: g.Color, IsDefault: g.IsDefault,
 		CreatedAt: g.CreatedAt, ArchivedAt: g.ArchivedAt}
 	if !g.IsDefault {
 		w.Order = g.SortKey
@@ -200,7 +200,7 @@ func GroupsOf(gs []*core.Group) []*Group {
 
 // Core is the group as internal/core has it; collapsed comes from the view.
 func (g *Group) Core(collapsed bool) *core.Group {
-	return &core.Group{ID: g.ID, Name: g.Name, Color: g.Color, SortKey: g.Order, IsDefault: g.IsDefault,
+	return &core.Group{ID: g.ID, Host: g.Host, Name: g.Name, Color: g.Color, SortKey: g.Order, IsDefault: g.IsDefault,
 		CreatedAt: g.CreatedAt, ArchivedAt: g.ArchivedAt, Collapsed: collapsed}
 }
 

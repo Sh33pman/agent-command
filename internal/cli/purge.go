@@ -29,10 +29,10 @@ func newPurgeCmd() *cobra.Command {
 			}
 			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				cutoff := now().Add(-age)
-				var ids []string
+				var ids []ipc.Target
 				for _, s := range snap.Sessions {
 					if s.Status == core.StatusArchived && !s.ArchivedAt.After(cutoff) {
-						ids = append(ids, s.ID)
+						ids = append(ids, targetOf(s))
 					}
 				}
 				out := cmd.OutOrStdout()
@@ -45,7 +45,7 @@ func newPurgeCmd() *cobra.Command {
 					return err
 				}
 				var res ipc.Results
-				if err := c.mutate(ipc.Mutation{Kind: ipc.MutPurge, IDs: ids}, &res); err != nil {
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutPurge, Targets: ids}, &res); err != nil {
 					return err
 				}
 				return reportResults(out, res, "Purged %d session(s).\n")

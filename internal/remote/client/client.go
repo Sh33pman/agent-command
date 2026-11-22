@@ -117,7 +117,6 @@ type Client struct {
 	id       *identity.Identity
 	idErr    error
 	idKey    [2]string // the cert and key it was resolved from
-	inbox    inbox
 	started  bool
 	closed   bool
 }
@@ -167,8 +166,7 @@ func New(o Options, b Backend) *Client {
 		o.LostGrace = 300 * time.Millisecond
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Client{o: o, b: b, ctx: ctx, cancel: cancel, hosts: map[string]*hostConn{}, added: map[string]*added{},
-		inbox: newInbox()}
+	return &Client{o: o, b: b, ctx: ctx, cancel: cancel, hosts: map[string]*hostConn{}, added: map[string]*added{}}
 }
 
 // jitter is a random wait from half of d to d.

@@ -121,42 +121,21 @@ func (d *Daemon) sessionByID(ctx context.Context, id string) (*core.Session, err
 	return d.store.Session(ctx, id)
 }
 
-// splitInboxIDs parts inbox item ids into this machine's and the hosts'
-// (negative).
-func splitInboxIDs(ids []int64) (local, hosts []int64) {
-	for _, id := range ids {
-		if id < 0 {
-			hosts = append(hosts, id)
-		} else {
-			local = append(local, id)
-		}
-	}
-	return local, hosts
-}
-
-// answerOnHost types an answer to an item from a host into its session,
-// through its socket, as for a local one.
+// answerOnHost answers one of a host's items on its host, by the host's own
+// id. This machine's guardrail applies first: the host sees a paired
+// device, not who asked here.
 func (d *Daemon) answerOnHost(ctx context.Context, a ipc.InboxAnswer) error {
-	it, ok := d.client.InboxItem(a.ID)
+	it, ok := d.client.InboxItem(a.Host, a.ID)
 	if !ok {
-		return errors.New("this is no longer waiting for an answer")
+		return &codedError{code: ipc.CodeNotFound, err: errors.New("this is no longer waiting for an answer")}
 	}
 	if err := d.mayAnswer(ctx, it.Kind); err != nil {
 		return err
 	}
-	s, ok := d.treeSession(it.SessionID)
-	if !ok {
-		return errors.New("its session is no longer on its host")
-	}
-	keys, err := answerKeys(&it, s, a)
-	if err != nil {
-		return err
-	}
-	if err := d.typeKeys(it.SessionID, keys); err != nil {
-		return err
-	}
-	d.client.HandleInbox([]int64{a.ID})
-	return nil
+	host := a.Host
+	a.Host = ""
+	_, err := d.callHost(ctx, host, ipc.OpInboxAnswer, mustJSON(a))
+	return err
 }
 
 // withHostInbox is the queue with the hosts' items, in arrival order.

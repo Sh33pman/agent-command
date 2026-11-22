@@ -25,7 +25,7 @@ private func session(_ id: String, _ name: String = "", status: String = "busy")
     do { let ok = state.apply(["rev": 11, "type": "updated", "entity": "view", "data": ["mode": "list", "sort": "name"]]); #expect(ok) }
     let snap = try state.snapshot()
     #expect(snap.sessions?.map(\.id) == ["a", "b"] && snap.sessions?.first?.name == "renamed" && snap.sessions?.first?.status == "done")
-    #expect(snap.groups?.isEmpty == true && snap.dismissed == ["hooks"] && snap.inbox?.first?.id == 4)
+    #expect(snap.groups?.isEmpty == true && snap.dismissed == ["hooks"] && snap.inbox?.first?.itemID == 4)
     #expect(state.rev == 11)
 
     // Removing an inbox item by its id; an entity the app doesn't know; nonsense.

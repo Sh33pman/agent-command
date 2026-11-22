@@ -200,7 +200,7 @@ func TestRemoteOff(t *testing.T) {
 	p.in <- []byte("echo attached-$((2+2))\n")
 	p.sees(t, "attached-4")
 
-	host.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, ID: s.ID, Flag: false}, nil)
+	host.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, Targets: ipc.Here(s.ID), Flag: false}, nil)
 	laptop.waitFor("the change here", func() bool { got := laptop.session(local.ID); return got != nil && !got.Remote })
 	p.in <- []byte("echo still-$((3+3))\n")
 	p.sees(t, "still-6")

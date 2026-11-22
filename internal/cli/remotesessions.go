@@ -40,7 +40,7 @@ func newRemoteSetCmd(on bool) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					if err := c.mutate(ipc.Mutation{Kind: ipc.MutRemote, ID: s.ID, Flag: on}, nil); err != nil {
+					if err := c.mutate(ipc.Mutation{Kind: ipc.MutRemote, Targets: []ipc.Target{targetOf(s)}, Flag: on}, nil); err != nil {
 						return err
 					}
 					if on {

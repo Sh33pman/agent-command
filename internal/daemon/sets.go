@@ -25,15 +25,15 @@ func wireSets(sets []*core.Set) []ipc.Set {
 func (d *Daemon) mutateSet(ctx context.Context, st *store.Store, m ipc.Mutation) (any, error) {
 	switch m.Kind {
 	case ipc.MutSetCreate:
-		s, err := st.CreateSet(ctx, m.SetID, m.IDs...)
+		s, err := st.CreateSet(ctx, m.SetID, m.LocalIDs...)
 		if err != nil {
 			return nil, err
 		}
 		return wireSet(s), nil
 	case ipc.MutSetAdd:
-		return nil, st.AddToSet(ctx, m.SetID, m.ID, m.After)
+		return nil, st.AddToSet(ctx, m.SetID, m.LocalID, m.After)
 	case ipc.MutSetRemove:
-		return nil, st.RemoveFromSet(ctx, m.ID)
+		return nil, st.RemoveFromSet(ctx, m.LocalID)
 	default: // ipc.MutSetEnd
 		return nil, st.EndSet(ctx, m.SetID)
 	}

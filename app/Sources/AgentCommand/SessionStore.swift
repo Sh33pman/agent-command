@@ -281,8 +281,9 @@ final class SessionStore {
         }
         let looked = sessions.filter { $0.unseen && visibleIDs.contains($0.id) }.map(\.id)
         for id in looked where seenInFlight.insert(id).inserted {
+            let target = targets([id])
             run(failure: "Couldn't update the session") { conn in
-                try conn.send("mutate", Mutation(kind: "session.seen", id: id))
+                try conn.send("mutate", Mutation(kind: "session.seen", targets: target))
             } done: { _ in
                 self.seenInFlight.remove(id)
             }
@@ -290,13 +291,21 @@ final class SessionStore {
     }
 
     @ObservationIgnored private var seenInFlight: Set<String> = []
-    @ObservationIgnored private var readInFlight: Set<Int64> = []
+    @ObservationIgnored private var readInFlight: Set<InboxKey> = []
 
     // MARK: Inbox
 
     func session(id: String) -> Session? {
         sessions.first { $0.id == id } ?? archived.first { $0.id == id }
     }
+
+    /// Sessions as ops name them: each on its host.
+    func targets(_ ids: [String]) -> [Target] {
+        ids.map { id in session(id: id)?.target ?? Target(id: id) }
+    }
+
+    /// The group with key (SessionGroup.key).
+    func group(key: String) -> SessionGroup? { groups.first { $0.key == key } }
 
     /// Unread items in the queue, for one session or for all.
     func unreadCount(session id: String? = nil) -> Int {
@@ -305,11 +314,12 @@ final class SessionStore {
 
     private struct InboxMutation: Encodable {
         let kind: String
-        let item_ids: [Int64]
+        let items: [ItemTarget]
         var flag = false
     }
 
     private struct InboxRequest: Encodable {
+        var host: String?
         let session_id: String?
         var limit: Int?
         var cursor: String?
@@ -320,6 +330,7 @@ final class SessionStore {
     static let inboxLoadMax = 500
 
     private struct InboxAnswerRequest: Encodable {
+        var host: String?
         let id: Int64
         let option: Int?
         let text: String?
@@ -359,12 +370,13 @@ final class SessionStore {
     /// The Inbox, newest first, up to inboxLoadMax items: one session's, or
     /// everyone's.
     func loadInbox(session: String?, done: @escaping ([InboxItem]) -> Void) {
+        let host = session.flatMap { self.session(id: $0) }.flatMap { $0.isOnHost ? $0.hostName : nil }
         run(failure: "Couldn't read the inbox") { conn -> [InboxItem] in
             var items: [InboxItem] = []
             var cursor: String?
             repeat {
                 let page: Page<InboxItem> = try conn.call(
-                    "inbox", InboxRequest(session_id: session, limit: Page<InboxItem>.max, cursor: cursor))
+                    "inbox", InboxRequest(host: host, session_id: session, limit: Page<InboxItem>.max, cursor: cursor))
                 items += page.items
                 // An empty page ends it too, whatever its cursor says.
                 cursor = page.nextCursor.isEmpty || page.items.isEmpty ? nil : page.nextCursor
@@ -375,30 +387,32 @@ final class SessionStore {
 
     /// One page of the Inbox, from cursor ("" for the newest).
     func loadInboxPage(session: String?, cursor: String = "", done: @escaping (Page<InboxItem>) -> Void) {
+        let host = session.flatMap { self.session(id: $0) }.flatMap { $0.isOnHost ? $0.hostName : nil }
         run(failure: "Couldn't read the inbox") { conn -> Page<InboxItem> in
-            try conn.call("inbox", InboxRequest(session_id: session, cursor: cursor.isEmpty ? nil : cursor))
+            try conn.call("inbox", InboxRequest(host: host, session_id: session, cursor: cursor.isEmpty ? nil : cursor))
         } done: { done($0) }
     }
 
-    func setInboxRead(_ id: Int64, _ read: Bool, done: @escaping () -> Void = {}) {
+    func setInboxRead(_ id: InboxKey, _ read: Bool, done: @escaping () -> Void = {}) {
         run(failure: "Couldn't update the item") { conn in
-            try conn.send("mutate", InboxMutation(kind: "inbox.read", item_ids: [id], flag: read))
+            try conn.send("mutate", InboxMutation(kind: "inbox.read", items: [ItemTarget(id)], flag: read))
         } done: { _ in done() }
     }
 
-    func dismissInbox(_ id: Int64, done: @escaping () -> Void = {}) {
+    func dismissInbox(_ id: InboxKey, done: @escaping () -> Void = {}) {
         run(failure: "Couldn't dismiss the item") { conn in
-            try conn.send("mutate", InboxMutation(kind: "inbox.dismiss", item_ids: [id]))
+            try conn.send("mutate", InboxMutation(kind: "inbox.dismiss", items: [ItemTarget(id)]))
         } done: { _ in done() }
     }
 
-    /// Types an answer into the item's session, then reports why it failed, if it did.
-    func answerInbox(_ id: Int64, option: Int?, text: String?, done: @escaping (String?) -> Void) {
+    /// Types an answer into the item's session (on its host), then reports why
+    /// it failed, if it did.
+    func answerInbox(_ id: InboxKey, option: Int?, text: String?, done: @escaping (String?) -> Void) {
         calls.async {
             var failure: String?
             do {
                 let conn = try DaemonConnection(socket: DaemonPaths.socket)
-                try conn.send("inbox.answer", InboxAnswerRequest(id: id, option: option, text: text))
+                try conn.send("inbox.answer", InboxAnswerRequest(host: id.host.isEmpty ? nil : id.host, id: id.id, option: option, text: text))
             } catch {
                 failure = error.localizedDescription
             }
@@ -408,7 +422,7 @@ final class SessionStore {
 
     private struct Mutation: Encodable {
         let kind: String
-        let id: String
+        let targets: [Target]
     }
 
     private let calls = DispatchQueue(label: "acmd.daemon.calls")
@@ -538,14 +552,14 @@ final class SessionStore {
         struct Create: Encodable {
             let kind = "set.create"
             let set_id: String
-            let ids: [String]
+            let targets: [Target]
         }
         guard !sets.isEmpty else { return }
         calls.async {
             guard let conn = try? DaemonConnection(socket: DaemonPaths.socket) else { return }
             for set in sets {
                 do {
-                    try conn.send("mutate", Create(set_id: set.id, ids: set.members))
+                    try conn.send("mutate", Create(set_id: set.id, targets: set.members.map { Target(id: $0) }))
                 } catch {
                     NSLog("couldn't move set %@ to the daemon: %@", set.id, error.localizedDescription)
                 }
@@ -555,14 +569,23 @@ final class SessionStore {
 
     // MARK: Groups
 
+    /// A change to groups, or to sessions within them: all on one host.
     private struct GroupMutation: Encodable {
         let kind: String
+        var host: String?
         var group_id: String?
         var text: String?
         var color: String?
-        var ids: [String]?
+        var targets: [Target]?
         var after: String?
         var before: String?
+
+        init(kind: String, on host: String = "", group_id: String? = nil, text: String? = nil, color: String? = nil,
+             targets: [Target]? = nil, after: String? = nil, before: String? = nil) {
+            self.kind = kind
+            self.host = host.isEmpty ? nil : host
+            (self.group_id, self.text, self.color, self.targets, self.after, self.before) = (group_id, text, color, targets, after, before)
+        }
     }
 
     private func mutateGroup(_ m: GroupMutation, failure: String) {
@@ -571,45 +594,64 @@ final class SessionStore {
         } done: { _ in }
     }
 
-    /// Makes a group, and moves sessions into it (with their sets).
+    /// Makes a group, and moves sessions into it (with their sets). It's made
+    /// on the sessions' host, which keeps its own groups.
     func createGroup(_ name: String, moving ids: [String] = []) {
+        let moving = targets(ids)
+        let host = moving.first?.host ?? ""
         run(failure: "Couldn't make the group") { conn in
-            let group: SessionGroup = try conn.call("mutate", GroupMutation(kind: "group.create", text: name))
-            if !ids.isEmpty { try conn.send("mutate", GroupMutation(kind: "session.move", group_id: group.id, ids: ids)) }
+            let group: SessionGroup = try conn.call("mutate", GroupMutation(kind: "group.create", on: host, text: name))
+            if !moving.isEmpty {
+                try conn.send("mutate", GroupMutation(kind: "session.move", on: host, group_id: group.id, targets: moving))
+            }
             return group
         } done: { _ in }
     }
 
-    func renameGroup(_ id: String, to name: String) {
-        mutateGroup(GroupMutation(kind: "group.rename", group_id: id, text: name), failure: "Couldn't rename the group")
+    /// The groups below are named by key (SessionGroup.key): their id on their host.
+    func renameGroup(_ key: String, to name: String) {
+        guard let group = group(key: key) else { return }
+        mutateGroup(GroupMutation(kind: "group.rename", on: group.host, group_id: group.id, text: name), failure: "Couldn't rename the group")
     }
 
-    func setGroupColor(_ id: String, _ color: String) {
-        mutateGroup(GroupMutation(kind: "group.color", group_id: id, color: color), failure: "Couldn't change the group's colour")
+    func setGroupColor(_ key: String, _ color: String) {
+        guard let group = group(key: key) else { return }
+        mutateGroup(GroupMutation(kind: "group.color", on: group.host, group_id: group.id, color: color), failure: "Couldn't change the group's colour")
     }
 
     /// Deletes a group; its sessions move to Default.
-    func deleteGroup(_ id: String) {
-        mutateGroup(GroupMutation(kind: "group.delete", group_id: id), failure: "Couldn't delete the group")
+    func deleteGroup(_ key: String) {
+        guard let group = group(key: key) else { return }
+        mutateGroup(GroupMutation(kind: "group.delete", on: group.host, group_id: group.id), failure: "Couldn't delete the group")
     }
 
-    /// Moves sessions to a group. A session in a set takes its set along.
-    func moveSessions(_ ids: [String], to group: String) {
-        mutateGroup(GroupMutation(kind: "session.move", group_id: group, ids: ids), failure: "Couldn't move the sessions")
+    /// Moves sessions to a group. A session in a set takes its set along. A
+    /// session stays on its own host: only those on the group's host move.
+    func moveSessions(_ ids: [String], to key: String) {
+        guard let group = group(key: key) else { return }
+        let moving = targets(ids).filter { ($0.host ?? "") == group.host }
+        guard !moving.isEmpty else { return }
+        mutateGroup(GroupMutation(kind: "session.move", on: group.host, group_id: group.id, targets: moving), failure: "Couldn't move the sessions")
     }
 
-    /// Puts a group just before or just after another.
-    func moveGroup(_ id: String, before: String? = nil, after: String? = nil) {
-        mutateGroup(GroupMutation(kind: "group.move", group_id: id, after: after, before: before), failure: "Couldn't move the group")
+    /// Puts a group just before or just after another on its host.
+    func moveGroup(_ key: String, before: String? = nil, after: String? = nil) {
+        guard let group = group(key: key) else { return }
+        let near = [before, after].compactMap { $0 }.compactMap { self.group(key: $0) }
+        guard near.allSatisfy({ $0.host == group.host }) else { return }
+        mutateGroup(GroupMutation(kind: "group.move", on: group.host, group_id: group.id,
+                                  after: after.flatMap { self.group(key: $0)?.id }, before: before.flatMap { self.group(key: $0)?.id }),
+                    failure: "Couldn't move the group")
     }
 
-    /// Moves a group one place up or down among the groups you arranged.
-    func moveGroup(_ id: String, by step: Int) {
-        let ordered = SidebarLayout.orderedGroups(groups).filter { !$0.isDefault }
-        guard let at = ordered.firstIndex(where: { $0.id == id }) else { return }
+    /// Moves a group one place up or down among the groups you arranged on its host.
+    func moveGroup(_ key: String, by step: Int) {
+        guard let group = group(key: key) else { return }
+        let ordered = SidebarLayout.orderedGroups(groups).filter { !$0.isDefault && $0.host == group.host }
+        guard let at = ordered.firstIndex(where: { $0.key == key }) else { return }
         let to = at + step
         guard ordered.indices.contains(to) else { return }
-        if step < 0 { moveGroup(id, before: ordered[to].id) } else { moveGroup(id, after: ordered[to].id) }
+        if step < 0 { moveGroup(key, before: ordered[to].key) } else { moveGroup(key, after: ordered[to].key) }
     }
 
     /// Carries out a drop in the sidebar.
@@ -707,10 +749,11 @@ final class SessionStore {
     func resume(_ id: String, done: @escaping () -> Void) {
         struct Mutation: Encodable {
             let kind: String
-            let id: String
+            let targets: [Target]
         }
+        let target = targets([id])
         run(failure: "Couldn't resume the session") { conn in
-            let session: Session = try conn.call("resume", Mutation(kind: "", id: id))
+            let session: Session = try conn.call("resume", Mutation(kind: "", targets: target))
             return session
         } done: { _ in
             done()
@@ -782,11 +825,11 @@ final class SessionStore {
         guard !ids.isEmpty else { return }
         struct Many: Encodable {
             let kind: String
-            let ids: [String]
+            let targets: [Target]
             var text: String?
             var flag: Bool?
         }
-        let data = (try? JSONEncoder().encode(Many(kind: kind, ids: ids, text: text, flag: flag))) ?? Data()
+        let data = (try? JSONEncoder().encode(Many(kind: kind, targets: targets(ids), text: text, flag: flag))) ?? Data()
         mutations.call("mutate", data) { [weak self] result in
             switch result {
             case .success(let reply):
@@ -798,9 +841,11 @@ final class SessionStore {
         }
     }
 
+    /// One change to one session: an error says why it didn't happen.
     private func mutate(_ kind: String, _ id: String, failure: String) {
+        let target = targets([id])
         run(failure: failure) { conn in
-            try conn.send("mutate", Mutation(kind: kind, id: id))
+            try conn.send("mutate", Mutation(kind: kind, targets: target))
         } done: { _ in }
     }
 

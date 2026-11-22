@@ -39,7 +39,9 @@ struct SnapshotAssembler {
         }
         guard let (key, idField) = Self.lists[entity] else { return false }
         var list = root[key] as? [[String: Any]] ?? []
-        let at = list.firstIndex { Self.idOf($0[idField]) == id }
+        // An entity is its id on its host: every host's Default is "default".
+        let host = event["host"] as? String ?? ""
+        let at = list.firstIndex { Self.idOf($0[idField]) == id && ($0["host"] as? String ?? "") == host }
         switch type {
         case "added", "updated":
             guard let item = data as? [String: Any] else { return false }

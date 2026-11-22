@@ -137,12 +137,13 @@ func startRemoteSession(cmd *cobra.Command, o newOptions, on remoteNewOptions) e
 			if err != nil {
 				return err
 			}
-			g, err := resolveGroup(snap, o.group)
+			// The host's group: it keeps its own, and the session starts there.
+			g, err := resolveGroupOn(snap, o.group, on.host)
 			if err != nil && o.noCreate {
 				return err
 			}
 			if err != nil {
-				if g, err = createGroup(c, o.group, ""); err != nil {
+				if g, err = createGroupOn(c, o.group, "", on.host); err != nil {
 					return err
 				}
 			}
@@ -259,7 +260,7 @@ func newResumeCmd() *cobra.Command {
 						continue
 					}
 					var w ipc.Session
-					if err := c.call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &w); err != nil {
+					if err := c.call(ipc.OpResume, ipc.Mutation{Targets: []ipc.Target{targetOf(s)}}, &w); err != nil {
 						errs = append(errs, fmt.Errorf("%s: %w", nameOf(s), err))
 						continue
 					}

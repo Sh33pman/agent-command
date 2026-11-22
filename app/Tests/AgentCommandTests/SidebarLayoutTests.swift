@@ -182,6 +182,7 @@ extension UsesSharedSpeech {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
             let store = SessionStore()
+            store.groups = [SessionGroup(id: "api", name: "API"), SessionGroup(id: "web", name: "Web")]
             store.renameGroup("api", to: "backend")
             store.setGroupColor("api", "red")
             store.deleteGroup("web")
@@ -190,7 +191,8 @@ extension UsesSharedSpeech {
             #expect(all.map { $0["kind"] as? String } == ["group.rename", "group.color", "group.delete", "session.move"])
             #expect(all[0]["group_id"] as? String == "api" && all[0]["text"] as? String == "backend")
             #expect(all[1]["color"] as? String == "red")
-            #expect(all[3]["ids"] as? [String] == ["a", "b"] && all[3]["group_id"] as? String == "api")
+            #expect(targetIDs(all[3]) == ["a", "b"] && all[3]["group_id"] as? String == "api")
+            #expect(all.allSatisfy { $0["host"] == nil }, "this Mac's groups name no host")
             #expect(all.allSatisfy { $0["flag"] == nil }, "no group is moved up or down by a flag")
         }
 
@@ -219,7 +221,7 @@ extension UsesSharedSpeech {
             let all = try await sent(daemon, count: 2)
             #expect(all[0]["kind"] as? String == "group.create" && all[0]["text"] as? String == "fresh")
             #expect(all[1]["kind"] as? String == "session.move" && all[1]["group_id"] as? String == "g1")
-            #expect(all[1]["ids"] as? [String] == ["a"])
+            #expect(targetIDs(all[1]) == ["a"])
         }
 
         @Test func aDropOfSessionsMovesThemAndClearsTheMarks() async throws {
@@ -227,6 +229,7 @@ extension UsesSharedSpeech {
             defer { daemon.stop() }
             let store = SessionStore()
             store.sessions = [try makeSession(id: "a")]
+            store.groups = groups
             store.setSidebarFocused(true)
             store.setCursor("a")
             store.toggleMarkAtCursor()
@@ -278,4 +281,43 @@ extension UsesSharedSpeech {
     // Moving a host's sessions offers only that host's groups.
     let entries = Palette.groupEntries([onStudio], section: "s", groups: groups).map(\.title)
     #expect(entries.contains("Move to studio") && !entries.contains("Move to Mine") && !entries.contains { $0.contains("box") })
+}
+
+// A host's groups have their host's ids, and every host's Default is
+// "default": the app tells them apart by key, and names the host in ops.
+extension UsesSharedSpeech.GroupCallsTests {
+    @Test func aHostsDefaultIsNotThisMacs() async throws {
+        let daemon = try FakeDaemon()
+        defer { daemon.stop() }
+        let store = SessionStore()
+        let mine = SessionGroup(id: "default", name: "Default", isDefault: true)
+        let theirs = SessionGroup(id: "default", name: "Default", isDefault: true, host: "studio")
+        store.groups = [mine, theirs]
+        var here = try makeSession(id: "a")
+        here.groupID = "other"
+        var there = try makeRemoteSession(id: "h", host: "studio")
+        there.groupID = "other"
+        store.sessions = [here, there]
+        #expect(mine.key != theirs.key && store.group(key: theirs.key)?.host == "studio")
+        store.moveSessions(["a", "h"], to: mine.key) // only this Mac's moves into this Mac's
+        store.moveSessions(["a", "h"], to: theirs.key) // only studio's into studio's
+        let all = try await sent(daemon, count: 2)
+        #expect(targetIDs(all[0]) == ["a"] && all[0]["host"] == nil && all[0]["group_id"] as? String == "default")
+        #expect(targetIDs(all[1]) == ["h"] && targetHosts(all[1]) == ["studio"] && all[1]["host"] as? String == "studio")
+
+        // The sidebar: each Default shows its own machine's sessions.
+        here.groupID = "default"
+        there.groupID = "default"
+        let rows = SidebarLayout.rows(sessions: [here, there], groups: [mine, theirs], sets: [], options: SidebarOptions())
+        var under: [String: [String]] = [:]
+        var current = ""
+        for row in rows {
+            switch row {
+            case .header(let h): current = h.group.key
+            case .session(let s, _): under[current, default: []].append(s.id)
+            }
+        }
+        #expect(under[mine.key] == ["a"] && under[theirs.key] == ["h"])
+        #expect(Set(rows.map(\.id)).count == rows.count, "every row its own id")
+    }
 }

@@ -66,7 +66,7 @@ func TestRemoteFlag(t *testing.T) {
 	// Turning it off: saved, watchers see a new revision, subscribers are told.
 	var before, after ipc.WatchResponse
 	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{}, &before))
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutRemote, ID: byDefault.ID, Flag: false})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutRemote, Targets: ipc.Here(byDefault.ID), Flag: false})
 	must(t, c.Call(ipc.OpWatch, ipc.WatchRequest{}, &after))
 	if after.Rev == before.Rev {
 		t.Error("watchers weren't woken")
@@ -74,13 +74,13 @@ func TestRemoteFlag(t *testing.T) {
 	if sessionByID(t, c, byDefault.ID).Remote {
 		t.Error("still Remote after turning it off")
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutRemote, ID: byDefault.ID, Flag: false}) // no change
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutRemote, ID: local.ID, Flag: true})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutRemote, Targets: ipc.Here(byDefault.ID), Flag: false}) // no change
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutRemote, Targets: ipc.Here(local.ID), Flag: true})
 	want := []RemoteChange{{SessionID: byDefault.ID, Remote: false}, {SessionID: local.ID, Remote: true}}
 	if got := changes.all(); len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("changes = %+v, want %+v", got, want)
 	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, ID: "nope", Flag: true}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, Targets: ipc.Here("nope"), Flag: true}, nil); err == nil {
 		t.Error("an unknown session is an error")
 	}
 

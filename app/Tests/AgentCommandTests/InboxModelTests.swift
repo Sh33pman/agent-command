@@ -173,7 +173,7 @@ struct InboxModelTests {
         try await until { h.model.selectedID == 5 }
         #expect(h.model.items.map(\.id) == [5, 4] && h.model.panel == .messages)
         #expect(h.model.typing == false, "the keyboard stays on the list")
-        try await until { daemon.received("mutate").contains { ($0["item_ids"] as? [Int]) == [5] } }
+        try await until { daemon.received("mutate").contains { itemIDs($0) == [5] } }
     }
 
     /// A session's history comes a page at a time: the next once its last

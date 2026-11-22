@@ -177,7 +177,7 @@ extension UsesSharedSpeech {
             s.mutations = fake
             s.rename(Array(s.sessions.prefix(2)), to: "work")
             #expect(fake.ops == ["mutate"] && fake.last["kind"] as? String == "session.rename")
-            #expect(fake.last["ids"] as? [String] == ["a", "b"] && fake.last["text"] as? String == "work", "the daemon numbers them")
+            #expect(targetIDs(fake.last) == ["a", "b"] && fake.last["text"] as? String == "work", "the daemon numbers them")
         }
 
         @Test func whatDidntChangeIsSaid() throws {
@@ -221,8 +221,8 @@ extension UsesSharedSpeech {
             s.dismissInbox(8) { finished += 1 }
             try await until { finished == 2 }
             let sent = daemon.received("mutate")
-            #expect(sent.contains { $0["kind"] as? String == "inbox.read" && ($0["item_ids"] as? [Int]) == [7] })
-            #expect(sent.contains { $0["kind"] as? String == "inbox.dismiss" && ($0["item_ids"] as? [Int]) == [8] })
+            #expect(sent.contains { $0["kind"] as? String == "inbox.read" && itemIDs($0) == [7] })
+            #expect(sent.contains { $0["kind"] as? String == "inbox.dismiss" && itemIDs($0) == [8] })
         }
 
         @Test func anAnswerReachesTheDaemonOrSaysWhyNot() async throws {
@@ -276,7 +276,7 @@ extension UsesSharedSpeech {
             var resumed = false
             s.resume("a") { resumed = true }
             try await until { resumed }
-            #expect(daemon.received("resume").first?["id"] as? String == "a")
+            #expect(daemon.received("resume").first.flatMap(targetIDs) == ["a"])
 
             s.saveLayout("{}")
             try await until { daemon.received("layout.set").first?["json"] as? String == "{}" }
@@ -289,7 +289,7 @@ extension UsesSharedSpeech {
             s.archive("a")
             s.unarchive("a")
             try await until { daemon.received("mutate").count == 2 }
-            #expect(daemon.received("mutate").allSatisfy { $0["id"] as? String == "a" })
+            #expect(daemon.received("mutate").allSatisfy { targetIDs($0) == ["a"] })
 
             s.newSession(harness: "terminal", in: "/work")
             try await until { s.selectedID == "n" }
@@ -349,7 +349,7 @@ extension UsesSharedSpeech {
 
         @Test func whatWasWaitingBeforeThisLaunchIsntNews() async throws {
             let s = try store([])
-            var news: [[Int64]] = []
+            var news: [[InboxKey]] = []
             var changes = 0
             var notices: [UInt64] = []
             s.onNewItems = { news.append($0.map(\.id)) }

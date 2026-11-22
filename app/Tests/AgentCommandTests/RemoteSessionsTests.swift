@@ -53,17 +53,25 @@ extension UsesSharedSpeech {
             #expect(s.place(of: b, clients: ["b": 3]).shared == "shared · 3")
         }
 
+        /// A host's items keep the host's own ids, which can be the same as this
+        /// Mac's: each host's new ones are news, told apart by host.
         @Test func newItemsFromHostsAreNewsToo() async throws {
             let s = try store()
-            var arrived: [Int64] = []
+            var arrived: [InboxKey] = []
             s.onNewItems = { arrived += $0.map(\.id) }
-            func item(_ id: Int) -> [String: Any] { ["id": id, "session_id": "c", "kind": "done", "state": "open", "host": "studio"] }
-            s.publish(try snapshot(["inbox": [item(1), item(-1)]]))
+            func item(_ id: Int, on host: String = "studio") -> [String: Any] {
+                ["id": id, "session_id": "c", "kind": "done", "state": "open", "host": host]
+            }
+            s.publish(try snapshot(["inbox": [item(1), item(1, on: "")]]))
             try await until { s.queue.count == 2 }
             #expect(arrived.isEmpty, "items from before launch aren't news")
-            s.publish(try snapshot(["inbox": [item(1), item(-1), item(-2)]]))
+            #expect(Set(s.queue.map(\.id)).count == 2, "the same id on two machines is two items")
+            s.publish(try snapshot(["inbox": [item(1), item(1, on: ""), item(2)]]))
             try await until { s.queue.count == 3 }
-            #expect(arrived == [-2] && s.queue.last?.host == "studio")
+            #expect(arrived == [InboxKey(host: "studio", id: 2)] && s.queue.last?.host == "studio")
+            s.publish(try snapshot(["inbox": [item(1), item(1, on: ""), item(2), item(2, on: "")]]))
+            try await until { s.queue.count == 4 }
+            #expect(arrived.last == 2, "this Mac's 2 is news of its own")
         }
 
         @Test func startingOnAHostGoesThroughTheClient() throws {
@@ -95,7 +103,7 @@ extension UsesSharedSpeech {
             s.mutations = fake
             s.setRemote(s.sessions, true)
             #expect(fake.ops == ["mutate"] && fake.last["kind"] as? String == "session.remote" && fake.last["flag"] as? Bool == true)
-            #expect(fake.last["ids"] as? [String] == ["a", "b"], "this Mac's only")
+            #expect(targetIDs(fake.last) == ["a", "b"] && targetHosts(fake.last) == ["", ""], "this Mac's only")
 
             daemon.reply("new", [
                 "id": "Z", "name": "z", "cwd": "/tmp", "status": "busy", "kind": "hosted", "unseen": false,

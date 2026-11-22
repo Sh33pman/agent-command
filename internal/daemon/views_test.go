@@ -26,7 +26,7 @@ func TestWithoutClaude(t *testing.T) {
 	c := dial(t, p)
 	for _, call := range []func() error{
 		func() error { return c.Call(ipc.OpNew, ipc.NewRequest{Cwd: "/w"}, nil) },
-		func() error { return c.Call(ipc.OpResume, ipc.Mutation{ID: "x"}, nil) },
+		func() error { return c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here("x")}, nil) },
 	} {
 		if err := call(); err == nil || !strings.Contains(err.Error(), "run `acmd doctor`") {
 			t.Errorf("without claude: %v", err)
@@ -81,8 +81,7 @@ func TestMoveGroup(t *testing.T) {
 		"no neighbor":           {Kind: ipc.MutGroupMove, GroupID: a},
 		"both neighbors":        {Kind: ipc.MutGroupMove, GroupID: a, After: b, Before: cc},
 		"next to Default":       {Kind: ipc.MutGroupMove, GroupID: a, Before: "default"},
-		"next to a missing one": {Kind: ipc.MutGroupMove, GroupID: a, After: "nope"},
-	} {
+		"next to a missing one": {Kind: ipc.MutGroupMove, GroupID: a, After: "nope"}} {
 		if err := c.Call(ipc.OpMutate, m, nil); err == nil {
 			t.Errorf("moved a group with %s", name)
 		}
@@ -121,13 +120,13 @@ func TestPurge(t *testing.T) {
 	c := dial(t, p)
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"beef0001-x","source":"startup","cwd":"/w"}`, time.Now(), ipc.HookContext{}), nil))
 	s := byClaude(snapshot(t, c), "beef0001-x")
-	var res ipc.Results
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID}}, &res))
-	if res.Failed() != 1 || res.Results[0].Code != ipc.CodeInvalid {
-		t.Errorf("purged a live session: %+v", res)
+	// One session that can't be purged is an error, with its code.
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, Targets: ipc.Here(s.ID)}, nil); codeOf(err) != ipc.CodeInvalid {
+		t.Errorf("purged a live session: %v", err)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID})
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{s.ID, "nope"}}, &res))
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)})
+	var res ipc.Results
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, Targets: ipc.Here(s.ID, "nope")}, &res))
 	if len(res.Results) != 2 || !res.Results[0].OK || res.Results[1].Code != ipc.CodeNotFound ||
 		len(snapshot(t, c).Sessions) != 0 || len(rm.ids) != 0 {
 		t.Errorf("purge: %+v removes=%v", res, rm.ids) // no BgID known (hook-only session): no claude rm
@@ -165,7 +164,7 @@ func TestMarkSeen(t *testing.T) {
 	if !s.Unseen {
 		t.Fatalf("not unseen: %+v", s)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutSeen, ID: s.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutSeen, Targets: ipc.Here(s.ID)})
 	if s := snapshot(t, c).Sessions[0]; s.Unseen {
 		t.Errorf("still unseen: %+v", s)
 	}

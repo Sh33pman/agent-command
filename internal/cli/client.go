@@ -119,8 +119,25 @@ func snapshotOf(s ipc.Snapshot) snapshot {
 	return snapshot{Snapshot: s, Sessions: s.CoreSessions(), Groups: s.CoreGroups(), ViewState: s.ViewState.Core()}
 }
 
+// A kind that changes many sessions answers a result for each; with no out
+// to take them, the first that failed is the error, with its code.
 func (c *client) mutate(m ipc.Mutation, out any) error {
-	return c.call(ipc.OpMutate, m, out)
+	if out != nil {
+		return c.call(ipc.OpMutate, m, out)
+	}
+	var raw json.RawMessage
+	if err := c.call(ipc.OpMutate, m, &raw); err != nil {
+		return err
+	}
+	var res ipc.Results
+	if json.Unmarshal(raw, &res) == nil {
+		for _, r := range res.Results {
+			if !r.OK {
+				return &ipc.RemoteError{Msg: r.Error, Code: r.Code}
+			}
+		}
+	}
+	return nil
 }
 
 // withClient runs fn with a connected client and a fresh snapshot.
@@ -165,16 +182,26 @@ func resolveSession(snap snapshot, sel string) (*core.Session, error) {
 
 // resolveGroup finds a live group by id or case-insensitive name ("default" works).
 func resolveGroup(snap snapshot, sel string) (*core.Group, error) {
+	return resolveGroupOn(snap, sel, "")
+}
+
+// resolveGroupOn is resolveGroup among host's groups ("" for this
+// machine's): ids are unique only within their host, and every host has a
+// Default.
+func resolveGroupOn(snap snapshot, sel, host string) (*core.Group, error) {
 	sel = strings.TrimSpace(sel)
 	for _, g := range snap.Groups {
-		if g.ID == sel {
+		if g.Host == host && g.ID == sel {
 			return g, nil
 		}
 	}
 	for _, g := range snap.Groups {
-		if g.ArchivedAt.IsZero() && strings.EqualFold(g.Name, sel) {
+		if g.Host == host && g.ArchivedAt.IsZero() && strings.EqualFold(g.Name, sel) {
 			return g, nil
 		}
+	}
+	if host != "" {
+		return nil, fmt.Errorf("no group named %q on %s", sel, host)
 	}
 	return nil, fmt.Errorf("no group named %q", sel)
 }

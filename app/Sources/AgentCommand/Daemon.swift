@@ -91,6 +91,8 @@ struct WakeState: Decodable, Equatable {
 
 /// A group of sessions (internal/ipc.Group): a named, coloured container you arrange.
 struct SessionGroup: Decodable, Identifiable, Equatable {
+    /// Its id on its host: every host's Default is "default", so a group is
+    /// told apart by key.
     let id: String
     let name: String
     let isDefault: Bool
@@ -111,6 +113,12 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
         (self.id, self.name, self.isDefault, self.archivedAt) = (id, name, isDefault, archivedAt)
         (self.color, self.order, self.host) = (color, order, host)
     }
+
+    /// It told apart from other hosts' groups of the same id.
+    var key: String { Self.key(host, id) }
+
+    /// The key of group id on host.
+    static func key(_ host: String, _ id: String) -> String { host.isEmpty ? id : host + "\u{1F}" + id }
 
     /// Its name in the sidebar: a host's groups say their host, and a host's
     /// Default is the host's name.
@@ -137,9 +145,17 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
     var isArchived: Bool { !archivedAt.isEmpty }
 }
 
+/// An Inbox item named on its host (design 7.4): ids are unique only within
+/// their host.
+struct InboxKey: Hashable {
+    let host: String
+    let id: Int64
+}
+
 /// Something a session sent you (internal/core.InboxItem).
 struct InboxItem: Decodable, Identifiable, Equatable {
-    let id: Int64
+    /// Its id on its host.
+    let itemID: Int64
     let sessionID: String
     let kind: String
     let text: String
@@ -148,17 +164,19 @@ struct InboxItem: Decodable, Identifiable, Equatable {
     let at: String
     let read: Bool
     let state: String
-    /// The Remote host of an item from a session added from one; "" for this Mac's.
+    /// The Remote host of an item from one of its sessions; "" for this Mac's.
     let host: String
+    /// It on its host: what an op on it names.
+    var id: InboxKey { InboxKey(host: host, id: itemID) }
 
     private enum CodingKeys: String, CodingKey {
-        case id, kind, text, options, multipart, at, read, state, host
+        case itemID = "id", kind, text, options, multipart, at, read, state, host
         case sessionID = "session_id"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(Int64.self, forKey: .id)
+        itemID = try c.decode(Int64.self, forKey: .itemID)
         sessionID = try c.decode(String.self, forKey: .sessionID)
         kind = try c.decode(String.self, forKey: .kind)
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
@@ -376,6 +394,10 @@ struct Session: Decodable, Identifiable, Equatable {
     var isRemote: Bool { remote == true }
     /// Its Remote host's name, or "" for this Mac.
     var hostName: String { host ?? "" }
+    /// Its group's key (SessionGroup.key): the group on its own host.
+    var groupKey: String? { groupID.map { SessionGroup.key(hostName, $0) } }
+    /// It as an op names it: on its host.
+    var target: Target { Target(host: hostName, id: id) }
     /// It runs on a Remote host, added here from it.
     var isOnHost: Bool { !hostName.isEmpty }
     var isHostGone: Bool { isOnHost && hostGone == true }
@@ -691,5 +713,28 @@ struct PageRequest: Encodable {
     init(limit: Int? = nil, cursor: String = "") {
         self.limit = limit
         self.cursor = cursor.isEmpty ? nil : cursor
+    }
+}
+
+/// A session, group or set as an op names it: its id on its host ("" for
+/// this Mac), design 7.4.
+struct Target: Encodable, Equatable {
+    var host: String?
+    let id: String
+
+    init(host: String = "", id: String) {
+        self.host = host.isEmpty ? nil : host
+        self.id = id
+    }
+}
+
+/// An Inbox item as an op names it.
+struct ItemTarget: Encodable, Equatable {
+    var host: String?
+    let id: Int64
+
+    init(_ key: InboxKey) {
+        host = key.host.isEmpty ? nil : key.host
+        id = key.id
     }
 }

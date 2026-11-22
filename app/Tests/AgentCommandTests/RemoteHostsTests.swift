@@ -61,8 +61,8 @@ func makeRemoteSession(
 }
 
 @Test func inboxItemsAndNoticesNameTheirHost() throws {
-    let item: InboxItem = try decode(#"{"id": -3, "session_id": "a", "kind": "done", "host": "studio"}"#)
-    #expect(item.host == "studio" && item.id == -3)
+    let item: InboxItem = try decode(#"{"id": 3, "session_id": "a", "kind": "done", "host": "studio"}"#)
+    #expect(item.host == "studio" && item.itemID == 3 && item.id == InboxKey(host: "studio", id: 3), "the host's own id, with its host")
     let mine: InboxItem = try decode(#"{"id": 3, "session_id": "a", "kind": "done"}"#)
     #expect(mine.host.isEmpty)
 
@@ -254,15 +254,18 @@ func makeRemoteSession(
 // MARK: New sessions
 
 
-@Test func inboxNewsCountsBothWays() throws {
-    let start = InboxNews([try makeItem(4, session: "a"), try makeItem(-2, session: "b")])
-    #expect(start.newest == 4 && start.newestRemote == -2)
+@Test func inboxNewsCountsEachHostsOwn() throws {
+    // A host's items keep its own ids, which can be this Mac's too.
+    let start = InboxNews([try makeItem(4, session: "a"), try makeItem(2, session: "b", host: "studio")])
+    #expect(start.newest == ["": 4, "studio": 2])
     let (fresh, next) = start.fresh([
-        try makeItem(4, session: "a"), try makeItem(5, session: "a"), try makeItem(-2, session: "b"), try makeItem(-3, session: "b"),
+        try makeItem(4, session: "a"), try makeItem(5, session: "a"),
+        try makeItem(2, session: "b", host: "studio"), try makeItem(3, session: "b", host: "studio"),
+        try makeItem(1, session: "c", host: "box"),
     ])
-    #expect(fresh.map(\.id) == [5, -3], "new from this Mac counts up, new from hosts counts down")
-    #expect(next.newest == 5 && next.newestRemote == -3)
+    #expect(fresh.map(\.id) == [5, InboxKey(host: "studio", id: 3), InboxKey(host: "box", id: 1)], "each host's count goes up on its own")
+    #expect(next.newest == ["": 5, "studio": 3, "box": 1])
     let (again, kept) = next.fresh([])
-    #expect(again.isEmpty && kept.newest == 5 && kept.newestRemote == -3, "an empty queue forgets nothing")
-    #expect(InboxNews([]).newest == 0 && InboxNews([]).newestRemote == 0)
+    #expect(again.isEmpty && kept.newest == next.newest, "an empty queue forgets nothing")
+    #expect(InboxNews([]).newest.isEmpty)
 }

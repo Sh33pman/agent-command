@@ -44,7 +44,7 @@ final class InboxModel {
 
     private(set) var filter: InboxFilter
     /// The message open below or beside the list.
-    private(set) var selectedID: Int64? {
+    private(set) var selectedID: InboxKey? {
         didSet { if selectedID != oldValue { messageChanged() } }
     }
     private(set) var history: [InboxItem] = []
@@ -63,11 +63,11 @@ final class InboxModel {
     /// Whether the reply box should have the keyboard.
     var typing = false
     /// The option picked out with the keyboard, and the message it belongs to.
-    private var choice: (item: Int64, index: Int)?
+    private var choice: (item: InboxKey, index: Int)?
     private(set) var panel = InboxPanel.messages
     /// Where each panel's cursor is, and what's marked with x.
     private(set) var sessionCursor: InboxFilter
-    private(set) var messageCursor: Int64? {
+    private(set) var messageCursor: InboxKey? {
         didSet {
             if let session = items.first(where: { $0.id == messageCursor })?.sessionID { cursorSession = session }
         }
@@ -75,7 +75,7 @@ final class InboxModel {
     /// Says that a new message has come in, for a few seconds.
     private(set) var notice: String?
     private(set) var markedSessions: Set<String> = []
-    private(set) var markedMessages: Set<Int64> = []
+    private(set) var markedMessages: Set<InboxKey> = []
 
     @ObservationIgnored private var lastIndex = 0
     @ObservationIgnored private var hadQueue = false
@@ -87,9 +87,9 @@ final class InboxModel {
     /// if the one before it was.
     @ObservationIgnored private var following: (session: String, speak: Bool)?
     /// Messages you answered or dismissed, as against ones that went by themselves.
-    @ObservationIgnored private var leftByYou: Set<Int64> = []
+    @ObservationIgnored private var leftByYou: Set<InboxKey> = []
     /// What the queue held last time, to tell what's new.
-    @ObservationIgnored private var knownItems: Set<Int64>?
+    @ObservationIgnored private var knownItems: Set<InboxKey>?
     /// Stops the popup reading a message it moved to by itself.
     @ObservationIgnored private var movingQuietly = false
     @ObservationIgnored private var noticeTimer: Timer?
@@ -413,7 +413,7 @@ final class InboxModel {
         let list = items
         let speech = SpeechController.shared
         let cursorLeft = messageCursor != nil && !list.contains { $0.id == messageCursor }
-        let leftByItself = cursorLeft && !leftByYou.contains(messageCursor ?? -1)
+        let leftByItself = cursorLeft && !(messageCursor.map(leftByYou.contains) ?? false)
         // A message that goes by itself shouldn't start the next one reading.
         if filter == .queue, leftByItself, selectedID == messageCursor, let cursorSession {
             let wasReading = speech.speakingItem == messageCursor

@@ -217,10 +217,10 @@ extension UsesSharedSpeech {
             store.createSets([]) // nothing to move: nothing sent
             try await until("the mutations") { daemon.received("mutate").count == 3 }
             let sent = daemon.received("mutate")
-            #expect(sent.first?["kind"] as? String == "set.remove" && sent.first?["id"] as? String == "b")
+            #expect(sent.first?["kind"] as? String == "set.remove" && sent.first.flatMap(targetIDs) == ["b"])
             let creates = sent.filter { $0["kind"] as? String == "set.create" }
             #expect(creates.map { $0["set_id"] as? String } == ["S", "T"])
-            #expect(creates.first?["ids"] as? [String] == ["a", "b"])
+            #expect(creates.first.flatMap(targetIDs) == ["a", "b"])
         }
 
         @Test func theLayoutIsKeptUnderThisAppsID() async throws {

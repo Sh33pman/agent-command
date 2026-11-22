@@ -470,35 +470,33 @@ func TestTheHostsTree(t *testing.T) {
 		t.Error("a socket for another host's session")
 	}
 
-	// The inbox, named with the host, with an id of its own.
+	// The inbox, named with the host, with the host's own id: nothing here
+	// renumbers it (design 7.4).
 	eventually(t, "the inbox", func() bool { return len(l.c.Inbox()) == 1 })
 	it := l.c.Inbox()[0]
-	if it.ID >= 0 || it.SessionID != "r1" || it.Host != "studio" || it.Text != "Which?" || it.State != core.InboxOpen {
+	if it.ID != 7 || it.SessionID != "r1" || it.Host != "studio" || it.Text != "Which?" || it.State != core.InboxOpen {
 		t.Errorf("inbox = %+v", it)
 	}
-	if got, ok := l.c.InboxItem(it.ID); !ok || got.Text != "Which?" {
+	if got, ok := l.c.InboxItem("studio", 7); !ok || got.Text != "Which?" {
 		t.Errorf("item = %+v %v", got, ok)
 	}
-	if items := l.c.SessionInbox("r1"); len(items) != 1 || len(l.c.SessionInbox("r2")) != 0 {
+	if _, ok := l.c.InboxItem("other", 7); ok {
+		t.Error("an item found on a host it isn't on")
+	}
+	if items := l.c.SessionInbox("studio", "r1"); len(items) != 1 || len(l.c.SessionInbox("studio", "r2")) != 0 {
 		t.Errorf("session inbox = %+v", items)
 	}
-	l.c.SetInboxRead([]int64{it.ID}, true)
-	if !l.c.Inbox()[0].Read {
-		t.Error("not read")
-	}
-	// A new item keeps the old one's id; read here stays read.
+	// Read and handled on the host: here, it shows as the host has it.
 	r.b.change(func() {
+		r.b.inbox[0].Read = true
 		r.b.inbox = append(r.b.inbox, core.InboxItem{ID: 8, SessionID: "r1", Kind: core.InboxDone, Text: "Done", State: core.InboxOpen, At: t0.Add(time.Minute)})
 	})
-	eventually(t, "two items", func() bool { return len(l.c.Inbox()) == 2 })
-	items := l.c.Inbox()
-	if items[0].ID != it.ID || !items[0].Read || items[1].Read || items[1].Text != "Done" {
+	eventually(t, "two items", func() bool { return len(l.c.Inbox()) == 2 && l.c.Inbox()[0].Read })
+	if items := l.c.Inbox(); items[0].ID != 7 || items[1].ID != 8 || items[1].Read || items[1].Text != "Done" {
 		t.Errorf("inbox = %+v", items)
 	}
-	l.c.HandleInbox([]int64{it.ID})
-	if items := l.c.Inbox(); len(items) != 1 || items[0].Text != "Done" {
-		t.Errorf("after the dismiss: %+v", items)
-	}
+	r.b.change(func() { r.b.inbox[0].State = core.InboxDismissed })
+	eventually(t, "the dismiss", func() bool { items := l.c.Inbox(); return len(items) == 1 && items[0].Text == "Done" })
 
 	// Its state follows.
 	r.b.edit("r1", func(s *core.Session) { s.Status, s.StatusDetail, s.Unseen = core.StatusWaiting, "question", true })

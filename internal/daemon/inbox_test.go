@@ -104,15 +104,15 @@ func TestInboxReadDismissAndMovingOn(t *testing.T) {
 	if q[0].Read {
 		t.Fatalf("new item is read: %+v", q[0])
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxRead, ItemIDs: []int64{q[0].ID}, Flag: true})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxRead, Items: ipc.HereItems(q[0].ID), Flag: true})
 	if got := snapshot(t, c).Inbox; len(got) != 2 || !got[0].Read {
 		t.Errorf("after read: %+v", got)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxRead, ItemIDs: []int64{q[0].ID}})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxRead, Items: ipc.HereItems(q[0].ID)})
 	if got := snapshot(t, c).Inbox; got[0].Read {
 		t.Errorf("after unread: %+v", got)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxDismiss, ItemIDs: []int64{q[0].ID}})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxDismiss, Items: ipc.HereItems(q[0].ID)})
 	send(b, "PreToolUse", `"tool_name":"Bash"`)
 	if got := snapshot(t, c).Inbox; len(got) != 0 {
 		t.Errorf("queue: %+v", got)
@@ -122,7 +122,7 @@ func TestInboxReadDismissAndMovingOn(t *testing.T) {
 		t.Errorf("history: %+v", history)
 	}
 	// A late dismiss doesn't change what already happened.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxDismiss, ItemIDs: []int64{history[0].ID}})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxDismiss, Items: ipc.HereItems(history[0].ID)})
 	history = inboxOf(t, c, ipc.InboxRequest{})
 	if history[0].State != core.InboxStale {
 		t.Errorf("late dismiss: %+v", history[0])
@@ -194,7 +194,7 @@ func TestInboxMultipartQuestionsGoToTheSession(t *testing.T) {
 func TestInboxArchiveClosesItems(t *testing.T) {
 	c, _, a, _, send := inboxSetup(t)
 	send(a, "Stop", finished)
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: a.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(a.ID)})
 	if got := snapshot(t, c).Inbox; len(got) != 0 {
 		t.Errorf("queue: %+v", got)
 	}

@@ -32,7 +32,7 @@ const (
 	OpMutate   = "mutate"   // one change (Mutation)
 	OpWatch    = "watch"    // wait for a change (WatchRequest → WatchResponse); a view's heartbeat
 	OpNew      = "new"      // start a background session (NewRequest → *core.Session)
-	OpResume   = "resume"   // resume a paused background session (Mutation.ID → *core.Session)
+	OpResume   = "resume"   // resume a paused background session (Mutation, one target → *core.Session)
 	// OpConversations lists earlier Claude and Antigravity conversations to
 	// resume (Page → ConversationPage).
 	OpConversations = "conversations"
@@ -322,26 +322,72 @@ type Set struct {
 
 // Mutation is one change requested by a client.
 type Mutation struct {
-	Kind    string   `json:"kind"`
-	ID      string   `json:"id,omitempty"`
-	IDs     []string `json:"ids,omitempty"`
-	ItemIDs []int64  `json:"item_ids,omitempty"`
-	GroupID string   `json:"group_id,omitempty"`
-	Text    string   `json:"text,omitempty"`
-	Color   string   `json:"color,omitempty"`
-	Flag    bool     `json:"flag,omitempty"`
-	Pane    *PaneLoc `json:"pane,omitempty"`
-	SetID   string   `json:"set_id,omitempty"`
-	After   string   `json:"after,omitempty"`
-	Before  string   `json:"before,omitempty"`
-	// Host makes the change on a known Remote host, for what has no id there
-	// yet (a new group). Ids of a host's sessions, groups and sets go to it
-	// by themselves.
+	Kind string `json:"kind"`
+	// Targets are the sessions it changes, each on its host ("" for this
+	// machine): design 7.4's {host?, id}. A kind that refers to a group, set
+	// or neighbor (move, the set kinds) changes only sessions on Host; the
+	// others may span hosts, and this machine's daemon splits them per host,
+	// with a Result for each target.
+	Targets []Target `json:"targets,omitempty"`
+	// Items are the Inbox items it changes (inbox.read, inbox.dismiss), each
+	// with its host's own id.
+	Items []ItemTarget `json:"items,omitempty"`
+	// LocalID, LocalIDs and LocalItemIDs are what a daemon runs on its own
+	// machine, set from Targets and Items once it has split the mutation by
+	// host (one target is also LocalID): never sent. Clients set Targets.
+	LocalID      string   `json:"-"`
+	LocalIDs     []string `json:"-"`
+	LocalItemIDs []int64  `json:"-"`
+	GroupID      string   `json:"group_id,omitempty"`
+	Text         string   `json:"text,omitempty"`
+	Color        string   `json:"color,omitempty"`
+	Flag         bool     `json:"flag,omitempty"`
+	Pane         *PaneLoc `json:"pane,omitempty"`
+	SetID        string   `json:"set_id,omitempty"`
+	After        string   `json:"after,omitempty"`
+	Before       string   `json:"before,omitempty"`
+	// Host is the machine its group, set and neighbor are on, and the one
+	// a mutation with no targets is for (the group kinds, a new group): a
+	// known Remote host's name, or "" for this machine. A host is always
+	// named, never found from an id: ids are unique only within their host,
+	// and every host's Default group is "default".
 	Host string `json:"host,omitempty"`
+}
+
+// Target names a session, group or set on its host: Host is a known Remote
+// host's name, "" for the machine the daemon is on.
+type Target struct {
+	Host string `json:"host,omitempty"`
+	ID   string `json:"id"`
+}
+
+// ItemTarget names an Inbox item on its host, by the host's own id.
+type ItemTarget struct {
+	Host string `json:"host,omitempty"`
+	ID   int64  `json:"id"`
+}
+
+// Here are targets on this machine, for ids.
+func Here(ids ...string) []Target {
+	out := make([]Target, len(ids))
+	for i, id := range ids {
+		out[i] = Target{ID: id}
+	}
+	return out
+}
+
+// On are targets on host, for ids.
+func On(host string, ids ...string) []Target {
+	out := Here(ids...)
+	for i := range out {
+		out[i].Host = host
+	}
+	return out
 }
 
 // InboxRequest asks for one session's inbox items, or everyone's with no SessionID.
 type InboxRequest struct {
+	Host      string `json:"host,omitempty"` // the session's host; "" for this machine
 	SessionID string `json:"session_id,omitempty"`
 	Page
 }
@@ -349,6 +395,8 @@ type InboxRequest struct {
 // InboxAnswer answers an item: Option (from 1) for a question or permission, Text
 // for anything else.
 type InboxAnswer struct {
+	// Host is the item's host ("" for this machine), and ID its id there.
+	Host   string `json:"host,omitempty"`
 	ID     int64  `json:"id"`
 	Option int    `json:"option,omitempty"`
 	Text   string `json:"text,omitempty"`
@@ -741,6 +789,7 @@ type Results struct {
 
 // Result is what happened to one id: done, or an error with a code.
 type Result struct {
+	Host  string `json:"host,omitempty"` // the target's host; "" for this machine
 	ID    string `json:"id"`
 	OK    bool   `json:"ok"`
 	Code  string `json:"code,omitempty"` // a Code*, or a host's own
@@ -806,6 +855,7 @@ const OpSessionScreen = "session.screen"
 // ScreenRequest names the session, and how much to send: Lines is the last
 // lines of the screen and history (0: all of it).
 type ScreenRequest struct {
+	Host  string `json:"host,omitempty"` // the session's host; "" for this machine
 	ID    string `json:"id"`
 	Lines int    `json:"lines,omitempty"`
 }
@@ -818,4 +868,13 @@ type Screen struct {
 	// Lines cut it.
 	Lines int `json:"lines"`
 	Total int `json:"total"`
+}
+
+// HereItems are Inbox item targets on this machine, for ids.
+func HereItems(ids ...int64) []ItemTarget {
+	out := make([]ItemTarget, len(ids))
+	for i, id := range ids {
+		out[i] = ItemTarget{ID: id}
+	}
+	return out
 }

@@ -95,8 +95,8 @@ func TestARequestIDRunsOnce(t *testing.T) {
 	}
 
 	// An op that creates nothing ignores the id: renaming twice renames twice.
-	must(t, c.CallOnce(ipc.OpMutate, "n1", ipc.Mutation{Kind: ipc.MutRename, ID: first.ID, Text: "one"}, nil))
-	must(t, c.CallOnce(ipc.OpMutate, "n1", ipc.Mutation{Kind: ipc.MutRename, ID: first.ID, Text: "two"}, nil))
+	must(t, c.CallOnce(ipc.OpMutate, "n1", ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here(first.ID), Text: "one"}, nil))
+	must(t, c.CallOnce(ipc.OpMutate, "n1", ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here(first.ID), Text: "two"}, nil))
 	for _, s := range snapshotOf(t, c).Sessions {
 		if s.ID == first.ID && s.Name != "two" {
 			t.Errorf("rename with an id = %q", s.Name)
@@ -156,7 +156,7 @@ func TestEveryErrorHasACode(t *testing.T) {
 	cases := map[string]error{
 		errcode.UnknownOp:  c.Call("no.such.op", nil, nil),
 		errcode.BadRequest: c.Call(ipc.OpMutate, "not a mutation", nil),
-		errcode.NotFound:   c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: "nope", Text: "x"}, nil),
+		errcode.NotFound:   c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here("nope"), Text: "x"}, nil),
 	}
 	for want, err := range cases {
 		if got := codeOf(err); got != want {

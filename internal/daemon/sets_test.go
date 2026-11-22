@@ -81,15 +81,15 @@ func TestSetOps(t *testing.T) {
 	a, b, d := terminal(t, c, "a", ""), terminal(t, c, "b", ""), terminal(t, c, "d", "")
 
 	var set ipc.Set
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutSetCreate, IDs: []string{a.ID, b.ID}}, &set))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutSetCreate, Targets: ipc.Here(a.ID, b.ID)}, &set))
 	if set.Type != ipc.EntitySet || set.ID == "" || set.Parent != a.GroupID {
 		t.Errorf("set.create returned %+v", set)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutSetAdd, SetID: set.ID, ID: d.ID, After: a.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutSetAdd, SetID: set.ID, Targets: ipc.Here(d.ID), After: a.ID})
 	if got := setOf(t, c); got != "a,d,b" {
 		t.Errorf("after set.add: %q, want a,d,b", got)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutSetRemove, ID: d.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutSetRemove, Targets: ipc.Here(d.ID)})
 	if got := setOf(t, c); got != "a,b" {
 		t.Errorf("after set.remove: %q, want a,b", got)
 	}
@@ -98,10 +98,10 @@ func TestSetOps(t *testing.T) {
 		t.Errorf("after set.end: %q, want none", got)
 	}
 	// The rules come back as errors.
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutSetCreate, IDs: []string{a.ID}}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutSetCreate, Targets: ipc.Here(a.ID)}, nil); err == nil {
 		t.Error("set.create of one session succeeded")
 	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutSetAdd, SetID: "nope", ID: a.ID}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutSetAdd, SetID: "nope", Targets: ipc.Here(a.ID)}, nil); err == nil {
 		t.Error("set.add to a missing set succeeded")
 	}
 }
@@ -110,7 +110,7 @@ func TestArchivingTheSecondToLastMemberEndsItsSet(t *testing.T) {
 	c := setsDaemon(t)
 	a := terminal(t, c, "a", "")
 	b := terminal(t, c, "b", a.ID)
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, ID: b.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(b.ID)})
 	if got := setOf(t, c); got != "" {
 		t.Errorf("after archiving b: %q, want no set", got)
 	}
@@ -127,7 +127,7 @@ func TestMovingOneMemberMovesItsSet(t *testing.T) {
 	b := terminal(t, c, "b", a.ID)
 	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "api"}, &g))
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{b.ID}, GroupID: g.ID})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(b.ID), GroupID: g.ID})
 	snap := snapshot(t, c)
 	for _, s := range snap.Sessions {
 		if s.GroupID != g.ID {

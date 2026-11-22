@@ -27,9 +27,12 @@ type Event struct {
 	Type string `json:"type"` // an Event* type
 	// Entity and ID name what changed; Data is it, whole, for added and
 	// updated. A single value (view, settings, …) has no ID.
-	Entity string          `json:"entity,omitempty"`
-	ID     string          `json:"id,omitempty"`
-	Data   json.RawMessage `json:"data,omitempty"`
+	Entity string `json:"entity,omitempty"`
+	// Host is the entity's host, for one of a known Remote host's ("" for
+	// this machine's): ids are unique only within their host.
+	Host string          `json:"host,omitempty"`
+	ID   string          `json:"id,omitempty"`
+	Data json.RawMessage `json:"data,omitempty"`
 	// Snapshot is everything, for EventSnapshot: what the client wants of it.
 	Snapshot *Snapshot `json:"snapshot,omitempty"`
 }

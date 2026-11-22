@@ -37,7 +37,7 @@ func TestCallRunsTheHostsOps(t *testing.T) {
 		t.Errorf("snapshot = %+v", snap)
 	}
 	// A change through mutate is checked by its kind.
-	must(t, f.call(api.OpCall, callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: "l1", Text: "x"}), nil))
+	must(t, f.call(api.OpCall, callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here("l1"), Text: "x"}), nil))
 	if last := f.b.calls[len(f.b.calls)-1]; last.Op != ipc.OpMutate || !json.Valid(last.Data) || last.RequestID != "" {
 		t.Errorf("mutate went as %+v", last)
 	}
@@ -53,7 +53,7 @@ func TestCallRunsTheHostsOps(t *testing.T) {
 	_, err := f.h.SetScope("laptop", config.ScopeAct)
 	must(t, err)
 	for _, r := range []api.CallRequest{
-		callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, IDs: []string{"l1"}}),
+		callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, Targets: ipc.Here("l1")}),
 		callReq(t, ipc.OpInit, nil),
 		callReq(t, ipc.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"notify.sound": ""}}),
 	} {
@@ -61,7 +61,7 @@ func TestCallRunsTheHostsOps(t *testing.T) {
 	}
 	_, err = f.h.SetScope("laptop", config.ScopeRead)
 	must(t, err)
-	wantCode(t, "rename with read", f.call(api.OpCall, callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: "l1", Text: "x"}), nil),
+	wantCode(t, "rename with read", f.call(api.OpCall, callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here("l1"), Text: "x"}), nil),
 		api.CodePermission)
 	must(t, f.call(api.OpCall, callReq(t, ipc.OpSnapshot, nil), &snap)) // reading still works
 	wantCode(t, "new with read", f.call(api.OpSessionNew, api.NewSession{Dir: "~"}, nil), api.CodePermission)

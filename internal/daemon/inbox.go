@@ -86,7 +86,7 @@ func pageBefore[T any](p ipc.Page, fetch func(before int64, n int) ([]T, error),
 // waiting for one first, because text sent at the wrong moment lands somewhere you
 // didn't choose: in a prompt you haven't seen, or in a plain shell.
 func (d *Daemon) answerInbox(ctx context.Context, a ipc.InboxAnswer) error {
-	if a.ID < 0 { // from a host
+	if a.Host != "" { // a host's item
 		return d.answerOnHost(ctx, a)
 	}
 	d.mu.Lock()

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"cmp"
 	"encoding/json"
 	"slices"
 	"strconv"
@@ -41,27 +40,41 @@ func (t *tree) drop(typ, id string) {
 	t.order[typ] = slices.DeleteFunc(t.order[typ], func(x string) bool { return x == id })
 }
 
-// apply follows one event, and returns a notice the host decided on now.
+// apply follows one event, and returns a notice the host decided on now. Only
+// the host's own entities are kept: one it shows from yet another host has
+// that host's ids, which can be the same as its own (every Default is
+// "default"), and is that host's to offer.
 func (t *tree) apply(ev ipc.Event) *ipc.Notice {
 	if ev.Type == ipc.EventSnapshot && ev.Snapshot != nil {
 		*t = *newTree()
 		s := ev.Snapshot
 		for _, x := range s.Sessions {
-			t.sessions[x.ID] = x
-			t.keep(ipc.EntitySession, x.ID)
+			if own(x) {
+				t.sessions[x.ID] = x
+				t.keep(ipc.EntitySession, x.ID)
+			}
 		}
 		for _, x := range s.Groups {
-			t.groups[x.ID] = x
-			t.keep(ipc.EntityGroup, x.ID)
+			if x.Host == "" {
+				t.groups[x.ID] = x
+				t.keep(ipc.EntityGroup, x.ID)
+			}
 		}
 		for _, x := range s.Sets {
-			t.sets[x.ID] = x
-			t.keep(ipc.EntitySet, x.ID)
+			if x.Host == "" {
+				t.sets[x.ID] = x
+				t.keep(ipc.EntitySet, x.ID)
+			}
 		}
 		for _, x := range s.Inbox {
-			t.inbox[x.ID] = x
+			if x.Host == "" {
+				t.inbox[x.ID] = x
+			}
 		}
 		return nil
+	}
+	if ev.Host != "" && ev.Entity != ipc.EntityNotice {
+		return nil // yet another host's
 	}
 	removed := ev.Type == ipc.EventRemoved
 	switch ev.Entity {
@@ -114,7 +127,8 @@ func (t *tree) apply(ev ipc.Event) *ipc.Notice {
 func own(s *ipc.Session) bool { return s.Host == "" }
 
 // syncLocked follows a host's tree here: a socket for each of its own
-// sessions that isn't archived, and their inbox items (c.mu is held).
+// sessions that isn't archived (c.mu is held). Their Inbox items are read
+// from the tree as they are (Inbox).
 func (c *Client) syncLocked(h *hostConn) {
 	host := h.cfg.Name
 	live := map[string]bool{}
@@ -126,7 +140,6 @@ func (c *Client) syncLocked(h *hostConn) {
 	for id, a := range c.added {
 		if a.Host == host && !live[id] {
 			c.closeProxyLocked(a)
-			c.inbox.set(id, host, nil)
 			delete(c.added, id)
 		}
 	}
@@ -137,17 +150,6 @@ func (c *Client) syncLocked(h *hostConn) {
 			c.added[id] = a
 		}
 		c.openLocked(a)
-	}
-	bySession := map[string][]core.InboxItem{}
-	for _, it := range h.tree.inbox {
-		if live[it.SessionID] && it.State == core.InboxOpen {
-			bySession[it.SessionID] = append(bySession[it.SessionID], it)
-		}
-	}
-	for id := range live {
-		items := bySession[id]
-		slices.SortFunc(items, func(a, b core.InboxItem) int { return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.ID, b.ID)) })
-		c.inbox.setItems(id, host, items)
 	}
 }
 

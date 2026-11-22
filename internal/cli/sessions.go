@@ -240,7 +240,7 @@ func newRenameCmd() *cobra.Command {
 					return err
 				}
 				var res ipc.Results
-				if err := c.mutate(ipc.Mutation{Kind: ipc.MutRename, IDs: ids, Text: name}, &res); err != nil {
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutRename, Targets: ids, Text: name}, &res); err != nil {
 					return err
 				}
 				return reportResults(cmd.OutOrStdout(), res, "")
@@ -252,19 +252,22 @@ func newRenameCmd() *cobra.Command {
 }
 
 // resolveSessions finds each selector's session, once each, in order.
-func resolveSessions(snap snapshot, sels []string) ([]string, error) {
-	var ids []string
+func resolveSessions(snap snapshot, sels []string) ([]ipc.Target, error) {
+	var ids []ipc.Target
 	for _, sel := range sels {
 		s, err := resolveSession(snap, sel)
 		if err != nil {
 			return nil, err
 		}
-		if !slices.Contains(ids, s.ID) {
-			ids = append(ids, s.ID)
+		if t := targetOf(s); !slices.Contains(ids, t) {
+			ids = append(ids, t)
 		}
 	}
 	return ids, nil
 }
+
+// targetOf names s on its host, for an op.
+func targetOf(s *core.Session) ipc.Target { return ipc.Target{Host: s.Host, ID: s.ID} }
 
 // reportResults says what didn't work, one line each, and fails if any
 // didn't. done, when set, says how many did.
@@ -295,7 +298,7 @@ func newDescribeCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutDescribe, ID: s.ID, Text: strings.Join(args[1:], " ")}, nil)
+				return c.mutate(ipc.Mutation{Kind: ipc.MutDescribe, Targets: []ipc.Target{targetOf(s)}, Text: strings.Join(args[1:], " ")}, nil)
 			})
 		},
 	}
@@ -325,7 +328,7 @@ func newArchiveCmd() *cobra.Command {
 					return err
 				}
 				var res ipc.Results
-				if err := c.mutate(ipc.Mutation{Kind: ipc.MutArchive, IDs: ids}, &res); err != nil {
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutArchive, Targets: ids}, &res); err != nil {
 					return err
 				}
 				return reportResults(cmd.OutOrStdout(), res, "")
@@ -352,7 +355,7 @@ func newFinishCmd() *cobra.Command {
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}
-				if err := c.mutate(ipc.Mutation{Kind: ipc.MutFinish, ID: s.ID}, nil); err != nil {
+				if err := c.mutate(ipc.Mutation{Kind: ipc.MutFinish, Targets: []ipc.Target{targetOf(s)}}, nil); err != nil {
 					return err
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "Finished %s.\n", nameOf(s))
@@ -376,7 +379,7 @@ func newUnarchiveCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutUnarchive, ID: s.ID}, nil)
+				return c.mutate(ipc.Mutation{Kind: ipc.MutUnarchive, Targets: []ipc.Target{targetOf(s)}}, nil)
 			})
 		},
 	}
@@ -391,24 +394,27 @@ func newMoveCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withClient(cmd.Context(), func(c *client, snap snapshot) error {
 				groupName := args[len(args)-1]
-				var ids []string
-				for _, sel := range args[:len(args)-1] {
-					s, err := resolveSession(snap, sel)
-					if err != nil {
-						return err
-					}
-					ids = append(ids, s.ID)
+				ids, err := resolveSessions(snap, args[:len(args)-1])
+				if err != nil {
+					return err
 				}
-				g, err := resolveGroup(snap, groupName)
+				// The group is on the sessions' host: a session stays on its own.
+				host := ids[0].Host
+				for _, t := range ids {
+					if t.Host != host {
+						return usageError{fmt.Errorf("those sessions are on different hosts: move the sessions of one host at a time")}
+					}
+				}
+				g, err := resolveGroupOn(snap, groupName, host)
 				if err != nil {
 					if !create {
 						return fmt.Errorf("%w (use --create to create it)", err)
 					}
-					if g, err = createGroup(c, groupName, ""); err != nil {
+					if g, err = createGroupOn(c, groupName, "", host); err != nil {
 						return err
 					}
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutMove, IDs: ids, GroupID: g.ID}, nil)
+				return c.mutate(ipc.Mutation{Kind: ipc.MutMove, Targets: ids, GroupID: g.ID, Host: host}, nil)
 			})
 		},
 	}
@@ -417,9 +423,15 @@ func newMoveCmd() *cobra.Command {
 }
 
 func createGroup(c *client, name, color string) (*core.Group, error) {
+	return createGroupOn(c, name, color, "")
+}
+
+// createGroupOn makes a group on host ("" for this machine).
+func createGroupOn(c *client, name, color, host string) (*core.Group, error) {
 	var g ipc.Group
-	if err := c.mutate(ipc.Mutation{Kind: ipc.MutGroupCreate, Text: name, Color: color}, &g); err != nil {
+	if err := c.mutate(ipc.Mutation{Kind: ipc.MutGroupCreate, Text: name, Color: color, Host: host}, &g); err != nil {
 		return nil, err
 	}
+	g.Host = host
 	return g.Core(false), nil
 }

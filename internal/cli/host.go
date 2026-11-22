@@ -132,7 +132,7 @@ func archiveSelf(p paths.Paths, id string) {
 		return
 	}
 	defer conn.Close()
-	_ = conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: id}, nil)
+	_ = conn.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(id)}, nil)
 }
 
 func newHostServeCmd() *cobra.Command {

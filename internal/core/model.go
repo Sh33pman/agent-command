@@ -213,7 +213,10 @@ type Set struct {
 
 // Group is a session group.
 type Group struct {
-	ID      string
+	ID string
+	// Host is the Remote host the group is on, for a host's tree; "" for this
+	// machine's. Ids are unique only within their host.
+	Host    string
 	Name    string
 	Color   string
 	SortKey int

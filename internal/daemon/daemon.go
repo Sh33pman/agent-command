@@ -455,7 +455,7 @@ func (d *Daemon) run(ctx context.Context, req ipc.Request) (any, error) {
 		if err := json.Unmarshal(req.Data, &m); err != nil {
 			return nil, badRequest("bad mutation: %v", err)
 		}
-		return d.mutate(ctx, m)
+		return d.routeMutation(ctx, m)
 	case ipc.OpWatch:
 		w, err := decode[ipc.WatchRequest](req.Data)
 		if err != nil {
@@ -490,8 +490,8 @@ func (d *Daemon) run(ctx context.Context, req ipc.Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if d.client.Is(r.SessionID) { // a host's, as its tree has it
-			items, next, err := ipc.PageOf(d.client.SessionInbox(r.SessionID), r.Page)
+		if r.Host != "" { // a host's, as its tree has it
+			items, next, err := ipc.PageOf(d.client.SessionInbox(r.Host, r.SessionID), r.Page)
 			if err != nil {
 				return nil, badRequest("%v", err)
 			}
@@ -528,7 +528,13 @@ func (d *Daemon) run(ctx context.Context, req ipc.Request) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return d.resume(ctx, m.ID)
+		if len(m.Targets) != 1 {
+			return nil, badRequest("resume takes one session")
+		}
+		if t := m.Targets[0]; t.Host != "" { // the host resumes its own
+			return d.callHost(ctx, t.Host, ipc.OpResume, mustJSON(ipc.Mutation{Targets: ipc.Here(t.ID)}))
+		}
+		return d.resume(ctx, m.Targets[0].ID)
 	case ipc.OpStatus:
 		sessions, err := d.store.Sessions(ctx, true)
 		if err != nil {

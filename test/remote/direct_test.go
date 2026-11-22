@@ -62,7 +62,7 @@ func TestDirectConnect(t *testing.T) {
 	var b ipc.Session
 	remote := false
 	host.call(ipc.OpNew, ipc.NewRequest{Cwd: dir, Harness: core.HarnessTerminal, Name: "tests", SetWith: a.ID, Remote: &remote}, &b)
-	host.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{a.ID, b.ID}, GroupID: g.ID}, nil)
+	host.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(a.ID, b.ID), GroupID: g.ID}, nil)
 
 	c := dialHost(t, host)
 	var info wire.Info
@@ -157,6 +157,6 @@ func TestDirectConnect(t *testing.T) {
 		}
 	}
 	// A change made here happens on the host.
-	laptop.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: b.ID, Text: "renamed here"}, nil)
+	laptop.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.On("studio", b.ID), Text: "renamed here"}, nil)
 	host.waitFor("the rename on the host", func() bool { s := host.session(b.ID); return s != nil && s.Name == "renamed here" })
 }

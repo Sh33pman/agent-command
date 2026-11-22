@@ -77,10 +77,19 @@ pub const WatchResponse = struct {
     rev: u64 = 0,
 };
 
+/// Mirrors Go `ipc.Target`: a session, group or set on its host (null for
+/// the machine the daemon is on). Ids are unique only within their host.
+pub const Target = struct {
+    host: ?[]const u8 = null,
+    id: []const u8,
+};
+
 pub const Mutation = struct {
     kind: []const u8,
-    id: ?[]const u8 = null,
-    ids: ?[]const []const u8 = null,
+    /// The sessions it changes, each on its host.
+    targets: ?[]const Target = null,
+    /// The host its group, set and neighbor are on (null: this machine).
+    host: ?[]const u8 = null,
     group_id: ?[]const u8 = null,
     text: ?[]const u8 = null,
     color: ?[]const u8 = null,
@@ -714,12 +723,12 @@ test "encodeRequest and decodeResponse match internal/ipc/ipc.go schemas" {
 
     const mut_req = try encodeRequest(allocator, "mutate", Mutation{
         .kind = "session.rename",
-        .id = "sess-1",
+        .targets = &.{ .{ .id = "sess-1" }, .{ .host = "studio", .id = "r1" } },
         .text = "api - 1",
     });
     defer allocator.free(mut_req);
     try std.testing.expectEqualStrings(
-        "{\"op\":\"mutate\",\"data\":{\"kind\":\"session.rename\",\"id\":\"sess-1\",\"text\":\"api - 1\"}}\n",
+        "{\"op\":\"mutate\",\"data\":{\"kind\":\"session.rename\",\"targets\":[{\"id\":\"sess-1\"},{\"host\":\"studio\",\"id\":\"r1\"}],\"text\":\"api - 1\"}}\n",
         mut_req,
     );
 

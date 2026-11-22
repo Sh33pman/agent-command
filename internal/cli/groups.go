@@ -123,13 +123,13 @@ func groupMutation(use, short string, nargs int, build func(g *core.Group, args 
 
 func newGroupRenameCmd() *cobra.Command {
 	return groupMutation("rename <group> <new name>", "Rename a group", 2, func(g *core.Group, a []string) ipc.Mutation {
-		return ipc.Mutation{Kind: ipc.MutGroupRename, GroupID: g.ID, Text: a[1]}
+		return ipc.Mutation{Kind: ipc.MutGroupRename, GroupID: g.ID, Text: a[1], Host: g.Host}
 	})
 }
 
 func newGroupColorCmd() *cobra.Command {
 	return groupMutation("color <group> <color>", "Change a group's color", 2, func(g *core.Group, a []string) ipc.Mutation {
-		return ipc.Mutation{Kind: ipc.MutGroupColor, GroupID: g.ID, Color: a[1]}
+		return ipc.Mutation{Kind: ipc.MutGroupColor, GroupID: g.ID, Color: a[1], Host: g.Host}
 	})
 }
 
@@ -148,7 +148,7 @@ func newGroupDeleteCmd() *cobra.Command {
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, fmt.Sprintf("Delete group %q? Its sessions move to Default.", g.Name)); err != nil {
 					return err
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutGroupDelete, GroupID: g.ID}, nil)
+				return c.mutate(ipc.Mutation{Kind: ipc.MutGroupDelete, GroupID: g.ID, Host: g.Host}, nil)
 			})
 		},
 	}
@@ -184,7 +184,7 @@ func newGroupArchiveCmd() *cobra.Command {
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutGroupArchive, GroupID: g.ID}, nil)
+				return c.mutate(ipc.Mutation{Kind: ipc.MutGroupArchive, GroupID: g.ID, Host: g.Host}, nil)
 			})
 		},
 	}
@@ -209,7 +209,7 @@ func newGroupUnarchiveCmd() *cobra.Command {
 				if g == nil {
 					return fmt.Errorf("no archived group named %q", args[0])
 				}
-				return c.mutate(ipc.Mutation{Kind: ipc.MutGroupUnarchive, GroupID: g.ID, Flag: sessions}, nil)
+				return c.mutate(ipc.Mutation{Kind: ipc.MutGroupUnarchive, GroupID: g.ID, Flag: sessions, Host: g.Host}, nil)
 			})
 		},
 	}

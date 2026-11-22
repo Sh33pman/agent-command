@@ -22,6 +22,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/remote/host"
 	"github.com/brettmostert/agent-command/internal/remote/hostapi"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
+	"github.com/brettmostert/agent-command/internal/remote/wire"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
 )
@@ -145,14 +146,46 @@ func (b *otherDaemon) Call(ctx context.Context, op string, data json.RawMessage)
 		return json.Marshal(ipc.SessionOf(s))
 	case ipc.OpResume:
 		return json.Marshal(map[string]string{"op": op})
+	case ipc.OpInboxAnswer:
+		var a ipc.InboxAnswer
+		if err := json.Unmarshal(data, &a); err != nil {
+			return nil, err
+		}
+		answered := false
+		b.change(func() {
+			for i, it := range b.inbox {
+				if it.ID == a.ID && it.State == core.InboxOpen {
+					b.inbox[i].State, answered = core.InboxResponded, true
+				}
+			}
+		})
+		if !answered {
+			return nil, wire.Errorf(ipc.CodeNotFound, "item %d isn't waiting", a.ID)
+		}
+		return nil, nil
 	case ipc.OpMutate:
 		var m ipc.Mutation
 		if err := json.Unmarshal(data, &m); err != nil {
 			return nil, err
 		}
-		ids := m.IDs
-		if m.ID != "" {
-			ids = append(ids, m.ID)
+		if m.Kind == ipc.MutInboxRead {
+			b.change(func() {
+				for i, it := range b.inbox {
+					for _, t := range m.Items {
+						if t.Host == "" && t.ID == it.ID {
+							b.inbox[i].Read = m.Flag
+						}
+					}
+				}
+			})
+			return nil, nil
+		}
+		var ids []string
+		for _, t := range m.Targets {
+			if t.Host != "" {
+				return nil, fmt.Errorf("a host got a target on %s", t.Host)
+			}
+			ids = append(ids, t.ID)
 		}
 		res := ipc.Results{Results: []ipc.Result{}}
 		for _, id := range ids {
@@ -241,7 +274,9 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	t.Cleanup(func() { stopSrv(); logErr(t, <-served) })
 	b.change(func() {
 		b.sockets["r1"] = sock
-		b.groups = []*core.Group{{ID: "g1", Name: "Backend", SortKey: 1, CreatedAt: time.Now()}}
+		// The host's own Default has the id every Default has: "default".
+		b.groups = []*core.Group{{ID: "g1", Name: "Backend", SortKey: 1, CreatedAt: time.Now()},
+			{ID: store.DefaultGroupID, Name: "Default", IsDefault: true, CreatedAt: time.Now()}}
 		b.sessions = append(b.sessions, &core.Session{ID: "r1", Name: "api", Cwd: other, Harness: core.HarnessTerminal, GroupID: "g1",
 			Status: core.StatusWaiting, Remote: true, CreatedAt: time.Now()})
 		b.inbox = []core.InboxItem{{ID: 5, SessionID: "r1", Kind: core.InboxPermission, Text: "Bash", Options: core.PermissionOptions,
@@ -302,13 +337,13 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 				groups++
 			}
 		}
-		return s != nil && groups == 1
+		return s != nil && groups == 2 // Backend and the host's Default
 	})
 	if s.Host != "studio" || s.RemoteID != "r1" || s.GroupID != "g1" || s.Name != "api" {
 		t.Errorf("session = %+v", s)
 	}
-	if item.ID >= 0 || item.Host != "studio" || item.SessionID != "r1" {
-		t.Errorf("inbox = %+v", item)
+	if item.ID != 5 || item.Host != "studio" || item.SessionID != "r1" {
+		t.Errorf("inbox = %+v, want the host's own id", item)
 	}
 
 	// Attached and typed in, as a local session is.
@@ -321,20 +356,29 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	in <- []byte("echo remote-$((20+22))\n")
 	waitFor(t, "the output", func() bool { return strings.Contains(out.String(), "remote-42") })
 
-	// The inbox: its history, read, and an answer typed through the socket.
+	// The inbox: its history, read and answered on the host, by {host, id}.
 	var page ipc.InboxPage
-	must(t, call(ipc.OpInbox, ipc.InboxRequest{SessionID: s.ID}, &page))
+	must(t, call(ipc.OpInbox, ipc.InboxRequest{Host: "studio", SessionID: s.ID}, &page))
 	items := page.Items
 	if len(items) != 1 || items[0].ID != item.ID {
 		t.Errorf("history = %+v", items)
 	}
-	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutInboxRead, ItemIDs: []int64{item.ID}, Flag: true}, nil))
-	must(t, call(ipc.OpInboxAnswer, ipc.InboxAnswer{ID: item.ID, Option: 3}, nil))
-	waitFor(t, "the answer", func() bool { text, _ := term.ScreenText(sock); return strings.Contains(text, "$ 3") })
-	if snap := snapshot(); len(snap.Inbox) != 0 {
-		t.Errorf("inbox after the answer: %+v", snap.Inbox)
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutInboxRead, Items: []ipc.ItemTarget{{Host: "studio", ID: item.ID}}, Flag: true}, nil))
+	waitFor(t, "read on the host", func() bool {
+		snap := snapshot()
+		return len(snap.Inbox) == 1 && snap.Inbox[0].Read
+	})
+	// This machine's item 5, if it had one, is another item: the host's isn't
+	// found without its host.
+	if err := call(ipc.OpInboxAnswer, ipc.InboxAnswer{ID: item.ID, Option: 3}, nil); err == nil {
+		t.Error("answered the host's item without naming the host")
 	}
-	if err := call(ipc.OpInboxAnswer, ipc.InboxAnswer{ID: item.ID, Option: 1}, nil); err == nil {
+	must(t, call(ipc.OpInboxAnswer, ipc.InboxAnswer{Host: "studio", ID: item.ID, Option: 3}, nil))
+	if !slices.ContainsFunc(b.calls(), func(c string) bool { return c == `inbox.answer {"id":5,"option":3}` }) {
+		t.Errorf("the host got %v", b.calls())
+	}
+	waitFor(t, "the answer", func() bool { return len(snapshot().Inbox) == 0 })
+	if err := call(ipc.OpInboxAnswer, ipc.InboxAnswer{Host: "studio", ID: item.ID, Option: 1}, nil); err == nil {
 		t.Error("answered twice")
 	}
 
@@ -351,8 +395,8 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 		return false
 	})
 
-	// Changes go to the host by its ids, and its tree follows here.
-	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: s.ID, Text: "renamed"}, nil))
+	// Changes go to the host named with its ids, and its tree follows here.
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.On("studio", s.ID), Text: "renamed"}, nil))
 	if b.get("r1").Name != "renamed" {
 		t.Errorf("host's name %q", b.get("r1").Name)
 	}
@@ -366,23 +410,67 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	})
 	var res ipc.Results
 	local := newSess(t, c, ipc.NewRequest{Cwd: "/w", Harness: core.HarnessTerminal, Name: "here"})
-	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, IDs: []string{s.ID, local.ID}, Text: "both"}, &res))
-	if len(res.Results) != 2 || res.Results[0].ID != s.ID || !res.Results[0].OK || res.Results[1].ID != local.ID || !res.Results[1].OK {
+	targets := []ipc.Target{{Host: "studio", ID: s.ID}, {ID: local.ID}}
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: targets, Text: "both"}, &res))
+	if len(res.Results) != 2 || res.Results[0].ID != s.ID || res.Results[0].Host != "studio" || !res.Results[0].OK ||
+		res.Results[1].ID != local.ID || res.Results[1].Host != "" || !res.Results[1].OK {
 		t.Errorf("a batch across here and the host: %+v", res)
 	}
-	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{s.ID}, GroupID: store.DefaultGroupID}, &res); err != nil ||
-		res.Results[0].OK {
-		t.Errorf("moved a host's session into a group here: %+v %v", res, err)
+	// Each Default is its own machine's, though both are "default": with the
+	// host connected, this machine's session moves into this machine's
+	// Default, and the host's into the host's.
+	var mine ipc.Group
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "Mine"}, &mine))
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(local.ID), GroupID: mine.ID}, nil))
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(local.ID), GroupID: store.DefaultGroupID}, nil))
+	if strings.Contains(strings.Join(b.calls(), "\n"), local.ID) {
+		t.Error("this machine's session went to the host")
 	}
-	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{s.ID}, GroupID: "g1"}, nil))
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.On("studio", s.ID), GroupID: store.DefaultGroupID, Host: "studio"}, nil))
+	if b.get("r1").GroupID != store.DefaultGroupID {
+		t.Errorf("the host's session isn't in the host's Default: %q", b.get("r1").GroupID)
+	}
+	// A move whose session and group are on different machines is refused.
+	err = call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.On("studio", s.ID), GroupID: store.DefaultGroupID}, nil)
+	if codeOf(err) != ipc.CodeInvalid {
+		t.Errorf("moved a host's session into this machine's Default: %v", err)
+	}
+	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: targets, GroupID: "g1", Host: "studio"}, nil); codeOf(err) != ipc.CodeInvalid {
+		t.Errorf("moved sessions of two machines at once: %v", err)
+	}
+	// A host that isn't known, and an id that isn't on the host.
+	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.On("nowhere", s.ID), Text: "x"}, nil); codeOf(err) != ipc.CodeNotFound {
+		t.Errorf("an unknown host: %v", err)
+	}
+	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.On("studio", local.ID), Text: "x"}, nil); codeOf(err) != ipc.CodeNotFound {
+		t.Errorf("this machine's id on the host: %v", err)
+	}
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.On("studio", s.ID), GroupID: "g1", Host: "studio"}, nil))
+	// A kind that changes one session at a time doesn't span machines.
+	if err := call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutSeen, Targets: targets}, nil); codeOf(err) != ipc.CodeInvalid {
+		t.Errorf("seen on two machines: %v", err)
+	}
+	// Inbox items on two machines: each on its own.
+	before := len(b.calls())
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutInboxRead, Flag: false,
+		Items: []ipc.ItemTarget{{ID: 999}, {Host: "studio", ID: 5}}}, nil))
+	if got := b.calls()[before:]; len(got) != 1 || !strings.Contains(got[0], `"items":[{"id":5}]`) {
+		t.Errorf("the host got %v", got)
+	}
+	// A screen read names its host, and goes to it.
+	var screen map[string]string
+	must(t, call(ipc.OpSessionScreen, ipc.ScreenRequest{Host: "studio", ID: s.ID}, &screen))
+	if screen["op"] != ipc.OpSessionScreen || !strings.HasSuffix(b.calls()[len(b.calls())-1], `{"id":"r1"}`) {
+		t.Errorf("screen = %v, the host got %v", screen, b.calls()[len(b.calls())-1])
+	}
 	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "Ops", Host: "studio"}, nil))
 	var resumed map[string]string
-	must(t, call(ipc.OpResume, ipc.Mutation{ID: s.ID}, &resumed))
+	must(t, call(ipc.OpResume, ipc.Mutation{Targets: ipc.On("studio", s.ID)}, &resumed))
 	if resumed["op"] != ipc.OpResume {
 		t.Errorf("resume = %v", resumed)
 	}
 	ran := strings.Join(b.calls(), "\n")
-	for _, want := range []string{`"kind":"session.rename","id":"r1"`, `"kind":"group.create","text":"Ops"`, ipc.OpResume + " "} {
+	for _, want := range []string{`"kind":"session.rename","targets":[{"id":"r1"}]`, `"kind":"group.create","text":"Ops"`, ipc.OpResume + " "} {
 		if !strings.Contains(ran, want) {
 			t.Errorf("the host didn't run %s:\n%s", want, ran)
 		}
@@ -451,7 +539,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	}
 
 	// Archived on the host: it stays listed here, archived, with no socket.
-	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, ID: s.ID}, nil))
+	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.On("studio", s.ID)}, nil))
 	if b.get("r1").Status != core.StatusArchived {
 		t.Errorf("host's status %q", b.get("r1").Status)
 	}
@@ -508,15 +596,15 @@ func TestClientBackend(t *testing.T) {
 		t.Errorf("notices = %+v", n)
 	}
 	b.Changed()
-	local, hosts := splitInboxIDs([]int64{3, -1, 4})
-	if fmt.Sprint(local, hosts) != "[3 4] [-1]" {
-		t.Errorf("split = %v %v", local, hosts)
-	}
 	if d.withHostInbox(nil) != nil || d.remoteHosts() != nil {
 		t.Error("no client: nothing to add")
 	}
 	if out, done, err := d.forwardToHost(ctx, ipc.Request{Op: ipc.OpPing}); out != nil || done || err != nil {
 		t.Error("no client: nothing goes to a host")
+	}
+	// A host that isn't known: not_found, from any op that names it.
+	if _, err := d.callHost(ctx, "nowhere", ipc.OpSnapshot, nil); resultOf("", err).Code != ipc.CodeNotFound {
+		t.Errorf("an unknown host: %v", err)
 	}
 }
 

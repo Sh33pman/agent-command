@@ -60,7 +60,7 @@ func (b hostBackend) NewSession(ctx context.Context, req ipc.NewRequest) (*core.
 }
 
 func (b hostBackend) Rename(ctx context.Context, id, name string) error {
-	return b.mutate(ctx, ipc.Mutation{Kind: ipc.MutRename, ID: id, Text: name})
+	return b.mutate(ctx, ipc.Mutation{Kind: ipc.MutRename, LocalID: id, Text: name})
 }
 
 func (b hostBackend) End(ctx context.Context, id string, finish bool) error {
@@ -68,7 +68,7 @@ func (b hostBackend) End(ctx context.Context, id string, finish bool) error {
 	if finish {
 		kind = ipc.MutFinish
 	}
-	return b.mutate(ctx, ipc.Mutation{Kind: kind, ID: id})
+	return b.mutate(ctx, ipc.Mutation{Kind: kind, LocalID: id})
 }
 
 func (b hostBackend) mutate(ctx context.Context, m ipc.Mutation) error {

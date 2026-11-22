@@ -461,23 +461,21 @@ enum RemoteDefaults {
     static var newSessionsRemote: Bool { HostSettings.shared.bool("remote.new_sessions_remote") }
 }
 
-/// New inbox items since the last look. The daemon's own ids count up; items
-/// from hosts have negative ids that count down.
+/// New inbox items since the last look: each host's ids count up, this Mac's
+/// ("" ) and every Remote host's alike.
 struct InboxNews: Equatable {
-    var newest: Int64 = 0
-    var newestRemote: Int64 = 0
+    /// The newest id seen, by host.
+    var newest: [String: Int64] = [:]
 
     init(_ queue: [InboxItem]) {
-        newest = max(0, queue.map(\.id).max() ?? 0)
-        newestRemote = min(0, queue.map(\.id).min() ?? 0)
+        for item in queue { newest[item.host] = max(newest[item.host] ?? 0, item.itemID) }
     }
 
     /// The items new since then, and what to remember for next time.
     func fresh(_ queue: [InboxItem]) -> (items: [InboxItem], next: InboxNews) {
-        let items = queue.filter { $0.id > newest || $0.id < newestRemote }
+        let items = queue.filter { $0.itemID > (newest[$0.host] ?? 0) }
         var next = InboxNews(queue)
-        next.newest = max(next.newest, newest)
-        next.newestRemote = min(next.newestRemote, newestRemote)
+        next.newest.merge(newest) { max($0, $1) }
         return (items, next)
     }
 }

@@ -60,7 +60,7 @@ enum SidebarRow: Equatable, Identifiable {
 
     var id: String {
         switch self {
-        case .header(let header): "group:" + header.group.id
+        case .header(let header): "group:" + header.group.key
         case .session(let session, _): session.id
         }
     }
@@ -88,21 +88,22 @@ enum SidebarLayout {
         // Each session in its group, on its own host: a host's sessions stay in
         // the host's groups, and one whose group isn't known goes to its host's
         // Default.
-        let known = Set(ordered.map(\.id))
+        // Groups by key: every host's Default is "default".
+        let known = Set(ordered.map(\.key))
         var defaults: [String: String] = [:]
-        for group in ordered where group.isDefault { defaults[group.host] = group.id }
+        for group in ordered where group.isDefault { defaults[group.host] = group.key }
         var byGroup: [String: [Session]] = [:]
         for session in sorted {
-            let fallback = defaults[session.hostName] ?? "default"
-            let group = session.groupID.flatMap { known.contains($0) ? $0 : nil } ?? fallback
+            let fallback = defaults[session.hostName] ?? SessionGroup.key(session.hostName, "default")
+            let group = session.groupKey.flatMap { known.contains($0) ? $0 : nil } ?? fallback
             byGroup[group, default: []].append(session)
         }
         var rows: [SidebarRow] = []
         for group in ordered {
-            let members = byGroup[group.id] ?? []
+            let members = byGroup[group.key] ?? []
             if filtering && members.isEmpty { continue }
             if group.isDefault && members.isEmpty { continue }
-            let collapsed = options.collapsed.contains(group.id) && !filtering
+            let collapsed = options.collapsed.contains(group.key) && !filtering
             rows.append(.header(GroupHeader(group: group, count: members.count, urgent: mostUrgent(members), collapsed: collapsed)))
             if !collapsed { rows += sessionRows(members, sets: sets) }
         }
@@ -197,6 +198,8 @@ enum SidebarDrop: Equatable {
     /// The change a drop onto group target asks for. A dragged session that's
     /// marked takes every marked session with it. A group dropped on another
     /// goes before it; on Default, after the last group. Anything else is nothing.
+    /// Groups are named by key (SessionGroup.key), and a group moves only
+    /// among its own host's.
     static func action(items: [String], onto target: String, groups: [SessionGroup], marked: Set<String> = []) -> SidebarDrop? {
         guard let item = items.first else { return nil }
         if item.hasPrefix("session:") {
@@ -205,14 +208,14 @@ enum SidebarDrop: Equatable {
             return ids.isEmpty ? nil : .moveSessions(ids, to: target)
         }
         guard item.hasPrefix("group:") else { return nil }
-        let id = String(item.dropFirst(6))
+        let key = String(item.dropFirst(6))
         let ordered = SidebarLayout.orderedGroups(groups)
-        guard id != target, let dragged = ordered.first(where: { $0.id == id }), !dragged.isDefault,
-              let onto = ordered.first(where: { $0.id == target }) else { return nil }
+        guard key != target, let dragged = ordered.first(where: { $0.key == key }), !dragged.isDefault,
+              let onto = ordered.first(where: { $0.key == target }), onto.host == dragged.host else { return nil }
         if onto.isDefault {
-            guard let last = ordered.last(where: { !$0.isDefault }), last.id != id else { return nil }
-            return .moveGroup(id, before: nil, after: last.id)
+            guard let last = ordered.last(where: { !$0.isDefault && $0.host == dragged.host }), last.key != key else { return nil }
+            return .moveGroup(key, before: nil, after: last.key)
         }
-        return .moveGroup(id, before: target, after: nil)
+        return .moveGroup(key, before: target, after: nil)
     }
 }

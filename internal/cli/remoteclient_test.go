@@ -487,7 +487,9 @@ func TestNewOn(t *testing.T) {
 		_ = json.Unmarshal(b, &r)
 		return core.Session{ID: "01HZZZZZZZZZZZZZZZZZZZZZZZ", Name: r.Name, Cwd: "/home/me/" + strings.TrimPrefix(r.Dir, "~/"), Host: r.Host}, nil
 	})
-	f.reply(ipc.OpSnapshot, ipc.Snapshot{Groups: ipc.GroupsOf([]*core.Group{{ID: "g1", Name: "Work"}})})
+	// "Work" on studio, and one of the same name here: a session started on
+	// studio goes in studio's.
+	f.reply(ipc.OpSnapshot, ipc.Snapshot{Groups: ipc.GroupsOf([]*core.Group{{ID: "g0", Name: "Work"}, {ID: "g1", Name: "Work", Host: "studio"}})})
 	f.reply(ipc.OpMutate, core.Group{ID: "g2", Name: "New"})
 
 	out := mustRun(t, "new", "--on", "studio", "--dir", "~/api", "--harness", "terminal", "--name", "api", "--prompt", "hi")
@@ -500,8 +502,8 @@ func TestNewOn(t *testing.T) {
 		t.Errorf("new --on with a group: %v", f.called())
 	}
 	mustRun(t, "new", "--on", "studio", "--group", "New")
-	if !f.calledWith(ipc.OpRemoteNew, `"group_id":"g2"`) {
-		t.Errorf("new --on created no group: %v", f.called())
+	if !f.calledWith(ipc.OpRemoteNew, `"group_id":"g2"`) || !f.calledWith(ipc.OpMutate, `"kind":"group.create"`, `"host":"studio"`) {
+		t.Errorf("new --on created no group on studio: %v", f.called())
 	}
 	_, err := acmd(t, "new", "--on", "studio", "--group", "Nope", "--no-create")
 	errContains(t, err, `no group named "Nope"`)

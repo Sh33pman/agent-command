@@ -44,7 +44,7 @@ final class SpeechController {
     static let shared = SpeechController()
 
     /// The message being read.
-    private(set) var speakingItem: Int64?
+    private(set) var speakingItem: InboxKey?
     /// Why the last attempt couldn't be read.
     private(set) var failure: String?
     /// The daemon's word on speech here.

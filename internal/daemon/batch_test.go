@@ -51,7 +51,7 @@ func TestManyIdsGetAResultEach(t *testing.T) {
 	c := dial(t, p)
 	began := time.Now()
 	var res ipc.Results
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, IDs: append(ids, "nope", ids[0])}, &res))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(append(ids, "nope", ids[0])...)}, &res))
 	if got := codes(res); got != "ok,ok,ok,not_found" {
 		t.Fatalf("results = %s: %+v", got, res)
 	}
@@ -69,7 +69,7 @@ func TestManyIdsGetAResultEach(t *testing.T) {
 	}
 
 	// Unarchiving terminals isn't possible: each says so.
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, IDs: ids[:2]}, &res))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, Targets: ipc.Here(ids[:2]...)}, &res))
 	if codes(res) != "invalid,invalid" {
 		t.Errorf("unarchive = %+v", res)
 	}
@@ -85,7 +85,7 @@ func TestRenameManyIsNumbered(t *testing.T) {
 		ids = append(ids, byClaude(snapshot(t, c), cid).ID)
 	}
 	var res ipc.Results
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, IDs: ids, Text: " api "}, &res))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here(ids...), Text: " api "}, &res))
 	if codes(res) != "ok,ok,ok" {
 		t.Fatalf("rename = %+v", res)
 	}
@@ -96,23 +96,23 @@ func TestRenameManyIsNumbered(t *testing.T) {
 	if names[ids[0]] != "api - 1" || names[ids[1]] != "api - 2" || names[ids[2]] != "api - 3" {
 		t.Errorf("names = %v", names)
 	}
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, IDs: ids[:1], Text: "solo"}, &res))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here(ids[:1]...), Text: "solo"}, &res))
 	for _, s := range snapshot(t, c).Sessions {
 		if s.ID == ids[0] && s.Name != "solo" {
 			t.Errorf("one keeps the name as given: %q", s.Name)
 		}
 	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, IDs: ids, Text: "  "}, nil); err == nil {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: ipc.Here(ids...), Text: "  "}, nil); err == nil {
 		t.Error("an empty name")
 	}
 	// Remote on, and moving, per id.
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, IDs: ids, Flag: true}, &res))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, Targets: ipc.Here(ids...), Flag: true}, &res))
 	if codes(res) != "ok,ok,ok" {
 		t.Errorf("remote = %+v", res)
 	}
 	var g ipc.Group
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "G"}, &g))
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, IDs: []string{ids[0], "nope"}, GroupID: g.ID}, &res))
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(ids[0], "nope"), GroupID: g.ID}, &res))
 	if codes(res) != "ok,not_found" {
 		t.Errorf("move = %+v", res)
 	}
@@ -187,7 +187,7 @@ func TestHostBackendRunsOps(t *testing.T) {
 		t.Errorf("new = %s", raw)
 	}
 	rev, _ := d.changes.current()
-	if _, err := b.Call(ctx, ipc.OpMutate, json.RawMessage(`{"kind":"session.rename","id":"`+s.ID+`","text":"x"}`)); err != nil {
+	if _, err := b.Call(ctx, ipc.OpMutate, json.RawMessage(`{"kind":"session.rename","targets":[{"id":"`+s.ID+`"}],"text":"x"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if now, _ := d.changes.current(); now == rev {

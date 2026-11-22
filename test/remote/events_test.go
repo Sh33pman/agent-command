@@ -42,7 +42,7 @@ func TestEvents(t *testing.T) {
 		}
 		return false
 	})
-	if item.Host != "studio" || item.Kind != core.InboxPermission || !strings.Contains(item.Text, "make deploy") || item.ID >= 0 {
+	if item.Host != "studio" || item.Kind != core.InboxPermission || !strings.Contains(item.Text, "make deploy") || item.ID <= 0 {
 		t.Errorf("item = %+v", item)
 	}
 	laptop.waitFor("the session to wait", func() bool {
@@ -53,7 +53,7 @@ func TestEvents(t *testing.T) {
 		t.Errorf("on the host: %s", on.Status)
 	}
 	var page ipc.InboxPage
-	laptop.call(ipc.OpInbox, ipc.InboxRequest{SessionID: local.ID}, &page)
+	laptop.call(ipc.OpInbox, ipc.InboxRequest{Host: "studio", SessionID: local.ID}, &page)
 	items := page.Items
 	if len(items) != 1 || items[0].ID != item.ID {
 		t.Errorf("the session's inbox = %+v", items)

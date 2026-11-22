@@ -112,9 +112,9 @@ enum Palette {
     static func groupEntries(_ sessions: [Session], section: String, groups: [SessionGroup]) -> [PaletteEntry] {
         var list: [PaletteEntry] = []
         let hosts = Set(sessions.map(\.hostName))
-        for group in SidebarLayout.orderedGroups(groups) where hosts == [group.host] && !sessions.allSatisfy({ $0.groupID == group.id }) {
-            list.append(PaletteEntry(section: section, title: "Move to \(group.title)", key: group.id,
-                                     action: .moveToGroup(sessions, group: group.id)))
+        for group in SidebarLayout.orderedGroups(groups) where hosts == [group.host] && !sessions.allSatisfy({ $0.groupKey == group.key }) {
+            list.append(PaletteEntry(section: section, title: "Move to \(group.title)", key: group.key,
+                                     action: .moveToGroup(sessions, group: group.key)))
         }
         list.append(PaletteEntry(section: section, title: "Move to a new group…", action: .newGroup(sessions)))
         return list

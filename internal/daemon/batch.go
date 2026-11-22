@@ -22,7 +22,7 @@ var batchKinds = []string{ipc.MutRename, ipc.MutArchive, ipc.MutUnarchive, ipc.M
 	ipc.MutMove, ipc.MutPurge}
 
 func isBatch(m ipc.Mutation) bool {
-	return len(m.IDs) > 0 && slices.Contains(batchKinds, m.Kind)
+	return len(m.LocalIDs) > 0 && slices.Contains(batchKinds, m.Kind)
 }
 
 // codedError is an error with the code a Result carries.
@@ -89,7 +89,7 @@ func resultOf(id string, err error) ipc.Result {
 // mutateMany applies m to each of its ids.
 func (d *Daemon) mutateMany(ctx context.Context, m ipc.Mutation) (ipc.Results, error) {
 	var ids []string
-	for _, id := range m.IDs {
+	for _, id := range m.LocalIDs {
 		if !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
@@ -104,7 +104,7 @@ func (d *Daemon) mutateMany(ctx context.Context, m ipc.Mutation) (ipc.Results, e
 	down := map[string]error{} // hosts that couldn't be reached, and why
 	for i, id := range ids {
 		one := m
-		one.IDs, one.ID = nil, id
+		one.LocalIDs, one.LocalID = nil, id
 		if names != nil {
 			one.Text = names[i]
 		}
@@ -133,14 +133,14 @@ func (d *Daemon) mutateOne(ctx context.Context, m ipc.Mutation) error {
 	case ipc.MutMove:
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		if _, err := d.store.Session(ctx, m.ID); err != nil {
+		if _, err := d.store.Session(ctx, m.LocalID); err != nil {
 			return err
 		}
-		return d.store.MoveSessions(ctx, m.GroupID, m.ID)
+		return d.store.MoveSessions(ctx, m.GroupID, m.LocalID)
 	case ipc.MutPurge:
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		return d.purge(ctx, m.ID)
+		return d.purge(ctx, m.LocalID)
 	default:
 		_, err := d.mutate(ctx, m)
 		return err

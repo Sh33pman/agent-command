@@ -152,22 +152,22 @@ struct SidebarView: View {
         let group = header.group
         return GroupHeaderRow(header: header)
             .contentShape(Rectangle())
-            .onTapGesture { store.toggleCollapsed(group.id) }
-            .draggable(SidebarDrop.groupItem(group.id))
-            .dropDestination(for: String.self) { items, _ in drop(items, onto: group.id) }
+            .onTapGesture { store.toggleCollapsed(group.key) }
+            .draggable(SidebarDrop.groupItem(group.key))
+            .dropDestination(for: String.self) { items, _ in drop(items, onto: group.key) }
             .contextMenu {
-                Button(header.collapsed ? "Expand" : "Collapse") { store.toggleCollapsed(group.id) }
+                Button(header.collapsed ? "Expand" : "Collapse") { store.toggleCollapsed(group.key) }
                 if !group.isDefault {
                     Button("Rename…") { renameGroup(group) }
                     Menu("Colour") {
                         ForEach(SessionGroup.colors, id: \.self) { color in
-                            Button(color.capitalized) { store.setGroupColor(group.id, color) }
+                            Button(color.capitalized) { store.setGroupColor(group.key, color) }
                         }
                     }
-                    Button("Move Up") { store.moveGroup(group.id, by: -1) }
-                    Button("Move Down") { store.moveGroup(group.id, by: 1) }
+                    Button("Move Up") { store.moveGroup(group.key, by: -1) }
+                    Button("Move Down") { store.moveGroup(group.key, by: 1) }
                     Divider()
-                    Button("Delete Group") { store.deleteGroup(group.id) }
+                    Button("Delete Group") { store.deleteGroup(group.key) }
                 }
             }
     }
@@ -176,8 +176,8 @@ struct SidebarView: View {
     @ViewBuilder private func moveToGroupMenu(_ session: Session) -> some View {
         Menu("Move to Group") {
             ForEach(SidebarLayout.groups(for: session, in: store.groups)) { group in
-                if group.id != session.groupID {
-                    Button(group.title) { store.moveSessions(store.actionTargets(forRow: session).map(\.id), to: group.id) }
+                if group.key != session.groupKey {
+                    Button(group.title) { store.moveSessions(store.actionTargets(forRow: session).map(\.id), to: group.key) }
                 }
             }
             Divider()
@@ -232,7 +232,7 @@ struct SidebarView: View {
                             }
                             .draggable(SidebarDrop.sessionItem(session.id))
                             .dropDestination(for: String.self) { items, _ in
-                                drop(items, onto: session.groupID ?? "default")
+                                drop(items, onto: session.groupKey ?? SessionGroup.key(session.hostName, "default"))
                             }
     }
 

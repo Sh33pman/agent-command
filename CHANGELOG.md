@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.82.1](https://github.com/brettmostert/agent-command/compare/v0.82.0...v0.82.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **app:** close a daemon connection's socket once ([#149](https://github.com/brettmostert/agent-command/issues/149)) ([ff2f915](https://github.com/brettmostert/agent-command/commit/ff2f915dc0e0ddd0b93babf573481fcb1090bb41))
+
 ## [0.82.0](https://github.com/brettmostert/agent-command/compare/v0.81.2...v0.82.0) (2026-11-22)
 
 

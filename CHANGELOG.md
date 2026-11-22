@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.77.1](https://github.com/brettmostert/agent-command/compare/v0.77.0...v0.77.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **app:** no app in front when there is no NSApp ([#132](https://github.com/brettmostert/agent-command/issues/132)) ([5b2d431](https://github.com/brettmostert/agent-command/commit/5b2d431b44693402c3082dbce7c71db95754e4b4))
+
 ## [0.77.0](https://github.com/brettmostert/agent-command/compare/v0.76.0...v0.77.0) (2026-11-22)
 
 

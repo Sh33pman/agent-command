@@ -211,7 +211,7 @@ final class FakeDaemon: @unchecked Sendable {
 }
 
 /// In tests, a number is this Mac's Inbox item with that id.
-extension InboxKey: @retroactive ExpressibleByIntegerLiteral {
+extension InboxKey: ExpressibleByIntegerLiteral {
     public init(integerLiteral id: Int64) { self.init(host: "", id: id) }
 }
 

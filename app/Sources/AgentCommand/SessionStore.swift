@@ -340,8 +340,9 @@ final class SessionStore {
     private func showUnreadOnDock() {
         let unread = unreadCount()
         let label = unread > 0 ? String(unread) : nil
-        guard NSApp.dockTile.badgeLabel != label else { return }
-        NSApp.dockTile.badgeLabel = label
+        // No app at all, as in tests run in any order: no Dock icon.
+        guard let app = NSApp as NSApplication?, app.dockTile.badgeLabel != label else { return }
+        app.dockTile.badgeLabel = label
         // Only an app bundle has a notification center.
         guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().setBadgeCount(unread) { error in

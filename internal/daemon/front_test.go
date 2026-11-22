@@ -79,8 +79,7 @@ func TestTerminalFallsBackToWhatsInFront(t *testing.T) {
 	if got := sessionByID(t, c, s.ID); got.ClaudeSessionID != "" {
 		t.Errorf("the gone agent's id stayed: %q", got.ClaudeSessionID)
 	}
-	var items []core.InboxItem
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{SessionID: s.ID}, &items))
+	items := inboxOf(t, c, ipc.InboxRequest{SessionID: s.ID})
 	if len(items) != 1 || items[0].State != core.InboxStale {
 		t.Errorf("inbox: %+v, want the permission no longer relevant", items)
 	}

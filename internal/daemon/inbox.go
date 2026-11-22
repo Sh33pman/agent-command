@@ -16,9 +16,6 @@ import (
 // Handled items are kept this long.
 const inboxKeep = 30 * 24 * time.Hour
 
-// inboxHistoryLimit caps one read of the history.
-const inboxHistoryLimit = 500
-
 // pasteEnterDelay separates pasted text from its Enter: in one burst, Claude reads
 // the Enter as a new line.
 const pasteEnterDelay = 300 * time.Millisecond
@@ -49,10 +46,40 @@ func (d *Daemon) tidyInbox(ctx context.Context) (bool, error) {
 	return changed, d.store.PruneInbox(ctx, d.cfg.Now().Add(-inboxKeep))
 }
 
-func (d *Daemon) inboxHistory(ctx context.Context, sessionID string) ([]core.InboxItem, error) {
+// inboxHistory is a page of the Inbox: one session's, or everyone's.
+func (d *Daemon) inboxHistory(ctx context.Context, r ipc.InboxRequest) (ipc.InboxPage, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.store.InboxHistory(ctx, sessionID, inboxHistoryLimit)
+	items, next, err := pageBefore(r.Page, func(before int64, n int) ([]core.InboxItem, error) {
+		return d.store.InboxBefore(ctx, r.SessionID, before, n)
+	}, func(it core.InboxItem) int64 { return it.ID })
+	return ipc.InboxPage{Items: items, NextCursor: next}, err
+}
+
+// pageBefore is a page of a list the store keeps newest first, by id: fetch
+// gets n items older than before. One more than the page says whether
+// there's another.
+func pageBefore[T any](p ipc.Page, fetch func(before int64, n int) ([]T, error), idOf func(T) int64) ([]T, string, error) {
+	size, err := p.Size()
+	if err != nil {
+		return nil, "", badRequest("%v", err)
+	}
+	before, err := p.Before()
+	if err != nil {
+		return nil, "", badRequest("%v", err)
+	}
+	items, err := fetch(before, size+1)
+	if err != nil {
+		return nil, "", err
+	}
+	if items == nil {
+		items = []T{}
+	}
+	if len(items) <= size {
+		return items, "", nil
+	}
+	items = items[:size]
+	return items, ipc.BeforeCursor(idOf(items[size-1])), nil
 }
 
 // answerInbox types an answer into the item's session. It checks the session is

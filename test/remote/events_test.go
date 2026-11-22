@@ -52,8 +52,9 @@ func TestEvents(t *testing.T) {
 	if on := host.session(s.ID); on.Status != core.StatusWaiting {
 		t.Errorf("on the host: %s", on.Status)
 	}
-	var items []core.InboxItem
-	laptop.call(ipc.OpInbox, ipc.InboxRequest{SessionID: local.ID}, &items)
+	var page ipc.InboxPage
+	laptop.call(ipc.OpInbox, ipc.InboxRequest{SessionID: local.ID}, &page)
+	items := page.Items
 	if len(items) != 1 || items[0].ID != item.ID {
 		t.Errorf("the session's inbox = %+v", items)
 	}

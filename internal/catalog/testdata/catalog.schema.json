@@ -122,11 +122,11 @@
       "transport": {
         "op": "conversations"
       },
+      "input": {
+        "$ref": "#/$defs/ipc.Page"
+      },
       "output": {
-        "items": {
-          "$ref": "#/$defs/ipc.Conversation"
-        },
-        "type": "array"
+        "$ref": "#/$defs/ipc.ConversationPage"
       }
     },
     {
@@ -384,10 +384,7 @@
         "$ref": "#/$defs/ipc.InboxRequest"
       },
       "output": {
-        "items": {
-          "$ref": "#/$defs/core.InboxItem"
-        },
-        "type": "array"
+        "$ref": "#/$defs/ipc.InboxPage"
       }
     },
     {
@@ -548,13 +545,10 @@
         "op": "job.runs"
       },
       "input": {
-        "$ref": "#/$defs/ipc.JobRef"
+        "$ref": "#/$defs/ipc.JobRunsRequest"
       },
       "output": {
-        "items": {
-          "$ref": "#/$defs/core.JobRun"
-        },
-        "type": "array"
+        "$ref": "#/$defs/ipc.JobRunPage"
       }
     },
     {
@@ -2270,6 +2264,24 @@
         "updated_at"
       ]
     },
+    "ipc.ConversationPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ipc.Conversation"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ]
+    },
     "ipc.DeviceFeatures": {
       "properties": {
         "speech": {
@@ -2565,9 +2577,33 @@
         "id"
       ]
     },
+    "ipc.InboxPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/core.InboxItem"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ]
+    },
     "ipc.InboxRequest": {
       "properties": {
         "session_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "cursor": {
           "type": "string"
         }
       },
@@ -2736,6 +2772,41 @@
         }
       },
       "type": "object"
+    },
+    "ipc.JobRunPage": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/core.JobRun"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    "ipc.JobRunsRequest": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
+      ]
     },
     "ipc.Keymap": {
       "properties": {
@@ -2925,6 +2996,17 @@
       "required": [
         "id"
       ]
+    },
+    "ipc.Page": {
+      "properties": {
+        "limit": {
+          "type": "integer"
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "ipc.PaneLoc": {
       "properties": {

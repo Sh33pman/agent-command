@@ -85,8 +85,8 @@ func newScheduleShowCmd() *cobra.Command {
 				if done, err := emitJSON(cmd, j); done {
 					return err // its runs: acmd schedule runs --json
 				}
-				var runs []core.JobRun
-				if err := c.call(ipc.OpJobRuns, ipc.JobRef{ID: j.ID}, &runs); err != nil {
+				runs, err := jobRuns(c, j.ID)
+				if err != nil {
 					return err
 				}
 				showJob(cmd.OutOrStdout(), j, snap, runs)
@@ -382,8 +382,8 @@ func newScheduleRunsCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				var runs []core.JobRun
-				if err := c.call(ipc.OpJobRuns, ipc.JobRef{ID: j.ID}, &runs); err != nil {
+				runs, err := jobRuns(c, j.ID)
+				if err != nil {
 					return err
 				}
 				writeRuns(cmd.OutOrStdout(), snap, runs)
@@ -635,4 +635,21 @@ func writeRuns(out io.Writer, snap snapshot, runs []core.JobRun) {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", whenText(r.Due), r.Result, session, r.Detail)
 	}
 	_ = tw.Flush()
+}
+
+// jobRuns is all of a job's runs, newest first, page by page.
+func jobRuns(c *client, id string) ([]core.JobRun, error) {
+	var all []core.JobRun
+	req := ipc.JobRunsRequest{ID: id, Page: ipc.Page{Limit: ipc.PageMax}}
+	for {
+		var page ipc.JobRunPage
+		if err := c.call(ipc.OpJobRuns, req, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Items...)
+		if page.NextCursor == "" {
+			return all, nil
+		}
+		req.Cursor = page.NextCursor
+	}
 }

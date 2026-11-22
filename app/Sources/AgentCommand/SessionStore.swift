@@ -311,7 +311,13 @@ final class SessionStore {
 
     private struct InboxRequest: Encodable {
         let session_id: String?
+        var limit: Int?
+        var cursor: String?
     }
+
+    /// The most a whole-list load takes, page by page: what the daemon kept
+    /// in one read before paging.
+    static let inboxLoadMax = 500
 
     private struct InboxAnswerRequest: Encodable {
         let id: Int64
@@ -350,9 +356,27 @@ final class SessionStore {
         }
     }
 
+    /// The Inbox, newest first, up to inboxLoadMax items: one session's, or
+    /// everyone's.
     func loadInbox(session: String?, done: @escaping ([InboxItem]) -> Void) {
         run(failure: "Couldn't read the inbox") { conn -> [InboxItem] in
-            try conn.call("inbox", InboxRequest(session_id: session))
+            var items: [InboxItem] = []
+            var cursor: String?
+            repeat {
+                let page: Page<InboxItem> = try conn.call(
+                    "inbox", InboxRequest(session_id: session, limit: Page<InboxItem>.max, cursor: cursor))
+                items += page.items
+                // An empty page ends it too, whatever its cursor says.
+                cursor = page.nextCursor.isEmpty || page.items.isEmpty ? nil : page.nextCursor
+            } while cursor != nil && items.count < Self.inboxLoadMax
+            return Array(items.prefix(Self.inboxLoadMax))
+        } done: { done($0) }
+    }
+
+    /// One page of the Inbox, from cursor ("" for the newest).
+    func loadInboxPage(session: String?, cursor: String = "", done: @escaping (Page<InboxItem>) -> Void) {
+        run(failure: "Couldn't read the inbox") { conn -> Page<InboxItem> in
+            try conn.call("inbox", InboxRequest(session_id: session, cursor: cursor.isEmpty ? nil : cursor))
         } done: { done($0) }
     }
 
@@ -711,7 +735,13 @@ final class SessionStore {
         calls.async {
             do {
                 let conn = try DaemonConnection(socket: DaemonPaths.socket)
-                let list: [Conversation] = try conn.call("conversations")
+                var list: [Conversation] = []
+                var cursor = ""
+                repeat { // all of them, for the picker's search
+                    let page: Page<Conversation> = try conn.call("conversations", PageRequest(limit: Page<Conversation>.max, cursor: cursor))
+                    list += page.items
+                    cursor = page.items.isEmpty ? "" : page.nextCursor
+                } while !cursor.isEmpty
                 DispatchQueue.main.async { done(list, nil) }
             } catch {
                 DispatchQueue.main.async { done([], error.localizedDescription) }
@@ -838,8 +868,14 @@ final class SessionStore {
 
     /// A job's runs, newest first.
     func loadJobRuns(_ id: String, done: @escaping ([JobRun]) -> Void) {
+        struct Runs: Encodable {
+            let id: String
+            let limit: Int
+        }
+        // A job keeps 100 runs at most: one page has them all.
         run(failure: "Couldn't read the job's runs") { conn -> [JobRun] in
-            try conn.call("job.runs", JobRef(id: id))
+            let page: Page<JobRun> = try conn.call("job.runs", Runs(id: id, limit: Page<JobRun>.max))
+            return page.items
         } done: { done($0) }
     }
 

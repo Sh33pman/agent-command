@@ -30,7 +30,8 @@ func TestJSONIsTheOpsAnswer(t *testing.T) {
 	f.reply(ipc.OpSessionScreen, screen)
 	run := core.JobRun{ID: 4, JobID: "j1", Result: "started"}
 	f.reply(ipc.OpJobRun, run)
-	f.reply(ipc.OpJobRuns, []core.JobRun{run})
+	runs := ipc.JobRunPage{Items: []core.JobRun{run}}
+	f.reply(ipc.OpJobRuns, runs)
 	f.reply(ipc.OpJobPause, nil)
 	cfg := ipc.ConfigState{Values: map[string]any{"default_harness": "claude"}}
 	f.reply(ipc.OpConfigGet, cfg)
@@ -58,7 +59,7 @@ func TestJSONIsTheOpsAnswer(t *testing.T) {
 		{[]string{"resume", "s1"}, resumed},
 		{[]string{"screen", "s1"}, screen},
 		{[]string{"schedule", "run", "nightly"}, run},
-		{[]string{"schedule", "runs", "nightly"}, []core.JobRun{run}},
+		{[]string{"schedule", "runs", "nightly"}, runs},
 		{[]string{"schedule", "pause", "nightly"}, map[string]any{}},
 		{[]string{"schedule", "list"}, []*core.Job{job}},
 		{[]string{"schedule", "show", "nightly"}, job},

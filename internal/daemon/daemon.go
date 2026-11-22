@@ -469,16 +469,35 @@ func (d *Daemon) run(ctx context.Context, req ipc.Request) (any, error) {
 		}
 		return d.newSession(ctx, n)
 	case ipc.OpConversations:
-		return d.conversations(ctx)
+		var p ipc.Page
+		if len(req.Data) > 0 {
+			var err error
+			if p, err = decode[ipc.Page](req.Data); err != nil {
+				return nil, err
+			}
+		}
+		all, err := d.conversations(ctx)
+		if err != nil {
+			return nil, err
+		}
+		items, next, err := ipc.PageOf(all, p)
+		if err != nil {
+			return nil, badRequest("%v", err)
+		}
+		return ipc.ConversationPage{Items: items, NextCursor: next}, nil
 	case ipc.OpInbox:
 		r, err := decode[ipc.InboxRequest](req.Data)
 		if err != nil {
 			return nil, err
 		}
-		if d.client.Is(r.SessionID) {
-			return d.client.SessionInbox(r.SessionID), nil
+		if d.client.Is(r.SessionID) { // a host's, as its tree has it
+			items, next, err := ipc.PageOf(d.client.SessionInbox(r.SessionID), r.Page)
+			if err != nil {
+				return nil, badRequest("%v", err)
+			}
+			return ipc.InboxPage{Items: items, NextCursor: next}, nil
 		}
-		return d.inboxHistory(ctx, r.SessionID)
+		return d.inboxHistory(ctx, r)
 	case ipc.OpInboxAnswer:
 		a, err := decode[ipc.InboxAnswer](req.Data)
 		if err != nil {

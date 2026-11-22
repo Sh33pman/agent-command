@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
@@ -67,14 +68,30 @@ func TestInboxQueueOrderAndLatestOnly(t *testing.T) {
 	if len(q) != 2 || q[0].SessionID != b.ID || q[1].SessionID != a.ID || q[1].Text != "Second." {
 		t.Fatalf("queue: %+v", q)
 	}
-	var history []core.InboxItem
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{SessionID: a.ID}, &history))
+	history := inboxOf(t, c, ipc.InboxRequest{SessionID: a.ID})
 	if len(history) != 2 || history[0].Text != "Second." || history[1].Text != "First." || history[1].State != core.InboxStale {
 		t.Errorf("a's history: %+v", history)
 	}
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{}, &history))
+	history = inboxOf(t, c, ipc.InboxRequest{})
 	if len(history) != 3 {
 		t.Errorf("all: %+v", history)
+	}
+
+	// Page by page, newest first: a new item meanwhile doesn't shift them.
+	var page ipc.InboxPage
+	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{Page: ipc.Page{Limit: 2}}, &page))
+	if len(page.Items) != 2 || page.Items[0].ID != history[0].ID || page.NextCursor == "" {
+		t.Fatalf("first page = %+v", page)
+	}
+	send(b, "Stop", `"last_assistant_message":"Newer."`)
+	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{Page: ipc.Page{Limit: 2, Cursor: page.NextCursor}}, &page))
+	if len(page.Items) != 1 || page.Items[0].ID != history[2].ID || page.NextCursor != "" {
+		t.Errorf("last page = %+v", page)
+	}
+	for _, bad := range []ipc.InboxRequest{{Page: ipc.Page{Cursor: "nope"}}, {Page: ipc.Page{Limit: -1}}} {
+		if err := c.Call(ipc.OpInbox, bad, nil); codeOf(err) != errcode.BadRequest {
+			t.Errorf("%+v: %v", bad, err)
+		}
 	}
 }
 
@@ -100,14 +117,13 @@ func TestInboxReadDismissAndMovingOn(t *testing.T) {
 	if got := snapshot(t, c).Inbox; len(got) != 0 {
 		t.Errorf("queue: %+v", got)
 	}
-	var history []core.InboxItem
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{}, &history))
+	history := inboxOf(t, c, ipc.InboxRequest{})
 	if history[0].State != core.InboxStale || history[1].State != core.InboxDismissed {
 		t.Errorf("history: %+v", history)
 	}
 	// A late dismiss doesn't change what already happened.
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutInboxDismiss, ItemIDs: []int64{history[0].ID}})
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{}, &history))
+	history = inboxOf(t, c, ipc.InboxRequest{})
 	if history[0].State != core.InboxStale {
 		t.Errorf("late dismiss: %+v", history[0])
 	}
@@ -154,8 +170,7 @@ func TestInboxAnswers(t *testing.T) {
 	if typed.all() != "\x1b[200~more[201~\x1b[201~|\r" {
 		t.Errorf("typed %q", typed.all())
 	}
-	var history []core.InboxItem
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{SessionID: a.ID}, &history))
+	history := inboxOf(t, c, ipc.InboxRequest{SessionID: a.ID})
 	if history[0].State != core.InboxResponded || !history[0].Read {
 		t.Errorf("after reply: %+v", history[0])
 	}
@@ -183,8 +198,7 @@ func TestInboxArchiveClosesItems(t *testing.T) {
 	if got := snapshot(t, c).Inbox; len(got) != 0 {
 		t.Errorf("queue: %+v", got)
 	}
-	var history []core.InboxItem
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{SessionID: a.ID}, &history))
+	history := inboxOf(t, c, ipc.InboxRequest{SessionID: a.ID})
 	if len(history) != 1 || history[0].State != core.InboxStale {
 		t.Errorf("history: %+v", history)
 	}

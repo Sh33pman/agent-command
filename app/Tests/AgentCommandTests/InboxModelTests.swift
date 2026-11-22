@@ -167,7 +167,7 @@ struct InboxModelTests {
     @Test func openingASessionShowsItsFirstMessage() async throws {
         let daemon = try FakeDaemon()
         defer { daemon.stop() }
-        daemon.reply("inbox", [raw(5), raw(4, read: true)])
+        daemon.reply("inbox", ["items": [raw(5), raw(4, read: true)], "next_cursor": ""] as [String: Any])
         let h = try mainInbox(daemon, queue: [])
         h.model.setFilter(.session("a"))
         try await until { h.model.selectedID == 5 }
@@ -176,10 +176,44 @@ struct InboxModelTests {
         try await until { daemon.received("mutate").contains { ($0["item_ids"] as? [Int]) == [5] } }
     }
 
+    /// A session's history comes a page at a time: the next once its last
+    /// row shows, asked for with the cursor the page gave.
+    @Test func theHistoryLoadsMoreAsYouScroll() async throws {
+        let daemon = try FakeDaemon()
+        defer { daemon.stop() }
+        daemon.reply("inbox", ["items": [raw(5), raw(4)], "next_cursor": "more"] as [String: Any])
+        daemon.reply("inbox", cursor: "more", ["items": [raw(4), raw(3), raw(2)], "next_cursor": ""] as [String: Any])
+        let h = try mainInbox(daemon, queue: [])
+        h.model.setFilter(.session("a"))
+        try await until { h.model.items.count == 2 }
+        // The history's own pages: not the whole-list loads, which ask for 500.
+        func pages() -> [[String: Any]] { daemon.received("inbox").filter { $0["cursor"] != nil && $0["limit"] == nil } }
+        h.model.loadMore(after: h.model.items[0])
+        #expect(pages().isEmpty, "not before the last row")
+        h.model.loadMore(after: h.model.items[1])
+        try await until { h.model.items.count == 4 }
+        #expect(h.model.items.map(\.id) == [5, 4, 3, 2], "what's shown already isn't twice")
+        #expect(pages().first?["cursor"] as? String == "more")
+        if let last = h.model.items.last { h.model.loadMore(after: last) }
+        #expect(pages().count == 1, "the last page: no more")
+    }
+
+    @Test func aReloadKeepsThePagesScrolledThrough() throws {
+        func items(_ ids: [Int64]) throws -> [InboxItem] {
+            try ids.map { id in
+                try JSONDecoder().decode(InboxItem.self, from: JSONSerialization.data(withJSONObject: raw(Int(id))))
+            }
+        }
+        let shown = try items([5, 4, 3, 2, 1])
+        #expect(InboxModel.refreshed(shown, with: try items([6, 5, 4])).map(\.id) == [6, 5, 4, 3, 2, 1])
+        #expect(InboxModel.refreshed(shown, with: try items([9, 8])).map(\.id) == [9, 8], "they don't meet")
+        #expect(InboxModel.refreshed([], with: try items([2, 1])).map(\.id) == [2, 1])
+    }
+
     @Test func aSetListsOnlyItsSessions() async throws {
         let daemon = try FakeDaemon()
         defer { daemon.stop() }
-        daemon.reply("inbox", [raw(3, session: "c"), raw(2, session: "b"), raw(1, session: "a")])
+        daemon.reply("inbox", ["items": [raw(3, session: "c"), raw(2, session: "b"), raw(1, session: "a")], "next_cursor": ""] as [String: Any])
         let h = try mainInbox(daemon, queue: [])
         h.model.setFilter(.set(["a", "b"]))
         try await until { h.model.selectedID != nil }
@@ -191,7 +225,7 @@ struct InboxModelTests {
     @Test func nothingToShowIsFine() async throws {
         let daemon = try FakeDaemon()
         defer { daemon.stop() }
-        daemon.reply("inbox", [] as [Any])
+        daemon.reply("inbox", ["items": [] as [Any], "next_cursor": ""] as [String: Any])
         let h = try mainInbox(daemon, queue: [])
         h.model.setFilter(.session("a"))
         try await Task.sleep(for: .milliseconds(50))
@@ -359,7 +393,7 @@ struct InboxModelTests {
     @Test func theSidebarOfTheInboxListsAgentsAndCountsUnread() async throws {
         let daemon = try FakeDaemon()
         defer { daemon.stop() }
-        daemon.reply("inbox", [raw(1, session: "a"), raw(2, session: "a", read: true), raw(3, session: "old-term")])
+        daemon.reply("inbox", ["items": [raw(1, session: "a"), raw(2, session: "a", read: true), raw(3, session: "old-term")], "next_cursor": ""] as [String: Any])
         let sessions = [
             try makeSession(id: "a", claude: "c"), try makeSession(id: "shell", harness: "terminal", status: "running"),
             try makeSession(id: "old-term", harness: "terminal", status: "running"),

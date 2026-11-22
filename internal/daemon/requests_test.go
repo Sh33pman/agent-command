@@ -170,3 +170,25 @@ func TestEveryErrorHasACode(t *testing.T) {
 		t.Errorf("new with no terminals: code %q (%v)", got, err)
 	}
 }
+
+// inboxOf is the first page of the Inbox as r asks.
+func inboxOf(t *testing.T, c *ipc.Conn, r ipc.InboxRequest) []core.InboxItem {
+	t.Helper()
+	var page ipc.InboxPage
+	must(t, c.Call(ipc.OpInbox, r, &page))
+	return page.Items
+}
+
+func conversationsOf(t *testing.T, c *ipc.Conn) []ipc.Conversation {
+	t.Helper()
+	var page ipc.ConversationPage
+	must(t, c.Call(ipc.OpConversations, nil, &page))
+	return page.Items
+}
+
+func runsOf(t *testing.T, c *ipc.Conn, id string) []core.JobRun {
+	t.Helper()
+	var page ipc.JobRunPage
+	must(t, c.Call(ipc.OpJobRuns, ipc.JobRunsRequest{ID: id}, &page))
+	return page.Items
+}

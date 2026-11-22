@@ -75,7 +75,7 @@ func localOps() []Op {
 		// Sessions.
 		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, ipc.Session{}).runsCode().retryable(),
 		act(ipc.OpResume, "Resumes a paused background session.", entities, ipc.Mutation{}, ipc.Session{}).runsCode(),
-		read(ipc.OpConversations, "Lists earlier Claude and Antigravity conversations that can be resumed.", host, nil, []ipc.Conversation{}),
+		read(ipc.OpConversations, "Lists earlier Claude and Antigravity conversations that can be resumed.", host, ipc.Page{}, ipc.ConversationPage{}),
 		// rename, archive, unarchive, move, purge, remote and remove_added take
 		// many ids (IDs), and return a result for each.
 		mut(act(ipc.MutRename, "Renames sessions: the name for one, numbered (\"api - 1\", \"api - 2\") for several.", entities, nil, ipc.Results{})),
@@ -113,7 +113,7 @@ func localOps() []Op {
 		mut(act(ipc.MutViewArchived, "Shows or hides archived sessions.", host, nil, nil)),
 
 		// Inbox.
-		read(ipc.OpInbox, "Lists Inbox items, newest first: one session's, or everyone's.", entities, ipc.InboxRequest{}, []core.InboxItem{}),
+		read(ipc.OpInbox, "Lists Inbox items, newest first: one session's, or everyone's.", entities, ipc.InboxRequest{}, ipc.InboxPage{}),
 		act(ipc.OpInboxAnswer, "Answers an Inbox item by typing into its session.", entities, ipc.InboxAnswer{}, nil).runsCode(),
 		mut(act(ipc.MutInboxRead, "Marks Inbox items read or unread.", entities, nil, nil)),
 		mut(act(ipc.MutInboxDismiss, "Takes Inbox items out of the queue.", entities, nil, nil)),
@@ -130,7 +130,7 @@ func localOps() []Op {
 		act(ipc.OpJobDelete, "Deletes a scheduled job.", host, ipc.JobRef{}, nil).destructive(),
 		act(ipc.OpJobPause, "Pauses or resumes a scheduled job.", host, ipc.JobRef{}, nil),
 		act(ipc.OpJobRun, "Runs a scheduled job now.", host, ipc.JobRef{}, core.JobRun{}).runsCode().retryable(),
-		read(ipc.OpJobRuns, "Lists a job's runs, newest first.", host, ipc.JobRef{}, []core.JobRun{}),
+		read(ipc.OpJobRuns, "Lists a job's runs, newest first.", host, ipc.JobRunsRequest{}, ipc.JobRunPage{}),
 		read(ipc.OpAgentSettings, "Lists an agent's settings for jobs.", host, ipc.JobRef{}, []harness.Setting{}),
 		admin(ipc.OpWakeSet, "Turns waking the Mac for jobs on or off, checking the sudoers rule again.", host, ipc.WakeRef{}, ipc.WakeState{}).hostOnly(),
 

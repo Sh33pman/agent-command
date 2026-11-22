@@ -48,6 +48,12 @@ final class InboxModel {
         didSet { if selectedID != oldValue { messageChanged() } }
     }
     private(set) var history: [InboxItem] = []
+    /// The cursor for history's next page, while there's more of it to load.
+    private var historyMore = ""
+    /// Whose history is asked for, so a late page from another list is dropped.
+    private var historyOf: String?
+    /// Whose history is on show now (nil: none yet).
+    private var historyShown: String??
     /// Every session's items, for the counts beside the sessions.
     private(set) var allItems: [InboxItem] = []
     private(set) var error: String?
@@ -367,10 +373,37 @@ final class InboxModel {
         }
     }
 
+    /// The history's first page; more come as you scroll (loadMore).
     private func load(session: String?) {
-        store.loadInbox(session: session) { [weak self] items in
-            self?.history = items
-            self?.keepSelection()
+        historyOf = session
+        store.loadInboxPage(session: session) { [weak self] page in
+            guard let self, self.historyOf == session else { return }
+            self.history = Self.refreshed(self.historyShown == .some(session) ? self.history : [], with: page.items)
+            if self.history.count == page.items.count { self.historyMore = page.nextCursor }
+            self.historyShown = .some(session)
+            self.keepSelection()
+        }
+    }
+
+    /// The history after a reload: its newest page as it is now, then the
+    /// older pages already scrolled through, from where the newest page ends.
+    /// When they don't meet, only the newest page is left.
+    static func refreshed(_ shown: [InboxItem], with first: [InboxItem]) -> [InboxItem] {
+        guard shown.count > first.count, let last = first.last,
+              let at = shown.firstIndex(where: { $0.id == last.id }) else { return first }
+        return first + shown[(at + 1)...]
+    }
+
+    /// Loads the history's next page once item, its last row, shows.
+    func loadMore(after item: InboxItem) {
+        guard filter != .queue, !historyMore.isEmpty, item.id == history.last?.id else { return }
+        let cursor = historyMore, session = historyOf
+        historyMore = "" // once
+        store.loadInboxPage(session: session, cursor: cursor) { [weak self] page in
+            guard let self, self.historyOf == session else { return }
+            let seen = Set(self.history.map(\.id))
+            self.history += page.items.filter { !seen.contains($0.id) }
+            self.historyMore = page.nextCursor
         }
     }
 

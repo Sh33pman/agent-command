@@ -98,10 +98,16 @@ tap() {
 	rm -rf "$dir"
 
 	# What a user gets: the cask on main, and the zip it downloads.
-	local committed cask_version cask_sha
-	committed="$(gh api -H 'Accept: application/vnd.github.raw' "repos/$tap/contents/$cask_path?ref=main")"
-	cask_version="$(sed -nE 's/^  version "([^"]+)"$/\1/p' <<<"$committed")"
-	cask_sha="$(sed -nE 's/^  sha256 "([0-9a-f]{64})"$/\1/p' <<<"$committed")"
+	# Read right after the commit, main can still show the cask before it:
+	# give it a minute to catch up before calling it wrong.
+	local committed cask_version cask_sha try
+	for try in 1 2 3 4 5 6; do
+		committed="$(gh api -H 'Accept: application/vnd.github.raw' "repos/$tap/contents/$cask_path?ref=main")"
+		cask_version="$(sed -nE 's/^  version "([^"]+)"$/\1/p' <<<"$committed")"
+		cask_sha="$(sed -nE 's/^  sha256 "([0-9a-f]{64})"$/\1/p' <<<"$committed")"
+		[[ "$cask_version" == "$version" ]] && break
+		[[ $try == 6 ]] || sleep 10
+	done
 	if [[ "$cask_version" != "$version" ]]; then
 		echo "release: the cask on main is at version \"$cask_version\", not $version" >&2
 		exit 1

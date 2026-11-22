@@ -149,6 +149,12 @@ final class FakeDaemon: @unchecked Sendable {
         lock.withLock { replies[op] = data }
     }
 
+    /// The answer to op when it asks for the page at cursor: other pages get
+    /// op's own reply.
+    func reply(_ op: String, cursor: String, _ data: Any) {
+        lock.withLock { replies[op + "#" + cursor] = data }
+    }
+
     func fail(_ op: String, _ message: String) {
         lock.withLock { failures[op] = message }
     }
@@ -185,6 +191,9 @@ final class FakeDaemon: @unchecked Sendable {
                     requests.append((op, request["data"] as? [String: Any] ?? [:]))
                     if let failure = failures[op] {
                         answer = ["ok": false, "error": failure]
+                    } else if let cursor = (request["data"] as? [String: Any])?["cursor"] as? String,
+                              let data = replies[op + "#" + cursor] {
+                        answer["data"] = data
                     } else if let data = replies[op] {
                         answer["data"] = data
                     }

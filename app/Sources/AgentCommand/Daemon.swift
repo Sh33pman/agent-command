@@ -657,3 +657,39 @@ enum Acmd {
         }
     }
 }
+
+/// One page of a list op (internal/ipc/page.go): its items, and the cursor
+/// for the next page, "" on the last.
+struct Page<Item: Decodable>: Decodable {
+    var items: [Item] = []
+    var nextCursor = ""
+
+    /// The most items a page holds.
+    static var max: Int { 500 }
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case nextCursor = "next_cursor"
+    }
+
+    init(items: [Item] = [], nextCursor: String = "") {
+        (self.items, self.nextCursor) = (items, nextCursor)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        items = try c.decodeIfPresent([Item].self, forKey: .items) ?? []
+        nextCursor = try c.decodeIfPresent(String.self, forKey: .nextCursor) ?? ""
+    }
+}
+
+/// Asks for one page of a list: "" is the first.
+struct PageRequest: Encodable {
+    var limit: Int?
+    var cursor: String?
+
+    init(limit: Int? = nil, cursor: String = "") {
+        self.limit = limit
+        self.cursor = cursor.isEmpty ? nil : cursor
+    }
+}

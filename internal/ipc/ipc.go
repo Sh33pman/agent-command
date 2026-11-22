@@ -34,11 +34,11 @@ const (
 	OpNew      = "new"      // start a background session (NewRequest → *core.Session)
 	OpResume   = "resume"   // resume a paused background session (Mutation.ID → *core.Session)
 	// OpConversations lists earlier Claude and Antigravity conversations to
-	// resume (→ []Conversation).
+	// resume (Page → ConversationPage).
 	OpConversations = "conversations"
 	OpLayout        = "layout"       // the app's pane layout (→ Layout)
 	OpSetLayout     = "layout.set"   // stores it (Layout)
-	OpInbox         = "inbox"        // inbox items, newest first (InboxRequest → []core.InboxItem)
+	OpInbox         = "inbox"        // inbox items, newest first (InboxRequest → InboxPage)
 	OpInboxAnswer   = "inbox.answer" // types an answer into the item's session (InboxAnswer)
 	// Scheduled jobs. The snapshot lists them; these change them.
 	OpJobSave        = "job.save"         // adds or edits a job (core.Job: ID "" adds) → *core.Job
@@ -53,7 +53,7 @@ const (
 	OpJobDelete     = "job.delete"     // JobRef.ID
 	OpJobPause      = "job.pause"      // JobRef.ID, Paused
 	OpJobRun        = "job.run"        // runs it now (JobRef.ID) → core.JobRun
-	OpJobRuns       = "job.runs"       // its runs, newest first (JobRef.ID) → []core.JobRun
+	OpJobRuns       = "job.runs"       // its runs, newest first (JobRunsRequest) → JobRunPage
 	OpAgentSettings = "agent.settings" // an agent's settings for jobs (JobRef.Harness) → []harness.Setting
 	OpWakeSet       = "wake.set"       // wakes the Mac for every job or not (WakeRef), checking the sudoers rule again → WakeState
 	// Remote sessions: Hosting, this machine's listener for other acmds.
@@ -343,6 +343,7 @@ type Mutation struct {
 // InboxRequest asks for one session's inbox items, or everyone's with no SessionID.
 type InboxRequest struct {
 	SessionID string `json:"session_id,omitempty"`
+	Page
 }
 
 // InboxAnswer answers an item: Option (from 1) for a question or permission, Text

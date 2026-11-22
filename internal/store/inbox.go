@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -89,11 +90,20 @@ func (s *Store) InboxQueue(ctx context.Context) ([]core.InboxItem, error) {
 
 // InboxHistory is the newest limit items, of one session or (with "") of all.
 func (s *Store) InboxHistory(ctx context.Context, sessionID string, limit int) ([]core.InboxItem, error) {
-	if sessionID == "" {
-		return s.inboxItems(ctx, `SELECT `+inboxCols+` FROM inbox_items ORDER BY id DESC LIMIT ?`, limit)
+	return s.InboxBefore(ctx, sessionID, 0, limit)
+}
+
+// InboxBefore is InboxHistory from the items older than before (0: from
+// the newest).
+func (s *Store) InboxBefore(ctx context.Context, sessionID string, before int64, limit int) ([]core.InboxItem, error) {
+	if before <= 0 {
+		before = math.MaxInt64
 	}
-	return s.inboxItems(ctx, `SELECT `+inboxCols+` FROM inbox_items WHERE session_id = ? ORDER BY id DESC LIMIT ?`,
-		sessionID, limit)
+	if sessionID == "" {
+		return s.inboxItems(ctx, `SELECT `+inboxCols+` FROM inbox_items WHERE id < ? ORDER BY id DESC LIMIT ?`, before, limit)
+	}
+	return s.inboxItems(ctx, `SELECT `+inboxCols+` FROM inbox_items WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?`,
+		sessionID, before, limit)
 }
 
 func (s *Store) inboxItems(ctx context.Context, query string, args ...any) ([]core.InboxItem, error) {

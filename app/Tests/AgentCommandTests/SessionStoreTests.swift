@@ -256,7 +256,7 @@ extension UsesSharedSpeech {
         @Test func loadingTheInboxAsksForTheSession() async throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
-            daemon.reply("inbox", [item(1), item(2)])
+            daemon.reply("inbox", ["items": [item(1), item(2)], "next_cursor": ""] as [String: Any])
             let s = try store()
             var loaded: [InboxItem]?
             s.loadInbox(session: "a") { loaded = $0 }
@@ -270,7 +270,7 @@ extension UsesSharedSpeech {
             defer { daemon.stop() }
             daemon.reply("resume", hosted("a"))
             daemon.reply("new", hosted("n"))
-            daemon.reply("conversations", [["id": "c1", "cwd": "/w", "updated_at": "2026-11-07T10:00:00Z"]])
+            daemon.reply("conversations", ["items": [["id": "c1", "cwd": "/w", "updated_at": "2026-11-07T10:00:00Z"]], "next_cursor": ""] as [String: Any])
             let s = try store(["a"])
 
             var resumed = false
@@ -394,7 +394,7 @@ extension UsesSharedSpeech {
         @Test func thereIsNothingToReadWithoutAMessage() async throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
-            daemon.reply("inbox", [] as [Any])
+            daemon.reply("inbox", ["items": [] as [Any], "next_cursor": ""] as [String: Any])
             let s = try store()
             s.reflect(selected: "a", visible: [], closed: [])
             let speech = SpeechController.shared
@@ -408,7 +408,7 @@ extension UsesSharedSpeech {
         @Test func theLatestMessageIsTheOneRead() async throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
-            daemon.reply("inbox", [item(2), item(1)])
+            daemon.reply("inbox", ["items": [item(2), item(1)], "next_cursor": ""] as [String: Any])
             let s = try store()
             s.reflect(selected: "a", visible: [], closed: [])
             let speech = SpeechController.shared

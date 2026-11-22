@@ -200,6 +200,7 @@ struct InboxView: View {
                                 .contentShape(Rectangle())
                                 .simultaneousGesture(TapGesture().onEnded { model.click(item: item) })
                                 .simultaneousGesture(TapGesture(count: 2).onEnded { model.open(item) })
+                                .onAppear { model.loadMore(after: item) }
                         }
                     }
                 }

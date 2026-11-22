@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"sort"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -148,10 +149,20 @@ func (s *Store) RecordRun(ctx context.Context, r *core.JobRun) error {
 
 // JobRuns lists a job's runs, newest first (limit 0: all that are kept).
 func (s *Store) JobRuns(ctx context.Context, jobID string, limit int) ([]core.JobRun, error) {
+	return s.JobRunsBefore(ctx, jobID, 0, limit)
+}
+
+// JobRunsBefore is JobRuns from the runs older than before (0: from the
+// newest).
+func (s *Store) JobRunsBefore(ctx context.Context, jobID string, before int64, limit int) ([]core.JobRun, error) {
 	if limit <= 0 {
 		limit = runsKept
 	}
-	rows, err := s.q.QueryContext(ctx, `SELECT `+runCols+` FROM job_runs WHERE job_id = ? ORDER BY id DESC LIMIT ?`, jobID, limit)
+	if before <= 0 {
+		before = math.MaxInt64
+	}
+	rows, err := s.q.QueryContext(ctx, `SELECT `+runCols+` FROM job_runs WHERE job_id = ? AND id < ? ORDER BY id DESC LIMIT ?`,
+		jobID, before, limit)
 	if err != nil {
 		return nil, err
 	}

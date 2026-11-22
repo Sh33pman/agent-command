@@ -14,6 +14,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/term"
@@ -322,10 +323,22 @@ func TestResumeConversation(t *testing.T) {
 	})
 	c := dial(t, p)
 
-	var list []ipc.Conversation
-	must(t, c.Call(ipc.OpConversations, nil, &list))
+	list := conversationsOf(t, c)
 	if len(list) != 2 {
 		t.Fatalf("conversations: %+v", list)
+	}
+	// A page at a time.
+	var page ipc.ConversationPage
+	must(t, c.Call(ipc.OpConversations, ipc.Page{Limit: 1}, &page))
+	if len(page.Items) != 1 || page.Items[0].ID != list[0].ID || page.NextCursor == "" {
+		t.Fatalf("first page = %+v", page)
+	}
+	must(t, c.Call(ipc.OpConversations, ipc.Page{Limit: 1, Cursor: page.NextCursor}, &page))
+	if len(page.Items) != 1 || page.Items[0].ID != list[1].ID || page.NextCursor != "" {
+		t.Errorf("last page = %+v", page)
+	}
+	if err := c.Call(ipc.OpConversations, ipc.Page{Cursor: ipc.BeforeCursor(3)}, nil); codeOf(err) != errcode.BadRequest {
+		t.Errorf("another list's cursor: %v", err)
 	}
 	byID := map[string]ipc.Conversation{}
 	for _, item := range list {
@@ -346,7 +359,7 @@ func TestResumeConversation(t *testing.T) {
 	}
 
 	// It's listed as already tracked, and resuming it again isn't a second session.
-	must(t, c.Call(ipc.OpConversations, nil, &list))
+	list = conversationsOf(t, c)
 	for _, item := range list {
 		if item.ID == idle && item.SessionID != s.ID {
 			t.Errorf("tracked: %+v", item)
@@ -388,8 +401,7 @@ func TestResumeAntigravityConversation(t *testing.T) {
 	start(t, p, func(c *Config) { c.Hosts, c.ClaudeDir, c.AgyDir = fh, claude, agy })
 	c := dial(t, p)
 
-	var list []ipc.Conversation
-	must(t, c.Call(ipc.OpConversations, nil, &list))
+	list := conversationsOf(t, c)
 	if len(list) != 3 || list[0].ID != newer || list[0].Harness != core.HarnessAntigravity || list[0].Cwd != "/w/agy" ||
 		list[0].Title != "Delete notes2.txt" || list[1].ID != claudeID || list[1].Harness != core.HarnessClaude ||
 		list[2].ID != older || list[2].Harness != core.HarnessAntigravity {
@@ -404,7 +416,7 @@ func TestResumeAntigravityConversation(t *testing.T) {
 	if len(r) != 1 || r[0].Harness != core.HarnessAntigravity || r[0].Resume != newer || r[0].ClaudeSession != "" || r[0].Dir != "/w/agy" {
 		t.Fatalf("host request: %+v", r)
 	}
-	must(t, c.Call(ipc.OpConversations, nil, &list))
+	list = conversationsOf(t, c)
 	if list[0].SessionID != s.ID {
 		t.Errorf("tracked: %+v", list[0])
 	}
@@ -671,8 +683,7 @@ func TestDenyingAPermissionEndsWaiting(t *testing.T) {
 	must(t, f.Close())
 
 	waitFor(t, "done after the denial", func() bool { return sessionByID(t, c, s.ID).Status == core.StatusDone })
-	var items []core.InboxItem
-	must(t, c.Call(ipc.OpInbox, ipc.InboxRequest{SessionID: s.ID}, &items))
+	items := inboxOf(t, c, ipc.InboxRequest{SessionID: s.ID})
 	if len(items) != 1 || items[0].Kind != core.InboxPermission || items[0].State != core.InboxStale {
 		t.Errorf("inbox: %+v, want the permission no longer relevant", items)
 	}

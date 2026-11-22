@@ -702,9 +702,16 @@ func (d *Daemon) handleJob(ctx context.Context, req ipc.Request) (any, error) {
 	case ipc.OpJobRun:
 		return d.runJobNow(ctx, ref.ID)
 	case ipc.OpJobRuns:
+		r, err := decode[ipc.JobRunsRequest](req.Data)
+		if err != nil {
+			return nil, err
+		}
 		d.mu.Lock()
 		defer d.mu.Unlock()
-		return d.store.JobRuns(ctx, ref.ID, 0)
+		items, next, err := pageBefore(r.Page, func(before int64, n int) ([]core.JobRun, error) {
+			return d.store.JobRunsBefore(ctx, r.ID, before, n)
+		}, func(run core.JobRun) int64 { return run.ID })
+		return ipc.JobRunPage{Items: items, NextCursor: next}, err
 	case ipc.OpAgentSettings:
 		s := harness.SettingsFor(ref.Harness)
 		if s == nil {

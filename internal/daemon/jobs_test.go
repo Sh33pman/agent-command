@@ -522,10 +522,21 @@ func TestJobOps(t *testing.T) {
 	if run.Result != core.RunStarted || run.Detail != "Run by hand." || len(fh.requests()) != 1 {
 		t.Errorf("run now: %+v", run)
 	}
-	var runs []core.JobRun
-	must(t, c.Call(ipc.OpJobRuns, ipc.JobRef{ID: job.ID}, &runs))
-	if len(runs) != 1 || runs[0].ID != run.ID {
+	var again core.JobRun
+	must(t, c.Call(ipc.OpJobRun, ipc.JobRef{ID: job.ID}, &again))
+	runs := runsOf(t, c, job.ID)
+	if len(runs) != 2 || runs[0].ID != again.ID || runs[1].ID != run.ID {
 		t.Errorf("runs: %+v", runs)
+	}
+	// A page at a time, newest first.
+	var page ipc.JobRunPage
+	must(t, c.Call(ipc.OpJobRuns, ipc.JobRunsRequest{ID: job.ID, Page: ipc.Page{Limit: 1}}, &page))
+	if len(page.Items) != 1 || page.Items[0].ID != again.ID || page.NextCursor == "" {
+		t.Fatalf("first page = %+v", page)
+	}
+	must(t, c.Call(ipc.OpJobRuns, ipc.JobRunsRequest{ID: job.ID, Page: ipc.Page{Limit: 1, Cursor: page.NextCursor}}, &page))
+	if len(page.Items) != 1 || page.Items[0].ID != run.ID || page.NextCursor != "" {
+		t.Errorf("last page = %+v", page)
 	}
 
 	var settings []harness.Setting

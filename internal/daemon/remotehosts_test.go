@@ -322,8 +322,9 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	waitFor(t, "the output", func() bool { return strings.Contains(out.String(), "remote-42") })
 
 	// The inbox: its history, read, and an answer typed through the socket.
-	var items []core.InboxItem
-	must(t, call(ipc.OpInbox, ipc.InboxRequest{SessionID: s.ID}, &items))
+	var page ipc.InboxPage
+	must(t, call(ipc.OpInbox, ipc.InboxRequest{SessionID: s.ID}, &page))
+	items := page.Items
 	if len(items) != 1 || items[0].ID != item.ID {
 		t.Errorf("history = %+v", items)
 	}

@@ -11,19 +11,39 @@
 // terminal), 'i' input, 'r' resize (rows, cols as uint16 BE), 'k' end the
 // terminal, 'w' type the payload into the shell and close (Send), 't' reply
 // with the screen as plain text and close (ScreenText), 'f' reply with the
-// program in front as JSON and close (Foreground).
+// program in front as JSON and close (Foreground), 'm' reply whether the
+// server has the mode in the payload, as JSON, and close (CheckMode).
 //
 // Hosts outlive upgrades, so a client can meet a server older or newer than
 // itself. Add to this protocol, don't change it: a server ignores frames it
 // doesn't know, and a client still works if an attach payload is ignored.
-// The attach payload is the protocol version, rows and cols as uint16 BE, and
-// may be empty.
+// The attach payload is the protocol version, rows and cols as uint16 BE, then
+// the mode (Mode*) as text; any of it may be missing. A server closes an
+// attach for a mode it doesn't have.
+//
+// # Modes
+//
+// An attach asks for a mode (design D8). ModeStream, the only one now, is
+// the terminal's own bytes, for a client with an emulator; no mode is
+// ModeStream, so clients and servers from before modes work unchanged. A
+// client asking for any other mode checks it first (CheckMode), and falls
+// back when the server says not_supported, or is older than the question.
+//
+// Planned, not built: ModeRendered, for thin clients with no emulator
+// (Android, a first Windows client). The host's libghostty-vt has the exact
+// screen, so it sends it as cells: the screen's size, each cell's text,
+// colors and attributes, and the cursor, then only the cells that change,
+// a frame at a time. Input and resize are the same frames as for a stream.
 package term
 
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
+	"slices"
+
+	"github.com/brettmostert/agent-command/internal/errcode"
 )
 
 // Frame types (client to server).
@@ -36,7 +56,36 @@ const (
 	frameText   = 't' // the screen as plain text (ScreenText)
 	frameFront  = 'f' // the program in front (Foreground)
 	frameAgent  = 'g' // the agent's last OSC 7501 report (AgentStatus)
+	frameMode   = 'm' // whether the server has a mode (CheckMode)
 )
+
+// Attach modes.
+const (
+	// ModeStream is the terminal's own output, as bytes: what a client with
+	// a terminal emulator draws.
+	ModeStream = "stream"
+	// ModeRendered is planned (see the package doc): the screen as cells,
+	// then its changes. No server has it yet.
+	ModeRendered = "rendered"
+)
+
+// modes are the modes this server attaches with.
+var modes = []string{ModeStream}
+
+// HasMode says whether this build's servers attach with mode ("" is
+// ModeStream).
+func HasMode(mode string) bool { return mode == "" || slices.Contains(modes, mode) }
+
+// ModeError is an attach mode a server doesn't have: a client falls back to
+// ModeStream.
+type ModeError struct{ Mode string }
+
+func (e *ModeError) Error() string {
+	return fmt.Sprintf("the terminal can't attach in %q mode", e.Mode)
+}
+
+// Code is its error code.
+func (e *ModeError) Code() string { return errcode.NotSupported }
 
 // Front is the program in front of a terminal: the one the keyboard reaches.
 type Front struct {
@@ -85,11 +134,20 @@ func resizePayload(rows, cols int) []byte {
 	return b
 }
 
-func attachPayload(rows, cols int) []byte {
-	b := make([]byte, 6)
+func attachPayload(rows, cols int, mode string) []byte {
+	b := make([]byte, 6, 6+len(mode))
 	binary.BigEndian.PutUint16(b, protocolVersion)
 	copy(b[2:], resizePayload(rows, cols))
-	return b
+	return append(b, mode...)
+}
+
+// attachMode is the mode an attach payload asks for: ModeStream when it
+// names none.
+func attachMode(p []byte) string {
+	if len(p) <= 6 {
+		return ModeStream
+	}
+	return string(p[6:])
 }
 
 // attachSize reads the uint16 at offset in an attach payload, 0 if absent.

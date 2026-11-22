@@ -19,7 +19,11 @@
 //
 // # Attach
 //
-// OpSessionAttach is a long-lived stream. After its OK reply, the stream is a
+// OpSessionAttach is a long-lived stream, in the mode its AttachRequest asks
+// for: term.ModeStream, the only one now, and the one when it asks for none.
+// A host refuses any other mode with errcode.NotSupported before the stream
+// opens, so a client can ask for term.ModeRendered once there is one, and
+// fall back. After its OK reply, the stream is a
 // byte pipe to the session's terminal (internal/term's server), as if the
 // client had connected to its unix socket: the client writes term's frames,
 // starting with the attach frame ('a': the protocol version, rows and cols),
@@ -52,7 +56,7 @@ const MinVersion = 1
 // The ops.
 const (
 	OpSessionsList  = "sessions.list"  // no arguments → SessionList
-	OpSessionAttach = "session.attach" // SessionRef → a stream: term's protocol (see the package doc)
+	OpSessionAttach = "session.attach" // AttachRequest → a stream: term's protocol (see the package doc)
 	OpSessionNew    = "session.new"    // NewSession → Session
 	OpSessionRename = "session.rename" // Rename → Session
 	OpSessionEnd    = "session.end"    // End → no data
@@ -120,6 +124,13 @@ type SessionList struct {
 // SessionRef names a session.
 type SessionRef struct {
 	ID string `json:"id"`
+}
+
+// AttachRequest asks to attach to a session's terminal, in a mode (term's
+// Mode*; "" is term.ModeStream).
+type AttachRequest struct {
+	ID   string `json:"id"`
+	Mode string `json:"mode,omitempty"`
 }
 
 // NewSession starts a session on the host. It's always Remote.

@@ -249,7 +249,7 @@ func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
 // detached (SIGTERM, how the view loop switches sessions) or the session's
 // CLI exits. It is what the view loop runs in place of `claude attach`.
 func newHostAttachCmd() *cobra.Command {
-	var id string
+	var id, mode string
 	cmd := &cobra.Command{
 		Use:    "attach --session <id>",
 		Short:  "Attach this terminal to a session's host (internal)",
@@ -260,10 +260,11 @@ func newHostAttachCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return attachOrLeave(cmd.Context(), p.HostSocket(id), hostWait)
+			return attachOrLeave(cmd.Context(), p.HostSocket(id), mode, hostWait)
 		},
 	}
 	cmd.Flags().StringVar(&id, "session", "", "the acmd session")
+	cmd.Flags().StringVar(&mode, "mode", term.ModeStream, "how the terminal comes: stream, its own bytes (the only one now)")
 	return cmd
 }
 
@@ -276,7 +277,7 @@ var errNoHost = errors.New("the session's host isn't running")
 // attachOrLeave attaches once a host is listening. With none, it leaves without an
 // error, which closes the pane's terminal, so the pane can offer to resume instead
 // of showing a failure.
-func attachOrLeave(ctx context.Context, socket string, wait time.Duration) error {
+func attachOrLeave(ctx context.Context, socket, mode string, wait time.Duration) error {
 	deadline := time.Now().Add(wait)
 	for !term.Running(socket) {
 		if time.Now().After(deadline) {
@@ -288,7 +289,7 @@ func attachOrLeave(ctx context.Context, socket string, wait time.Duration) error
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	if err := attachHost(ctx, socket, 0); !errors.Is(err, errNoHost) {
+	if err := attachHost(ctx, socket, mode, 0); !errors.Is(err, errNoHost) {
 		return err
 	}
 	return nil
@@ -301,7 +302,7 @@ const detachKey = 0x1d
 // attachHost attaches the terminal to socket. A detach (SIGTERM, or typing
 // detach when it isn't 0) or the CLI exiting end it without an error; no host
 // listening is an error.
-func attachHost(parent context.Context, socket string, detach byte) error {
+func attachHost(parent context.Context, socket, mode string, detach byte) error {
 	if !term.Running(socket) {
 		return errNoHost
 	}
@@ -361,7 +362,7 @@ func attachHost(parent context.Context, socket string, detach byte) error {
 		}
 	}()
 	rows, cols := size()
-	err := term.Attach(ctx, socket, in, sizes, rows, cols, os.Stdout)
+	err := term.AttachMode(ctx, socket, mode, in, sizes, rows, cols, os.Stdout)
 	if errors.Is(err, term.ErrEnded) {
 		return nil // the session's CLI exited
 	}

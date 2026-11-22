@@ -15,6 +15,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/daemon"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/term"
@@ -155,7 +156,7 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 func TestAttachLeavesQuietlyWithoutAHost(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "none.sock")
 	start := time.Now()
-	if err := attachOrLeave(context.Background(), sock, 150*time.Millisecond); err != nil {
+	if err := attachOrLeave(context.Background(), sock, term.ModeStream, 150*time.Millisecond); err != nil {
 		t.Errorf("attach with no host: %v", err)
 	}
 	if time.Since(start) < 150*time.Millisecond {
@@ -170,15 +171,20 @@ func TestAttachHost(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "h.sock")
-	if err := attachHost(context.Background(), sock, 0); err == nil {
+	if err := attachHost(context.Background(), sock, term.ModeStream, 0); err == nil {
 		t.Error("attach without a host should fail")
 	}
 	// The CLI exits while attached: attach returns without an error.
 	srv := &term.Server{Socket: sock, Shell: []string{"/bin/sh", "-c", "sleep 0.5"}, Dir: dir, Env: []string{"PATH=/usr/bin:/bin"}}
 	go func() { _ = srv.Serve(context.Background()) }()
 	waitUntil(t, "host socket", func() bool { return term.Running(sock) })
+	// A mode the terminal doesn't have: not_supported, exit 11.
+	err = attachHost(context.Background(), sock, term.ModeRendered, 0)
+	if ExitCode(err) != exitNotSupported || errorCode(err) != errcode.NotSupported {
+		t.Errorf("rendered: %v (exit %d, code %s)", err, ExitCode(err), errorCode(err))
+	}
 	done := make(chan error, 1)
-	go func() { done <- attachHost(context.Background(), sock, 0) }()
+	go func() { done <- attachHost(context.Background(), sock, term.ModeStream, 0) }()
 	select {
 	case err := <-done:
 		if err != nil {

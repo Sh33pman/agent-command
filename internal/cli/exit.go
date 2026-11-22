@@ -36,5 +36,12 @@ func ExitCode(err error) int {
 			return code
 		}
 	}
+	// One that knows its code, as term.ModeError does.
+	var coded interface{ Code() string }
+	if errors.As(err, &coded) {
+		if code, ok := codedExits[coded.Code()]; ok {
+			return code
+		}
+	}
 	return exitFailed
 }

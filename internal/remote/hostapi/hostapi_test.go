@@ -17,6 +17,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/host"
@@ -737,6 +738,28 @@ func TestAttachToAnEndedTerminal(t *testing.T) {
 	wantCode(t, "no terminal", err, api.CodeNotRunning)
 	_, err = f.open(api.OpSessionAttach, json.RawMessage(`[]`))
 	wantCode(t, "bad arguments", err, wire.CodeBadRequest)
+}
+
+// An attach names its mode: stream, or none, attaches; any other is
+// refused with not_supported before the stream opens, so a client falls back.
+func TestAttachModes(t *testing.T) {
+	f := newFixture(t)
+	f.seed()
+	f.terminal("r1")
+	_, err := f.open(api.OpSessionAttach, api.AttachRequest{ID: "r1", Mode: term.ModeRendered})
+	wantCode(t, "rendered", err, errcode.NotSupported)
+	if f.attached("r1") != 0 {
+		t.Error("a refused mode attached")
+	}
+	for _, mode := range []string{"", term.ModeStream} {
+		s, err := f.open(api.OpSessionAttach, api.AttachRequest{ID: "r1", Mode: mode})
+		if err != nil {
+			t.Fatalf("mode %q: %v", mode, err)
+		}
+		eventually(t, "attached", func() bool { return f.attached("r1") == 1 })
+		_ = s.Close()
+		eventually(t, "detached", func() bool { return f.attached("r1") == 0 })
+	}
 }
 
 // attachFrame is term's first frame: version 1, rows, cols.

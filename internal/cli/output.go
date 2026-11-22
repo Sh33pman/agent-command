@@ -132,6 +132,10 @@ func errorCode(err error) string {
 	if errors.As(err, &re) && re.Code != "" {
 		return re.Code
 	}
+	var coded interface{ Code() string }
+	if errors.As(err, &coded) && coded.Code() != "" {
+		return coded.Code()
+	}
 	return exitNames[ExitCode(err)]
 }
 

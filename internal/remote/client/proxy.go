@@ -12,6 +12,7 @@ import (
 
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
+	"github.com/brettmostert/agent-command/internal/term"
 )
 
 // The local proxy: each added session has a unix socket (0600, the same user
@@ -197,7 +198,7 @@ func (p *proxy) open(done <-chan struct{}, drain <-chan frame) (*wire.Stream, *w
 		c.mu.Unlock()
 		if conn != nil {
 			ctx, cancel := context.WithTimeout(p.ctx, c.o.DialTimeout)
-			s, err := conn.Open(ctx, api.OpSessionAttach, api.SessionRef{ID: remoteID}, nil)
+			s, err := conn.Open(ctx, api.OpSessionAttach, api.AttachRequest{ID: remoteID, Mode: term.ModeStream}, nil)
 			cancel()
 			switch {
 			case err == nil:

@@ -168,8 +168,14 @@ func (s *Server) Serve(ctx context.Context) error {
 				typ, p, err := readFrame(c)
 				_ = c.SetReadDeadline(time.Time{})
 				switch {
+				case err == nil && typ == frameAttach && !HasMode(attachMode(p)):
+					_ = c.Close() // a mode it doesn't have: the client asked first (CheckMode)
 				case err == nil && typ == frameAttach:
 					attaches <- attachRequest{conn: c, rows: attachSize(p, 2), cols: attachSize(p, 4)}
+				case err == nil && typ == frameMode:
+					b, _ := json.Marshal(modeReply{OK: HasMode(string(p))})
+					_, _ = c.Write(b)
+					_ = c.Close()
 				case err == nil && typ == frameWrite:
 					_, _ = ptmx.Write(p)
 					_ = c.Close()
@@ -501,6 +507,35 @@ func ScreenText(socket string) (string, error) {
 	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 	b, err := io.ReadAll(c)
 	return string(b), err
+}
+
+// modeReply answers a mode frame.
+type modeReply struct {
+	OK bool `json:"ok"`
+}
+
+// CheckMode asks the terminal on socket whether it attaches in mode: a
+// *ModeError when it doesn't, or when it's older than the question (it
+// closes without an answer). ErrEnded when there's no terminal.
+func CheckMode(socket, mode string) error {
+	if mode == "" || mode == ModeStream {
+		return nil // every server has it
+	}
+	c, err := net.DialTimeout("unix", socket, time.Second)
+	if err != nil {
+		return ErrEnded
+	}
+	defer c.Close()
+	if err := writeFrame(c, frameMode, []byte(mode)); err != nil {
+		return ErrEnded
+	}
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	b, _ := io.ReadAll(c)
+	var r modeReply
+	if json.Unmarshal(b, &r) != nil || !r.OK {
+		return &ModeError{Mode: mode}
+	}
+	return nil
 }
 
 // Foreground returns the program in front of the terminal on socket. ok is

@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
+	"github.com/brettmostert/agent-command/internal/term"
 )
 
 // Attach relays a client's stream to the session's terminal byte for byte:
@@ -34,9 +36,12 @@ var (
 )
 
 func (a *API) attach(ctx context.Context, c *wire.Call, s *wire.Stream) error {
-	var ref api.SessionRef
+	var ref api.AttachRequest
 	if err := c.Decode(&ref); err != nil {
 		return err
+	}
+	if !term.HasMode(ref.Mode) {
+		return wire.Errorf(errcode.NotSupported, "this host can't attach in %q mode: attach in %q", ref.Mode, term.ModeStream)
 	}
 	if err := a.attachable(ctx, ref.ID); err != nil {
 		return err

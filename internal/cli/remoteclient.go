@@ -20,6 +20,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -495,7 +496,7 @@ func (c *client) findRemoteSession(host, sel string) (*core.Session, error) {
 // attachTerminal attaches this terminal to a session's socket until it's
 // detached; swappable in tests.
 var attachTerminal = func(ctx context.Context, socket string) error {
-	err := attachHost(ctx, socket, detachKey)
+	err := attachHost(ctx, socket, term.ModeStream, detachKey)
 	if errors.Is(err, errNoHost) {
 		return errors.New("the session's socket isn't there: is the daemon running?")
 	}

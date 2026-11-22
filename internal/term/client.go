@@ -13,12 +13,21 @@ import (
 // attach) and sizes from size go to the shell. It returns nil when ctx
 // ends (detached) and ErrEnded when the shell is gone.
 func Attach(ctx context.Context, socket string, in <-chan []byte, size <-chan [2]int, rows, cols int, out io.Writer) error {
+	return AttachMode(ctx, socket, ModeStream, in, size, rows, cols, out)
+}
+
+// AttachMode is Attach in mode: a *ModeError, before anything is attached,
+// when the terminal doesn't have it.
+func AttachMode(ctx context.Context, socket, mode string, in <-chan []byte, size <-chan [2]int, rows, cols int, out io.Writer) error {
+	if err := CheckMode(socket, mode); err != nil {
+		return err
+	}
 	c, err := net.DialTimeout("unix", socket, 2*time.Second)
 	if err != nil {
 		return ErrEnded // no server: the terminal ended
 	}
 	defer c.Close()
-	if err := writeFrame(c, frameAttach, attachPayload(rows, cols)); err != nil {
+	if err := writeFrame(c, frameAttach, attachPayload(rows, cols, mode)); err != nil {
 		return ErrEnded
 	}
 	// For a server that ignores the attach payload.

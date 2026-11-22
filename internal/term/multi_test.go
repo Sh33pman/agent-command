@@ -82,7 +82,7 @@ func TestEmptyAttachPayload(t *testing.T) {
 	if got := attachSize(nil, 2); got != 0 {
 		t.Errorf("attachSize(nil) = %d", got)
 	}
-	p := attachPayload(24, 80)
+	p := attachPayload(24, 80, ModeStream)
 	if attachSize(p, 2) != 24 || attachSize(p, 4) != 80 {
 		t.Errorf("attachPayload = %v", p)
 	}

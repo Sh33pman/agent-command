@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.83.0](https://github.com/brettmostert/agent-command/compare/v0.82.1...v0.83.0) (2026-11-22)
+
+
+### Features
+
+* every entity says its type, and clients keep the ones they don't know ([#154](https://github.com/brettmostert/agent-command/issues/154)) ([61b781f](https://github.com/brettmostert/agent-command/commit/61b781f6aed71e086e1a789938baf38afbac84a7))
+* one dispatcher checks every op, on every transport ([#152](https://github.com/brettmostert/agent-command/issues/152)) ([920520d](https://github.com/brettmostert/agent-command/commit/920520d453cb96249b7206b68f89107d6755b06a))
+* the app checks the setup and opens the editor through the daemon ([#155](https://github.com/brettmostert/agent-command/issues/155)) ([3325b20](https://github.com/brettmostert/agent-command/commit/3325b20daa25892df8a098fb983f94e3797d0743))
+* the local socket agrees a protocol version, and lists the daemon's ops ([#151](https://github.com/brettmostert/agent-command/issues/151)) ([4cf9384](https://github.com/brettmostert/agent-command/commit/4cf9384623fdb5388a4265db25db72102c7475b4))
+
 ## [0.82.1](https://github.com/brettmostert/agent-command/compare/v0.82.0...v0.82.1) (2026-11-22)
 
 

@@ -147,7 +147,7 @@ func newRemoteAddCmd() *cobra.Command {
 	var fingerprint, cert string
 	cmd := &cobra.Command{
 		Use:   "add <name> <address> (--fingerprint SHA256:…|--cert file)",
-		Short: "Add a Remote host: another acmd whose Remote sessions you want to use",
+		Short: "Add a Remote host: another acmd whose sessions you want to use here",
 		Long: "Adds a Remote host to [[remote.hosts]] in config.toml. The address is host:port (Hosting's\n" +
 			"port is 7433 unless the host says otherwise). Pin the host by the fingerprint its\n" +
 			"`acmd remote identity` shows, or by its cert file. The host must also authorize this\n" +

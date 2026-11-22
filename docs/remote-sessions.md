@@ -1,6 +1,6 @@
 # Remote sessions
 
-Remote sessions let one Agent Command use sessions that run on another. You mark a session on one Mac as Remote, and another Mac opens it in its sidebar, types in it, answers its questions and gets its notifications, as if it ran there. The session keeps running on the Mac that started it.
+Remote sessions let one Agent Command use the sessions that run on another. Once you pair a Mac with a host, it shows the host's sessions, groups and sets in its sidebar, as the host arranges them, and you open them, type in them, answer their questions and get their notifications, as if they ran there. They keep running on the host.
 
 This is separate from **Agent Remote Control** (Settings → General, `acmd agent-remote-control`), which starts Claude and Antigravity sessions with `--remote-control` so you can use them from claude.ai, the Claude app or Antigravity. Remote sessions are between two Agent Commands, and don't involve Anthropic or Google.
 
@@ -21,11 +21,12 @@ The app steps below are for the macOS app. On Linux, the daemon and `acmd` do ev
 - **Host:** the Mac where the sessions run.
 - **Client:** the Mac that uses them. One Mac can be both: a host for some machines, and a client of others.
 - **Hosting:** the host's listener for clients. It's off by default. When it's on, it listens on `localhost:7433` unless you choose otherwise.
-- **Remote session:** a session on the host that clients may use. Each session has its own Remote flag, and it's off unless you turn it on. Clients never see the host's other sessions.
+- **Direct Connect:** what a paired client gets: the whole host, every session, group, set and scheduled job, as the host has them, limited by its pairing's scope (read, act or admin). A change it makes is made on the host, and every client of the host sees it.
+- **Remote (shared) session:** a session marked with the Remote switch shows as "shared", with how many clients are attached. It's what sharing a session with another person will build on; it doesn't limit what a paired client sees.
 - **Identity and fingerprints:** each Mac has a cert and key. acmd makes them the first time they're needed, or you use your own. A Mac is known by its cert's **fingerprint**: `SHA256:` followed by 43 characters, the SHA-256 of the cert in base64. `acmd remote identity` shows it, and so does Settings → Remote → Identity. There's no certificate authority: each side pins the other's fingerprint.
 - **Authorized clients:** on the host, the clients allowed in, by fingerprint. acmd keeps them in its database; ones you list in config.toml (`[[remote.authorized_clients]]`) count too.
 - **Pending requests:** a client the host doesn't know is refused, and its request waits on the host for you to approve or deny. Nothing is ever approved by itself. A request is kept for 24 hours after the client last tried.
-- **Known hosts:** on the client, the hosts it connects to, each with a name, an address (`host:port`) and the fingerprint it expects. acmd keeps them in its database; ones you list in config.toml (`[[remote.hosts]]`) count too. A session you open from a host is **added** here: it's a row in the sidebar with a "↗ host" badge, and it still runs on the host.
+- **Known hosts:** on the client, the hosts it connects to, each with a name, an address (`host:port`) and the fingerprint it expects. acmd keeps them in its database; ones you list in config.toml (`[[remote.hosts]]`) count too. A host's sessions show in the sidebar with a "↗ host" badge, in the host's own groups, and still run on the host.
 
 The apps and the CLI never touch the network. They talk to their own Mac's background service (the daemon), and the two daemons talk to each other:
 
@@ -38,8 +39,8 @@ The apps and the CLI never touch the network. They talk to their own Mac's backg
   │ acmd daemon ─────────┼──────────────────────────┼─▶ Hosting (:7433)    │
   │   client identity    │  each side pins the      │   host identity      │
   │   known hosts        │  other's fingerprint     │   authorized clients │
-  └──────────────────────┘                          │   Remote sessions    │
-                                                    └──────────────────────┘
+  │   each host's tree   │                          │   its sessions       │
+  └──────────────────────┘                          └──────────────────────┘
 ```
 
 Both sides show a cert (mutual TLS). The client checks that the host's cert has the fingerprint it pinned, and the host checks that the client's fingerprint is authorized. Then the two daemons check they speak the same protocol version, and every call and terminal stream runs inside that one encrypted connection.
@@ -91,12 +92,9 @@ The client then tries to connect. The host doesn't know it yet, so the host keep
 
 If you already have the client's fingerprint or cert file, you can authorize it before it ever connects: **Add Client…** under Authorized clients, or `acmd remote authorize <fingerprint|cert-file> --name laptop`.
 
-### 4. Mark a session Remote, and open it on the client
+### 4. Use the host's sessions on the client
 
-On the host:
-
-- **App:** **Turn Remote On** in a session's menu in the sidebar, or **Turn Remote on** in the command palette. A new session from ⇧⌘N or ⇧⌘T has a **Remote** checkbox in its folder panel. A Remote session shows "shared", and how many clients are attached.
-- **CLI:** `acmd remote on <session>` for one that's running, or `acmd new --remote` for a new one. `acmd remote sessions` lists them.
+Once the host approves the client, its sessions show on the client: there's nothing to mark. (On the host, **Turn Remote On** in a session's menu, or `acmd remote on <session>`, marks a session as shared: it shows "shared" and how many clients are attached.)
 
 On the client:
 
@@ -246,7 +244,7 @@ A new cert has a new fingerprint. After you change one, clients must pin the hos
 
 ## What clients can do, and security
 
-**What a client gets.** In the app and with `acmd remote`, an authorized client sees only the host's Remote sessions. Every other session is hidden there, and acting on one fails as if it didn't exist. **With `acmd --host`, it gets the whole host** (Direct Connect): every session, group and scheduled job, as the host has them, and it can do what you can there, except admin ops (purging, `init`, Hosting and pairing, settings that run code) and what belongs to the host's own machine (speech, waking, hooks). Approve only your own machines, and revoke a pairing you no longer trust (`acmd remote clients`, then `acmd remote revoke`).
+**What a client gets.** An authorized client gets the whole host (Direct Connect), in the app, with `acmd remote` and with `acmd --host`: every session, group, set and scheduled job, as the host has them. What it can do there is its scope (below); what belongs to the host's own machine (speech, waking, hooks, opening an editor) it never can. The Remote switch on a session doesn't limit any of this: it marks the session as shared. Approve only your own machines, and revoke a pairing you no longer trust (`acmd remote clients`, then `acmd remote revoke`).
 
 **What each client may do** is its scope, shown by `acmd remote clients` and changed with `acmd remote scope <client> read|act|admin` or in its menu under Settings → Remote: `read` lists and reads everything, follows changes and reads screens; `act` also starts, attaches to and types into sessions, answers the Inbox, renames, archives and moves (what a newly approved client gets); `admin` also changes settings and Hosting, approves clients, purges, and sets what runs. Clients paired before scopes existed, and ones `config.toml` lists without a `scope`, are `admin`, so they keep what they could do. A call a client's scope doesn't allow fails with `permission_denied`, naming the command that raises it. But a client has full control of the Remote sessions it sees: it can type in them (including answering permission prompts), read their screens and Inbox messages, rename them, finish and end them. It can also start new sessions on the host, including terminals, in any folder your account can reach, and list and make folders to do it. Each new one is Remote.
 

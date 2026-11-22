@@ -96,7 +96,7 @@ struct RemoteSettings: View {
         .sheet(item: $approving) { request in
             NameSheet(
                 title: "Approve \(request.displayName)?", action: "Approve", name: request.commonName,
-                note: "It can use this Mac's sessions from now on: start, attach to and answer them, but not change settings (change that in its menu). Fingerprint \(request.fingerprint).") { remote.approve(request, name: $0) }
+                note: "It sees every session, group and scheduled job on this Mac, and can start, attach to and answer sessions, but not change settings (change what it may do in its menu, or revoke it there). Fingerprint \(request.fingerprint).") { remote.approve(request, name: $0) }
         }
     }
 
@@ -194,7 +194,7 @@ struct RemoteSettings: View {
         } header: {
             Text("Known hosts")
         } footer: {
-            Text("Other Agent Commands whose Remote sessions this Mac uses. Each one must approve this Mac first.")
+            Text("Other Agent Commands whose sessions this Mac shows, in their own groups, as each host has them. Each one must approve this Mac first.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -224,7 +224,7 @@ struct RemoteSettings: View {
     @ViewBuilder private var clients: some View {
         Section("Authorized clients") {
             if remote.clients.isEmpty {
-                Text("None yet. Add one, or approve one when it asks to connect.").foregroundStyle(.secondary)
+                Text("None yet. Add one, or approve one when it asks to connect. Each client sees all of this Mac's sessions, as its scope allows; revoke one to stop it.").foregroundStyle(.secondary)
             }
             ForEach(remote.clients) { client in
                 HStack {

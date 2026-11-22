@@ -23,7 +23,7 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 - **Resume** an earlier Claude conversation by ID or from a list.
 - **Command popup** and a live **theme picker**, using Ghostty's themes.
 - **Agent Remote Control:** when it's on, every Claude and Antigravity session starts with `--remote-control`, so you can use it from claude.ai, the Claude app or Antigravity. Turn it on in Settings or with `acmd agent-remote-control on` (it was `acmd remote-control`, and the `remote_control` setting is now `agent_remote_control`).
-- **Remote sessions:** use sessions that run on another Mac's Agent Command, or let another Mac use yours. See [Remote sessions](#remote-sessions) below.
+- **Remote sessions:** use the sessions that run on another Mac's Agent Command, or let another Mac use yours. See [Remote sessions](#remote-sessions) below.
 - **Report a bug or request a feature** from the Help menu or the command popup. It opens a filled-in GitHub issue in your browser for you to submit. A bug report can include the last 200 lines of the daemon log, with secrets, your account name and your home folder taken out, and you see what will be included first.
 - `acmd` brings up the app, or its window if it's already running. `acmd --new-instance` starts another copy, and its subcommands list and manage sessions.
 
@@ -31,7 +31,7 @@ A native macOS app for running Claude Code sessions and terminals side by side, 
 
 ## Remote sessions
 
-Mark a session Remote, and another Agent Command can open it, type in it and get its notifications, while it keeps running where it started. The Mac with the sessions turns on **Hosting** (Settings → Remote, or `acmd remote hosting on`), and the other adds it as a known host by its address and fingerprint (`acmd remote add`). The two connect with mutual TLS, each pinning the other's fingerprint, and the host approves each new client. Hosting is off by default, and listens only on localhost until you choose otherwise.
+Pair another Agent Command with this one, and it shows this Mac's sessions, groups and sets as you have them here, opens them, types in them and gets their notifications, while they keep running here. The Mac with the sessions turns on **Hosting** (Settings → Remote, or `acmd remote hosting on`), and the other adds it as a known host by its address and fingerprint (`acmd remote add`). The two connect with mutual TLS, each pinning the other's fingerprint, and the host approves each new client. Hosting is off by default, and listens only on localhost until you choose otherwise.
 
 [docs/remote-sessions.md](docs/remote-sessions.md) has a quick start for a local network, a guide for the internet through Cloudflare Tunnel, your own certs, the security notes, every `acmd remote` command and exit code, and troubleshooting. Remote sessions are separate from Agent Remote Control, which is for claude.ai, the Claude app and Antigravity.
 

@@ -59,6 +59,11 @@ func env(t *testing.T) *stopRecorder {
 	origVisible := visibleSessions
 	visibleSessions = func(sessions []*core.Session) []*core.Session { return sessions }
 	t.Cleanup(func() { visibleSessions = origVisible })
+	// --host is kept between commands in one process: a test that calls a
+	// command's code directly starts with none, whatever ran before it.
+	origHost := targetHost
+	targetHost = ""
+	t.Cleanup(func() { targetHost = origHost })
 	dir, err := os.MkdirTemp("", "acmdcli")
 	if err != nil {
 		t.Fatal(err)

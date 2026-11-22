@@ -1,6 +1,9 @@
 const std = @import("std");
 const glib = @import("glib");
 
+/// The protocol versions this UI speaks (internal/ipc.ProtoMin, Proto): it
+/// uses the highest it shares with the daemon (design 8.2).
+pub const proto_min: i32 = 1;
 pub const proto_version: i32 = 1;
 pub const max_sun_path: usize = 104;
 pub const max_line: usize = 2 << 20; // 2 MiB, matching internal/ipc/ipc.go MaxLine
@@ -64,8 +67,12 @@ pub fn resolveSocketPath(allocator: std.mem.Allocator, env: Env) ![]u8 {
 
 pub const Hello = struct {
     proto: i32 = proto_version,
+    proto_min: i32 = proto_min,
+    proto_max: i32 = proto_version,
     version: []const u8,
     pid: i32 = 0,
+    /// The daemon's ops, in its reply: what this UI can use.
+    ops: ?[]const []const u8 = null,
 };
 
 pub const WatchRequest = struct {
@@ -238,7 +245,11 @@ pub const Client = struct {
         client.daemon_hello = try client.call(Hello, "hello", hello);
         errdefer client.daemon_hello.deinit();
 
-        if (client.daemon_hello.value.proto != proto_version) {
+        // A daemon with no version in common refuses the hello
+        // (proto_unsupported); one that picked a version this UI doesn't
+        // speak is refused here.
+        const agreed = client.daemon_hello.value.proto;
+        if (agreed < proto_min or agreed > proto_version) {
             return error.ProtocolMismatch;
         }
         return client;
@@ -717,7 +728,7 @@ test "encodeRequest and decodeResponse match internal/ipc/ipc.go schemas" {
     });
     defer allocator.free(hello_req);
     try std.testing.expectEqualStrings(
-        "{\"op\":\"hello\",\"data\":{\"proto\":1,\"version\":\"0.51.0\",\"pid\":42}}\n",
+        "{\"op\":\"hello\",\"data\":{\"proto\":1,\"proto_min\":1,\"proto_max\":1,\"version\":\"0.51.0\",\"pid\":42}}\n",
         hello_req,
     );
 
@@ -784,4 +795,18 @@ test "decodes the daemon's snapshot fixture" {
     try std.testing.expect(groups[1].is_default);
     try std.testing.expectEqualStrings("activity", snap.value.view_state.sort);
     try std.testing.expect(snap.value.view_state.desc);
+}
+
+// The daemon's hello as Go writes it: the version agreed, its range and its
+// ops, which this UI speaks. Run from app-linux.
+test "decodes the daemon's hello fixture" {
+    const allocator = std.testing.allocator;
+    const data = try std.Io.Dir.cwd().readFileAlloc(std.testing.io, "../internal/ipc/testdata/wire/hello.json", allocator, .limited(64 * 1024));
+    defer allocator.free(data);
+    var hello = try std.json.parseFromSlice(Hello, allocator, data, .{ .ignore_unknown_fields = true });
+    defer hello.deinit();
+    try std.testing.expectEqual(@as(i32, 1), hello.value.proto);
+    try std.testing.expectEqual(@as(i32, 2), hello.value.proto_max);
+    try std.testing.expect(hello.value.proto >= proto_min and hello.value.proto <= proto_version);
+    try std.testing.expectEqualStrings("snapshot", hello.value.ops.?[1]);
 }

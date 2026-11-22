@@ -71,7 +71,7 @@ func connect(ctx context.Context) (*client, error) {
 	if err != nil {
 		return nil, err
 	}
-	me := ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version}
+	me := ipc.HelloFrom(version.Get().Version)
 	conn, err := ipc.Dial(ctx, p.Socket(), me)
 	if err == nil {
 		return &client{conn: conn, host: targetHost}, nil

@@ -142,7 +142,7 @@ func doctorEnv() (doctor.Env, error) {
 func daemonState(ctx context.Context, p paths.Paths) (doctor.DaemonState, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.HelloFrom(version.Get().Version))
 	var mismatch *ipc.ErrVersionMismatch
 	switch {
 	case errors.As(err, &mismatch):
@@ -211,7 +211,7 @@ func daemonInit(ctx context.Context) (ipc.InitResult, error) {
 func daemonHealth(ctx context.Context, env doctor.Env) ([]ipc.Health, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	conn, err := ipc.Dial(ctx, env.Paths.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	conn, err := ipc.Dial(ctx, env.Paths.Socket(), ipc.HelloFrom(version.Get().Version))
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()

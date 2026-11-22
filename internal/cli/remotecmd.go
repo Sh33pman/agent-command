@@ -135,7 +135,7 @@ func hostingAddress(parent context.Context, p paths.Paths) string {
 	}
 	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.HelloFrom(version.Get().Version))
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()
@@ -204,7 +204,7 @@ func reloadHosting(parent context.Context, p paths.Paths) {
 	}
 	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.HelloFrom(version.Get().Version))
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()

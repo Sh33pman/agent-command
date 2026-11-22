@@ -605,7 +605,7 @@ func runningDaemon(parent context.Context) (*ipc.Conn, context.CancelFunc, error
 		cancel()
 		return nil, nil, err
 	}
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.HelloFrom(version.Get().Version))
 	if err != nil {
 		if conn != nil {
 			_ = conn.Close()

@@ -422,7 +422,7 @@ func (d *Daemon) run(ctx context.Context, req ipc.Request) (any, error) {
 	}
 	switch req.Op {
 	case ipc.OpHello:
-		return ipc.Hello{Proto: ipc.Proto, Version: d.cfg.Version, Pid: os.Getpid()}, nil
+		return d.helloReply(req.Data)
 	case ipc.OpPing, ipc.OpShutdown:
 		return nil, nil
 	case ipc.OpEvent:

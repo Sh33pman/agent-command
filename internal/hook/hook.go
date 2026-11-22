@@ -87,7 +87,7 @@ func Run(name string, o Options) (Outcome, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
 	defer cancel()
-	conn, err := ipc.Dial(ctx, o.Paths.Socket(), ipc.Hello{Proto: ipc.Proto, Version: o.Version})
+	conn, err := ipc.Dial(ctx, o.Paths.Socket(), ipc.HelloFrom(o.Version))
 	var mismatch *ipc.ErrVersionMismatch
 	switch {
 	case err == nil:

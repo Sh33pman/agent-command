@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -18,8 +19,14 @@ import (
 	"github.com/brettmostert/agent-command/internal/schedule"
 )
 
-// Proto is bumped only on incompatible protocol changes.
-const Proto = 1
+// Proto is the newest protocol version this build speaks, and ProtoMin the
+// oldest (design 8.2, D6): a client and its daemon use the highest version
+// both speak, and decide what to show from the daemon's ops, never from the
+// version. Proto is bumped only on incompatible protocol changes.
+const (
+	Proto    = 1
+	ProtoMin = 1
+)
 
 // Ops.
 const (
@@ -527,9 +534,16 @@ type Response struct {
 
 // Hello is exchanged first in both directions.
 type Hello struct {
-	Proto   int    `json:"proto"`
-	Version string `json:"version"`
-	Pid     int    `json:"pid,omitempty"`
+	// ProtoMin and ProtoMax are the versions a side speaks. In the daemon's
+	// reply, Proto is the one chosen; a client's hello with only Proto speaks
+	// just that one.
+	Proto    int    `json:"proto"`
+	ProtoMin int    `json:"proto_min,omitempty"`
+	ProtoMax int    `json:"proto_max,omitempty"`
+	Version  string `json:"version"`
+	Pid      int    `json:"pid,omitempty"`
+	// Ops are the daemon's ops, in its reply: what a client can use.
+	Ops []string `json:"ops,omitempty"`
 	// The client, in a client's hello: who it is, so the daemon knows who's
 	// there (OpClients) and who shows each notice. A client without an id
 	// (the CLI, a hook) isn't registered.
@@ -721,11 +735,23 @@ func Dial(ctx context.Context, socket string, me Hello) (*Conn, error) {
 		return nil, err
 	}
 	conn.Daemon = theirs
-	if theirs.Proto != me.Proto || theirs.Version != me.Version {
+	// The protocol was agreed in the hello (a daemon with none in common
+	// refuses it). Another build is still a mismatch: the CLI replaces a
+	// daemon left running from before an upgrade.
+	if theirs.Version != me.Version {
 		return conn, &ErrVersionMismatch{Daemon: theirs}
 	}
 	return conn, nil
 }
+
+// HelloFrom is a client's hello: its version, and the protocol versions
+// this build speaks.
+func HelloFrom(version string) Hello {
+	return Hello{Proto: Proto, ProtoMin: ProtoMin, ProtoMax: Proto, Version: version}
+}
+
+// Has says whether the daemon has op: a client shows what it offers.
+func (c *Conn) Has(op string) bool { return slices.Contains(c.Daemon.Ops, op) }
 
 // Call sends one request and decodes the response data into out (if non-nil).
 func (c *Conn) Call(op string, in, out any) error { return c.CallOnce(op, "", in, out) }

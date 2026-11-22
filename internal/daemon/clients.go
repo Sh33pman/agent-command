@@ -4,10 +4,14 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/catalog"
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/store"
@@ -494,4 +498,30 @@ func (d *Daemon) keymap(ctx context.Context, r ipc.KeysRequest) (ipc.Keymap, err
 	}
 	c := cs[pick]
 	return ipc.Keymap{ClientID: c.ID, Kind: c.Kind, Device: c.Device, Map: json.RawMessage(vs[pick])}, nil
+}
+
+// helloReply answers a client's hello (design 8.2): the highest protocol
+// version both speak, the range this daemon speaks, and its ops. A client
+// with none in common is refused with proto_unsupported, saying which to
+// update.
+func (d *Daemon) helloReply(data json.RawMessage) (any, error) {
+	var h ipc.Hello
+	if len(data) > 0 {
+		if err := json.Unmarshal(data, &h); err != nil {
+			return nil, badRequest("bad hello: %v", err)
+		}
+	}
+	theirs := catalog.Range{Min: cmp.Or(h.ProtoMin, h.Proto, ipc.Proto), Max: cmp.Or(h.ProtoMax, h.Proto, ipc.Proto)}
+	v, err := catalog.Negotiate(catalog.LocalProto, theirs)
+	if err != nil {
+		var pe *catalog.ProtoError
+		which := "update this client"
+		if errors.As(err, &pe) && pe.Update() == "mine" {
+			which = "update acmd"
+		}
+		return nil, &codedError{code: catalog.CodeProtoUnsupported,
+			err: fmt.Errorf("acmd's daemon speaks protocol %s and this client %s: %s", catalog.LocalProto, theirs, which)}
+	}
+	return ipc.Hello{Proto: v, ProtoMin: catalog.LocalProto.Min, ProtoMax: catalog.LocalProto.Max,
+		Version: d.cfg.Version, Pid: os.Getpid(), Ops: catalog.Local.Names()}, nil
 }

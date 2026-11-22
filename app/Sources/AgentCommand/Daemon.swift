@@ -530,9 +530,13 @@ enum DaemonPaths {
 /// mismatch, but the app can meet a daemon of another version and only needs
 /// the same protocol.
 final class DaemonConnection {
-    /// internal/ipc.Proto
-    private static let proto = 1
+    /// The protocol versions the app speaks (internal/ipc.ProtoMin, Proto): it
+    /// uses the highest it shares with the daemon (design 8.2).
+    static let protoMin = 1
+    static let proto = 1
     private let fd: Int32
+    /// The daemon's hello: the version agreed, and its ops.
+    private(set) var daemon = DaemonHello()
     private var pending = Data()
 
     /// Once fd is open, a throw below leaves closing it to deinit, which
@@ -560,16 +564,25 @@ final class DaemonConnection {
         guard status == 0 else {
             throw DaemonError(message: "daemon not reachable")
         }
-        struct Hello: Codable {
+        struct Hello: Encodable {
             let proto: Int
+            let proto_min: Int
+            let proto_max: Int
             let version: String
             var client: ClientHello? = nil
         }
-        let theirs: Hello = try call("hello", Hello(proto: Self.proto, version: "app", client: ClientIdentity.hello()))
-        guard theirs.proto == Self.proto else {
-            throw DaemonError(message: "daemon speaks protocol \(theirs.proto), the app \(Self.proto)")
+        // A daemon with no version in common refuses the hello, saying which
+        // to update (proto_unsupported).
+        daemon = try call("hello", Hello(proto: Self.proto, proto_min: Self.protoMin, proto_max: Self.proto,
+                                         version: "app", client: ClientIdentity.hello()))
+        guard (Self.protoMin...Self.proto).contains(daemon.proto) else {
+            throw DaemonError(message: "acmd's daemon chose protocol \(daemon.proto), which the app doesn't speak: update the app",
+                              code: "proto_unsupported")
         }
     }
+
+    /// Whether the daemon has op: the app offers what it can do.
+    func has(_ op: String) -> Bool { daemon.ops.contains(op) }
 
     deinit { close(fd) }
 
@@ -736,5 +749,31 @@ struct ItemTarget: Encodable, Equatable {
     init(_ key: InboxKey) {
         host = key.host.isEmpty ? nil : key.host
         id = key.id
+    }
+}
+
+/// The daemon's hello (internal/ipc.Hello): the protocol version agreed, the
+/// range it speaks, and its ops.
+struct DaemonHello: Decodable, Equatable {
+    var proto = 0
+    var protoMin = 0
+    var protoMax = 0
+    var version = ""
+    var ops: Set<String> = []
+
+    enum CodingKeys: String, CodingKey {
+        case proto, version, ops
+        case protoMin = "proto_min", protoMax = "proto_max"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        proto = try c.decodeIfPresent(Int.self, forKey: .proto) ?? 0
+        protoMin = try c.decodeIfPresent(Int.self, forKey: .protoMin) ?? proto
+        protoMax = try c.decodeIfPresent(Int.self, forKey: .protoMax) ?? proto
+        version = try c.decodeIfPresent(String.self, forKey: .version) ?? ""
+        ops = Set(try c.decodeIfPresent([String].self, forKey: .ops) ?? [])
     }
 }

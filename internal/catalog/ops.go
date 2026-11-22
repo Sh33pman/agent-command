@@ -12,7 +12,7 @@ import (
 var Local = mustNew(localOps()...)
 
 // LocalProto is the range of protocol versions the local socket speaks.
-var LocalProto = Range{Min: ipc.Proto, Max: ipc.Proto}
+var LocalProto = Range{Min: ipc.ProtoMin, Max: ipc.Proto}
 
 func mustNew(ops ...Op) *Catalog {
 	c, err := New(ops...)

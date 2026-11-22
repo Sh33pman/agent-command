@@ -454,7 +454,7 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 // to 3s for it to go, then signals it if it hasn't; it never starts one. It
 // reports whether one was running.
 func stopDaemon(ctx context.Context, p paths.Paths) bool {
-	me := ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version}
+	me := ipc.HelloFrom(version.Get().Version)
 	dial := func() (*ipc.Conn, bool) {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -553,7 +553,7 @@ func autoInit(cmd *cobra.Command) error {
 func daemonRunning(parent context.Context, p paths.Paths) bool {
 	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.HelloFrom(version.Get().Version))
 	if conn != nil {
 		_ = conn.Close()
 	}

@@ -67,6 +67,9 @@ func fixtures() map[string]any {
 			{ID: "nope", Code: CodeNotFound, Error: `no session "nope"`}}},
 		"screen.json": Screen{ID: "s1", Text: "$ make test\nok", Lines: 2, Total: 40},
 		"error.json":  Response{Error: "build runs on studio, which can't send its screen yet", Code: CodeNotSupported},
+		// The daemon's hello: the version agreed, its range, and its ops.
+		"hello.json": Hello{Proto: 1, ProtoMin: 1, ProtoMax: 2, Version: "0.82.0", Pid: 42,
+			Ops: []string{OpHello, OpSnapshot, OpSubscribe, OpMutate}},
 	}
 }
 

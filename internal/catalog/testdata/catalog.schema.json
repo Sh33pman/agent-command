@@ -2488,11 +2488,23 @@
         "proto": {
           "type": "integer"
         },
+        "proto_min": {
+          "type": "integer"
+        },
+        "proto_max": {
+          "type": "integer"
+        },
         "version": {
           "type": "string"
         },
         "pid": {
           "type": "integer"
+        },
+        "ops": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "client": {
           "$ref": "#/$defs/ipc.ClientHello"

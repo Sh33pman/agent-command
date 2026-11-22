@@ -117,11 +117,19 @@ extension UsesSharedSpeech {
             }
         }
 
+        /// The app uses the version it shares with the daemon; one it doesn't
+        /// speak is refused, saying to update the app.
         @Test func anotherProtocolIsRefused() throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
+            #expect(try DaemonConnection(socket: DaemonPaths.socket).daemon.proto == 1)
             daemon.proto = 2
-            #expect(throws: DaemonError.self) { try DaemonConnection(socket: DaemonPaths.socket) }
+            do {
+                _ = try DaemonConnection(socket: DaemonPaths.socket)
+                Issue.record("connected to a daemon on protocol 2")
+            } catch let error as DaemonError {
+                #expect(error.code == "proto_unsupported" && error.message.contains("update the app"))
+            }
         }
 
         @Test func noDaemonOrABadPathIsAnError() throws {

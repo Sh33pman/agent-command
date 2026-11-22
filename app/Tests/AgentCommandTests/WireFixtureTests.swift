@@ -44,4 +44,10 @@ private func fixture(_ name: String) throws -> Data {
     #expect(results.results.map(\.ok) == [true, false, false] && results.results[1].code == "host_unreachable")
     let error = try JSONSerialization.jsonObject(with: fixture("error.json")) as? [String: Any]
     #expect(error?["ok"] as? Bool == false && error?["code"] as? String == "not_supported")
+    // The daemon's hello: the version agreed, its range and its ops.
+    let hello = try JSONDecoder().decode(DaemonHello.self, from: fixture("hello.json"))
+    #expect(hello.proto == 1 && hello.protoMin == 1 && hello.protoMax == 2 && hello.ops.contains("snapshot"))
+    #expect((DaemonConnection.protoMin...DaemonConnection.proto).contains(hello.proto), "the app speaks the version agreed")
+    let old = try JSONDecoder().decode(DaemonHello.self, from: Data(#"{"proto": 1, "version": "0.70.0"}"#.utf8))
+    #expect(old.protoMin == 1 && old.protoMax == 1 && old.ops.isEmpty, "a daemon from before ranges speaks its one version")
 }

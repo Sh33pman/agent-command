@@ -126,7 +126,7 @@ func archiveSelf(p paths.Paths, id string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// A long-lived host can be older than the daemon, so a mismatch is fine.
-	conn, err := ipc.Dial(ctx, p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: version.Get().Version})
+	conn, err := ipc.Dial(ctx, p.Socket(), ipc.HelloFrom(version.Get().Version))
 	var mismatch *ipc.ErrVersionMismatch
 	if err != nil && !errors.As(err, &mismatch) {
 		return

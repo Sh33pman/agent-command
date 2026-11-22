@@ -180,6 +180,9 @@ func (b *daemon) Call(ctx context.Context, op string, data json.RawMessage) (jso
 	return json.Marshal(map[string]string{"op": op})
 }
 
+// Allow checks as the daemon does: the catalog's rule.
+func (b *daemon) Allow(ctx context.Context, op string) error { return hostapi.AllowByCatalog(ctx, op) }
+
 func (b *daemon) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
 	_, err := b.file.SetIf(set.Values, set.Versions)
 	return ipc.ConfigOf(b.file), err

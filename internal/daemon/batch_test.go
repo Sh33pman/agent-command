@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/catalog"
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/hostapi"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
 	"github.com/brettmostert/agent-command/internal/store"
 )
@@ -176,7 +179,8 @@ func TestSessionScreen(t *testing.T) {
 func TestHostBackendRunsOps(t *testing.T) {
 	d, _, _, _ := jobDaemon(t)
 	b := hostBackend{d}
-	ctx := context.Background()
+	// A pairing that may act: what it may run is the dispatcher's to say.
+	ctx := hostapi.WithCaller(context.Background(), catalog.Caller{Scope: catalog.ScopeAct, Name: "laptop"})
 	raw, err := b.Call(ctx, ipc.OpNew, json.RawMessage(`{"cwd":"`+t.TempDir()+`","harness":"terminal","name":"api"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -199,5 +203,33 @@ func TestHostBackendRunsOps(t *testing.T) {
 	_, err = b.Call(ctx, ipc.OpSessionScreen, json.RawMessage(`{"id":"nope"}`))
 	if !wire.IsCode(err, ipc.CodeNotFound) {
 		t.Errorf("screen of nothing: %v", err)
+	}
+	// The one dispatcher's rule, whatever the transport: a pairing that may
+	// only read is refused a change, with permission_denied; an op for the
+	// host's own machine is refused to any pairing, with forbidden.
+	reader := hostapi.WithCaller(context.Background(), catalog.Caller{Scope: catalog.ScopeRead, Name: "phone"})
+	_, err = b.Call(reader, ipc.OpMutate, json.RawMessage(`{"kind":"session.rename","targets":[{"id":"`+s.ID+`"}],"text":"y"}`))
+	if !wire.IsCode(err, errcode.PermissionDenied) || !strings.Contains(err.Error(), "acmd remote scope phone act") {
+		t.Errorf("a reader renamed: %v", err)
+	}
+	if err := b.Allow(reader, ipc.OpSnapshot); err != nil {
+		t.Errorf("a reader can't read: %v", err)
+	}
+	if err := b.Allow(reader, ipc.OpConfigSet); resultOf("", err).Code != errcode.PermissionDenied {
+		t.Errorf("a reader set config: %v", err)
+	}
+	if err := b.Allow(ctx, ipc.OpShutdown); resultOf("", err).Code != errcode.Forbidden {
+		t.Errorf("a pairing stopped the daemon: %v", err)
+	}
+	if err := b.Allow(ctx, "no.such.op"); resultOf("", err).Code != errcode.UnknownOp {
+		t.Errorf("an unknown op: %v", err)
+	}
+	// On this machine's socket the caller is the user: everything.
+	here := context.WithValue(context.Background(), callerKey{}, &caller{local: true})
+	if err := d.allow(here, ipc.OpShutdown); err != nil {
+		t.Errorf("this machine: %v", err)
+	}
+	if _, err := d.dispatch(here, ipc.Request{Op: ipc.OpMutate, Data: json.RawMessage(`{}`)}); resultOf("", err).Code != errcode.BadRequest {
+		t.Errorf("a mutation with no kind: %v", err)
 	}
 }

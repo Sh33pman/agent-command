@@ -49,6 +49,10 @@ type registry struct {
 // caller is who sent a request: the client named in its connection's hello,
 // the process on the other end of the socket, or a paired device (caller.go).
 type caller struct {
+	// local: on this machine's socket; otherwise a paired machine, whose
+	// pairing allows scope.
+	local    bool
+	scope    string
 	clientID string
 	pid      int
 	remote   string // the paired device, for a call from another machine

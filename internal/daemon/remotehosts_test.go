@@ -217,6 +217,11 @@ func (b *otherDaemon) calls() []string {
 	return slices.Clone(b.ran)
 }
 
+// Allow checks as the daemon does: the catalog's rule.
+func (b *otherDaemon) Allow(ctx context.Context, op string) error {
+	return hostapi.AllowByCatalog(ctx, op)
+}
+
 func (b *otherDaemon) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
 	_, err := b.file.SetIf(set.Values, set.Versions)
 	return ipc.ConfigOf(b.file), err

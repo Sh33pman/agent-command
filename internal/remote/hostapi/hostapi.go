@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
@@ -51,6 +50,10 @@ type Backend interface {
 	// data as the socket sends it. Callable has already allowed op; an
 	// error with a code (a *wire.CallError) keeps it.
 	Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error)
+	// Allow says whether the caller ctx carries (CallerOf) may run the
+	// catalog op name: the daemon's one rule for every transport. An error
+	// with a code (forbidden, permission_denied) keeps it.
+	Allow(ctx context.Context, op string) error
 	// Subscribe sends the daemon's event stream until send fails or ctx ends.
 	Subscribe(ctx context.Context, req ipc.SubscribeRequest, send func(ipc.Event) error) error
 }
@@ -84,21 +87,22 @@ func Register(r Registrar, b Backend, o Options) *API {
 		o.Home, _ = os.UserHomeDir()
 	}
 	a := &API{b: b, r: r, home: o.Home}
-	read, act, admin := config.ScopeRead, config.ScopeAct, config.ScopeAdmin
-	r.Handle(api.OpSessionsList, a.need(read, a.list))
-	r.HandleStream(api.OpSessionAttach, a.needStream(act, a.attach))
-	r.Handle(api.OpSessionNew, a.need(act, a.newSession))
-	r.Handle(api.OpSessionRename, a.need(act, a.rename))
-	r.Handle(api.OpSessionEnd, a.need(act, a.end))
-	r.Handle(api.OpFoldersRecent, a.need(read, a.recentFolders))
-	r.Handle(api.OpFoldersList, a.need(read, a.listFolders))
-	r.Handle(api.OpFoldersMkdir, a.need(act, a.mkdir))
-	r.Handle(api.OpHarnessesList, a.need(read, a.harnesses))
-	r.HandleStream(api.OpEvents, a.needStream(read, a.events))
-	r.Handle(api.OpConfigGet, a.need(read, a.configGet))
-	r.Handle(api.OpConfigSet, a.need(admin, a.configSet))
-	r.Handle(api.OpCall, a.call) // by the op it runs
-	r.HandleStream(api.OpSubscribe, a.needStream(read, a.subscribe))
+	// Each wire op is checked as the catalog op it is (design 6.12): the
+	// catalog says what scope it needs, for this transport as for any.
+	r.Handle(api.OpSessionsList, a.need(ipc.OpSnapshot, a.list))
+	r.HandleStream(api.OpSessionAttach, a.needStream(ipc.OpSessionAttach, a.attach))
+	r.Handle(api.OpSessionNew, a.need(ipc.OpNew, a.newSession))
+	r.Handle(api.OpSessionRename, a.need(ipc.MutRename, a.rename))
+	r.Handle(api.OpSessionEnd, a.need(ipc.MutArchive, a.end))
+	r.Handle(api.OpFoldersRecent, a.need(ipc.OpFoldersRecent, a.recentFolders))
+	r.Handle(api.OpFoldersList, a.need(ipc.OpFoldersList, a.listFolders))
+	r.Handle(api.OpFoldersMkdir, a.need(ipc.OpFoldersMkdir, a.mkdir))
+	r.Handle(api.OpHarnessesList, a.need(ipc.OpHarnesses, a.harnesses))
+	r.HandleStream(api.OpEvents, a.needStream(ipc.OpSubscribe, a.events))
+	r.Handle(api.OpConfigGet, a.need(ipc.OpConfigGet, a.configGet))
+	r.Handle(api.OpConfigSet, a.need(ipc.OpConfigSet, a.configSet))
+	r.Handle(api.OpCall, a.call) // as the op it runs
+	r.HandleStream(api.OpSubscribe, a.needStream(ipc.OpSubscribe, a.subscribe))
 	return a
 }
 

@@ -331,7 +331,7 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 		return
 	}
 	r := bufio.NewReaderSize(c, 64*1024)
-	who := &caller{}
+	who := &caller{local: true} // the user on this machine (design 9.1)
 	who.pid, _ = peer.PID(c)
 	ctx = context.WithValue(ctx, callerKey{}, who)
 	for {
@@ -346,11 +346,7 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 			d.serveEvents(ctx, c, r, req)
 			return
 		}
-		data, err := d.handle(ctx, req)
-		if err == nil && changesState(req.Op) {
-			d.changes.bump()
-			d.audit(ctx, req)
-		}
+		data, err := d.dispatch(ctx, req)
 		resp := ipc.Response{OK: err == nil}
 		if err != nil {
 			// Every error has its code: a client decides from it, never from

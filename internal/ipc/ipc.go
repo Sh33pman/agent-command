@@ -897,6 +897,12 @@ type PromptFile struct {
 // Remote host fails with CodeNotSupported.
 const OpSessionScreen = "session.screen"
 
+// OpSessionAttach attaches to a session's terminal, as a stream of its frames
+// (internal/term). On this machine a client connects to the terminal's own
+// socket; a paired machine uses the Remote API's session.attach, checked as
+// this op.
+const OpSessionAttach = "session.attach"
+
 // ScreenRequest names the session, and how much to send: Lines is the last
 // lines of the screen and history (0: all of it).
 type ScreenRequest struct {

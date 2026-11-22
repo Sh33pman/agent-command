@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/catalog"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/remote/hostapi"
 )
 
 func codeOf(err error) string {
@@ -126,7 +128,7 @@ func TestARequestIDRunsOnce(t *testing.T) {
 func TestARequestIDRunsOnceForAPairedDevice(t *testing.T) {
 	d, _, _, _ := jobDaemon(t)
 	b := hostBackend{d}
-	ctx := ipc.WithRequestID(context.Background(), "p1")
+	ctx := ipc.WithRequestID(hostapi.WithCaller(context.Background(), catalog.Caller{Scope: catalog.ScopeAct}), "p1")
 	in := json.RawMessage(`{"cwd":"` + t.TempDir() + `","harness":"terminal","name":"api"}`)
 	var ids []string
 	for range 2 {
@@ -139,7 +141,7 @@ func TestARequestIDRunsOnceForAPairedDevice(t *testing.T) {
 	if ids[0] == "" || ids[1] != ids[0] {
 		t.Errorf("ids = %v", ids)
 	}
-	raw, err := b.Call(context.Background(), ipc.OpNew, in)
+	raw, err := b.Call(hostapi.WithCaller(context.Background(), catalog.Caller{Scope: catalog.ScopeAct}), ipc.OpNew, in)
 	must(t, err)
 	var s ipc.Session
 	must(t, json.Unmarshal(raw, &s))

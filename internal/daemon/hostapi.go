@@ -99,27 +99,11 @@ func (b hostBackend) Config() ipc.ConfigState { return b.d.configState() }
 // Call runs a daemon op for a paired device (Direct Connect), as the socket
 // would, with the error's code kept.
 func (b hostBackend) Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
-	d := b.d
-	who := &caller{remote: "a paired device"}
-	if p, ok := hostapi.PeerOf(ctx); ok {
-		who.remote = cmp.Or(p.Name, p.CommonName, p.Fingerprint, who.remote)
-		who.machine = p.Fingerprint
-	}
-	// The UI on that machine that asked: recorded as who did it.
-	if ui := ipc.ClientOf(ctx); ui != nil {
-		who.clientID = ui.ID
-		who.device = strings.TrimSpace(ui.Device + " " + ui.Kind)
-	}
-	ctx = context.WithValue(ctx, callerKey{}, who)
-	req := ipc.Request{Op: op, Data: data}
-	out, err := d.handle(ctx, req)
+	ctx = remoteCaller(ctx)
+	out, err := b.d.dispatch(ctx, ipc.Request{Op: op, Data: data})
 	if err != nil {
 		r := resultOf("", err)
 		return nil, wire.Errorf(r.Code, "%s", r.Error)
-	}
-	if changesState(op) {
-		d.changes.bump()
-		d.audit(ctx, req)
 	}
 	if out == nil {
 		return nil, nil
@@ -129,11 +113,35 @@ func (b hostBackend) Call(ctx context.Context, op string, data json.RawMessage) 
 
 // Subscribe is the daemon's event stream for a paired device.
 func (b hostBackend) Subscribe(ctx context.Context, req ipc.SubscribeRequest, send func(ipc.Event) error) error {
+	return b.d.stream(remoteCaller(ctx), req, send)
+}
+
+// Allow is the dispatcher's rule for a paired machine (design 6.12): the
+// host API checks each of its wire ops as its catalog op here.
+func (b hostBackend) Allow(ctx context.Context, op string) error {
+	return b.d.allow(remoteCaller(ctx), op)
+}
+
+// remoteCaller is ctx with the caller the host API authenticated: the paired
+// machine, its pairing's scope, and the UI on it that asked, recorded as who
+// did it.
+func remoteCaller(ctx context.Context) context.Context {
 	who := &caller{remote: "a paired device"}
 	if p, ok := hostapi.PeerOf(ctx); ok {
 		who.remote = cmp.Or(p.Name, p.CommonName, p.Fingerprint, who.remote)
+		who.machine = p.Fingerprint
 	}
-	return b.d.stream(context.WithValue(ctx, callerKey{}, who), req, send)
+	if c, ok := hostapi.CallerOf(ctx); ok {
+		who.scope = string(c.Scope)
+		if who.machine == "" && c.Name != "" {
+			who.remote = c.Name
+		}
+	}
+	if ui := ipc.ClientOf(ctx); ui != nil {
+		who.clientID = ui.ID
+		who.device = strings.TrimSpace(ui.Device + " " + ui.Kind)
+	}
+	return context.WithValue(ctx, callerKey{}, who)
 }
 
 // SetConfig changes the host's settings for a client (config.set).

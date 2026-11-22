@@ -83,6 +83,10 @@ type Op struct {
 	// Retryable: it creates something, and takes a request id, so a retry
 	// with the same id gets the first result instead of a second one.
 	Retryable bool
+	// OwnHosts: it's this machine using its own Remote hosts (remote.hosts,
+	// remote.call, …), so a paired machine can't use a host to reach yet
+	// another.
+	OwnHosts bool
 }
 
 // MutateOp is the protocol-1 op that carries every Mutation op.

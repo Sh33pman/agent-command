@@ -1187,6 +1187,18 @@
       }
     },
     {
+      "name": "session.attach",
+      "description": "Attaches to a session's terminal: its output, then input and resizes, in a mode (stream, the only one now).",
+      "scope": "act",
+      "kind": "change",
+      "grant": "entities",
+      "runs_code": true,
+      "stream": true,
+      "transport": {
+        "op": "session.attach"
+      }
+    },
+    {
       "name": "session.describe",
       "description": "Sets a session's description.",
       "scope": "act",

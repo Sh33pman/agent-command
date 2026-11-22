@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"slices"
+
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -9,7 +11,19 @@ import (
 
 // Local is the catalog of the daemon's local ops: the unix socket's, and
 // later every transport's (D1).
-var Local = mustNew(localOps()...)
+var Local = mustNew(withOwnHosts(localOps())...)
+
+// ownHostOps are this machine's ops on its own Remote hosts.
+var ownHostOps = []string{ipc.OpRemoteHosts, ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteHostRemove,
+	ipc.OpRemoteHostRetry, ipc.OpRemoteBrowse, ipc.OpRemoteNew, ipc.OpRemoteFoldersRecent, ipc.OpRemoteFoldersList,
+	ipc.OpRemoteFoldersMkdir, ipc.OpRemoteHarnesses, ipc.OpRemoteCall, ipc.OpRemoteConfigGet, ipc.OpRemoteConfigSet}
+
+func withOwnHosts(ops []Op) []Op {
+	for i := range ops {
+		ops[i].OwnHosts = slices.Contains(ownHostOps, ops[i].Name)
+	}
+	return ops
+}
 
 // LocalProto is the range of protocol versions the local socket speaks.
 var LocalProto = Range{Min: ipc.ProtoMin, Max: ipc.Proto}
@@ -179,6 +193,8 @@ func localOps() []Op {
 		read(ipc.OpNoticeGet, "Reads a recent notice by its id.", entities, ipc.NoticeRef{}, ipc.Notice{}),
 		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
 
+		act(ipc.OpSessionAttach, "Attaches to a session's terminal: its output, then input and resizes, in a mode (stream, the only one now).",
+			entities, nil, nil).stream().runsCode(),
 		read(ipc.OpSessionScreen, "Returns a session's screen and recent history as plain text: all of it, or its last lines. Sessions on this machine only, for now.",
 			entities, ipc.ScreenRequest{}, ipc.Screen{}),
 

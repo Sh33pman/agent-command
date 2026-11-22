@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/brettmostert/agent-command/internal/catalog"
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
@@ -120,24 +119,6 @@ func TestCallStartsSessionsInTheHostsFolders(t *testing.T) {
 	wantCode(t, "not installed", f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~", Harness: "antigravity"}), nil),
 		wire.CodeNotFound)
 	wantCode(t, "bad new", f.call(api.OpCall, api.CallRequest{Op: ipc.OpNew, Data: json.RawMessage(`[]`)}, nil), wire.CodeBadRequest)
-}
-
-func TestCallableOps(t *testing.T) {
-	allowed := map[string]bool{}
-	for _, op := range catalog.Local.Ops() {
-		allowed[op.Name] = Callable(op)
-	}
-	for _, name := range []string{ipc.OpSnapshot, ipc.OpSessionScreen, ipc.MutRename, ipc.MutArchive, ipc.OpNew, ipc.OpJobSave, ipc.OpInboxAnswer,
-		ipc.OpConfigGet, ipc.MutPurge, ipc.OpConfigSet, ipc.OpRemoteScope, ipc.OpRemoteClients} {
-		if !allowed[name] {
-			t.Errorf("%s isn't callable", name)
-		}
-	}
-	for _, name := range []string{ipc.OpEvent, ipc.OpShutdown, ipc.OpWakeSet, ipc.OpSpeechSay, ipc.OpRemoteHosts, ipc.OpRemoteCall, ipc.OpSubscribe} {
-		if allowed[name] {
-			t.Errorf("%s is callable", name)
-		}
-	}
 }
 
 // A paired device follows the host daemon's event stream, as on its socket.

@@ -139,6 +139,9 @@ func (b *backend) HostSocket(id string) string {
 
 func (b *backend) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
 
+// Allow checks as the daemon does: the catalog's rule.
+func (b *backend) Allow(ctx context.Context, op string) error { return AllowByCatalog(ctx, op) }
+
 func (b *backend) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
 	_, err := b.file.SetIf(set.Values, set.Versions)
 	return ipc.ConfigOf(b.file), err

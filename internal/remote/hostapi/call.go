@@ -4,68 +4,66 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/catalog"
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
 )
 
-// Callable says whether a paired device may run op on this host through
-// api.OpCall (see internal/remote/api), whatever its scope: not an op for the
-// host's own machine, a stream, or one that uses the host's own hosts (so a
-// host can't be used to reach its hosts). Its scope decides the rest
-// (allowed).
-func Callable(op catalog.Op) bool {
-	switch {
-	case op.HostOnly, op.Stream, op.Name == ipc.OpHello, usesHosts(op.Name):
-		return false
+// Who may run what is the catalog's rule (catalog.Caller.Allow), checked by
+// the daemon's one dispatcher for every transport (design 6.12) through
+// Backend.Allow. This transport only authenticates: each call carries its
+// pairing's scope (CallerOf).
+
+type callerKey struct{}
+
+// CallerOf is the paired machine a request came from, as the catalog's rule
+// sees it: its pairing's scope and name.
+func CallerOf(ctx context.Context) (catalog.Caller, bool) {
+	c, ok := ctx.Value(callerKey{}).(catalog.Caller)
+	return c, ok
+}
+
+// WithCaller is ctx carrying c as the caller a transport authenticated.
+func WithCaller(ctx context.Context, c catalog.Caller) context.Context {
+	return context.WithValue(ctx, callerKey{}, c)
+}
+
+// authenticated is ctx with who c came from: its peer and its pairing.
+func (a *API) authenticated(ctx context.Context, c *wire.Call) context.Context {
+	p := c.Conn.Peer
+	who := catalog.Caller{Scope: catalog.Scope(a.r.Scope(p.Fingerprint)), Name: cmp.Or(p.Name, p.Fingerprint)}
+	return context.WithValue(context.WithValue(ctx, peerKey{}, p), callerKey{}, who)
+}
+
+// allow asks the daemon whether c's caller may run the catalog op name.
+func (a *API) allow(ctx context.Context, name string) error {
+	err := a.b.Allow(ctx, name)
+	var coded interface{ Code() string }
+	if errors.As(err, &coded) {
+		return wire.Errorf(coded.Code(), "%s", err.Error())
 	}
-	return true
+	return err
 }
 
-// usesHosts says whether an op is this machine using its own Remote hosts.
-func usesHosts(name string) bool {
-	switch name {
-	case ipc.OpRemoteHosts, ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteHostRemove, ipc.OpRemoteHostRetry,
-		ipc.OpRemoteBrowse, ipc.OpRemoteNew,
-		ipc.OpRemoteFoldersRecent, ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir, ipc.OpRemoteHarnesses,
-		ipc.OpRemoteCall, ipc.OpRemoteConfigGet, ipc.OpRemoteConfigSet:
-		return true
-	}
-	return false
-}
-
-// rank orders scopes: each allows what the ones below it do.
-func rank(scope string) int {
-	return map[string]int{config.ScopeRead: 1, config.ScopeAct: 2, config.ScopeAdmin: 3}[scope]
-}
-
-// allowed checks a caller's scope against what an op needs.
-func (a *API) allowed(c *wire.Call, need string) error {
-	have := a.r.Scope(c.Conn.Peer.Fingerprint)
-	if rank(have) >= rank(need) {
-		return nil
-	}
-	return wire.Errorf(api.CodePermission, "%s needs %s, and this machine may only %s on the host: there, acmd remote scope %s %s",
-		c.Op, need, have, cmp.Or(c.Conn.Peer.Name, c.Conn.Peer.Fingerprint), need)
-}
-
-// need serves an op only for a caller whose scope allows it.
-func (a *API) need(scope string, h wire.Handler) wire.Handler {
+// need serves a wire op as the catalog op name: checked as that op.
+func (a *API) need(name string, h wire.Handler) wire.Handler {
 	return func(ctx context.Context, c *wire.Call) (any, error) {
-		if err := a.allowed(c, scope); err != nil {
+		ctx = a.authenticated(ctx, c)
+		if err := a.allow(ctx, name); err != nil {
 			return nil, err
 		}
 		return h(ctx, c)
 	}
 }
 
-func (a *API) needStream(scope string, h wire.StreamHandler) wire.StreamHandler {
+func (a *API) needStream(name string, h wire.StreamHandler) wire.StreamHandler {
 	return func(ctx context.Context, c *wire.Call, s *wire.Stream) error {
-		if err := a.allowed(c, scope); err != nil {
+		ctx = a.authenticated(ctx, c)
+		if err := a.allow(ctx, name); err != nil {
 			return err
 		}
 		return h(ctx, c, s)
@@ -90,10 +88,12 @@ func (a *API) call(ctx context.Context, c *wire.Call) (any, error) {
 	if !ok {
 		return nil, wire.Errorf(wire.CodeUnknownOp, "this host has no %s", name)
 	}
-	if !Callable(op) {
-		return nil, wire.Errorf(api.CodeForbidden, "%s can't be run from another machine", name)
+	// call answers once: a stream has its own op (subscribe, attach).
+	if op.Stream || name == ipc.OpHello {
+		return nil, wire.Errorf(api.CodeForbidden, "%s can't be run through call", name)
 	}
-	if err := a.allowed(&wire.Call{Op: name, Conn: c.Conn}, string(op.Scope)); err != nil {
+	ctx = a.authenticated(ctx, c)
+	if err := a.allow(ctx, name); err != nil {
 		return nil, err
 	}
 	// The host's settings, as config.get and config.set are on their own:
@@ -124,8 +124,7 @@ func (a *API) call(ctx context.Context, c *wire.Call) (any, error) {
 			return nil, err
 		}
 	}
-	ctx = ipc.WithRequestID(context.WithValue(ctx, peerKey{}, c.Conn.Peer), req.RequestID)
-	ctx = ipc.WithClient(ctx, req.Client)
+	ctx = ipc.WithClient(ipc.WithRequestID(ctx, req.RequestID), req.Client)
 	data, err := a.b.Call(ctx, req.Op, req.Data)
 	if err != nil {
 		return nil, err
@@ -148,7 +147,7 @@ func (a *API) subscribe(ctx context.Context, c *wire.Call, s *wire.Stream) error
 	if err := c.Decode(&req); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(context.WithValue(ctx, peerKey{}, c.Conn.Peer))
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() { // the client goes: its end closes
 		defer cancel()
@@ -158,4 +157,15 @@ func (a *API) subscribe(ctx context.Context, c *wire.Call, s *wire.Stream) error
 		_ = s.SetWriteDeadline(time.Now().Add(eventWriteTimeout))
 		return s.Send(ev)
 	})
+}
+
+// AllowByCatalog is the catalog's rule for the caller ctx carries: what the
+// daemon's dispatcher checks. Test backends use it to check as the daemon does.
+func AllowByCatalog(ctx context.Context, name string) error {
+	op, ok := catalog.Local.Lookup(name)
+	if !ok {
+		return wire.Errorf(wire.CodeUnknownOp, "this host has no %s", name)
+	}
+	c, _ := CallerOf(ctx)
+	return c.Allow(op)
 }

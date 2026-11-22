@@ -97,6 +97,10 @@ final class FakeDaemon: @unchecked Sendable {
     private var replies: [String: Any] = [:]
     private var failures: [String: String] = [:]
     private var clients: [Int32] = []
+    /// The events it sends after a subscribe's OK.
+    private var stream: [[String: Any]] = []
+
+    func streams(_ events: [[String: Any]]) { lock.withLock { stream = events } }
     /// What it says in its hello.
     var proto = 1
 
@@ -185,9 +189,13 @@ final class FakeDaemon: @unchecked Sendable {
                         answer["data"] = data
                     }
                 }
-                guard var out = try? JSONSerialization.data(withJSONObject: answer) else { return }
-                out.append(0x0A)
-                _ = out.withUnsafeBytes { write(client, $0.baseAddress!, $0.count) }
+                var lines = [answer]
+                if op == "subscribe", answer["ok"] as? Bool == true { lines += lock.withLock { stream } }
+                for line in lines {
+                    guard var out = try? JSONSerialization.data(withJSONObject: line) else { return }
+                    out.append(0x0A)
+                    _ = out.withUnsafeBytes { write(client, $0.baseAddress!, $0.count) }
+                }
             }
         }
     }

@@ -447,3 +447,8 @@ func TestClientBackend(t *testing.T) {
 		t.Errorf("seen went to the host: %v", err)
 	}
 }
+
+// Subscribe sends a snapshot.
+func (b *otherDaemon) Subscribe(_ context.Context, _ ipc.SubscribeRequest, send func(ipc.Event) error) error {
+	return send(ipc.Event{Rev: 1, Type: ipc.EventSnapshot, Snapshot: &ipc.Snapshot{}})
+}

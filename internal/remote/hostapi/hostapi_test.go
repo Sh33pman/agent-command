@@ -974,3 +974,8 @@ func TestSettings(t *testing.T) {
 		t.Error("took arguments that aren't a change")
 	}
 }
+
+// Subscribe sends a snapshot.
+func (b *backend) Subscribe(_ context.Context, _ ipc.SubscribeRequest, send func(ipc.Event) error) error {
+	return send(ipc.Event{Rev: 1, Type: ipc.EventSnapshot, Snapshot: &ipc.Snapshot{}})
+}

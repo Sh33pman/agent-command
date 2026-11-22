@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/brettmostert/agent-command/internal/catalog"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -87,4 +88,22 @@ type peerKey struct{}
 func PeerOf(ctx context.Context) (wire.Peer, bool) {
 	p, ok := ctx.Value(peerKey{}).(wire.Peer)
 	return p, ok
+}
+
+// subscribe is the host daemon's event stream, for a paired device.
+func (a *API) subscribe(ctx context.Context, c *wire.Call, s *wire.Stream) error {
+	var req ipc.SubscribeRequest
+	if err := c.Decode(&req); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancel(context.WithValue(ctx, peerKey{}, c.Conn.Peer))
+	defer cancel()
+	go func() { // the client goes: its end closes
+		defer cancel()
+		_, _ = s.Read(make([]byte, 1))
+	}()
+	return a.b.Subscribe(ctx, req, func(ev ipc.Event) error {
+		_ = s.SetWriteDeadline(time.Now().Add(eventWriteTimeout))
+		return s.Send(ev)
+	})
 }

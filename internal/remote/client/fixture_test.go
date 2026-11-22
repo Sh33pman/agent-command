@@ -499,3 +499,8 @@ func logErr(t *testing.T, err error) {
 		t.Log(err)
 	}
 }
+
+// Subscribe sends a snapshot.
+func (b *daemon) Subscribe(_ context.Context, _ ipc.SubscribeRequest, send func(ipc.Event) error) error {
+	return send(ipc.Event{Rev: 1, Type: ipc.EventSnapshot, Snapshot: &ipc.Snapshot{}})
+}

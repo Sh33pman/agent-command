@@ -120,6 +120,15 @@ func (b hostBackend) Call(ctx context.Context, op string, data json.RawMessage) 
 	return json.Marshal(onTheWire(out))
 }
 
+// Subscribe is the daemon's event stream for a paired device.
+func (b hostBackend) Subscribe(ctx context.Context, req ipc.SubscribeRequest, send func(ipc.Event) error) error {
+	who := &caller{remote: "a paired device"}
+	if p, ok := hostapi.PeerOf(ctx); ok {
+		who.remote = cmp.Or(p.Name, p.CommonName, p.Fingerprint, who.remote)
+	}
+	return b.d.stream(context.WithValue(ctx, callerKey{}, who), req, send)
+}
+
 // SetConfig changes the host's settings for a client (config.set).
 func (b hostBackend) SetConfig(values map[string]any) (ipc.ConfigState, error) {
 	return b.d.setConfig(values)

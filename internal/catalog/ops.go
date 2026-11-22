@@ -47,6 +47,7 @@ func mut(o Op) Op {
 func (o Op) destructive() Op { o.Kind = KindDestructive; return o }
 func (o Op) hostOnly() Op    { o.HostOnly = true; return o }
 func (o Op) runsCode() Op    { o.RunsCode = true; return o }
+func (o Op) stream() Op      { o.Stream = true; return o }
 
 func localOps() []Op {
 	const (
@@ -65,6 +66,7 @@ func localOps() []Op {
 		// State.
 		read(ipc.OpSnapshot, "Returns the sessions, groups, view state, notices, Inbox, jobs, wake state, Remote state, settings, health, features and updates. A client id says which warnings it dismissed.",
 			entities, ipc.SnapshotRequest{}, ipc.Snapshot{}),
+		read(ipc.OpSubscribe, "Streams the daemon's state: a snapshot, then each entity added, updated (whole) or removed, with a revision. Resumes from a revision, or sends a new snapshot when too far behind.", entities, ipc.SubscribeRequest{}, ipc.Event{}).stream(),
 		read(ipc.OpWatch, "Waits until something changes, or a timeout passes. A view's heartbeat while it's open.", entities, ipc.WatchRequest{}, ipc.WatchResponse{}),
 		read(ipc.OpLayout, "Returns a client's saved pane layout.", host, ipc.Layout{}, ipc.Layout{}),
 		act(ipc.OpSetLayout, "Saves a client's pane layout.", host, ipc.Layout{}, nil),

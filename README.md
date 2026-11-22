@@ -37,7 +37,7 @@ Mark a session Remote, and another Agent Command can open it, type in it and get
 
 ## Scripting with acmd
 
-Every command that reads or changes state takes `--json`, which prints the answer of the daemon op it runs, in the daemon's wire types (`internal/ipc`), and nothing else. A command that runs several ops prints one answer per line. Errors go to stderr as `{"error": {"code": "…", "message": "…"}}`. Name sessions by id in scripts: the numbers `acmd list` shows follow the list's order, which changes.
+Every command that reads or changes state takes `--json`, which prints the answer of the daemon op it runs, in the daemon's wire types (`internal/ipc`), and nothing else. A command that runs several ops prints one answer per line. `acmd events` follows the daemon as it changes: a snapshot, then each session, group, inbox item, job or setting added, updated or removed, one JSON event per line (`--types` to pick, `--since` to resume). Errors go to stderr as `{"error": {"code": "…", "message": "…"}}`. Name sessions by id in scripts: the numbers `acmd list` shows follow the list's order, which changes.
 
 `--host <name>` (or `ACMD_HOST`) runs the command on a known Remote host instead of this Mac: `acmd --host studio list --json`. A paired machine can do on the host what you can, except admin ops (purge, init, Hosting and pairing, settings that run code) and what belongs to the host's own machine (speech, waking, hooks).
 

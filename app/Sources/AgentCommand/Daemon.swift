@@ -577,6 +577,21 @@ final class DaemonConnection {
             withJSONObject: reply?["data"] ?? [String: Any](), options: .fragmentsAllowed)
     }
 
+    /// Starts the daemon's event stream on this connection (subscribe): read it
+    /// with nextEvent. Nothing else can be called on it after.
+    func subscribe(since: UInt64) throws {
+        struct Subscribe: Encodable { let since: UInt64 }
+        _ = try exchange("subscribe", JSONEncoder().encode(Subscribe(since: since)))
+    }
+
+    /// The stream's next event.
+    func nextEvent() throws -> [String: Any] {
+        try JSONSerialization.jsonObject(with: try readLine()) as? [String: Any] ?? [:]
+    }
+
+    /// Whether another whole line is already read: more events came together.
+    var hasLineWaiting: Bool { pending.contains(0x0A) }
+
     private func readLine() throws -> Data {
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {

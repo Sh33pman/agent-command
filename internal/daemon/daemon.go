@@ -135,8 +135,9 @@ type Daemon struct {
 	stop  chan struct{}
 	once  sync.Once
 
-	changes changes   // bumped on every state change (OpWatch)
-	reg     *registry // the clients (clients.go)
+	changes changes      // bumped on every state change (OpWatch)
+	reg     *registry    // the clients (clients.go)
+	events  *eventStream // the event stream (events.go)
 
 	notify *notifier   // d.mu
 	bg     *background // d.mu (background.go)
@@ -229,7 +230,7 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = ln.Close()
 		return err
 	}
-	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}), bg: newBackground()}
+	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}), bg: newBackground(), events: newEventStream()}
 	sweepHosts(cfg.Paths)
 	_ = os.Remove(cfg.Paths.OldPopupLock())
 	if cfg.Notify != nil {
@@ -263,6 +264,7 @@ func Run(ctx context.Context, cfg Config) error {
 	go d.background(ctx)
 	go d.scheduler(ctx)
 	go d.keepForgetting(ctx)
+	go d.followEvents(ctx)
 
 	go func() {
 		select {
@@ -338,6 +340,10 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 		}
 		if req.Op == ipc.OpHello && who.clientID == "" {
 			defer d.hello(ctx, helloOf(req.Data), who)()
+		}
+		if req.Op == ipc.OpSubscribe {
+			d.serveEvents(ctx, c, r, req)
+			return
 		}
 		data, err := d.handle(ctx, req)
 		if err == nil && changesState(req.Op) {

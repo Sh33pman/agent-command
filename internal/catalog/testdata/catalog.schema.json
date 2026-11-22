@@ -1513,6 +1513,23 @@
       }
     },
     {
+      "name": "subscribe",
+      "description": "Streams the daemon's state: a snapshot, then each entity added, updated (whole) or removed, with a revision. Resumes from a revision, or sends a new snapshot when too far behind.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "entities",
+      "stream": true,
+      "transport": {
+        "op": "subscribe"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.SubscribeRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Event"
+      }
+    },
+    {
       "name": "view.archived",
       "description": "Shows or hides archived sessions.",
       "scope": "act",
@@ -2217,6 +2234,31 @@
       "required": [
         "speech",
         "editor"
+      ]
+    },
+    "ipc.Event": {
+      "properties": {
+        "rev": {
+          "type": "integer"
+        },
+        "type": {
+          "type": "string"
+        },
+        "entity": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "data": true,
+        "snapshot": {
+          "$ref": "#/$defs/ipc.Snapshot"
+        }
+      },
+      "type": "object",
+      "required": [
+        "rev",
+        "type"
       ]
     },
     "ipc.Features": {
@@ -3846,6 +3888,20 @@
         "sessions",
         "events"
       ]
+    },
+    "ipc.SubscribeRequest": {
+      "properties": {
+        "types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "since": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
     },
     "ipc.Update": {
       "properties": {

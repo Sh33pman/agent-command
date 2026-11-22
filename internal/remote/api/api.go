@@ -61,6 +61,10 @@ const (
 	OpConfigSet = "config.set" // ipc.ConfigSet → ipc.ConfigState
 	// OpCall runs a host daemon op (see the package doc).
 	OpCall = "call" // CallRequest → the op's answer
+	// OpSubscribe is the host daemon's event stream, as on its socket: the
+	// whole host (Direct Connect). ipc.SubscribeRequest → a stream of
+	// ipc.Event lines.
+	OpSubscribe = "subscribe"
 )
 
 // CallRequest names a daemon op and its argument, as the daemon's socket takes

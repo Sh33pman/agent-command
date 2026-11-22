@@ -50,6 +50,8 @@ type Backend interface {
 	// data as the socket sends it. Callable has already allowed op; an
 	// error with a code (a *wire.CallError) keeps it.
 	Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error)
+	// Subscribe sends the daemon's event stream until send fails or ctx ends.
+	Subscribe(ctx context.Context, req ipc.SubscribeRequest, send func(ipc.Event) error) error
 }
 
 // Registrar is Hosting (*host.Host): what serves ops to its clients, and
@@ -91,6 +93,7 @@ func Register(r Registrar, b Backend, o Options) *API {
 	r.Handle(api.OpConfigGet, a.configGet)
 	r.Handle(api.OpConfigSet, a.configSet)
 	r.Handle(api.OpCall, a.call)
+	r.HandleStream(api.OpSubscribe, a.subscribe)
 	return a
 }
 

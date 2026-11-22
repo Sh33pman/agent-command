@@ -392,23 +392,12 @@ final class SessionStore {
     }
 
     private func follow() {
-        struct Watch: Encodable {
-            let rev: UInt64
-            let wait_ms: Int
-        }
-        struct Watched: Decodable {
-            let rev: UInt64
-        }
-        struct SnapshotRequest: Encodable { let client_id: String }
         var startedDaemon = false
         var loadedLayout = false
+        var state = SnapshotAssembler()
         while true {
             do {
                 let conn = try DaemonConnection(socket: DaemonPaths.socket)
-                // The state first: a daemon with no changes yet holds a watch
-                // from revision 0 until it times out.
-                let first: Snapshot = try conn.call("snapshot", SnapshotRequest(client_id: clientID))
-                publish(first)
                 if !loadedLayout {
                     struct Layout: Codable {
                         var client_id: String?
@@ -421,13 +410,15 @@ final class SessionStore {
                     loadedLayout = true
                     DispatchQueue.main.async { self.onLayoutLoaded?(layout.json) }
                 }
-                var rev: UInt64 = 0
+                // The daemon's stream: a snapshot, or after a dropped connection
+                // only what was missed, then each change as it happens.
+                try conn.subscribe(since: state.hasSnapshot ? state.rev : 0)
                 while true {
-                    let watched: Watched = try conn.call(
-                        "watch", Watch(rev: rev, wait_ms: 25_000))
-                    rev = watched.rev
-                    let snapshot: Snapshot = try conn.call("snapshot", SnapshotRequest(client_id: clientID))
-                    publish(snapshot)
+                    var changed = state.apply(try conn.nextEvent())
+                    while conn.hasLineWaiting { // changes that came together, shown together
+                        changed = state.apply(try conn.nextEvent()) || changed
+                    }
+                    if changed, state.hasSnapshot { publish(try state.snapshot()) }
                 }
             } catch {
                 if !startedDaemon {

@@ -111,3 +111,19 @@ func TestCallableOps(t *testing.T) {
 		}
 	}
 }
+
+// A paired device follows the host daemon's event stream, as on its socket.
+func TestSubscribeStreamsTheHost(t *testing.T) {
+	f := newFixture(t)
+	s, err := f.open(api.OpSubscribe, ipc.SubscribeRequest{Types: []string{ipc.EntitySession}})
+	must(t, err)
+	defer s.Close()
+	var ev ipc.Event
+	must(t, s.Receive(&ev))
+	if ev.Type != ipc.EventSnapshot || ev.Snapshot == nil {
+		t.Errorf("first = %+v", ev)
+	}
+	if _, err := f.open(api.OpSubscribe, "x"); err == nil {
+		t.Error("a request that isn't one")
+	}
+}

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.81.0](https://github.com/brettmostert/agent-command/compare/v0.80.0...v0.81.0) (2026-11-22)
+
+
+### Features
+
+* an attach names its mode ([#141](https://github.com/brettmostert/agent-command/issues/141)) ([b852a54](https://github.com/brettmostert/agent-command/commit/b852a54cc01a5bcf9d5060601b82921aca1a51a4))
+
 ## [0.80.0](https://github.com/brettmostert/agent-command/compare/v0.79.0...v0.80.0) (2026-11-22)
 
 

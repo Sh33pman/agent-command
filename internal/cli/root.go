@@ -29,7 +29,7 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 		newListCmd(), newScreenCmd(), newRenameCmd(), newDescribeCmd(), newFinishCmd(), newArchiveCmd(), newUnarchiveCmd(), newMoveCmd(),
 		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd(),
 		newInitCmd(), newUninstallCmd(), newEditorCmd(), newAgentRemoteControlCmd(), newRemoteControlCmd(), newConfigCmd(), newKeysCmd(), newDoctorCmd(),
-		newNewCmd(), newResumeCmd(), newSpeechCmd(), newHostCmd(), newOpenCmd(), newEditCmd(), newPurgeCmd(), newScheduleCmd())
+		newNewCmd(), newResumeCmd(), newClientsCmd(), newSpeechCmd(), newHostCmd(), newOpenCmd(), newEditCmd(), newPurgeCmd(), newScheduleCmd())
 	root.AddCommand(newRemoteCmd())
 	// Cobra provides the `completion` command (zsh, bash, fish, powershell).
 
@@ -45,7 +45,7 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "list", "screen", "rename", "describe", "finish", "archive", "unarchive", "move", "group", "view-mode", "sort",
-			"focus-group", "new", "resume", "purge", "schedule", "config", "status":
+			"focus-group", "new", "resume", "purge", "schedule", "config", "clients", "keys":
 			markOnHost(c)
 		}
 	}

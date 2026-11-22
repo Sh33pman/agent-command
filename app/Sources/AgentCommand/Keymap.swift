@@ -711,18 +711,12 @@ extension Keymap {
         return Export(sections: sections, fixed: FixedKeys.all.map { Export.Fixed(section: $0.section, keys: $0.keys, title: $0.title) })
     }
 
-    /// Where acmd keys reads them.
-    static var exportPath: String {
-        (DaemonPaths.stateDir(ProcessInfo.processInfo.environment) as NSString).appendingPathComponent("keys.json")
-    }
-
-    /// Writes them for acmd keys. A failure only means acmd keys is out of date.
-    func writeExport(to path: String = Keymap.exportPath) {
+    /// Registers them with the daemon, for acmd keys. A failure only means acmd
+    /// keys is out of date until the next change.
+    func register(with calls: DaemonCalls = DaemonSocketCalls()) {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(export) else { return }
-        try? FileManager.default.createDirectory(
-            atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-        try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        calls.call("keys.set", data) { _ in }
     }
 }

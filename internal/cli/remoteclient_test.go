@@ -831,8 +831,8 @@ func TestHostFlagRunsOpsOnTheHost(t *testing.T) {
 	}
 	_, err := acmd(t, "--host", "studio", "resume", "1")
 	errContains(t, err, "studio: can't") // the host's refusal
-	_, err = acmd(t, "--host", "studio", "keys")
-	errContains(t, err, "acmd keys runs on this machine only")
+	_, err = acmd(t, "--host", "studio", "uninstall")
+	errContains(t, err, "acmd uninstall runs on this machine only")
 	_, err = acmd(t, "--host", "studio", "new", "--on", "lab")
 	errContains(t, err, "give one")
 	t.Setenv("ACMD_HOST", "studio")

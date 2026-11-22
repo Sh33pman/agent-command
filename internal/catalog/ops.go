@@ -171,6 +171,10 @@ func localOps() []Op {
 
 		read(ipc.OpClients, "Lists the clients that use this daemon: each one's kind, device, what it can do, and how it's used now.", host, nil, []ipc.Client{}),
 		act(ipc.OpClientPresence, "Says how the calling client is used now (active, idle, background) and the session it shows. The client must name itself in its hello.", host, ipc.ClientPresence{}, nil),
+		read(ipc.OpClientProfile, "Reads the calling client's notification profile: which notices it shows, and what opens its popup.", host, nil, ipc.ClientProfile{}),
+		act(ipc.OpClientProfileSet, "Changes the calling client's notification profile.", host, ipc.ClientProfile{}, ipc.ClientProfile{}),
+		act(ipc.OpKeysSet, "Registers the calling client's keyboard shortcuts, so acmd keys can list them.", host, map[string]any{}, nil),
+		read(ipc.OpKeys, "Reads a client's keyboard shortcuts: the one named, or the desktop app's seen most recently.", host, ipc.KeysRequest{}, ipc.Keymap{}),
 		read(ipc.OpNoticeGet, "Reads a recent notice by its id.", entities, ipc.NoticeRef{}, ipc.Notice{}),
 		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
 

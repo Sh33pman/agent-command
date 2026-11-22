@@ -39,6 +39,35 @@
       }
     },
     {
+      "name": "client.profile",
+      "description": "Reads the calling client's notification profile: which notices it shows, and what opens its popup.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "client.profile"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ClientProfile"
+      }
+    },
+    {
+      "name": "client.profile.set",
+      "description": "Changes the calling client's notification profile.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "client.profile.set"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.ClientProfile"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.ClientProfile"
+      }
+    },
+    {
       "name": "clients",
       "description": "Lists the clients that use this daemon: each one's kind, device, what it can do, and how it's used now.",
       "scope": "read",
@@ -541,6 +570,35 @@
       },
       "output": {
         "$ref": "#/$defs/core.Job"
+      }
+    },
+    {
+      "name": "keys",
+      "description": "Reads a client's keyboard shortcuts: the one named, or the desktop app's seen most recently.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "keys"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.KeysRequest"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Keymap"
+      }
+    },
+    {
+      "name": "keys.set",
+      "description": "Registers the calling client's keyboard shortcuts, so acmd keys can list them.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "keys.set"
+      },
+      "input": {
+        "type": "object"
       }
     },
     {
@@ -2061,6 +2119,20 @@
         "presence"
       ]
     },
+    "ipc.ClientProfile": {
+      "properties": {
+        "notify": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "popup_opens": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "ipc.ConfigSet": {
       "properties": {
         "values": {
@@ -2563,6 +2635,33 @@
           "type": "boolean"
         },
         "harness": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ipc.Keymap": {
+      "properties": {
+        "client_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "map": true
+      },
+      "type": "object",
+      "required": [
+        "client_id",
+        "map"
+      ]
+    },
+    "ipc.KeysRequest": {
+      "properties": {
+        "client_id": {
           "type": "string"
         }
       },

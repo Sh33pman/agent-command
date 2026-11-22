@@ -66,9 +66,16 @@ final class PopupSettings {
         didSet { UserDefaults.standard.set(enabled, forKey: Self.enabledKey) }
     }
 
+    /// What opens the popup. The daemon keeps it, in this app's notification
+    /// profile (client.profile).
     var opens: PopupOpens {
-        didSet { UserDefaults.standard.set(opens.rawValue, forKey: Self.opensKey) }
+        didSet { if opens != oldValue, !applying { saveProfile() } }
     }
+
+    /// The daemon; tests swap them.
+    @ObservationIgnored var calls: DaemonCalls = DaemonSocketCalls()
+    @ObservationIgnored var defaults = UserDefaults.standard
+    @ObservationIgnored private var applying = false
 
     /// Whether the popup reads each message as it's shown.
     var autoPlay: Bool {
@@ -84,7 +91,58 @@ final class PopupSettings {
         style = UserDefaults.standard.string(forKey: Self.styleKey).flatMap(ReplyPopupStyle.init) ?? .window
         autoPlay = UserDefaults.standard.bool(forKey: Self.autoPlayKey)
         enabled = UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true
-        opens = UserDefaults.standard.string(forKey: Self.opensKey).flatMap(PopupOpens.init) ?? .everything
+        opens = .everything
+    }
+
+    /// For tests: settings of their own.
+    init(calls: DaemonCalls, defaults: UserDefaults) {
+        (self.calls, self.defaults) = (calls, defaults)
+        (style, autoPlay, enabled, opens) = (.window, false, true, .everything)
+    }
+
+    /// Reads this app's profile from the daemon. The first time, what the app
+    /// kept itself moves there.
+    func loadProfile() {
+        calls.call("client.profile", Data("{}".utf8)) { [weak self] result in
+            guard let self, case .success(let data) = result else { return }
+            let profile = (try? JSONDecoder().decode(Profile.self, from: data)) ?? Profile()
+            if let wire = profile.popup_opens, let kept = PopupOpens(wire: wire) {
+                self.applying = true
+                self.opens = kept
+                self.applying = false
+                self.defaults.removeObject(forKey: Self.opensKey)
+            } else if let old = self.defaults.string(forKey: Self.opensKey).flatMap { PopupOpens(rawValue: $0) } {
+                self.defaults.removeObject(forKey: Self.opensKey)
+                self.opens = old
+                if old == .everything { self.saveProfile() } // the same as now: says so anyway
+            }
+        }
+    }
+
+    private struct Profile: Codable {
+        var notify: [String]?
+        var popup_opens: String?
+    }
+
+    private func saveProfile() {
+        let data = (try? JSONEncoder().encode(Profile(popup_opens: opens.wire))) ?? Data()
+        calls.call("client.profile.set", data) { _ in }
+    }
+}
+
+extension PopupOpens {
+    /// As the daemon names it (internal/ipc.Popup*).
+    var wire: String {
+        switch self {
+        case .needsYou: "needs_you"
+        case .everything: "everything"
+        case .never: "never"
+        }
+    }
+
+    init?(wire: String) {
+        guard let match = Self.allCases.first(where: { $0.wire == wire }) else { return nil }
+        self = match
     }
 }
 

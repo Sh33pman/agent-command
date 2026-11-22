@@ -208,12 +208,11 @@ import Testing
     #expect(up.keys == ["↑", "⌃K", "k"] && !up.changed)
     #expect(export.fixed.count == FixedKeys.all.count)
 
-    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("acmd-keys-\(getpid())")
-    defer { try? FileManager.default.removeItem(at: dir) }
-    let path = dir.appendingPathComponent("state/keys.json").path
-    keys.writeExport(to: path)
-    let data = try Data(contentsOf: URL(fileURLWithPath: path))
-    let text = String(decoding: data, as: UTF8.self)
-    #expect(text.contains("\"action\" : \"app.inbox\"") && text.contains("⇧⌘K"))
-    #expect(Keymap.exportPath.hasSuffix("/keys.json"))
+    // Registered with the daemon, for acmd keys.
+    let fake = FakeCalls()
+    keys.register(with: fake)
+    #expect(fake.ops == ["keys.set"])
+    let sections = try #require(fake.last["sections"] as? [[String: Any]])
+    let actions = sections.flatMap { ($0["keys"] as? [[String: Any]]) ?? [] }
+    #expect(actions.contains { $0["action"] as? String == "app.inbox" && ($0["keys"] as? [String]) == ["⇧⌘K"] })
 }

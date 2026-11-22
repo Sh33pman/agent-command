@@ -195,9 +195,6 @@ func (p Paths) Env() string { return filepath.Join(p.StateDir, "env.json") }
 // Setup records the last `acmd init` (what it configured, and that it ran).
 func (p Paths) Setup() string { return filepath.Join(p.StateDir, "setup.json") }
 
-// Keys is the app's keyboard shortcuts, which it writes for `acmd keys`.
-func (p Paths) Keys() string { return filepath.Join(p.StateDir, "keys.json") }
-
 // Backups holds copies of config files from before acmd edited them.
 func (p Paths) Backups() string { return filepath.Join(p.StateDir, "backups") }
 

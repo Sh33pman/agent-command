@@ -31,8 +31,9 @@ var desktopKinds = []string{ipc.KindMac, ipc.KindLinux, ipc.KindWindows, ipc.Kin
 
 type registered struct {
 	store.Client
-	conns int       // open connections
-	gone  time.Time // when the last one closed
+	conns   int       // open connections
+	gone    time.Time // when the last one closed
+	profile ipc.ClientProfile
 }
 
 type registry struct {
@@ -60,7 +61,9 @@ func (d *Daemon) loadClients(ctx context.Context) error {
 	}
 	d.reg = &registry{clients: map[string]*registered{}}
 	for _, c := range cs {
-		d.reg.clients[c.ID] = &registered{Client: c}
+		r := &registered{Client: c}
+		d.clientState(ctx, r)
+		d.reg.clients[c.ID] = r
 	}
 	return nil
 }
@@ -150,7 +153,7 @@ func (d *Daemon) clientList() []ipc.Client {
 // route picks the clients that show a notice: with RouteAll every connected
 // client that shows notices; with RouteOne the one you're using, else the
 // desktop client used most recently. None: the host shows it itself.
-func (d *Daemon) route(how string) []string {
+func (d *Daemon) route(how, kind string) []string {
 	if d.reg == nil {
 		return nil
 	}
@@ -158,7 +161,7 @@ func (d *Daemon) route(how string) []string {
 	defer d.reg.mu.Unlock()
 	var can []*registered
 	for _, r := range d.reg.clients {
-		if d.connectedLocked(r) && slices.Contains(r.Caps, ipc.CapNotify) {
+		if d.connectedLocked(r) && slices.Contains(r.Caps, ipc.CapNotify) && (kind == "withdraw" || r.wants(kind)) {
 			can = append(can, r)
 		}
 	}
@@ -218,9 +221,6 @@ func (d *Daemon) forgetClients(ctx context.Context) int {
 		}
 	}
 	d.reg.mu.Unlock()
-	for _, id := range ids {
-		_ = d.store.SetAppState(ctx, dismissedKey(id), "")
-	}
 	return len(ids)
 }
 
@@ -257,6 +257,25 @@ func (d *Daemon) handleClients(ctx context.Context, req ipc.Request) (any, error
 			return nil, err
 		}
 		return d.noticeByID(r)
+	case ipc.OpClientProfile:
+		return d.profile(ctx)
+	case ipc.OpClientProfileSet:
+		p, err := decode[ipc.ClientProfile](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.setProfile(ctx, p)
+	case ipc.OpKeysSet:
+		return nil, d.setKeymap(ctx, req.Data)
+	case ipc.OpKeys:
+		var r ipc.KeysRequest
+		if len(req.Data) > 0 {
+			var err error
+			if r, err = decode[ipc.KeysRequest](req.Data); err != nil {
+				return nil, err
+			}
+		}
+		return d.keymap(ctx, r)
 	}
 	return nil, nil
 }
@@ -268,4 +287,113 @@ func helloOf(data json.RawMessage) *ipc.ClientHello {
 		return nil
 	}
 	return h.Client
+}
+
+// wants says whether a client shows notices of kind.
+func (r *registered) wants(kind string) bool {
+	return len(r.profile.Notify) == 0 || slices.Contains(r.profile.Notify, kind)
+}
+
+// clientState reads what a registered client keeps into the registry.
+func (d *Daemon) clientState(ctx context.Context, r *registered) {
+	if v, err := d.store.ClientField(ctx, r.ID, store.ClientProfile); err == nil && v != "" {
+		_ = json.Unmarshal([]byte(v), &r.profile)
+	}
+}
+
+func (d *Daemon) callerID(ctx context.Context) (string, error) {
+	id := callerOf(ctx).clientID
+	if id == "" || d.reg == nil {
+		return "", invalid("say who you are in the hello first")
+	}
+	return id, nil
+}
+
+// setProfile changes the calling client's notification profile.
+func (d *Daemon) setProfile(ctx context.Context, p ipc.ClientProfile) (ipc.ClientProfile, error) {
+	id, err := d.callerID(ctx)
+	if err != nil {
+		return ipc.ClientProfile{}, err
+	}
+	for _, k := range p.Notify {
+		switch k {
+		case "waiting", "error", "done", "paused":
+		default:
+			return ipc.ClientProfile{}, invalid("a notice is waiting, error, done or paused, not %q", k)
+		}
+	}
+	switch p.PopupOpens {
+	case "", ipc.PopupNeedsYou, ipc.PopupEverything, ipc.PopupNever:
+	default:
+		return ipc.ClientProfile{}, invalid("the popup opens for needs_you, everything or never, not %q", p.PopupOpens)
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return ipc.ClientProfile{}, err
+	}
+	if err := d.store.SetClientField(ctx, id, store.ClientProfile, string(b)); err != nil {
+		return ipc.ClientProfile{}, err
+	}
+	d.reg.mu.Lock()
+	if r := d.reg.clients[id]; r != nil {
+		r.profile = p
+	}
+	d.reg.mu.Unlock()
+	return p, nil
+}
+
+// profile is the calling client's notification profile.
+func (d *Daemon) profile(ctx context.Context) (ipc.ClientProfile, error) {
+	id, err := d.callerID(ctx)
+	if err != nil {
+		return ipc.ClientProfile{}, err
+	}
+	d.reg.mu.Lock()
+	defer d.reg.mu.Unlock()
+	if r := d.reg.clients[id]; r != nil {
+		return r.profile, nil
+	}
+	return ipc.ClientProfile{}, nil
+}
+
+// setKeymap registers the calling client's keymap.
+func (d *Daemon) setKeymap(ctx context.Context, m json.RawMessage) error {
+	id, err := d.callerID(ctx)
+	if err != nil {
+		return err
+	}
+	var obj map[string]any
+	if json.Unmarshal(m, &obj) != nil {
+		return invalid("a keymap is a JSON object")
+	}
+	return d.store.SetClientField(ctx, id, store.ClientKeymap, string(m))
+}
+
+// keymap is a client's keymap: the one named, or the desktop client's seen
+// most recently, else any client's.
+func (d *Daemon) keymap(ctx context.Context, r ipc.KeysRequest) (ipc.Keymap, error) {
+	cs, vs, err := d.store.ClientsWith(ctx, store.ClientKeymap)
+	if err != nil {
+		return ipc.Keymap{}, err
+	}
+	pick := -1
+	for i, c := range cs {
+		switch {
+		case r.ClientID != "":
+			if c.ID == r.ClientID {
+				pick = i
+			}
+		case pick < 0 && slices.Contains(desktopKinds, c.Kind):
+			pick = i
+		}
+	}
+	if pick < 0 && r.ClientID == "" && len(cs) > 0 {
+		pick = 0
+	}
+	if pick < 0 {
+		return ipc.Keymap{}, &codedError{code: ipc.CodeNotFound,
+			err: invalid("no app has listed its shortcuts yet: open Agent Command once, then try again")}
+	}
+	c := cs[pick]
+	return ipc.Keymap{ClientID: c.ID, Kind: c.Kind, Device: c.Device, Map: json.RawMessage(vs[pick])}, nil
 }

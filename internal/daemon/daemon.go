@@ -5,6 +5,7 @@ package daemon
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -406,7 +407,7 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		return nil, d.ApplyHook(ctx, ev)
 	case ipc.OpHarnesses:
 		return d.harnesses(), nil
-	case ipc.OpClients, ipc.OpClientPresence, ipc.OpNoticeGet:
+	case ipc.OpClients, ipc.OpClientPresence, ipc.OpNoticeGet, ipc.OpClientProfile, ipc.OpClientProfileSet, ipc.OpKeysSet, ipc.OpKeys:
 		return d.handleClients(ctx, req)
 	case ipc.OpSessionScreen:
 		r, err := decode[ipc.ScreenRequest](req.Data)
@@ -422,7 +423,7 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 				return nil, err
 			}
 		}
-		return d.snapshot(ctx, sr.ClientID)
+		return d.snapshot(ctx, cmp.Or(sr.ClientID, callerOf(ctx).clientID))
 	case ipc.OpMutate:
 		var m ipc.Mutation
 		if err := json.Unmarshal(req.Data, &m); err != nil {

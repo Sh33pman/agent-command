@@ -48,3 +48,57 @@ func TestClients(t *testing.T) {
 		t.Errorf("left = %+v", got)
 	}
 }
+
+// Each client's dismissed warnings move from where 1.3 kept them into the
+// registry, with the client.
+func TestDismissedWarningsMoveToTheRegistry(t *testing.T) {
+	s, p := open(t)
+	for _, q := range []string{
+		`ALTER TABLE clients DROP COLUMN profile`, `ALTER TABLE clients DROP COLUMN dismissed`, `ALTER TABLE clients DROP COLUMN keymap`,
+		`INSERT INTO app_state (key, value) VALUES ('health.dismissed:mac-1', '["hooks"]'), ('health.dismissed:old', '')`,
+		`PRAGMA user_version = 14`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	must(t, s.Close())
+	s2, err := Open(ctx, p)
+	must(t, err)
+	defer s2.Close()
+	if v, err := s2.ClientField(ctx, "mac-1", ClientDismissed); err != nil || v != `["hooks"]` {
+		t.Errorf("dismissed = %q %v", v, err)
+	}
+	if v, _ := s2.AppState(ctx, "health.dismissed:mac-1"); v != "" {
+		t.Errorf("left behind: %q", v)
+	}
+	cs, _ := s2.Clients(ctx)
+	if len(cs) != 1 || cs[0].LastSeen.Before(time.Now().Add(-time.Minute)) {
+		t.Errorf("clients = %+v: seen now, so not forgotten straight away", cs)
+	}
+}
+
+func TestClientFields(t *testing.T) {
+	s, _ := open(t)
+	must(t, s.SetClientField(ctx, "new", ClientKeymap, `{"a":1}`)) // adds it
+	must(t, s.SaveClient(ctx, Client{ID: "new", Kind: "mac"}))
+	if v, err := s.ClientField(ctx, "new", ClientKeymap); err != nil || v != `{"a":1}` {
+		t.Errorf("keymap = %q %v", v, err)
+	}
+	if v, err := s.ClientField(ctx, "nobody", ClientProfile); err != nil || v != "" {
+		t.Errorf("no client: %q %v", v, err)
+	}
+	cs, vs, err := s.ClientsWith(ctx, ClientKeymap)
+	if err != nil || len(cs) != 1 || cs[0].Kind != "mac" || vs[0] != `{"a":1}` {
+		t.Errorf("with a keymap: %+v %v %v", cs, vs, err)
+	}
+	if _, err := s.ClientField(ctx, "new", "id; DROP TABLE clients"); err == nil {
+		t.Error("any field")
+	}
+	if err := s.SetClientField(ctx, "new", "kind", "x"); err == nil {
+		t.Error("set any field")
+	}
+	if _, _, err := s.ClientsWith(ctx, "kind"); err == nil {
+		t.Error("list by any field")
+	}
+}

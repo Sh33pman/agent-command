@@ -760,9 +760,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         store.onNewItems = { [weak self] items in self?.popupWindow.itemsArrived(items) }
         notifier.popupShows = { [weak self] kind in self?.popupWindow.replacesBanner(noticeKind: kind) ?? false }
         registerHotKeys()
+        PopupSettings.shared.loadProfile()
         Keymap.shared.onChange = { [weak self] in self?.keysChanged() }
         GhosttyRuntime.shared.onOpenFile = { [weak self] file, session in self?.openFile(file, from: session) }
-        Keymap.shared.writeExport()
+        Keymap.shared.register()
     }
 
     /// Closing the window keeps the app running, for the popup and the Dock badge. The
@@ -1254,7 +1255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func keysChanged() {
         for (action, item) in menuItems { applyKey(action, to: item) }
         registerHotKeys()
-        Keymap.shared.writeExport()
+        Keymap.shared.register()
     }
 
     /// The shortcuts that work from any app, off while the shortcuts list records a key.

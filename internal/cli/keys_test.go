@@ -1,10 +1,11 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
 const keysJSON = `{
@@ -21,16 +22,13 @@ const keysJSON = `{
 }`
 
 func TestKeysListsTheAppsShortcuts(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("ACMD_CONFIG_DIR", dir)
-	t.Setenv("ACMD_STATE_DIR", filepath.Join(dir, "s"))
-	t.Setenv("ACMD_RUNTIME_DIR", filepath.Join(dir, "r"))
-
+	f := newFakeDaemon(t)
+	f.fail(ipc.OpKeys, "no app has listed its shortcuts yet: open Agent Command once, then try again")
 	if _, err := acmd(t, "keys"); err == nil || !strings.Contains(err.Error(), "open Agent Command once") {
-		t.Fatalf("before the app wrote them: %v", err)
+		t.Fatalf("before the app registered them: %v", err)
 	}
-	must(t, os.MkdirAll(filepath.Join(dir, "s"), 0o700))
-	must(t, os.WriteFile(filepath.Join(dir, "s", "keys.json"), []byte(keysJSON), 0o600))
+	answer := ipc.Keymap{ClientID: "mac-1", Kind: ipc.KindMac, Device: "studio", Map: json.RawMessage(keysJSON)}
+	f.reply(ipc.OpKeys, answer)
 
 	text := mustRun(t, "keys")
 	for _, want := range []string{"App\n", "⇧⌘K", "Inbox  (changed)", "(none)", "↑ ⌃K k", "Can't be changed", "1-9", "(Sidebar)"} {
@@ -38,21 +36,45 @@ func TestKeysListsTheAppsShortcuts(t *testing.T) {
 			t.Errorf("text lacks %q:\n%s", want, text)
 		}
 	}
-	md := mustRun(t, "keys", "--markdown")
+	md := mustRun(t, "keys", "--markdown", "--client", "mac-1")
 	for _, want := range []string{"# Agent Command keyboard shortcuts", "## Lists", "| ⇧⌘K | Inbox (changed) |",
 		"| (none) | Rename — In Scheduled: edits the job. |", "## Can't be changed"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown lacks %q:\n%s", want, md)
 		}
 	}
-	if out := mustRun(t, "keys", "--json"); out != keysJSON {
-		t.Errorf("json: %s", out)
+	if !f.calledWith(ipc.OpKeys, `"client_id":"mac-1"`) {
+		t.Errorf("--client: %v", f.called())
+	}
+	var got ipc.Keymap
+	must(t, json.Unmarshal([]byte(mustRun(t, "keys", "--json")), &got))
+	if got.ClientID != "mac-1" || len(got.Map) == 0 {
+		t.Errorf("json: %+v", got)
 	}
 	if _, err := acmd(t, "keys", "--format", "yaml"); ExitCode(err) != exitUsage {
 		t.Errorf("--format is gone: %v", err)
 	}
-	must(t, os.WriteFile(filepath.Join(dir, "s", "keys.json"), []byte("{"), 0o600))
+	f.reply(ipc.OpKeys, ipc.Keymap{ClientID: "x", Map: json.RawMessage(`[1]`)})
 	if _, err := acmd(t, "keys"); err == nil {
-		t.Error("a broken file read")
+		t.Error("a keymap of another shape read")
+	}
+}
+
+func TestClientsCommand(t *testing.T) {
+	f := newFakeDaemon(t)
+	f.reply(ipc.OpClients, []ipc.Client{})
+	if out := mustRun(t, "clients"); !strings.Contains(out, "No clients yet") {
+		t.Errorf("none: %s", out)
+	}
+	f.reply(ipc.OpClients, []ipc.Client{{ClientHello: ipc.ClientHello{ID: "mac-1", Kind: ipc.KindMac, Device: "studio",
+		Caps: []string{ipc.CapNotify}}, Presence: ipc.PresenceActive, Connected: true}})
+	out := mustRun(t, "clients")
+	for _, want := range []string{"KIND", "mac", "studio", "active", "notify", "mac-1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("clients lacks %q:\n%s", want, out)
+		}
+	}
+	if out := mustRun(t, "clients", "--json"); !strings.Contains(out, `"presence":"active"`) {
+		t.Errorf("json: %s", out)
 	}
 }

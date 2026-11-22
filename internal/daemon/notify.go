@@ -112,7 +112,7 @@ func (d *Daemon) addNotice(no ipc.Notice) {
 	if no.Kind == "withdraw" {
 		route = config.RouteAll // whichever showed it takes it back
 	}
-	no.To = d.route(route)
+	no.To = d.route(route, no.Kind)
 	n.notices = append(n.notices, no)
 	if len(n.notices) > keepNotices {
 		n.notices = n.notices[len(n.notices)-keepNotices:]

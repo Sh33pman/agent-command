@@ -2,20 +2,17 @@ package cli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
-// `acmd keys`: the app's keyboard shortcuts, as it last wrote them (keys.json in
-// the state folder): the defaults with your changes.
+// `acmd keys`: the app's keyboard shortcuts, as it registered them with the
+// daemon: the defaults with your changes.
 
 type keymap struct {
 	Sections []struct {
@@ -37,37 +34,33 @@ type keymap struct {
 
 func newKeysCmd() *cobra.Command {
 	var markdown bool
+	var from string
 	cmd := &cobra.Command{
 		Use:   "keys",
 		Short: "List the app's keyboard shortcuts (change them in the app: ⌘/ or Settings → Keyboard)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			p, err := paths.Default()
-			if err != nil {
-				return err
-			}
-			b, err := os.ReadFile(p.Keys())
-			if errors.Is(err, fs.ErrNotExist) {
-				return errors.New("the app lists its shortcuts as it starts: open Agent Command once, then try again")
-			}
-			if err != nil {
-				return err
-			}
-			var km keymap
-			if err := json.Unmarshal(b, &km); err != nil {
-				return fmt.Errorf("%s: %w", p.Keys(), err)
-			}
-			switch {
-			case jsonOut:
-				_, err = jsonWriter(cmd).Write(b)
-				return err
-			case markdown:
-				return writeKeysMarkdown(cmd.OutOrStdout(), km)
-			}
-			return writeKeysText(cmd.OutOrStdout(), km)
+			return withDaemon(cmd, func(c *client) error {
+				var m ipc.Keymap
+				if err := c.call(ipc.OpKeys, ipc.KeysRequest{ClientID: from}, &m); err != nil {
+					return err
+				}
+				if jsonOut {
+					return nil // the daemon's answer, as it is
+				}
+				var km keymap
+				if err := json.Unmarshal(m.Map, &km); err != nil {
+					return fmt.Errorf("%s's shortcuts: %w", cmpOr(m.Device, m.ClientID), err)
+				}
+				if markdown {
+					return writeKeysMarkdown(cmd.OutOrStdout(), km)
+				}
+				return writeKeysText(cmd.OutOrStdout(), km)
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print the shortcuts as a Markdown table")
+	cmd.Flags().StringVar(&from, "client", "", "whose shortcuts: a client's id (acmd clients); default the desktop app seen last")
 	return cmd
 }
 

@@ -504,6 +504,49 @@ type ClientPresence struct {
 	Focus    string `json:"focus,omitempty"`
 }
 
+// The calling client's own state in the daemon. OpClientProfile reads its
+// notification profile (→ ClientProfile), OpClientProfileSet changes it
+// (ClientProfile → ClientProfile). OpKeysSet registers its keymap (Keymap's
+// map: no data), and OpKeys reads one (KeysRequest → Keymap): acmd keys.
+const (
+	OpClientProfile    = "client.profile"
+	OpClientProfileSet = "client.profile.set"
+	OpKeysSet          = "keys.set"
+	OpKeys             = "keys"
+)
+
+// ClientProfile is how a client notifies.
+type ClientProfile struct {
+	// Notify are the notice kinds it shows (waiting, error, done, paused);
+	// none means every kind.
+	Notify []string `json:"notify,omitempty"`
+	// PopupOpens is what opens its popup: PopupNeedsYou, PopupEverything or
+	// PopupNever ("" for the client's own default).
+	PopupOpens string `json:"popup_opens,omitempty"`
+}
+
+// What opens a client's popup (ClientProfile.PopupOpens).
+const (
+	PopupNeedsYou   = "needs_you"
+	PopupEverything = "everything"
+	PopupNever      = "never"
+)
+
+// KeysRequest names whose keymap to read: a client's id, or "" for the
+// desktop client seen most recently.
+type KeysRequest struct {
+	ClientID string `json:"client_id,omitempty"`
+}
+
+// Keymap is a client's keyboard shortcuts, as it registered them: its own
+// shape (for the macOS app, its sections of actions and keys).
+type Keymap struct {
+	ClientID string          `json:"client_id"`
+	Kind     string          `json:"kind,omitempty"`
+	Device   string          `json:"device,omitempty"`
+	Map      json.RawMessage `json:"map"`
+}
+
 // NoticeRef names a notice by its id.
 type NoticeRef struct {
 	ID uint64 `json:"id"`

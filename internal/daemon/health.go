@@ -17,6 +17,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/report"
+	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -198,13 +199,11 @@ func (d *Daemon) features() *ipc.Features {
 // Dismissed warnings are kept per client, by the id it gives (until clients
 // register, 4.1).
 
-func dismissedKey(clientID string) string { return "health.dismissed:" + clientID }
-
 func (d *Daemon) dismissed(ctx context.Context, clientID string) ([]string, error) {
 	if clientID == "" {
 		return nil, nil
 	}
-	v, err := d.store.AppState(ctx, dismissedKey(clientID))
+	v, err := d.store.ClientField(ctx, clientID, store.ClientDismissed)
 	if err != nil || v == "" {
 		return nil, err
 	}
@@ -220,7 +219,7 @@ func (d *Daemon) setDismissed(ctx context.Context, clientID string, ids []string
 	if err != nil {
 		return err
 	}
-	if err := d.store.SetAppState(ctx, dismissedKey(clientID), string(b)); err != nil {
+	if err := d.store.SetClientField(ctx, clientID, store.ClientDismissed, string(b)); err != nil {
 		return err
 	}
 	d.changes.bump()
@@ -241,6 +240,9 @@ func (d *Daemon) handleHealth(ctx context.Context, req ipc.Request) (any, error)
 		ref, err := decode[ipc.HealthRef](req.Data)
 		if err != nil {
 			return nil, err
+		}
+		if strings.TrimSpace(ref.ClientID) == "" {
+			ref.ClientID = callerOf(ctx).clientID // the one asking
 		}
 		if strings.TrimSpace(ref.ClientID) == "" {
 			return nil, errors.New("which client? client_id is missing")

@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -109,4 +112,66 @@ func (s *Store) ForgetClients(ctx context.Context, before time.Time) ([]string, 
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// What a client keeps in the daemon, each as JSON (” for none).
+const (
+	ClientProfile   = "profile"
+	ClientDismissed = "dismissed"
+	ClientKeymap    = "keymap"
+)
+
+var clientFields = map[string]bool{ClientProfile: true, ClientDismissed: true, ClientKeymap: true}
+
+// ClientField reads one of what a client keeps (” for none, or no such
+// client).
+func (s *Store) ClientField(ctx context.Context, id, field string) (string, error) {
+	if !clientFields[field] {
+		return "", fmt.Errorf("no client field %q", field)
+	}
+	var v string
+	err := s.q.QueryRowContext(ctx, `SELECT `+field+` FROM clients WHERE id = ?`, id).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+
+// SetClientField changes one of what a client keeps, adding the client when
+// it isn't known yet.
+func (s *Store) SetClientField(ctx context.Context, id, field, value string) error {
+	if !clientFields[field] {
+		return fmt.Errorf("no client field %q", field)
+	}
+	now := ms(s.now().UTC())
+	_, err := s.q.ExecContext(ctx, `INSERT INTO clients (id, first_seen, last_seen, `+field+`) VALUES (?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET `+field+` = excluded.`+field, id, now, now, value)
+	return err
+}
+
+// ClientsWith lists the clients that keep a field, with its value, the most
+// recently seen first.
+func (s *Store) ClientsWith(ctx context.Context, field string) ([]Client, []string, error) {
+	if !clientFields[field] {
+		return nil, nil, fmt.Errorf("no client field %q", field)
+	}
+	rows, err := s.q.QueryContext(ctx, `SELECT id, kind, device, last_seen, `+field+` FROM clients WHERE `+field+` != ''
+		ORDER BY last_seen DESC, id`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var cs []Client
+	var vs []string
+	for rows.Next() {
+		var c Client
+		var last int64
+		var v string
+		if err := rows.Scan(&c.ID, &c.Kind, &c.Device, &last, &v); err != nil {
+			return nil, nil, err
+		}
+		c.LastSeen = fromMS(last)
+		cs, vs = append(cs, c), append(vs, v)
+	}
+	return cs, vs, rows.Err()
 }

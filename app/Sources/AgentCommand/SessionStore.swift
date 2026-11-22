@@ -475,7 +475,7 @@ final class SessionStore {
 
     func publish(_ snapshot: Snapshot) {
         // Only sessions acmd runs, oldest first: ids are time-ordered ULIDs.
-        let hosted = (snapshot.sessions ?? []).filter { $0.kind == "hosted" }.sorted { $0.id < $1.id }
+        let hosted = snapshot.sessionsInGroups().filter { $0.kind == "hosted" }.sorted { $0.id < $1.id }
         let visible = hosted.filter { !$0.isArchived }
         let archived = hosted.filter(\.isArchived)
         DispatchQueue.main.async {

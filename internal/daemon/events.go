@@ -77,6 +77,14 @@ func entitiesOf(s ipc.Snapshot) ([]entity, error) {
 	for _, x := range s.Notices {
 		add(ipc.EntityNotice, strconv.FormatUint(x.Seq, 10), x)
 	}
+	// An entity of a type with no list of its own goes by its own type: a
+	// client that doesn't know the type keeps it, for its children.
+	for _, raw := range s.Others {
+		var x struct{ Type, ID, Host string }
+		if json.Unmarshal(raw, &x) == nil && x.Type != "" && x.ID != "" {
+			addOn(x.Type, x.Host, x.ID, raw)
+		}
+	}
 	for _, x := range s.RemoteHosts {
 		add(ipc.EntityRemoteHost, x.Name, x)
 	}

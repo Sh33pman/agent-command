@@ -28,10 +28,16 @@ private func session(_ id: String, _ name: String = "", status: String = "busy")
     #expect(snap.groups?.isEmpty == true && snap.dismissed == ["hooks"] && snap.inbox?.first?.itemID == 4)
     #expect(state.rev == 11)
 
-    // Removing an inbox item by its id; an entity the app doesn't know; nonsense.
+    // Removing an inbox item by its id; an entity the app doesn't know is kept
+    // with its type, for its children; nonsense.
     do { let ok = state.apply(["rev": 12, "type": "removed", "entity": "inbox", "id": "4"]); #expect(ok) }
     #expect(try state.snapshot().inbox?.isEmpty == true)
-    do { let ok = state.apply(["rev": 13, "type": "added", "entity": "weather", "id": "x", "data": [String: Any]()]); #expect(!ok) }
+    do { let ok = state.apply(["rev": 13, "type": "added", "entity": "folder", "id": "f", "data": ["id": "f", "parent": "g"]]); #expect(ok) }
+    #expect(try state.snapshot().others == [try JSONDecoder().decode(EntityRef.self, from: Data(#"{"type":"folder","id":"f","parent":"g"}"#.utf8))])
+    do { let ok = state.apply(["rev": 13, "type": "removed", "entity": "folder", "id": "f"]); #expect(ok) }
+    #expect(try state.snapshot().others?.isEmpty == true)
+    do { let ok = state.apply(["rev": 13, "type": "removed", "entity": "folder", "id": "never"]); #expect(!ok) }
+    do { let ok = state.apply(["rev": 13, "type": "added", "entity": "folder", "data": [String: Any]()]); #expect(!ok, "no id") }
     do { let ok = state.apply(["rev": 14, "type": "removed", "entity": "session", "id": "nope"]); #expect(!ok) }
     do { let ok = state.apply(["rev": 15, "type": "added", "entity": "session", "id": "c", "data": "not an object"]); #expect(!ok) }
     do { let ok = state.apply(["rev": 16, "type": "shuffled", "entity": "session", "id": "a"]); #expect(!ok) }

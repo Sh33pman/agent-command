@@ -129,6 +129,9 @@ pub const Session = struct {
 /// Mirrors Go `ipc.Group`.
 pub const Group = struct {
     id: []const u8,
+    /// The Remote host it's on ("" for this machine's): ids are unique only
+    /// within their host.
+    host: []const u8 = "",
     name: []const u8 = "",
     color: []const u8 = "",
     order: i32 = 0,
@@ -151,7 +154,43 @@ pub const ViewState = struct {
 pub const Snapshot = struct {
     sessions: ?[]const Session = null,
     groups: ?[]const Group = null,
+    sets: ?[]const EntityRef = null,
+    /// Entities of types with no list of their own, which this UI may not
+    /// know (design 7.2): kept for their children's sake.
+    others: ?[]const EntityRef = null,
     view_state: ViewState = .{},
+
+    /// The group a session shows in (design 7.2): the one it names, else its
+    /// nearest ancestor that's a group, following parents through sets and
+    /// entities of types this UI doesn't know, on its own host. null: its
+    /// host's Default.
+    pub fn groupOf(self: Snapshot, s: Session) ?[]const u8 {
+        if (s.group_id.len > 0) return s.group_id;
+        var at = s.parent;
+        var hops: usize = 0;
+        while (at.len > 0 and hops < 16) : (hops += 1) {
+            for (self.groups orelse &.{}) |g| {
+                if (std.mem.eql(u8, g.host, s.host) and std.mem.eql(u8, g.id, at)) return g.id;
+            }
+            at = parentOf(self.sets, s.host, at) orelse parentOf(self.others, s.host, at) orelse return null;
+        }
+        return null;
+    }
+
+    fn parentOf(list: ?[]const EntityRef, host: []const u8, id: []const u8) ?[]const u8 {
+        for (list orelse &.{}) |e| {
+            if (std.mem.eql(u8, e.host, host) and std.mem.eql(u8, e.id, id)) return e.parent;
+        }
+        return null;
+    }
+};
+
+/// What every entity has (design 7.1): its type, id, host and parent.
+pub const EntityRef = struct {
+    type: []const u8 = "",
+    id: []const u8 = "",
+    host: []const u8 = "",
+    parent: []const u8 = "",
 };
 
 const RawResponse = struct {
@@ -777,7 +816,12 @@ test "decodes the daemon's snapshot fixture" {
     defer snap.deinit();
 
     const sessions = snap.value.sessions.?;
-    try std.testing.expectEqual(@as(usize, 4), sessions.len);
+    try std.testing.expectEqual(@as(usize, 5), sessions.len);
+    // s5 is in a folder, a type this UI doesn't know: it shows in the
+    // folder's group (design 7.2).
+    try std.testing.expectEqualStrings("folder", snap.value.others.?[0].type);
+    try std.testing.expectEqualStrings("g1", snap.value.groupOf(sessions[4]).?);
+    try std.testing.expectEqualStrings("g1", snap.value.groupOf(sessions[0]).?);
     try std.testing.expectEqualStrings("api", sessions[0].name);
     try std.testing.expectEqualStrings("waiting", sessions[0].status);
     try std.testing.expectEqualStrings("Allow Bash?", sessions[0].status_detail);
@@ -809,4 +853,21 @@ test "decodes the daemon's hello fixture" {
     try std.testing.expectEqual(@as(i32, 2), hello.value.proto_max);
     try std.testing.expect(hello.value.proto >= proto_min and hello.value.proto <= proto_version);
     try std.testing.expectEqualStrings("snapshot", hello.value.ops.?[1]);
+}
+
+test "a session in containers this UI doesn't know finds its group" {
+    const groups = [_]Group{ .{ .id = "g1" }, .{ .id = "g1", .host = "studio" } };
+    const others = [_]EntityRef{
+        .{ .type = "folder", .id = "f1", .parent = "g1" },
+        .{ .type = "folder", .id = "f2", .parent = "f1" },
+        .{ .type = "workspace", .id = "w1" },
+        .{ .type = "folder", .id = "f1", .host = "studio", .parent = "g1" },
+        .{ .type = "folder", .id = "loop", .parent = "loop" },
+    };
+    const snap = Snapshot{ .groups = &groups, .others = &others };
+    try std.testing.expectEqualStrings("g1", snap.groupOf(.{ .id = "a", .name = "a", .parent = "f2" }).?);
+    try std.testing.expect(snap.groupOf(.{ .id = "b", .name = "b", .parent = "w1" }) == null);
+    try std.testing.expectEqualStrings("g1", snap.groupOf(.{ .id = "c", .name = "c", .parent = "f1", .host = "studio" }).?);
+    try std.testing.expect(snap.groupOf(.{ .id = "d", .name = "d", .parent = "loop" }) == null);
+    try std.testing.expect(snap.groupOf(.{ .id = "e", .name = "e", .parent = "nowhere" }) == null);
 }

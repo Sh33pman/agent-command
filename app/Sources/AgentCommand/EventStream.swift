@@ -37,7 +37,9 @@ struct SnapshotAssembler {
             root[field] = type == "removed" ? nil : data
             return true
         }
-        guard let (key, idField) = Self.lists[entity] else { return false }
+        // A type the app doesn't know: kept in others, by its type, host and
+        // id, for its children's sake (design 7.2).
+        guard let (key, idField) = Self.lists[entity] else { return keepOther(entity, id: id, type: type, data: data, event: event) }
         var list = root[key] as? [[String: Any]] ?? []
         // An entity is its id on its host: every host's Default is "default".
         let host = event["host"] as? String ?? ""
@@ -53,6 +55,28 @@ struct SnapshotAssembler {
             return false
         }
         root[key] = list
+        return true
+    }
+
+    private mutating func keepOther(_ entity: String, id: String, type: String, data: Any?, event: [String: Any]) -> Bool {
+        guard !id.isEmpty else { return false }
+        let host = event["host"] as? String ?? ""
+        var list = root["others"] as? [[String: Any]] ?? []
+        let at = list.firstIndex {
+            $0["type"] as? String == entity && Self.idOf($0["id"]) == id && ($0["host"] as? String ?? "") == host
+        }
+        switch type {
+        case "added", "updated":
+            guard var item = data as? [String: Any] else { return false }
+            item["type"] = entity
+            if let at { list[at] = item } else { list.append(item) }
+        case "removed":
+            guard let at else { return false }
+            list.remove(at: at)
+        default:
+            return false
+        }
+        root["others"] = list
         return true
     }
 

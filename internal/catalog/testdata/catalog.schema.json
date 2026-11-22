@@ -3728,6 +3728,9 @@
     },
     "ipc.Session": {
       "properties": {
+        "type": {
+          "type": "string"
+        },
         "id": {
           "type": "string"
         },
@@ -3837,6 +3840,7 @@
       },
       "type": "object",
       "required": [
+        "type",
         "id",
         "name",
         "group_id",
@@ -3891,6 +3895,10 @@
           "items": {
             "$ref": "#/$defs/ipc.Set"
           },
+          "type": "array"
+        },
+        "others": {
+          "items": true,
           "type": "array"
         },
         "view_state": {

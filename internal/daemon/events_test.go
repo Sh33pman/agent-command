@@ -228,3 +228,26 @@ func TestASlowClientResyncs(t *testing.T) {
 		t.Error("forgotten")
 	}
 }
+
+// An entity of a type with no list of its own goes out by its own type, so a
+// client that doesn't know the type keeps it, for its children (design 7.2).
+func TestOtherEntitiesGoOutByTheirType(t *testing.T) {
+	s := ipc.Snapshot{Others: []json.RawMessage{
+		json.RawMessage(`{"type":"folder","id":"f1","parent":"g1"}`),
+		json.RawMessage(`{"type":"folder","id":"f2","host":"studio","parent":"default"}`),
+		json.RawMessage(`{"id":"no-type"}`), json.RawMessage(`not json`),
+	}}
+	ens, err := entitiesOf(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var folders []entityKey
+	for _, en := range ens {
+		if en.key.typ == "folder" {
+			folders = append(folders, en.key)
+		}
+	}
+	if len(folders) != 2 || folders[0].id != "f1" || folders[1].host != "studio" {
+		t.Errorf("folders = %+v", folders)
+	}
+}

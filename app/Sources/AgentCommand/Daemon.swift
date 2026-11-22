@@ -25,10 +25,58 @@ struct Snapshot: Decodable {
     var update: UpdateState? = nil
     /// How reading aloud stands on this Mac.
     var speech: SpeechState? = nil
+    /// Entities of types with no list of their own, which the app may not
+    /// know (design 7.2): kept for their children's sake.
+    var others: [EntityRef]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health, dismissed, features, update, speech
+        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health, dismissed, features, update, speech, others
         case remoteHosts = "remote_hosts"
+    }
+
+    /// The sessions, each with its group: a session that names none (in a
+    /// container of a type the app doesn't know) goes in its nearest
+    /// ancestor that's a group, following parents through sets and unknown
+    /// entities on its own host (design 7.2). One with no such ancestor has
+    /// none, and shows in its host's Default.
+    func sessionsInGroups() -> [Session] {
+        let groups = Set((self.groups ?? []).map { SessionGroup.key($0.host, $0.id) })
+        var parents: [String: String] = [:]
+        for set in sets ?? [] { parents[SessionGroup.key(set.host ?? "", set.id)] = set.parent }
+        for other in others ?? [] where !other.parent.isEmpty { parents[SessionGroup.key(other.host, other.id)] = other.parent }
+        return (sessions ?? []).map { session in
+            guard session.groupID?.isEmpty ?? true, var at = session.parent else { return session }
+            var placed = session
+            for _ in 0..<16 { // an ancestor chain this deep is a loop
+                let key = SessionGroup.key(session.hostName, at)
+                if groups.contains(key) {
+                    placed.groupID = at
+                    break
+                }
+                guard let up = parents[key] else { break }
+                at = up
+            }
+            return placed
+        }
+    }
+}
+
+/// An entity as every type has it (design 7.1): its type, id, host and
+/// parent. Enough to place what's inside one of a type the app doesn't know.
+struct EntityRef: Decodable, Equatable {
+    var type = ""
+    var id = ""
+    var host = ""
+    var parent = ""
+
+    enum CodingKeys: String, CodingKey { case type, id, host, parent }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? ""
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? ""
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
+        parent = try c.decodeIfPresent(String.self, forKey: .parent) ?? ""
     }
 }
 

@@ -231,8 +231,14 @@ type Snapshot struct {
 	Sessions []*Session `json:"sessions"`
 	Groups   []*Group   `json:"groups"`
 	// Sets are the sets, oldest first. Their sessions are in Sessions.
-	Sets      []Set     `json:"sets,omitempty"`
-	ViewState ViewState `json:"view_state"`
+	Sets []Set `json:"sets,omitempty"`
+	// Others are entities of types with no list of their own (design 7.2):
+	// a type added later (a workspace, a folder) goes here, so a client that
+	// doesn't know it still sees its type, id, host, parent and order, and
+	// draws its children under their nearest ancestor of a type it knows.
+	// Each is a JSON object with those common fields and its own.
+	Others    []json.RawMessage `json:"others,omitempty"`
+	ViewState ViewState         `json:"view_state"`
 	// Notices are the most recent notifications, oldest first.
 	Notices []Notice `json:"notices,omitempty"`
 	// Inbox is the queue: the items still to deal with, in arrival order.

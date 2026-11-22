@@ -15,6 +15,8 @@ import (
 
 // Session is a session as clients see it.
 type Session struct {
+	// Type is EntitySession: every entity says its type (design 7.1).
+	Type        string `json:"type"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -114,7 +116,7 @@ func SessionOf(s *core.Session) *Session {
 		return nil
 	}
 	w := &Session{
-		ID: s.ID, Name: s.Name, Description: s.Description, GroupID: s.GroupID, Parent: s.GroupID,
+		Type: EntitySession, ID: s.ID, Name: s.Name, Description: s.Description, GroupID: s.GroupID, Parent: s.GroupID,
 		NameSource: s.NameSource, Cwd: s.Cwd, ClaudeSessionID: s.ClaudeSessionID, ClaudeHistory: s.ClaudeHistory,
 		TranscriptPath: s.TranscriptPath, Status: s.Status, StatusDetail: s.StatusDetail, Unseen: s.Unseen,
 		Kind: s.Kind, Harness: s.Harness, BgID: s.BgID, Pid: s.Pid, Remote: s.Remote, Host: s.Host,

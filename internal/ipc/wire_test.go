@@ -41,10 +41,16 @@ func sampleSnapshot() Snapshot {
 		Where: core.WhereFolder, Cwd: "/w/api"}, Cron: "0 2 * * *", Summary: "Every day at 2:00", CreatedAt: at, UpdatedAt: at,
 		NextRun: at.Add(17 * time.Hour), LastRun: &core.JobRun{ID: 3, JobID: "j1", Due: at.Add(-7 * time.Hour), At: at.Add(-7 * time.Hour),
 			Result: "started", SessionID: "s4"}, Form: &schedule.Form{Kind: schedule.FormDaily, Hour: 2}}
+	// A type no client knows yet (design 7.2): a folder in g1, holding a
+	// session that names only its parent. Every client draws s5 in g1.
+	folder := json.RawMessage(`{"type":"folder","id":"f1","parent":"g1","name":"api","path":"/w/api"}`)
+	inFolder := &Session{Type: EntitySession, ID: "s5", Name: "lint", Parent: "f1", Cwd: "/w/api", Status: core.StatusDone,
+		Kind: core.KindHosted, Harness: core.HarnessTerminal, CreatedAt: at}
 	return Snapshot{
-		Sessions:  SessionsOf(sessions),
+		Sessions:  append(SessionsOf(sessions), inFolder),
 		Groups:    GroupsOf(groups),
 		Sets:      []Set{{Type: EntitySet, ID: "set1", Parent: "g1"}},
+		Others:    []json.RawMessage{folder},
 		ViewState: ViewStateOf(core.ViewState{Mode: "groups", Sort: "activity", Desc: true, Collapsed: []string{"g1"}}),
 		Inbox: []core.InboxItem{{ID: 1, SessionID: "s1", Kind: "permission", Text: "Allow Bash: make test?", Options: []string{"Yes", "No"},
 			At: at.Add(time.Minute), State: "open"}},

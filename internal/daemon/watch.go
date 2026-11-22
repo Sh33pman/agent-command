@@ -73,7 +73,7 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 	case req.Resume != "":
 		s, err = d.resumeConversation(ctx, req)
 	case req.Cwd == "":
-		return nil, errors.New("no folder for the new session")
+		return nil, badRequest("no folder for the new session")
 	default:
 		s, err = d.hostSession(ctx, req)
 	}
@@ -134,7 +134,7 @@ func (d *Daemon) eventTime(s *core.Session) time.Time {
 func decode[T any](raw json.RawMessage) (T, error) {
 	var v T
 	if err := json.Unmarshal(raw, &v); err != nil {
-		return v, fmt.Errorf("bad request: %w", err)
+		return v, badRequest("bad request: %v", err)
 	}
 	return v, nil
 }

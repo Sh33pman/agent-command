@@ -89,7 +89,8 @@ func (c *Client) Call(ctx context.Context, host, op string, data json.RawMessage
 		return nil, err
 	}
 	var out json.RawMessage
-	err := c.call(ctx, host, api.OpCall, api.CallRequest{Op: op, Data: data}, &out)
+	// A request id goes along, so the host runs a retried creating op once.
+	err := c.call(ctx, host, api.OpCall, api.CallRequest{Op: op, Data: data, RequestID: ipc.RequestIDOf(ctx)}, &out)
 	return out, err
 }
 

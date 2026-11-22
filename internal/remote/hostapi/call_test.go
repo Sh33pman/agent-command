@@ -38,8 +38,15 @@ func TestCallRunsTheHostsOps(t *testing.T) {
 	}
 	// A change through mutate is checked by its kind.
 	must(t, f.call(api.OpCall, callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: "l1", Text: "x"}), nil))
-	if last := f.b.calls[len(f.b.calls)-1]; last.Op != ipc.OpMutate || !json.Valid(last.Data) {
+	if last := f.b.calls[len(f.b.calls)-1]; last.Op != ipc.OpMutate || !json.Valid(last.Data) || last.RequestID != "" {
 		t.Errorf("mutate went as %+v", last)
+	}
+	// A request id goes along to the daemon, which runs a retry once.
+	withID := callReq(t, ipc.OpMutate, ipc.Mutation{Kind: ipc.MutGroupCreate, Text: "G"})
+	withID.RequestID = "q1"
+	must(t, f.call(api.OpCall, withID, nil))
+	if last := f.b.calls[len(f.b.calls)-1]; last.RequestID != "q1" {
+		t.Errorf("the request id didn't go along: %+v", last)
 	}
 	// Admin ops need admin: this pairing has it; one that may only act doesn't.
 	must(t, f.call(api.OpCall, callReq(t, ipc.OpInit, nil), nil))

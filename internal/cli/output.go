@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
@@ -97,21 +98,22 @@ const exitCodesHelp = "Exit codes:\n" +
 	"  8   Hosting is on, but can't listen on its port\n" +
 	"  9   not found: no such session, group, job or host\n" +
 	"  10  invalid: a bad name, value or schedule\n" +
-	"  11  not supported: the host can't do that, or a paired device may not\n" +
+	"  11  not supported: the host can't do that, or this client may not\n" +
 	"  12  not running: the session's terminal has ended\n" +
 	"  13  partial: some of several sessions didn't change\n" +
 	"With --json, an error is {\"error\": {\"code\": …, \"message\": …}} on stderr."
 
 // codedExits are the daemon's error codes and their exit codes.
 var codedExits = map[string]int{
-	ipc.CodeNotFound: exitNotFound, ipc.CodeInvalid: exitInvalid, "bad_request": exitInvalid,
-	ipc.CodeNotSupported: exitNotSupported, "forbidden": exitNotSupported, "unknown_op": exitNotSupported,
+	ipc.CodeNotFound: exitNotFound, ipc.CodeInvalid: exitInvalid, ipc.CodeBadRequest: exitInvalid,
+	ipc.CodeNotSupported: exitNotSupported, errcode.Forbidden: exitNotSupported, ipc.CodeUnknownOp: exitNotSupported,
+	ipc.CodePermission: exitNotSupported,
 	ipc.CodeNotRunning: exitNotRunning, ipc.CodeHostUnreachable: exitUnreachable,
 }
 
 // exitNames are the codes JSON errors carry for acmd's own exit codes.
 var exitNames = map[int]string{
-	exitFailed: ipc.CodeFailed, exitUsage: "usage", exitUnreachable: ipc.CodeHostUnreachable, exitPending: "pending",
+	exitFailed: ipc.CodeInternal, exitUsage: "usage", exitUnreachable: ipc.CodeHostUnreachable, exitPending: "pending",
 	exitUnauthorized: "unauthorized", exitFingerprint: "fingerprint", exitVersion: "version", exitPortTaken: "port_taken",
 	exitNotFound: ipc.CodeNotFound, exitInvalid: ipc.CodeInvalid, exitNotSupported: ipc.CodeNotSupported,
 	exitNotRunning: ipc.CodeNotRunning, exitPartial: "partial",

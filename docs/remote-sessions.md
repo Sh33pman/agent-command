@@ -260,6 +260,13 @@ So authorizing a client is like giving it your account on the host. Only authori
 
 **Turning a session local** (`acmd remote off`, or **Turn Remote Off**) drops the clients attached to it at once. Turning Hosting off drops every connection.
 
+## Writing a client
+
+What a client can call is in the op catalog, `internal/catalog/testdata/catalog.schema.json` in the source: each op as JSON Schema, with its scope.
+
+- **Errors.** Every failed call answers with a `code` and a message, on the local socket and over Remote alike: `not_found`, `invalid`, `bad_request`, `conflict`, `permission_denied`, `forbidden`, `not_running`, `not_supported`, `host_unreachable`, `unknown_op`, `proto_unsupported`, `exists`, `not_folder`, or `internal` for anything else. The catalog's `errors` lists them with what each means. Decide from the code; the message is for people, and can change.
+- **Retries.** The ops that create something (`new`, `remote.new`, `job.save`, `job.run`, and the `group.create` mutation) are marked `retryable` in the catalog. Send one with a `request_id` (any unique string, such as a UUID) beside `op`, and a retry with the same id within 10 minutes gets the first result back instead of starting a second session, even if the daemon restarted in between. A call that failed isn't kept: retrying it tries again.
+
 ## CLI reference
 
 Every command is under `acmd remote`, except `acmd new --remote` and `acmd new --on`. `acmd remote <command> --help` has the details.

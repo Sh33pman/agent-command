@@ -1,6 +1,10 @@
 package catalog
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/brettmostert/agent-command/internal/errcode"
+)
 
 // Range is the protocol versions one side speaks, from Min to Max.
 //
@@ -24,7 +28,7 @@ func (r Range) String() string {
 
 // CodeProtoUnsupported is the error code for two sides with no version in
 // common.
-const CodeProtoUnsupported = "proto_unsupported"
+const CodeProtoUnsupported = errcode.ProtoUnsupported
 
 // ProtoError is why two sides can't talk: no version in common, or a range
 // that isn't one.

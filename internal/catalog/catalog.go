@@ -80,6 +80,9 @@ type Op struct {
 	Stream bool
 	// Mutation: protocol 1 sends it as ipc.OpMutate, with Name as the kind.
 	Mutation bool
+	// Retryable: it creates something, and takes a request id, so a retry
+	// with the same id gets the first result instead of a second one.
+	Retryable bool
 }
 
 // MutateOp is the protocol-1 op that carries every Mutation op.

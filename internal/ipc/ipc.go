@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/schedule"
 )
 
@@ -422,6 +423,31 @@ type Conversation struct {
 type Request struct {
 	Op   string          `json:"op"`
 	Data json.RawMessage `json:"data,omitempty"`
+	// RequestID makes a creating op safe to retry (the catalog marks which
+	// are): the same id within RequestKeep gets the first result back,
+	// instead of a second session, job, run or group. Any unique string,
+	// such as a UUID.
+	RequestID string `json:"request_id,omitempty"`
+}
+
+// RequestKeep is how long the daemon keeps a request id's result.
+const RequestKeep = 10 * time.Minute
+
+type requestIDKey struct{}
+
+// WithRequestID carries a request id with ctx, on its way to the daemon's
+// ops or a host's.
+func WithRequestID(ctx context.Context, id string) context.Context {
+	if id == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, requestIDKey{}, id)
+}
+
+// RequestIDOf is the request id ctx carries, or "".
+func RequestIDOf(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey{}).(string)
+	return id
 }
 
 // Response answers a Request.
@@ -634,8 +660,12 @@ func Dial(ctx context.Context, socket string, me Hello) (*Conn, error) {
 }
 
 // Call sends one request and decodes the response data into out (if non-nil).
-func (c *Conn) Call(op string, in, out any) error {
-	req := Request{Op: op}
+func (c *Conn) Call(op string, in, out any) error { return c.CallOnce(op, "", in, out) }
+
+// CallOnce is Call with a request id, for a creating op that's safe to retry
+// with the same id: it runs once.
+func (c *Conn) CallOnce(op, requestID string, in, out any) error {
+	req := Request{Op: op, RequestID: requestID}
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
@@ -716,12 +746,19 @@ type Result struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Error codes a Result can carry.
+// Error codes a Result or a Response carries: errcode's, which every
+// transport answers with, and the catalog lists.
 const (
-	CodeNotFound        = "not_found"        // no such session
-	CodeInvalid         = "invalid"          // it can't be done to this one: unarchive a terminal, purge one not archived
-	CodeHostUnreachable = "host_unreachable" // its Remote host can't be reached now
-	CodeFailed          = "failed"           // anything else: Error says what
+	CodeNotFound        = errcode.NotFound
+	CodeInvalid         = errcode.Invalid
+	CodeBadRequest      = errcode.BadRequest
+	CodeConflict        = errcode.Conflict
+	CodePermission      = errcode.PermissionDenied
+	CodeHostUnreachable = errcode.HostUnreachable
+	CodeUnknownOp       = errcode.UnknownOp
+	CodeNotSupported    = errcode.NotSupported
+	CodeNotRunning      = errcode.NotRunning
+	CodeInternal        = errcode.Internal
 )
 
 // Failed says how many results aren't OK.
@@ -764,12 +801,6 @@ type PromptFile struct {
 // (ScreenRequest → Screen). Sessions on this machine only, for now: one on a
 // Remote host fails with CodeNotSupported.
 const OpSessionScreen = "session.screen"
-
-// CodeNotSupported: the session's host can't do that yet.
-const CodeNotSupported = "not_supported"
-
-// CodeNotRunning: the session's terminal has ended.
-const CodeNotRunning = "not_running"
 
 // ScreenRequest names the session, and how much to send: Lines is the last
 // lines of the screen and history (0: all of it).

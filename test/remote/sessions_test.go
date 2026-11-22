@@ -312,3 +312,35 @@ func TestTwoHosts(t *testing.T) {
 		t.Error("the panes are mixed up")
 	}
 }
+
+// A new session on a host, retried with the same request id through this
+// machine's daemon, starts one session there: the id goes along to the host.
+func TestARetriedNewSessionStartsOneOnTheHost(t *testing.T) {
+	host := newMachine(t, "host", hostConfig(freePort(t), true))
+	host.start()
+	laptop := newMachine(t, "laptop", clientConfig)
+	laptop.start()
+	laptop.pair("studio", host)
+
+	before := len(host.snapshot().Sessions)
+	req := ipc.RemoteNewRequest{Host: "studio", Dir: t.TempDir(), Harness: core.HarnessTerminal}
+	var ids []string
+	for range 2 {
+		c, err := laptop.dial()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var s ipc.Session
+		if err := c.CallOnce(ipc.OpRemoteNew, "once-1", req, &s); err != nil {
+			t.Fatal(err)
+		}
+		c.Close()
+		ids = append(ids, s.ID)
+	}
+	if ids[0] == "" || ids[1] != ids[0] {
+		t.Errorf("ids = %v", ids)
+	}
+	if n := len(host.snapshot().Sessions) - before; n != 1 {
+		t.Errorf("%d sessions started on the host", n)
+	}
+}

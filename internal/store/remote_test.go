@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
 )
@@ -65,7 +66,7 @@ func TestClientScopes(t *testing.T) {
 	s, p := open(t)
 	must(t, s.AddAuthorizedClient(ctx, config.AuthorizedClient{Name: "old", Fingerprint: "SHA256:o"}))
 	// Back to before scopes, and up again: clients from then keep admin.
-	for _, q := range []string{`ALTER TABLE remote_clients DROP COLUMN scope`, `PRAGMA user_version = 16`} {
+	for _, q := range []string{`ALTER TABLE remote_clients DROP COLUMN scope`, `DROP TABLE requests`, `PRAGMA user_version = 16`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(q, err)
 		}
@@ -85,5 +86,32 @@ func TestClientScopes(t *testing.T) {
 	got, _ = s2.AuthorizedClients(ctx)
 	if got[1].Name != "renamed" || got[1].Scope != config.ScopeRead {
 		t.Errorf("after a rename: %+v", got[1])
+	}
+}
+
+// A request id's result is kept, replaced by a later one of the same id,
+// and forgotten once it's older than the window.
+func TestRequests(t *testing.T) {
+	s, _ := open(t)
+	t0 := time.Date(2026, 11, 22, 10, 0, 0, 0, time.UTC)
+	if _, err := s.Request(ctx, "r1", t0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("none yet: %v", err)
+	}
+	must(t, s.SaveRequest(ctx, Request{ID: "r1", Op: "new", Result: []byte(`{"id":"a"}`), At: t0}, t0.Add(-time.Hour)))
+	got, err := s.Request(ctx, "r1", t0.Add(-time.Minute))
+	if err != nil || got.Op != "new" || string(got.Result) != `{"id":"a"}` || !got.At.Equal(t0) {
+		t.Fatalf("kept = %+v %v", got, err)
+	}
+	if _, err := s.Request(ctx, "r1", t0.Add(time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Errorf("older than since: %v", err)
+	}
+	// A later save forgets those before its window.
+	must(t, s.SaveRequest(ctx, Request{ID: "r2", Op: "job.run", Result: []byte(`{}`), At: t0.Add(20 * time.Minute)}, t0.Add(10*time.Minute)))
+	if _, err := s.Request(ctx, "r1", time.Time{}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("r1 wasn't forgotten: %v", err)
+	}
+	must(t, s.SaveRequest(ctx, Request{ID: "r2", Op: "job.run", Result: []byte(`{"n":2}`), At: t0.Add(21 * time.Minute)}, t0))
+	if got, _ := s.Request(ctx, "r2", time.Time{}); string(got.Result) != `{"n":2}` {
+		t.Errorf("replaced = %s", got.Result)
 	}
 }

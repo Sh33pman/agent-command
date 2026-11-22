@@ -92,6 +92,6 @@ func (d *Daemon) handleRemote(req ipc.Request) (any, error) {
 		n, err := h.Disconnect(ref.Client)
 		return ipc.RemoteDisconnected{Closed: n}, err
 	default:
-		return nil, fmt.Errorf("unknown op %q", req.Op)
+		return nil, &codedError{code: ipc.CodeUnknownOp, err: fmt.Errorf("unknown op %q", req.Op)}
 	}
 }

@@ -37,6 +37,8 @@ package api
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/brettmostert/agent-command/internal/errcode"
 )
 
 // Version is the host API's version, in wire.Info's API. It's bumped on any
@@ -76,16 +78,18 @@ const (
 type CallRequest struct {
 	Op   string          `json:"op"`
 	Data json.RawMessage `json:"data,omitempty"`
+	// RequestID makes a creating op safe to retry, as ipc.Request's.
+	RequestID string `json:"request_id,omitempty"`
 }
 
-// Error codes the host API adds to wire's (wire.CodeNotFound and
-// wire.CodeBadRequest mean what they say there).
+// Error codes the host API answers with, besides wire's: errcode's, as
+// every transport has them.
 const (
-	CodeNotRunning = "not_running"       // the session's terminal has ended: nothing to attach to
-	CodePermission = "permission_denied" // the host's user may not read or write there
-	CodeExists     = "exists"            // there's already something at that path
-	CodeNotFolder  = "not_folder"        // the path is a file, not a folder
-	CodeForbidden  = "forbidden"         // a paired device may not call that op
+	CodeNotRunning = errcode.NotRunning
+	CodePermission = errcode.PermissionDenied
+	CodeExists     = errcode.Exists
+	CodeNotFolder  = errcode.NotFolder
+	CodeForbidden  = errcode.Forbidden
 )
 
 // Session is a Remote session, as a client sees it.

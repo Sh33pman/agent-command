@@ -143,10 +143,10 @@ func (b *backend) SetConfig(values map[string]any) (ipc.ConfigState, error) {
 	return ipc.ConfigOf(b.file), err
 }
 
-func (b *backend) Call(_ context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
+func (b *backend) Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.calls = append(b.calls, api.CallRequest{Op: op, Data: data})
+	b.calls = append(b.calls, api.CallRequest{Op: op, Data: data, RequestID: ipc.RequestIDOf(ctx)})
 	if b.callErr != nil {
 		return nil, b.callErr
 	}

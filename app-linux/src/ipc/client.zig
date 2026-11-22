@@ -141,6 +141,8 @@ pub const Snapshot = struct {
 const RawResponse = struct {
     ok: bool = false,
     @"error": ?[]const u8 = null,
+    /// What kind of error (internal/errcode): every failed response has one.
+    code: ?[]const u8 = null,
     data: ?std.json.Value = null,
 };
 
@@ -185,7 +187,7 @@ pub fn decodeResponse(comptime T: type, allocator: std.mem.Allocator, line: []co
 
     if (!envelope.value.ok) {
         if (envelope.value.@"error") |msg| {
-            std.log.warn("daemon error: {s}", .{msg});
+            std.log.warn("daemon error ({s}): {s}", .{ envelope.value.code orelse "internal", msg });
         }
         return error.DaemonRemoteError;
     }

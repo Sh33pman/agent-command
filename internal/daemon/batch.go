@@ -38,6 +38,15 @@ func invalid(format string, a ...any) error {
 	return &codedError{code: ipc.CodeInvalid, err: fmt.Errorf(format, a...)}
 }
 
+// badRequest is a request that doesn't make sense: its arguments don't
+// decode, or are missing.
+func badRequest(format string, a ...any) error {
+	return &codedError{code: ipc.CodeBadRequest, err: fmt.Errorf(format, a...)}
+}
+
+// errCoder is an error that knows its own code (a catalog.ProtoError).
+type errCoder interface{ Code() string }
+
 // unreachable marks an error from a host that couldn't be reached.
 func unreachable(err error) error {
 	if err == nil {
@@ -55,12 +64,15 @@ func resultOf(id string, err error) ipc.Result {
 	if err == nil {
 		return ipc.Result{ID: id, OK: true}
 	}
-	r := ipc.Result{ID: id, Code: ipc.CodeFailed, Error: err.Error()}
+	r := ipc.Result{ID: id, Code: ipc.CodeInternal, Error: err.Error()}
 	var ce *codedError
 	var we *wire.CallError
+	var coder errCoder
 	switch {
 	case errors.As(err, &ce):
 		r.Code = ce.code
+	case errors.As(err, &coder) && coder.Code() != "":
+		r.Code = coder.Code()
 	case errors.Is(err, store.ErrNotFound):
 		r.Code = ipc.CodeNotFound
 	case errors.As(err, &we) && we.Code != "":

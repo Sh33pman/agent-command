@@ -48,6 +48,7 @@ func (o Op) destructive() Op { o.Kind = KindDestructive; return o }
 func (o Op) hostOnly() Op    { o.HostOnly = true; return o }
 func (o Op) runsCode() Op    { o.RunsCode = true; return o }
 func (o Op) stream() Op      { o.Stream = true; return o }
+func (o Op) retryable() Op   { o.Retryable = true; return o }
 
 func localOps() []Op {
 	const (
@@ -72,7 +73,7 @@ func localOps() []Op {
 		act(ipc.OpSetLayout, "Saves a client's pane layout.", host, ipc.Layout{}, nil),
 
 		// Sessions.
-		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, ipc.Session{}).runsCode(),
+		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, ipc.Session{}).runsCode().retryable(),
 		act(ipc.OpResume, "Resumes a paused background session.", entities, ipc.Mutation{}, ipc.Session{}).runsCode(),
 		read(ipc.OpConversations, "Lists earlier Claude and Antigravity conversations that can be resumed.", host, nil, []ipc.Conversation{}),
 		// rename, archive, unarchive, move, purge, remote and remove_added take
@@ -89,7 +90,7 @@ func localOps() []Op {
 		mut(admin(ipc.MutRemote, "Turns sessions' Remote switch on or off: whether clients of Hosting may see and use them.", entities, nil, ipc.Results{})),
 
 		// Groups.
-		mut(act(ipc.MutGroupCreate, "Creates a group, with a name and a color.", entities, nil, ipc.Group{})),
+		mut(act(ipc.MutGroupCreate, "Creates a group, with a name and a color.", entities, nil, ipc.Group{})).retryable(),
 		mut(act(ipc.MutGroupRename, "Renames a group.", entities, nil, nil)),
 		mut(act(ipc.MutGroupColor, "Sets a group's color.", entities, nil, nil)),
 		mut(act(ipc.MutGroupDelete, "Deletes a group. Its sessions move to the Default group.", entities, nil, nil).destructive()),
@@ -119,7 +120,7 @@ func localOps() []Op {
 
 		// Scheduled jobs. Jobs run agents on the host, so they need the whole
 		// host, never a share.
-		act(ipc.OpJobSave, "Adds or edits a scheduled job.", host, core.Job{}, core.Job{}).runsCode(),
+		act(ipc.OpJobSave, "Adds or edits a scheduled job.", host, core.Job{}, core.Job{}).runsCode().retryable(),
 		read(ipc.OpJobCheck, "Checks a job without saving it: its schedule in words and its next runs.", host, ipc.JobCheckRequest{}, ipc.JobCheck{}),
 		act(ipc.OpJobPromptRead, "Reads a job's own prompt file, by job id, or a draft's Markdown or text file.", host, ipc.PromptFileRef{}, ipc.PromptFile{}),
 		act(ipc.OpJobPromptWrite, "Writes a job's own prompt file, by job id, or a draft's Markdown or text file.", host, ipc.PromptFileRef{}, ipc.PromptFile{}),
@@ -128,7 +129,7 @@ func localOps() []Op {
 		act(ipc.OpFoldersMkdir, "Makes a folder here.", host, api.FolderPath{}, api.Folder{}),
 		act(ipc.OpJobDelete, "Deletes a scheduled job.", host, ipc.JobRef{}, nil).destructive(),
 		act(ipc.OpJobPause, "Pauses or resumes a scheduled job.", host, ipc.JobRef{}, nil),
-		act(ipc.OpJobRun, "Runs a scheduled job now.", host, ipc.JobRef{}, core.JobRun{}).runsCode(),
+		act(ipc.OpJobRun, "Runs a scheduled job now.", host, ipc.JobRef{}, core.JobRun{}).runsCode().retryable(),
 		read(ipc.OpJobRuns, "Lists a job's runs, newest first.", host, ipc.JobRef{}, []core.JobRun{}),
 		read(ipc.OpAgentSettings, "Lists an agent's settings for jobs.", host, ipc.JobRef{}, []harness.Setting{}),
 		admin(ipc.OpWakeSet, "Turns waking the Mac for jobs on or off, checking the sudoers rule again.", host, ipc.WakeRef{}, ipc.WakeState{}).hostOnly(),
@@ -162,7 +163,7 @@ func localOps() []Op {
 		admin(ipc.OpRemoteHostRemove, "Forgets a known host, and the sessions added from it here.", host, ipc.RemoteHostRef{}, nil).destructive(),
 		act(ipc.OpRemoteHostRetry, "Connects to a known host now, without waiting out the backoff.", host, ipc.RemoteHostRef{}, ipc.RemoteHost{}),
 		read(ipc.OpRemoteBrowse, "Connects to a host and lists its own sessions, as it has them now.", host, ipc.RemoteHostRef{}, ipc.RemoteBrowse{}),
-		act(ipc.OpRemoteNew, "Starts a session on a host, in its folder and group there: it shows in the host's tree.", host, ipc.RemoteNewRequest{}, ipc.Session{}).runsCode(),
+		act(ipc.OpRemoteNew, "Starts a session on a host, in its folder and group there: it shows in the host's tree.", host, ipc.RemoteNewRequest{}, ipc.Session{}).runsCode().retryable(),
 		read(ipc.OpRemoteFoldersRecent, "Lists a host's recent folders.", host, ipc.RemoteHostRef{}, api.FolderList{}),
 		read(ipc.OpRemoteFoldersList, "Lists a folder on a host.", host, ipc.RemoteFolderRequest{}, api.FolderList{}),
 		act(ipc.OpRemoteFoldersMkdir, "Makes a folder on a host.", host, ipc.RemoteFolderRequest{}, api.Folder{}),

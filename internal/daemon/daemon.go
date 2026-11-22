@@ -128,12 +128,13 @@ type Config struct {
 
 // Daemon is a running daemon.
 type Daemon struct {
-	cfg   Config
-	store *store.Store
-	ln    net.Listener
-	mu    sync.Mutex // serializes state changes
-	stop  chan struct{}
-	once  sync.Once
+	cfg      Config
+	store    *store.Store
+	requests requests // the results of retryable ops that carried a request id
+	ln       net.Listener
+	mu       sync.Mutex // serializes state changes
+	stop     chan struct{}
+	once     sync.Once
 
 	changes changes      // bumped on every state change (OpWatch)
 	reg     *registry    // the clients (clients.go)
@@ -352,10 +353,10 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 		}
 		resp := ipc.Response{OK: err == nil}
 		if err != nil {
-			resp.Error = err.Error()
-			if r := resultOf("", err); r.Code != ipc.CodeFailed {
-				resp.Code = r.Code
-			}
+			// Every error has its code: a client decides from it, never from
+			// the message.
+			r := resultOf("", err)
+			resp.Error, resp.Code = r.Error, r.Code
 		} else if data != nil {
 			b, merr := json.Marshal(onTheWire(data))
 			if merr != nil {
@@ -385,6 +386,16 @@ func changesState(op string) bool {
 }
 
 func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
+	if id := cmp.Or(req.RequestID, ipc.RequestIDOf(ctx)); id != "" {
+		if name, ok := retryable(req); ok {
+			return d.requests.once(ctx, d, id, name, req)
+		}
+	}
+	return d.run(ctx, req)
+}
+
+// run runs one op.
+func (d *Daemon) run(ctx context.Context, req ipc.Request) (any, error) {
 	if out, done, err := d.forwardToHost(ctx, req); done { // a host's: it makes the change
 		return out, err
 	}
@@ -417,7 +428,7 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	case ipc.OpEvent:
 		var ev ipc.HookEvent
 		if err := json.Unmarshal(req.Data, &ev); err != nil {
-			return nil, fmt.Errorf("bad event: %w", err)
+			return nil, badRequest("bad event: %v", err)
 		}
 		return nil, d.ApplyHook(ctx, ev)
 	case ipc.OpHarnesses:
@@ -442,7 +453,7 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 	case ipc.OpMutate:
 		var m ipc.Mutation
 		if err := json.Unmarshal(req.Data, &m); err != nil {
-			return nil, fmt.Errorf("bad mutation: %w", err)
+			return nil, badRequest("bad mutation: %v", err)
 		}
 		return d.mutate(ctx, m)
 	case ipc.OpWatch:
@@ -478,7 +489,7 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		var l ipc.Layout
 		if len(req.Data) > 0 {
 			if err := json.Unmarshal(req.Data, &l); err != nil {
-				return nil, fmt.Errorf("bad layout request: %w", err)
+				return nil, badRequest("bad layout request: %v", err)
 			}
 		}
 		d.mu.Lock()
@@ -511,7 +522,7 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		return ipc.Status{Version: d.cfg.Version, Pid: os.Getpid(), Sessions: len(sessions), Events: events,
 			RemoteSessions: remoteCount(sessions)}, nil
 	default:
-		return nil, fmt.Errorf("unknown op %q", req.Op)
+		return nil, &codedError{code: ipc.CodeUnknownOp, err: fmt.Errorf("unknown op %q", req.Op)}
 	}
 }
 

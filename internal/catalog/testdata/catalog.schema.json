@@ -236,6 +236,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "entities",
+      "retryable": true,
       "transport": {
         "op": "mutate",
         "kind": "group.create"
@@ -526,6 +527,7 @@
       "kind": "change",
       "grant": "host",
       "runs_code": true,
+      "retryable": true,
       "transport": {
         "op": "job.run"
       },
@@ -562,6 +564,7 @@
       "kind": "change",
       "grant": "host",
       "runs_code": true,
+      "retryable": true,
       "transport": {
         "op": "job.save"
       },
@@ -637,6 +640,7 @@
       "kind": "change",
       "grant": "entities",
       "runs_code": true,
+      "retryable": true,
       "transport": {
         "op": "new"
       },
@@ -1021,6 +1025,7 @@
       "kind": "change",
       "grant": "host",
       "runs_code": true,
+      "retryable": true,
       "transport": {
         "op": "remote.new"
       },
@@ -1601,6 +1606,64 @@
       "output": {
         "$ref": "#/$defs/ipc.WatchResponse"
       }
+    }
+  ],
+  "errors": [
+    {
+      "code": "not_found",
+      "meaning": "No such thing, or not one the caller may see."
+    },
+    {
+      "code": "invalid",
+      "meaning": "It can't be done to this one, such as unarchiving a terminal."
+    },
+    {
+      "code": "bad_request",
+      "meaning": "The request doesn't make sense: its arguments don't decode, or are missing."
+    },
+    {
+      "code": "conflict",
+      "meaning": "It changed since the caller loaded it: reload, and try again."
+    },
+    {
+      "code": "permission_denied",
+      "meaning": "The caller's scope, or the host's user, may not do that."
+    },
+    {
+      "code": "forbidden",
+      "meaning": "A paired device may not call that op at all."
+    },
+    {
+      "code": "not_running",
+      "meaning": "The session's terminal has ended."
+    },
+    {
+      "code": "not_supported",
+      "meaning": "The session's host can't do that yet."
+    },
+    {
+      "code": "host_unreachable",
+      "meaning": "Its Remote host can't be reached now."
+    },
+    {
+      "code": "unknown_op",
+      "meaning": "The daemon doesn't have the op."
+    },
+    {
+      "code": "proto_unsupported",
+      "meaning": "No protocol version both sides speak."
+    },
+    {
+      "code": "exists",
+      "meaning": "There's already something at that path."
+    },
+    {
+      "code": "not_folder",
+      "meaning": "The path is a file, not a folder."
+    },
+    {
+      "code": "internal",
+      "meaning": "Anything else: the message says what."
     }
   ],
   "$defs": {

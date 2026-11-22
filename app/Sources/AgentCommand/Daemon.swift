@@ -461,6 +461,9 @@ struct Conversation: Decodable, Identifiable, Hashable {
 
 struct DaemonError: LocalizedError {
     let message: String
+    /// What kind of error, as the daemon says (internal/errcode): decide from
+    /// it, never from the message. "" for one the app made itself.
+    var code = ""
     var errorDescription: String? { message }
 }
 
@@ -581,7 +584,7 @@ final class DaemonConnection {
         }
         let reply = try JSONSerialization.jsonObject(with: try readLine()) as? [String: Any]
         guard reply?["ok"] as? Bool == true else {
-            throw DaemonError(message: reply?["error"] as? String ?? "daemon error")
+            throw DaemonError(message: reply?["error"] as? String ?? "daemon error", code: reply?["code"] as? String ?? "")
         }
         return try JSONSerialization.data(
             withJSONObject: reply?["data"] ?? [String: Any](), options: .fragmentsAllowed)

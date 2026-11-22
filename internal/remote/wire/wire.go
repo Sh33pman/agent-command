@@ -46,6 +46,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/brettmostert/agent-command/internal/errcode"
 )
 
 // Proto is the newest protocol version this side speaks, and ProtoMin the
@@ -124,12 +126,12 @@ type Reply struct {
 	Data  json.RawMessage `json:"data,omitempty"`
 }
 
-// Error codes in a Reply.
+// Error codes in a Reply: errcode's, as every transport has them.
 const (
-	CodeUnknownOp  = "unknown_op"  // the peer doesn't have the op
-	CodeBadRequest = "bad_request" // the arguments don't make sense
-	CodeNotFound   = "not_found"   // no such thing, or not one the client may see
-	CodeInternal   = "internal"    // anything else
+	CodeUnknownOp  = errcode.UnknownOp
+	CodeBadRequest = errcode.BadRequest
+	CodeNotFound   = errcode.NotFound
+	CodeInternal   = errcode.Internal
 )
 
 // ErrPending is a client the host doesn't know yet: it kept the request, and

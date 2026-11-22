@@ -7,6 +7,8 @@ import (
 	"reflect"
 
 	"github.com/invopop/jsonschema"
+
+	"github.com/brettmostert/agent-command/internal/errcode"
 )
 
 // SchemaDialect is the JSON Schema version Schema writes.
@@ -19,9 +21,11 @@ type Document struct {
 	Schema string `json:"$schema"`
 	Title  string `json:"title"`
 	// Proto is the range of protocol versions this catalog's daemon speaks.
-	Proto Range                         `json:"proto"`
-	Ops   []OpDoc                       `json:"ops"`
-	Defs  map[string]*jsonschema.Schema `json:"$defs"`
+	Proto Range   `json:"proto"`
+	Ops   []OpDoc `json:"ops"`
+	// Errors are the codes a failed op answers with, on every transport.
+	Errors []errcode.Code                `json:"errors"`
+	Defs   map[string]*jsonschema.Schema `json:"$defs"`
 }
 
 // OpDoc is one op in the Document. Input and Output are schemas, usually a
@@ -36,6 +40,7 @@ type OpDoc struct {
 	HostOnly    bool               `json:"host_only,omitempty"`
 	RunsCode    bool               `json:"runs_code,omitempty"`
 	Stream      bool               `json:"stream,omitempty"`
+	Retryable   bool               `json:"retryable,omitempty"`
 	Transport   Transport          `json:"transport"`
 	Input       *jsonschema.Schema `json:"input,omitempty"`
 	Output      *jsonschema.Schema `json:"output,omitempty"`
@@ -53,6 +58,7 @@ func (c *Catalog) Document(proto Range) (*Document, error) {
 		Schema: SchemaDialect,
 		Title:  "acmd daemon ops",
 		Proto:  proto,
+		Errors: errcode.All,
 		Defs:   map[string]*jsonschema.Schema{},
 	}
 	r := reflector()
@@ -61,7 +67,7 @@ func (c *Catalog) Document(proto Range) (*Document, error) {
 		d := OpDoc{
 			Name: o.Name, Description: o.Description,
 			Scope: o.Scope, Kind: o.Kind, Grant: o.Grant,
-			HostOnly: o.HostOnly, RunsCode: o.RunsCode, Stream: o.Stream,
+			HostOnly: o.HostOnly, RunsCode: o.RunsCode, Stream: o.Stream, Retryable: o.Retryable,
 			Transport: Transport{Op: op, Kind: kind},
 		}
 		var err error

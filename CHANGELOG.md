@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.81.2](https://github.com/brettmostert/agent-command/compare/v0.81.1...v0.81.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* **app:** no Dock badge when there is no NSApp ([#145](https://github.com/brettmostert/agent-command/issues/145)) ([5a5f330](https://github.com/brettmostert/agent-command/commit/5a5f330fde0aa9a16f4efa74cd88028276e06f8b))
+
 ## [0.81.1](https://github.com/brettmostert/agent-command/compare/v0.81.0...v0.81.1) (2026-11-22)
 
 

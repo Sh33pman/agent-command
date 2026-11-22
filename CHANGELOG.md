@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.81.1](https://github.com/brettmostert/agent-command/compare/v0.81.0...v0.81.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* name a host's entities by {host, id}, never guess the host from an id ([#143](https://github.com/brettmostert/agent-command/issues/143)) ([c0c679d](https://github.com/brettmostert/agent-command/commit/c0c679d0e82104fd9abb70c63a8c1db936b917b0))
+
 ## [0.81.0](https://github.com/brettmostert/agent-command/compare/v0.80.0...v0.81.0) (2026-11-22)
 
 

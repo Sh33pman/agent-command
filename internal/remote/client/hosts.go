@@ -123,7 +123,7 @@ func (c *Client) AddHost(e ipc.RemoteHostEdit) (ipc.RemoteHost, error) {
 
 // EditHost changes a known host: the fields of e that are set. Renaming it
 // moves its added sessions along; a new address or fingerprint reconnects.
-func (c *Client) EditHost(ctx context.Context, e ipc.RemoteHostEdit) (ipc.RemoteHost, error) {
+func (c *Client) EditHost(_ context.Context, e ipc.RemoteHostEdit) (ipc.RemoteHost, error) {
 	c.cfgMu.Lock()
 	defer c.cfgMu.Unlock()
 	hosts, err := c.knownHosts()
@@ -156,9 +156,6 @@ func (c *Client) EditHost(ctx context.Context, e ipc.RemoteHostEdit) (ipc.Remote
 		return ipc.RemoteHost{}, err
 	}
 	if kh.Name != e.Host {
-		if err := c.b.RenameHost(ctx, e.Host, kh.Name); err != nil {
-			return ipc.RemoteHost{}, err
-		}
 		c.mu.Lock()
 		for _, a := range c.added {
 			if a.Host == e.Host {
@@ -176,9 +173,9 @@ func (c *Client) EditHost(ctx context.Context, e ipc.RemoteHostEdit) (ipc.Remote
 	return c.Host(kh.Name)
 }
 
-// RemoveHost forgets a known host, and removes the sessions added from it
-// here. Nothing on the host is touched.
-func (c *Client) RemoveHost(ctx context.Context, name string) error {
+// RemoveHost forgets a known host, and its sessions go from here. Nothing on
+// the host is touched.
+func (c *Client) RemoveHost(_ context.Context, name string) error {
 	c.cfgMu.Lock()
 	defer c.cfgMu.Unlock()
 	if c.isInConfig(name) {
@@ -192,18 +189,13 @@ func (c *Client) RemoveHost(ctx context.Context, name string) error {
 		return fmt.Errorf("there's no Remote host named %q", name)
 	}
 	c.mu.Lock()
-	gone := c.sortedAddedLocked(name)
-	c.mu.Unlock()
-	var errs []error
-	for _, a := range gone {
-		if err := c.b.Remove(ctx, a.ID); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		c.forget(a.ID)
+	for _, a := range c.sortedAddedLocked(name) {
+		c.closeProxyLocked(a)
+		c.inbox.set(a.ID, name, nil)
+		delete(c.added, a.ID)
 	}
-	errs = append(errs, c.reloadLocked())
-	return errors.Join(errs...)
+	c.mu.Unlock()
+	return c.reloadLocked()
 }
 
 // checkHost checks a host entry against the others (all but the one named

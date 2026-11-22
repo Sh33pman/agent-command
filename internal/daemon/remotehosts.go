@@ -5,17 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
-	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/client"
-	"github.com/brettmostert/agent-command/internal/store"
 )
 
 // Remote hosts: this machine as a client of other acmds' Hosting. A session
@@ -47,7 +43,7 @@ func (d *Daemon) startRemoteHosts(ctx context.Context) {
 func isRemoteHostsOp(op string) bool {
 	switch op {
 	case ipc.OpRemoteHosts, ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteHostRemove, ipc.OpRemoteHostRetry,
-		ipc.OpRemoteBrowse, ipc.OpRemoteSessionAdd, ipc.OpRemoteSessionRemove, ipc.OpRemoteNew,
+		ipc.OpRemoteBrowse, ipc.OpRemoteNew,
 		ipc.OpRemoteFoldersRecent, ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir, ipc.OpRemoteHarnesses, ipc.OpRemoteCall:
 		return true
 	}
@@ -90,28 +86,12 @@ func (d *Daemon) handleRemoteHosts(ctx context.Context, req ipc.Request) (any, e
 		return c.Retry(ref.Host)
 	case ipc.OpRemoteBrowse:
 		return c.Browse(ctx, ref.Host)
-	case ipc.OpRemoteSessionAdd:
-		id, err := c.AddSession(ctx, ref.Host, ref.ID, "")
-		if err != nil {
-			return nil, err
-		}
-		return d.sessionByID(ctx, id)
-	case ipc.OpRemoteSessionRemove:
-		return nil, c.RemoveSession(ctx, ref.ID)
 	case ipc.OpRemoteNew:
 		r, err := decode[ipc.RemoteNewRequest](req.Data)
 		if err != nil {
 			return nil, err
 		}
-		id, err := c.NewSession(ctx, r)
-		if err != nil {
-			return nil, err
-		}
-		s, err := d.sessionByID(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		return d.joinSet(ctx, s, r.SetWith), nil
+		return c.NewSession(ctx, r)
 	case ipc.OpRemoteFoldersRecent:
 		return c.RecentFolders(ctx, ref.Host)
 	case ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir:
@@ -141,64 +121,6 @@ func (d *Daemon) sessionByID(ctx context.Context, id string) (*core.Session, err
 	return d.store.Session(ctx, id)
 }
 
-// mutateOnHost carries out a mutation of a session added from a host: a
-// rename or an end goes to the host. It reports whether m was one; the rest
-// apply here as for any session. d.mu isn't held: the host may take a moment.
-func (d *Daemon) mutateOnHost(ctx context.Context, m ipc.Mutation) (bool, error) {
-	switch m.Kind {
-	case ipc.MutRename, ipc.MutArchive, ipc.MutFinish, ipc.MutUnarchive, ipc.MutRemote:
-	default:
-		return false, nil
-	}
-	s, err := d.sessionByID(ctx, m.ID)
-	if err != nil || !s.OnHost() {
-		return false, nil // not found: the usual path says so
-	}
-	ctx, cancel := context.WithTimeout(ctx, remoteCallTimeout)
-	defer cancel()
-	switch m.Kind {
-	case ipc.MutRename:
-		name := strings.TrimSpace(m.Text)
-		if name == "" {
-			return true, errors.New("name is empty")
-		}
-		return true, unreachable(d.client.Rename(ctx, s.ID, name))
-	case ipc.MutFinish:
-		if s.HostGone {
-			return true, fmt.Errorf("%s no longer offers this session: remove it", s.Host)
-		}
-		return true, unreachable(d.client.End(ctx, s.ID, true))
-	case ipc.MutArchive:
-		if s.Status == core.StatusArchived {
-			return true, nil
-		}
-		if !s.HostGone { // ended there, then here
-			if err := d.client.End(ctx, s.ID, false); err != nil {
-				return true, unreachable(err)
-			}
-		}
-		d.mu.Lock()
-		defer d.mu.Unlock()
-		return true, d.archive(ctx, s.ID)
-	case ipc.MutUnarchive:
-		if s.HostGone {
-			return true, invalid("%s no longer offers this session: remove it", s.Host)
-		}
-		d.mu.Lock()
-		err := d.updateSession(ctx, s.ID, func(s *core.Session) error {
-			core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
-			return nil
-		})
-		d.mu.Unlock()
-		if err == nil {
-			d.client.SetArchived(s.ID, false)
-		}
-		return true, err
-	default: // MutRemote
-		return true, invalid("this session runs on %s: only %s can make it Remote", s.Host, s.Host)
-	}
-}
-
 // splitInboxIDs parts inbox item ids into this machine's and the hosts'
 // (negative).
 func splitInboxIDs(ids []int64) (local, hosts []int64) {
@@ -222,9 +144,9 @@ func (d *Daemon) answerOnHost(ctx context.Context, a ipc.InboxAnswer) error {
 	if err := d.mayAnswer(ctx, it.Kind); err != nil {
 		return err
 	}
-	s, err := d.sessionByID(ctx, it.SessionID)
-	if err != nil {
-		return err
+	s, ok := d.treeSession(it.SessionID)
+	if !ok {
+		return errors.New("its session is no longer on its host")
 	}
 	keys, err := answerKeys(&it, s, a)
 	if err != nil {
@@ -258,124 +180,15 @@ func (d *Daemon) remoteHosts() []ipc.RemoteHost {
 	return d.client.Hosts()
 }
 
-// clientBackend keeps the sessions added from hosts for the client.
+// clientBackend is the daemon for the client of Remote hosts: their notices
+// show here, and their changes reach the apps.
 type clientBackend struct{ d *Daemon }
 
 var _ client.Backend = clientBackend{}
 
-func (b clientBackend) Added(ctx context.Context) ([]client.Added, error) {
-	d := b.d
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	sessions, err := d.store.Sessions(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	var out []client.Added
-	for _, s := range sessions {
-		if s.OnHost() {
-			out = append(out, client.Added{ID: s.ID, Host: s.Host, RemoteID: s.RemoteID, Archived: s.Status == core.StatusArchived})
-		}
-	}
-	return out, nil
-}
-
-func (b clientBackend) Add(ctx context.Context, host string, rs api.Session, group string) (*core.Session, error) {
-	d := b.d
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	sessions, err := d.store.Sessions(ctx, true)
-	if err != nil {
-		return nil, err
-	}
-	for _, s := range sessions {
-		if s.Host == host && s.RemoteID == rs.ID {
-			if s.Status == core.StatusArchived { // added again: back from the archive
-				client.Apply(s, rs)
-				s.Status, s.ArchivedAt = core.Status(rs.Status), time.Time{}
-				if err := d.store.UpdateSession(ctx, s); err != nil {
-					return nil, err
-				}
-				d.changes.bump()
-			}
-			return s, nil
-		}
-	}
-	s := client.Local(host, rs)
-	s.GroupID = group
-	if err := d.store.CreateSession(ctx, s); err != nil {
-		return nil, err
-	}
-	if err := d.store.AppendEvent(ctx, store.LoggedEvent{SessionID: s.ID, Kind: string(core.EventCreated), Detail: "added from " + host}); err != nil {
-		return nil, err
-	}
-	d.changes.bump()
-	return s, nil
-}
-
-func (b clientBackend) Remove(ctx context.Context, id string) error {
-	d := b.d
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if err := d.store.DeleteSession(ctx, id); err != nil && !errors.Is(err, store.ErrNotFound) {
-		return err
-	}
-	d.forget(id)
-	d.changes.bump()
-	return nil
-}
-
-func (b clientBackend) RenameHost(ctx context.Context, old, name string) error {
-	d := b.d
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if err := d.store.RenameHost(ctx, old, name); err != nil {
-		return err
-	}
-	d.changes.bump()
-	return nil
-}
-
-func (b clientBackend) Update(ctx context.Context, id string, u client.Update) error {
-	return b.edit(ctx, id, func(s *core.Session) {
-		client.Apply(s, u.Session)
-		if u.Unseen != nil {
-			s.Unseen = *u.Unseen
-		}
-	})
-}
-
-func (b clientBackend) Gone(ctx context.Context, id string) error {
-	return b.edit(ctx, id, func(s *core.Session) { s.HostGone = true })
-}
-
-// edit changes an added session, and wakes the watchers when it changed.
-func (b clientBackend) edit(ctx context.Context, id string, fn func(*core.Session)) error {
-	d := b.d
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	s, err := d.store.Session(ctx, id)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil // removed meanwhile
-	}
-	if err != nil {
-		return err
-	}
-	before := *s
-	fn(s)
-	if reflect.DeepEqual(before, *s) {
-		return nil
-	}
-	if err := d.store.UpdateSession(ctx, s); err != nil {
-		return err
-	}
-	d.changes.bump()
-	return nil
-}
-
-// Notice shows a host's notification about an added session, as this
+// Notice shows a host's notification about one of its sessions, as this
 // machine's settings allow, naming the host.
-func (b clientBackend) Notice(id, host string, n api.Notice) {
+func (b clientBackend) Notice(id, host string, n ipc.Notice) {
 	d := b.d
 	d.mu.Lock()
 	defer d.mu.Unlock()

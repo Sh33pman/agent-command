@@ -93,17 +93,7 @@ struct RemoteHostsClient {
         call("remote.browse", Ref(host: host), done)
     }
 
-    /// Adds a host's session here, by its id there: done gets the session here.
-    func addSession(host: String, id: String, done: @escaping (Result<Session, Error>) -> Void) {
-        call("remote.sessions.add", Ref(host: host, id: id), done)
-    }
-
-    /// Removes an added session here, by its id here. The host keeps it.
-    func removeSession(_ id: String, done: @escaping (Error?) -> Void) {
-        call("remote.sessions.remove", Ref(id: id)) { (result: Result<Nothing, Error>) in done(result.failure) }
-    }
-
-    /// Starts a session on a host, Remote there, and adds it here.
+    /// Starts a session on a host: it shows here in the host's tree.
     /// setWith is a session from the same host to put it in a set with (a split).
     func newSession(host: String, dir: String, harness: String?, setWith: String? = nil,
                     done: @escaping (Result<Session, Error>) -> Void) {

@@ -20,7 +20,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
-	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/version"
 )
@@ -142,12 +141,15 @@ func errContains(t *testing.T, err error, want string) {
 	}
 }
 
-var sampleBrowse = ipc.RemoteBrowse{Host: "studio", Sessions: []ipc.RemoteBrowseSession{
-	{Session: api.Session{ID: "r1", Name: "auth", Harness: "claude", Dir: "/w/api", Status: "busy", Unseen: true}, Added: true, LocalID: "L1"},
-	{Session: api.Session{ID: "r2", Name: "docs", Harness: "terminal", Dir: "/w/docs", Status: "waiting"}},
-	{Session: api.Session{ID: "r3", Name: "docs-site", Harness: "claude", Dir: "/w/site", Status: "done"}},
-	{Session: api.Session{ID: "r4", Harness: "claude", Dir: "/w/x", Status: "done"}},
-}}
+// sampleSessions are a host's sessions, as browse lists them.
+var sampleSessions = []*core.Session{
+	{ID: "r1", Name: "auth", Harness: "claude", Cwd: "/w/api", Status: core.StatusBusy, Unseen: true, Host: "studio", Kind: core.KindHosted},
+	{ID: "r2", Name: "docs", Harness: "terminal", Cwd: "/w/docs", Status: core.StatusWaiting, Host: "studio", Kind: core.KindHosted},
+	{ID: "r3", Name: "docs-site", Harness: "claude", Cwd: "/w/site", Status: core.StatusDone, Host: "studio", Kind: core.KindHosted},
+	{ID: "r4", Harness: "claude", Cwd: "/w/x", Status: core.StatusDone, Host: "studio", Kind: core.KindHosted},
+}
+
+var sampleBrowse = ipc.RemoteBrowse{Host: "studio", Sessions: ipc.SessionsOf(sampleSessions)}
 
 func TestResolveRemoteSession(t *testing.T) {
 	for _, tc := range []struct{ sel, want, err string }{
@@ -159,19 +161,19 @@ func TestResolveRemoteSession(t *testing.T) {
 		{sel: "docs-", want: "r3"},
 		{sel: "au", want: "r1"},
 		{sel: "r", err: "matches more than one"},
-		{sel: "do", err: "matches more than one Remote session on studio: docs (r2), docs-site (r3)"},
-		{sel: "9", err: "no Remote session number 9"},
-		{sel: "#0", err: "no Remote session number 0"},
-		{sel: "nope", err: `studio has no Remote session "nope" (see acmd remote browse studio)`},
-		{sel: " ", err: "has no Remote session"},
+		{sel: "do", err: "matches more than one session on studio: docs (r2), docs-site (r3)"},
+		{sel: "9", err: "no session number 9"},
+		{sel: "#0", err: "no session number 0"},
+		{sel: "nope", err: `studio has no session "nope" (see acmd remote browse studio)`},
+		{sel: " ", err: "has no session"},
 	} {
-		s, err := resolveRemoteSession(sampleBrowse, tc.sel)
+		s, err := resolveRemoteSession("studio", sampleSessions, tc.sel)
 		if tc.err != "" {
 			errContains(t, err, tc.err)
 			continue
 		}
 		if err != nil || s.ID != tc.want {
-			t.Errorf("%q: %s, %v; want %s", tc.sel, s.ID, err, tc.want)
+			t.Errorf("%q: %v, %v; want %s", tc.sel, s, err, tc.want)
 		}
 	}
 }
@@ -391,30 +393,25 @@ func TestRemoteBrowse(t *testing.T) {
 	f := newFakeDaemon(t)
 	now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { now = time.Now })
-	b := sampleBrowse
-	b.Sessions = append([]ipc.RemoteBrowseSession(nil), b.Sessions...)
-	b.Sessions[0].LastActivity = now().Add(-5 * time.Minute)
+	b := ipc.RemoteBrowse{Host: "studio", Sessions: ipc.SessionsOf(sampleSessions)}
+	b.Sessions[0].LastEventAt = now().Add(-5 * time.Minute)
 	f.reply(ipc.OpRemoteBrowse, b)
 	out := mustRun(t, "remote", "browse", "studio")
-	for _, want := range []string{"#  STATUS   NAME       HARNESS   DIR   ADDED  LAST  ID",
-		"1  busy•    auth       claude    api   added  5m    r1",
-		"2  waiting  docs       terminal  docs  -      -     r2",
-		"4  done     (unnamed)  claude    x     -      -     r4"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("browse lacks %q:\n%s", want, out)
-		}
+	lines := strings.Split(out, "\n")
+	if !strings.HasPrefix(lines[0], "#  STATUS") || !strings.Contains(lines[1], "busy•") || !strings.Contains(lines[1], "auth") ||
+		!strings.Contains(lines[1], "5m") || !strings.HasSuffix(strings.TrimSpace(lines[1]), "r1") || !strings.Contains(out, "(unnamed)") {
+		t.Errorf("browse:\n%s", out)
 	}
-	var got browseJSON
+	var got []ipc.Session
 	must(t, json.Unmarshal([]byte(mustRun(t, "remote", "browse", "studio", "--json")), &got))
-	if got.Host != "studio" || len(got.Sessions) != 4 || got.Sessions[0].Number != 1 || !got.Sessions[0].Added ||
-		got.Sessions[0].LocalID != "L1" || got.Sessions[1].Name != "docs" {
+	if len(got) != 4 || got[0].ID != "r1" || got[0].Host != "studio" || got[1].Name != "docs" {
 		t.Errorf("browse --json = %+v", got)
 	}
-	f.reply(ipc.OpRemoteBrowse, ipc.RemoteBrowse{Host: "studio", Sessions: []ipc.RemoteBrowseSession{}})
-	if out := mustRun(t, "remote", "browse", "studio"); !strings.Contains(out, "studio has no Remote sessions. On studio, make one with acmd remote on <session>.") {
+	f.reply(ipc.OpRemoteBrowse, ipc.RemoteBrowse{Host: "studio", Sessions: []*ipc.Session{}})
+	if out := mustRun(t, "remote", "browse", "studio"); !strings.Contains(out, "studio has no sessions yet") {
 		t.Errorf("empty browse:\n%s", out)
 	}
-	if out := mustRun(t, "remote", "browse", "studio", "--json"); !strings.Contains(out, `"sessions": []`) {
+	if out := mustRun(t, "remote", "browse", "studio", "--json"); !strings.Contains(out, "[]") {
 		t.Errorf("empty browse --json:\n%s", out)
 	}
 }
@@ -423,13 +420,13 @@ func TestRemoteBrowse(t *testing.T) {
 // exits with that state's code; any other failure exits 1.
 func TestRemoteExitCodes(t *testing.T) {
 	f := newFakeDaemon(t)
+	fakeAttach(t, true, nil)
 	f.fail(ipc.OpRemoteBrowse, "studio isn't connected")
 	f.fail(ipc.OpRemoteNew, "studio isn't connected")
 	for state, code := range map[string]int{ipc.HostUnreachable: 3, ipc.HostPending: 4, ipc.HostUnauthorized: 5,
 		ipc.HostFingerprint: 6, ipc.HostVersion: 7, ipc.HostConnected: 1, ipc.HostError: 1} {
 		f.reply(ipc.OpRemoteHosts, []ipc.RemoteHost{{Name: "studio", State: state}})
-		for _, args := range [][]string{{"remote", "browse", "studio"}, {"remote", "open", "studio", "1"},
-			{"remote", "drop", "studio", "1"}, {"new", "--on", "studio"}} {
+		for _, args := range [][]string{{"remote", "browse", "studio"}, {"remote", "attach", "studio", "1"}, {"new", "--on", "studio"}} {
 			if _, err := acmd(t, args...); err == nil || ExitCode(err) != code {
 				t.Errorf("%s with %s: %v (code %d), want %d", strings.Join(args, " "), state, err, ExitCode(err), code)
 			}
@@ -461,107 +458,26 @@ func fakeAttach(t *testing.T, terminal bool, err error) *[]string {
 	return &sockets
 }
 
-func TestRemoteOpen(t *testing.T) {
-	f := newFakeDaemon(t)
-	f.reply(ipc.OpRemoteBrowse, sampleBrowse)
-	f.handle(ipc.OpRemoteSessionAdd, func(b json.RawMessage) (any, error) {
-		var r ipc.RemoteHostRef
-		_ = json.Unmarshal(b, &r)
-		return core.Session{ID: "L-" + r.ID, Host: r.Host, RemoteID: r.ID}, nil
-	})
-	sockets := fakeAttach(t, true, nil)
-
-	// Added already: attaches to the local session, without adding it again.
-	mustRun(t, "remote", "open", "studio", "auth")
-	if f.calledWith(ipc.OpRemoteSessionAdd) || len(*sockets) != 1 || (*sockets)[0] != f.p.HostSocket("L1") {
-		t.Errorf("open an added session: %v, %v", *sockets, f.called())
-	}
-	// Not added: added, then attached.
-	mustRun(t, "remote", "open", "studio", "#2")
-	if !f.calledWith(ipc.OpRemoteSessionAdd, `"host":"studio"`, `"id":"r2"`) || (*sockets)[1] != f.p.HostSocket("L-r2") {
-		t.Errorf("open: %v, %v", *sockets, f.called())
-	}
-	if f.calledWith(ipc.OpRemoteSessionRemove) {
-		t.Error("open removed the session")
-	}
-
-	// Without a terminal it's only added.
-	fakeAttach(t, false, nil)
-	out := mustRun(t, "remote", "open", "studio", "r3")
-	if !strings.Contains(out, `Added "docs-site" on studio (L-r3). Attach to it from a terminal with acmd remote open studio r3.`) {
-		t.Errorf("open without a terminal:\n%s", out)
-	}
-	_, err := acmd(t, "remote", "open", "studio", "nope")
-	errContains(t, err, `studio has no Remote session "nope"`)
-	f.fail(ipc.OpRemoteSessionAdd, "studio has no Remote session \"r4\"")
-	f.reply(ipc.OpRemoteHosts, []ipc.RemoteHost{{Name: "studio", State: ipc.HostConnected}})
-	_, err = acmd(t, "remote", "open", "studio", "4")
-	errContains(t, err, `no Remote session "r4"`)
-}
-
+// acmd remote attach (or open) attaches to a host's session through its
+// socket here: the host's sessions are here already, as its tree has them.
 func TestRemoteAttach(t *testing.T) {
 	f := newFakeDaemon(t)
 	f.reply(ipc.OpRemoteBrowse, sampleBrowse)
-	f.handle(ipc.OpRemoteSessionAdd, func(b json.RawMessage) (any, error) {
-		var r ipc.RemoteHostRef
-		_ = json.Unmarshal(b, &r)
-		return core.Session{ID: "L-" + r.ID}, nil
-	})
-	f.reply(ipc.OpRemoteSessionRemove, nil)
-
 	fakeAttach(t, false, nil)
 	_, err := acmd(t, "remote", "attach", "studio", "docs")
 	errContains(t, err, "needs a terminal")
 
 	sockets := fakeAttach(t, true, nil)
-	// Not added: added for the attach, removed after it.
 	mustRun(t, "remote", "attach", "studio", "docs")
-	if len(*sockets) != 1 || (*sockets)[0] != f.p.HostSocket("L-r2") || !f.calledWith(ipc.OpRemoteSessionRemove, `"id":"L-r2"`) {
-		t.Errorf("attach: %v, %v", *sockets, f.called())
+	mustRun(t, "remote", "open", "studio", "#1")
+	if len(*sockets) != 2 || (*sockets)[0] != f.p.HostSocket("r2") || (*sockets)[1] != f.p.HostSocket("r1") {
+		t.Errorf("attach: %v", *sockets)
 	}
-	// Added already: it stays added.
-	mustRun(t, "remote", "attach", "studio", "auth")
-	if f.calledWith(ipc.OpRemoteSessionRemove, `"id":"L1"`) {
-		t.Error("attach removed a session that was added before")
-	}
-	// The attach fails, and removing it fails too: both are said.
 	fakeAttach(t, true, errors.New("socket gone"))
-	f.fail(ipc.OpRemoteSessionRemove, "store is busy")
 	_, err = acmd(t, "remote", "attach", "studio", "docs")
 	errContains(t, err, "socket gone")
-	errContains(t, err, "still added here: remove it with acmd remote drop L-r2")
 	_, err = acmd(t, "remote", "attach", "studio", "zzz")
-	errContains(t, err, "no Remote session")
-}
-
-func TestRemoteDrop(t *testing.T) {
-	f := newFakeDaemon(t)
-	f.reply(ipc.OpRemoteBrowse, sampleBrowse)
-	f.reply(ipc.OpRemoteSessionRemove, nil)
-	f.reply(ipc.OpSnapshot, ipc.Snapshot{Sessions: ipc.SessionsOf([]*core.Session{
-		{ID: "L1", Name: "auth", Kind: core.KindHosted, Host: "studio", RemoteID: "r1"},
-		{ID: "loc", Name: "local", Kind: core.KindHosted},
-	})})
-	out := mustRun(t, "remote", "drop", "studio", "1")
-	if !strings.Contains(out, `Removed "auth" on studio here; it keeps running on the host.`) || !f.calledWith(ipc.OpRemoteSessionRemove, `"id":"L1"`) {
-		t.Errorf("drop host session:\n%s", out)
-	}
-	_, err := acmd(t, "remote", "drop", "studio", "docs")
-	errContains(t, err, `"docs" on studio isn't added here`)
-	out = mustRun(t, "remote", "drop", "auth")
-	if !strings.Contains(out, `Removed "auth" on studio here`) {
-		t.Errorf("drop local selector:\n%s", out)
-	}
-	_, err = acmd(t, "remote", "drop", "local")
-	errContains(t, err, "runs on this machine, not on a Remote host")
-	_, err = acmd(t, "remote", "drop", "zzz")
-	errContains(t, err, "zzz")
-	f.fail(ipc.OpRemoteSessionRemove, "nope")
-	_, err = acmd(t, "remote", "drop", "auth")
-	errContains(t, err, "nope")
-	f.fail(ipc.OpSnapshot, "no snapshot")
-	_, err = acmd(t, "remote", "drop", "auth")
-	errContains(t, err, "no snapshot")
+	errContains(t, err, `studio has no session "zzz"`)
 }
 
 func TestNewOn(t *testing.T) {
@@ -613,10 +529,10 @@ func TestRemoteCompletion(t *testing.T) {
 	must(t, os.MkdirAll(f.p.ConfigDir, 0o700))
 	must(t, os.WriteFile(f.p.Config(), []byte("[[remote.hosts]]\nname = \"studio\"\naddress = \"s:7433\"\nfingerprint = \"SHA256:x\"\n\n"+
 		"[[remote.hosts]]\nname = \"lab\"\naddress = \"l:7433\"\nfingerprint = \"SHA256:y\"\n"), 0o600))
-	f.reply(ipc.OpRemoteBrowse, ipc.RemoteBrowse{Host: "studio", Sessions: []ipc.RemoteBrowseSession{
-		{Session: api.Session{ID: "r1", Name: "auth"}}, {Session: api.Session{ID: "r2", Name: "two words"}}, {Session: api.Session{ID: "r3"}}}})
 	f.reply(ipc.OpSnapshot, ipc.Snapshot{Sessions: ipc.SessionsOf([]*core.Session{
-		{ID: "L1", Name: "auth", Host: "studio"}, {ID: "loc", Name: "local"}, {ID: "L2", Host: "lab", ArchivedAt: time.Now()}})})
+		{ID: "r1", Name: "auth", Host: "studio", Kind: core.KindHosted}, {ID: "r2", Name: "two words", Host: "studio", Kind: core.KindHosted},
+		{ID: "r3", Host: "studio", Kind: core.KindHosted}, {ID: "loc", Name: "local", Kind: core.KindHosted},
+		{ID: "L2", Host: "lab", Status: core.StatusArchived, Kind: core.KindHosted}})})
 
 	complete := func(args ...string) string {
 		t.Helper()
@@ -632,8 +548,6 @@ func TestRemoteCompletion(t *testing.T) {
 		{[]string{"remote", "open", ""}, []string{"studio", "lab"}, nil},
 		{[]string{"remote", "open", "studio", ""}, []string{"auth\tr1", "r1\tauth", "r2\ttwo words", "r3\t(unnamed)"}, []string{"two words\t"}},
 		{[]string{"remote", "attach", "studio", "a", ""}, nil, []string{"auth"}},
-		{[]string{"remote", "drop", ""}, []string{"studio", "lab", "L1\tauth on studio"}, []string{"loc", "L2"}},
-		{[]string{"remote", "drop", "studio", ""}, []string{"r1\tauth"}, nil},
 		{[]string{"new", "--on", ""}, []string{"studio", "lab"}, nil},
 	} {
 		out := complete(tc.args...)
@@ -649,12 +563,8 @@ func TestRemoteCompletion(t *testing.T) {
 		}
 	}
 	// No daemon: no sessions, and nothing is started.
-	f.fail(ipc.OpRemoteBrowse, "down")
 	f.fail(ipc.OpSnapshot, "down")
 	if out := complete("remote", "open", "studio", ""); strings.Contains(out, "r1") {
-		t.Errorf("completion without a browse:\n%s", out)
-	}
-	if out := complete("remote", "drop", ""); strings.Contains(out, "L1") {
 		t.Errorf("completion without a snapshot:\n%s", out)
 	}
 }
@@ -663,9 +573,6 @@ func TestCompletionWithoutADaemon(t *testing.T) {
 	isolate(t)
 	if got := hostSessionNames(context.Background(), "studio"); got != nil {
 		t.Errorf("sessions without a daemon: %v", got)
-	}
-	if got := addedSessionNames(context.Background()); got != nil {
-		t.Errorf("added sessions without a daemon: %v", got)
 	}
 	if got := hostNames(); got != nil {
 		t.Errorf("hosts without a config: %v", got)
@@ -748,7 +655,7 @@ func TestRemoteHostsEndToEnd(t *testing.T) {
 	if out := mustRun(t, "remote", "retry", "self"); !strings.Contains(out, "Connected to self") {
 		t.Errorf("retry after approval:\n%s", out)
 	}
-	if out := mustRun(t, "remote", "browse", "self"); !strings.Contains(out, "self has no Remote sessions") {
+	if out := mustRun(t, "remote", "browse", "self"); !strings.Contains(out, "self has no sessions yet") {
 		t.Errorf("browse:\n%s", out)
 	}
 

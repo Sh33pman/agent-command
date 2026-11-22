@@ -82,11 +82,7 @@ func TestKnownHosts(t *testing.T) {
 		t.Errorf("hosts = %+v", hosts)
 	}
 
-	// An edit: a rename moves the sessions added from it.
-	// Under the locks: the hosts' goroutines read both.
-	l.b.mu.Lock()
-	l.b.sessions["L09"] = &core.Session{ID: "L09", Host: "box", RemoteID: "r1", Status: core.StatusArchived}
-	l.b.mu.Unlock()
+	// An edit: a rename moves the host's sessions here with it.
 	l.c.mu.Lock()
 	l.c.added["L09"] = &added{Added: Added{ID: "L09", Host: "box", RemoteID: "r1", Archived: true}}
 	l.c.mu.Unlock()
@@ -101,9 +97,11 @@ func TestKnownHosts(t *testing.T) {
 	if st.Name != "tunnel" || st.Address != "localhost:17434" || st.Cert != certFile {
 		t.Errorf("edited = %+v", st)
 	}
-	if l.b.get("L09").Host != "tunnel" {
-		t.Errorf("the added session's host: %q", l.b.get("L09").Host)
+	l.c.mu.Lock()
+	if l.c.added["L09"].Host != "tunnel" {
+		t.Errorf("the session's host: %q", l.c.added["L09"].Host)
 	}
+	l.c.mu.Unlock()
 	// A new fingerprint replaces the cert.
 	other := "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	st, err = l.c.EditHost(ctx5(), ipc.RemoteHostEdit{Host: "tunnel", Fingerprint: other})
@@ -112,10 +110,10 @@ func TestKnownHosts(t *testing.T) {
 		t.Errorf("new pin = %+v", st)
 	}
 
-	// Removing it removes the sessions added from it, here only.
+	// Removing it takes its sessions from here; the host keeps them.
 	must(t, l.c.RemoveHost(ctx5(), "tunnel"))
-	if len(l.b.sessions) != 0 {
-		t.Errorf("sessions left: %+v", l.b.sessions)
+	if l.c.Is("L09") {
+		t.Error("its session is still here")
 	}
 	if err := l.c.RemoveHost(ctx5(), "tunnel"); err == nil {
 		t.Error("removed it twice")
@@ -145,7 +143,7 @@ func TestKnownHostsFollowConfig(t *testing.T) {
 	must(t, l.c.Reload())
 	list, err := l.c.Browse(ctx5(), "studio")
 	must(t, err)
-	if len(list.Sessions) != 1 || list.Sessions[0].ID != "r1" || list.Sessions[0].Added {
+	if len(list.Sessions) != 1 || list.Sessions[0].ID != "r1" || list.Sessions[0].Host != "studio" {
 		t.Errorf("browse = %+v", list)
 	}
 	// It's read-only here: the file changes it.
@@ -185,45 +183,30 @@ func TestTwoHostsAtOnce(t *testing.T) {
 	hosts := []*remoteHost{newRemoteHost(t, "studio"), newRemoteHost(t, "box")}
 	var panes []*pane
 	for i, r := range hosts {
+		api1, web, private := r.name+"-1", r.name+"-2", r.name+"-3"
 		r.authorize(l.fingerprint())
-		r.b.add(remoteSession("r1", "api"))
-		r.b.add(remoteSession("r2", "web"))
-		r.b.add(core.Session{ID: "l1", Name: "private", Status: core.StatusBusy, CreatedAt: t0})
-		r.terminal("r1")
+		r.b.add(remoteSession(api1, "api"))
+		r.b.add(remoteSession(web, "web"))
+		r.b.add(core.Session{ID: private, Name: "private", Status: core.StatusBusy, CreatedAt: t0})
+		r.terminal(api1)
 		l.know(r)
 
+		// The whole host, Remote or not, as its tree says: each of its
+		// sessions has a socket here, under the host's own id.
 		list, err := l.c.Browse(ctx5(), r.name)
 		must(t, err)
-		if len(list.Sessions) != 2 || list.Sessions[0].Added {
+		if len(list.Sessions) != 3 || list.Sessions[0].Host != r.name {
 			t.Fatalf("%s: browse = %+v", r.name, list)
 		}
-		id, err := l.c.AddSession(ctx5(), r.name, "r1", "work")
-		must(t, err)
-		again, err := l.c.AddSession(ctx5(), r.name, "r1", "")
-		must(t, err)
-		if again != id {
-			t.Errorf("added twice: %s, %s", id, again)
+		eventually(t, r.name+"'s tree", func() bool { return l.c.Is(api1) && l.c.Is(private) })
+		if h, ok := l.c.HostOf(api1); !ok || h != r.name {
+			t.Errorf("HostOf %s = %q %v", api1, h, ok)
 		}
-		s := l.b.get(id)
-		if s.Host != r.name || s.RemoteID != "r1" || s.Name != "api" || s.Cwd != "/w/api" || s.GroupID != "work" ||
-			s.Kind != core.KindHosted || s.Status != core.StatusRunning {
-			t.Errorf("added = %+v", s)
-		}
-		if _, err := l.c.AddSession(ctx5(), r.name, "l1", ""); err == nil {
-			t.Error("added a session that isn't Remote")
-		}
-		list, err = l.c.Browse(ctx5(), r.name)
-		must(t, err)
-		for _, s := range list.Sessions {
-			if s.Added != (s.ID == "r1") || (s.Added && s.LocalID != id) {
-				t.Errorf("%s: browse = %+v", r.name, s)
-			}
-		}
-		if st := l.state(r.name); st.State != ipc.HostConnected || st.Sessions != 1 || st.HostVersion != "1.0.0" {
+		if st := l.state(r.name); st.State != ipc.HostConnected || st.Sessions != 3 || st.HostVersion != "1.0.0" {
 			t.Errorf("%s: %+v", r.name, st)
 		}
 		// Typed in through the socket that's where a local host's would be.
-		p := attachPane(t, l.o.Socket(id))
+		p := attachPane(t, l.o.Socket(api1))
 		p.in <- []byte(fmt.Sprintf("echo on-%s-$((%d+1))\n", r.name, i))
 		want := fmt.Sprintf("on-%s-%d", r.name, i+1)
 		eventually(t, want, func() bool { return strings.Contains(p.out.String(), want) })
@@ -231,6 +214,10 @@ func TestTwoHostsAtOnce(t *testing.T) {
 	}
 	if !strings.Contains(panes[0].out.String(), "on-studio-1") || strings.Contains(panes[0].out.String(), "on-box") {
 		t.Errorf("the panes mixed:\n%s", panes[0].out)
+	}
+	tree := l.c.Tree()
+	if len(tree.Sessions) != 6 || tree.Sessions[0].Host != "studio" || tree.Sessions[5].Host != "box" {
+		t.Errorf("tree = %+v", tree.Sessions)
 	}
 }
 
@@ -354,7 +341,7 @@ func TestAnUnreachableHost(t *testing.T) {
 	}
 }
 
-func TestIdleHostDisconnects(t *testing.T) {
+func TestKnownHostsStayConnected(t *testing.T) {
 	l := newLaptop(t, func(o *Options) { o.IdleAfter = 200 * time.Millisecond })
 	r := newRemoteHost(t, "studio")
 	r.authorize(l.fingerprint())
@@ -367,7 +354,7 @@ func TestIdleHostDisconnects(t *testing.T) {
 	// The host daemon's own ops, as acmd --host runs them.
 	raw, err := l.c.Call(ctx5(), "studio", ipc.OpSnapshot, nil)
 	must(t, err)
-	if string(raw) != `{"op":"snapshot"}` {
+	if !strings.Contains(string(raw), `"sessions"`) {
 		t.Errorf("call = %s", raw)
 	}
 	if _, err := l.c.Call(ctx5(), "studio", ipc.OpSpeechSay, nil); err == nil {
@@ -383,9 +370,12 @@ func TestIdleHostDisconnects(t *testing.T) {
 		!strings.Contains(ce.Message, "update it") {
 		t.Errorf("an older host: %v", err)
 	}
+	// A known host stays connected, to show its tree: idle or not.
 	l.waitState("studio", ipc.HostConnected)
-	l.waitState("studio", ipc.HostIdle)
-	eventually(t, "the host sees it go", func() bool { return r.h.Status().Connected == 0 })
+	time.Sleep(400 * time.Millisecond)
+	if st := l.state("studio"); st.State != ipc.HostConnected {
+		t.Errorf("went idle: %+v", st)
+	}
 }
 
 func TestFolders(t *testing.T) {
@@ -420,97 +410,72 @@ func TestNewSessionOnAHost(t *testing.T) {
 	r := newRemoteHost(t, "studio")
 	r.authorize(l.fingerprint())
 	l.know(r)
-	id, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: core.HarnessTerminal, Name: "fresh", GroupID: "g1"})
+	s, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: core.HarnessTerminal, Name: "fresh"})
 	must(t, err)
-	made := r.b.session("new1")
-	if !made.Remote || made.Name != "fresh" || made.Cwd != r.home {
-		t.Errorf("on the host: %+v", made)
+	made := r.b.session(s.ID)
+	if made.Name != "fresh" || made.Cwd != r.home || s.Host != "studio" || s.RemoteID != s.ID {
+		t.Errorf("on the host: %+v, here %+v", made, s)
 	}
-	s := l.b.get(id)
-	if s.Host != "studio" || s.RemoteID != "new1" || s.Name != "fresh" || s.GroupID != "g1" {
-		t.Errorf("added: %+v", s)
-	}
-	if _, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: "emacs"}); !wire.IsCode(err, wire.CodeBadRequest) {
+	eventually(t, "it in the host's tree", func() bool { return l.c.Is(s.ID) })
+	if _, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: "emacs"}); !wire.IsCode(err, wire.CodeNotFound) &&
+		!wire.IsCode(err, wire.CodeBadRequest) {
 		t.Errorf("an unknown harness: %v", err)
 	}
-	l.b.failAdd = errors.New("disk full")
-	if _, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~"}); err == nil {
-		t.Error("added without the store")
+	if _, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "nowhere", Dir: "~"}); err == nil {
+		t.Error("a host that isn't known")
 	}
 }
 
-func TestRenameAndEndGoToTheHost(t *testing.T) {
-	l := newLaptop(t)
-	r := newRemoteHost(t, "studio")
-	r.authorize(l.fingerprint())
-	r.b.add(remoteSession("r1", "api"))
-	r.b.add(remoteSession("r2", "web"))
-	l.know(r)
-	id, err := l.c.AddSession(ctx5(), "studio", "r1", "")
-	must(t, err)
-	must(t, l.c.Rename(ctx5(), id, "renamed"))
-	if r.b.session("r1").Name != "renamed" || l.b.get(id).Name != "renamed" {
-		t.Errorf("rename: host %q, here %q", r.b.session("r1").Name, l.b.get(id).Name)
-	}
-	if err := l.c.Rename(ctx5(), "L99", "x"); err == nil {
-		t.Error("renamed a session that isn't added")
-	}
-	if err := l.c.End(ctx5(), "L99", false); err == nil {
-		t.Error("ended a session that isn't added")
-	}
-	two, err := l.c.AddSession(ctx5(), "studio", "r2", "")
-	must(t, err)
-	must(t, l.c.End(ctx5(), two, true))
-	eventually(t, "finished, here too", func() bool { return l.b.get(two).Status == core.StatusFinished })
-	must(t, l.c.End(ctx5(), id, false))
-	if r.b.session("r1").Status != core.StatusArchived {
-		t.Errorf("end: %+v", r.b.session("r1"))
-	}
-	// Archived there: no longer offered.
-	eventually(t, "gone", func() bool { return l.b.get(id).HostGone })
-}
-
-func TestEventsMerge(t *testing.T) {
+// The host's tree: its sessions, groups and sets as it has them, each named by
+// its host, with a socket for each of its own live sessions, its inbox under
+// ids of their own here, and its notices.
+func TestTheHostsTree(t *testing.T) {
 	l := newLaptop(t)
 	r := newRemoteHost(t, "studio")
 	r.authorize(l.fingerprint())
 	r.b.add(remoteSession("r1", "api"))
 	r.b.add(remoteSession("r2", "web"))
 	r.b.change(func() {
+		r.b.groups = []*core.Group{{ID: "g1", Name: "Backend", SortKey: 1}, {ID: "default", Name: "Default", IsDefault: true}}
+		r.b.sets = []ipc.Set{{Type: ipc.EntitySet, ID: "set1", Parent: "g1"}, {Type: ipc.EntitySet, ID: "theirs", Parent: "g1", Host: "far"}}
 		r.b.inbox = []core.InboxItem{{ID: 7, SessionID: "r1", Kind: core.InboxQuestion, Text: "Which?", Options: []string{"a", "b"}, State: core.InboxOpen, At: t0}}
+		// One the host uses from yet another host: that host's to offer.
+		r.b.sessions = append(r.b.sessions, &core.Session{ID: "x1", Host: "far", RemoteID: "f1", Status: core.StatusBusy, CreatedAt: t0})
 	})
 	l.know(r)
-	id, err := l.c.AddSession(ctx5(), "studio", "r1", "")
-	must(t, err)
-	two, err := l.c.AddSession(ctx5(), "studio", "r2", "")
-	must(t, err)
+	eventually(t, "the tree", func() bool { return l.c.Is("r1") && l.c.Is("r2") })
+	tree := l.c.Tree()
+	if len(tree.Sessions) != 2 || tree.Sessions[0].Host != "studio" || tree.Sessions[0].RemoteID != "r1" {
+		t.Errorf("sessions = %+v", tree.Sessions)
+	}
+	if len(tree.Groups) != 2 || tree.Groups[0].Host != "studio" || tree.Groups[0].Name != "Backend" || len(tree.Sets) != 1 || tree.Sets[0].Host != "studio" {
+		t.Errorf("groups %+v, sets %+v", tree.Groups, tree.Sets)
+	}
+	for id, want := range map[string]bool{"r1": true, "g1": true, "set1": true, "x1": false, "theirs": false, "nope": false, "": false} {
+		if _, ok := l.c.HostOf(id); ok != want {
+			t.Errorf("HostOf(%q) = %v", id, ok)
+		}
+	}
+	if l.c.Is("x1") {
+		t.Error("a socket for another host's session")
+	}
 
-	// The snapshot's inbox, named with the host, with an id of its own.
+	// The inbox, named with the host, with an id of its own.
 	eventually(t, "the inbox", func() bool { return len(l.c.Inbox()) == 1 })
 	it := l.c.Inbox()[0]
-	if it.ID >= 0 || it.SessionID != id || it.Host != "studio" || it.Text != "Which?" || it.State != core.InboxOpen {
+	if it.ID >= 0 || it.SessionID != "r1" || it.Host != "studio" || it.Text != "Which?" || it.State != core.InboxOpen {
 		t.Errorf("inbox = %+v", it)
 	}
 	if got, ok := l.c.InboxItem(it.ID); !ok || got.Text != "Which?" {
 		t.Errorf("item = %+v %v", got, ok)
 	}
-	if items := l.c.SessionInbox(id); len(items) != 1 || len(l.c.SessionInbox(two)) != 0 {
+	if items := l.c.SessionInbox("r1"); len(items) != 1 || len(l.c.SessionInbox("r2")) != 0 {
 		t.Errorf("session inbox = %+v", items)
 	}
 	l.c.SetInboxRead([]int64{it.ID}, true)
 	if !l.c.Inbox()[0].Read {
 		t.Error("not read")
 	}
-
-	// Its state, and its unseen flag when the host's changes.
-	r.b.edit("r1", func(s *core.Session) { s.Status, s.StatusDetail, s.Unseen = core.StatusWaiting, "question", true })
-	eventually(t, "waiting", func() bool {
-		s := l.b.get(id)
-		return s.Status == core.StatusWaiting && s.StatusDetail == "question" && s.Unseen
-	})
-	r.b.edit("r1", func(s *core.Session) { s.Unseen = false })
-	eventually(t, "seen", func() bool { return !l.b.get(id).Unseen })
-
 	// A new item keeps the old one's id; read here stays read.
 	r.b.change(func() {
 		r.b.inbox = append(r.b.inbox, core.InboxItem{ID: 8, SessionID: "r1", Kind: core.InboxDone, Text: "Done", State: core.InboxOpen, At: t0.Add(time.Minute)})
@@ -525,45 +490,42 @@ func TestEventsMerge(t *testing.T) {
 		t.Errorf("after the dismiss: %+v", items)
 	}
 
-	// Notices about added sessions, not others.
-	r.b.add(remoteSession("r3", "other"))
-	r.b.change(func() {
-		r.b.notices = append(r.b.notices,
-			ipc.Notice{Seq: 1, SessionID: "r3", Kind: "done", Title: "other"},
-			ipc.Notice{Seq: 2, SessionID: "r1", Kind: "waiting", Title: "⚠ api needs you"})
-	})
-	eventually(t, "the notice", func() bool {
-		l.b.mu.Lock()
-		defer l.b.mu.Unlock()
-		return len(l.b.notices) == 1 && l.b.notices[0] == id+" studio waiting ⚠ api needs you"
+	// Its state follows.
+	r.b.edit("r1", func(s *core.Session) { s.Status, s.StatusDetail, s.Unseen = core.StatusWaiting, "question", true })
+	eventually(t, "waiting", func() bool {
+		for _, s := range l.c.Tree().Sessions {
+			if s.ID == "r1" {
+				return s.Status == core.StatusWaiting && s.StatusDetail == "question" && s.Unseen
+			}
+		}
+		return false
 	})
 
-	// Turned local on the host: no longer available, and its items go.
-	r.b.edit("r1", func(s *core.Session) { s.Remote = false })
-	eventually(t, "gone", func() bool { return l.b.get(id).HostGone })
+	// Its notices.
+	r.b.change(func() {
+		r.b.notices = append(r.b.notices, ipc.Notice{Seq: 2, SessionID: "r1", Kind: "waiting", Title: "⚠ api needs you"})
+	})
+	eventually(t, "the notice", func() bool {
+		n := l.b.noticesSoFar()
+		return len(n) == 1 && n[0] == "r1 studio waiting ⚠ api needs you"
+	})
+
+	// Archived there: no socket here, and its items go.
+	r.b.edit("r1", func(s *core.Session) { s.Status = core.StatusArchived })
+	eventually(t, "no socket", func() bool { return !l.c.Is("r1") })
+	if _, err := os.Stat(l.o.Socket("r1")); !os.IsNotExist(err) {
+		t.Errorf("its socket: %v", err)
+	}
 	if len(l.c.Inbox()) != 0 {
 		t.Errorf("inbox = %+v", l.c.Inbox())
 	}
-	// And back.
-	r.b.edit("r1", func(s *core.Session) { s.Remote = true })
-	eventually(t, "back", func() bool { return !l.b.get(id).HostGone })
-
-	// Removed here: the host isn't touched.
-	must(t, l.c.RemoveSession(ctx5(), two))
-	if l.b.get(two).ID != "" || !r.b.session("r2").Remote {
-		t.Errorf("remove: here %+v, there %+v", l.b.get(two), r.b.session("r2"))
-	}
-	if err := l.c.RemoveSession(ctx5(), two); err == nil {
-		t.Error("removed it twice")
-	}
-	if _, err := os.Stat(l.o.Socket(two)); !os.IsNotExist(err) {
-		t.Errorf("its socket: %v", err)
-	}
-
-	// A snapshot after a reconnect: what went meanwhile is gone.
-	r.b.edit("r1", func(s *core.Session) { s.Status = core.StatusArchived })
+	// Gone there: gone here.
+	r.b.change(func() { r.b.sessions = r.b.sessions[1:2] }) // only r2
+	eventually(t, "gone", func() bool { return len(l.c.Tree().Sessions) == 1 })
+	// After a reconnect, the snapshot.
+	r.b.add(remoteSession("r3", "new"))
 	r.restart(0)
-	eventually(t, "gone after the reconnect", func() bool { return l.b.get(id).HostGone })
+	eventually(t, "the snapshot after a reconnect", func() bool { return l.c.Is("r3") })
 }
 
 func TestReconnectAndReattach(t *testing.T) {
@@ -573,8 +535,8 @@ func TestReconnectAndReattach(t *testing.T) {
 	r.b.add(remoteSession("r1", "api"))
 	sock := r.terminal("r1")
 	l.know(r)
-	id, err := l.c.AddSession(ctx5(), "studio", "r1", "")
-	must(t, err)
+	eventually(t, "its socket", func() bool { return l.c.Is("r1") })
+	id := "r1"
 	p := attachPane(t, l.o.Socket(id))
 	p.in <- []byte("echo first-$((1+1))\n")
 	eventually(t, "first", func() bool { return strings.Contains(p.out.String(), "first-2") })
@@ -613,14 +575,14 @@ func TestReconnectAndReattach(t *testing.T) {
 }
 
 func TestProxySocket(t *testing.T) {
-	l := newLaptop(t)
+	l := newLaptop(t, func(o *Options) { o.DialTimeout = time.Second })
 	r := newRemoteHost(t, "studio")
 	r.authorize(l.fingerprint())
 	r.b.add(remoteSession("r1", "api"))
 	sock := r.terminal("r1")
 	l.know(r)
-	id, err := l.c.AddSession(ctx5(), "studio", "r1", "")
-	must(t, err)
+	eventually(t, "its socket", func() bool { return l.c.Is("r1") })
+	id := "r1"
 	proxy := l.o.Socket(id)
 	info, err := os.Stat(proxy)
 	must(t, err)
@@ -644,35 +606,28 @@ func TestProxySocket(t *testing.T) {
 		t.Errorf("screen through the proxy:\n%s", text)
 	}
 
-	// Archived here: its socket goes; brought back: it's there again.
-	l.c.SetArchived(id, true)
+	// Archived on the host: its socket goes; brought back: it's there again.
+	r.b.edit("r1", func(s *core.Session) { s.Status = core.StatusArchived })
 	eventually(t, "the socket gone", func() bool { _, err := os.Stat(proxy); return os.IsNotExist(err) })
-	eventually(t, "idle", func() bool { return l.state("studio").Sessions == 0 })
-	l.c.SetArchived(id, false)
-	if !term.Running(proxy) {
-		t.Error("not back")
-	}
+	r.b.edit("r1", func(s *core.Session) { s.Status = core.StatusRunning })
+	eventually(t, "back", func() bool { return term.Running(proxy) })
 
-	// A restart of the client opens it again.
+	// A restart of the client opens it again, as the tree comes.
 	l.c.Close()
 	l.start()
-	if !term.Running(proxy) {
-		t.Error("not reopened")
-	}
+	eventually(t, "reopened", func() bool { return term.Running(proxy) })
 	if !l.c.Is(id) || l.c.Is("L99") {
 		t.Error("Is")
 	}
 
-	// A one-off to a host that's offline gives up.
-	l2 := newLaptop(t, func(o *Options) { o.DialTimeout = 300 * time.Millisecond })
-	l2.b.sessions["L01"] = &core.Session{ID: "L01", Host: "nowhere", RemoteID: "r1", Status: core.StatusRunning}
-	l2.c.Close()
-	l2.start()
+	// A one-off to a host that's gone gives up.
+	r.h.Close()
+	l.waitState("studio", ipc.HostUnreachable)
 	start := time.Now()
-	if err := term.Send(l2.o.Socket("L01"), []byte("x")); err != nil {
+	if err := term.Send(proxy, []byte("x")); err != nil {
 		t.Logf("send: %v", err)
 	}
-	if text, _ := term.ScreenText(l2.o.Socket("L01")); text != "" {
+	if text, _ := term.ScreenText(proxy); text != "" {
 		t.Errorf("read a screen from nowhere: %q", text)
 	}
 	if time.Since(start) > 3*time.Second {
@@ -682,9 +637,11 @@ func TestProxySocket(t *testing.T) {
 
 func TestProxyChecksThePeer(t *testing.T) {
 	l := newLaptop(t, func(o *Options) { o.CheckPeer = func(net.Conn) error { return errors.New("another user") } })
-	l.b.sessions["L01"] = &core.Session{ID: "L01", Host: "studio", RemoteID: "r1", Status: core.StatusRunning}
-	l.c.Close()
-	l.start()
+	r := newRemoteHost(t, "studio")
+	r.authorize(l.fingerprint())
+	r.b.add(remoteSession("L01", "api"))
+	l.know(r)
+	eventually(t, "its socket", func() bool { return l.c.Is("L01") })
 	c, err := net.Dial("unix", l.o.Socket("L01"))
 	must(t, err)
 	defer c.Close()
@@ -708,19 +665,6 @@ func TestBackoff(t *testing.T) {
 	}
 	if jitter(1) != 1 {
 		t.Error("jitter(1)")
-	}
-}
-
-func TestLocal(t *testing.T) {
-	s := Local("studio", api.Session{ID: "r1", Name: "api", Harness: "claude", Dir: "/w", Status: "done", Unseen: true, Created: t0, LastActivity: t0.Add(time.Hour)})
-	if s.Host != "studio" || s.RemoteID != "r1" || s.Kind != core.KindHosted || s.NameSource != core.NameUser || !s.Unseen ||
-		!s.CreatedAt.Equal(t0) || !s.LastEventAt.Equal(t0.Add(time.Hour)) || s.Status != core.StatusDone {
-		t.Errorf("local = %+v", s)
-	}
-	s.Status, s.HostGone = core.StatusArchived, true
-	Apply(s, api.Session{ID: "r1", Status: "busy"})
-	if s.Status != core.StatusArchived || s.HostGone || s.Harness != "claude" || s.NameSource != core.NameUser {
-		t.Errorf("an archived one = %+v", s)
 	}
 }
 

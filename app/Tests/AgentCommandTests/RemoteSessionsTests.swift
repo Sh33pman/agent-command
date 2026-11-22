@@ -66,30 +66,11 @@ extension UsesSharedSpeech {
             #expect(arrived == [-2] && s.queue.last?.host == "studio")
         }
 
-        @Test func removingIsForAddedSessionsOnly() throws {
-            let s = try store()
-            let fake = FakeCalls()
-            s.mutations = fake
-            s.restoreSidebar((cursor: "a", marks: ["a", "c"]))
-            s.removeAdded(s.actionTargets(forRow: s.sessions[0]))
-            #expect(fake.last["ids"] as? [String] == ["c"], "the local one in the selection is left alone")
-            #expect(s.markedIDs == ["a"])
-            s.removeAdded([s.sessions[0], s.sessions[1]])
-            #expect(fake.asked.count == 1, "nothing added from a host: nothing happens")
-        }
-
-        @Test func removingAndStartingGoThroughTheClient() throws {
+        @Test func startingOnAHostGoesThroughTheClient() throws {
             let s = try store()
             let fake = FakeCalls()
             s.remoteClient = RemoteHostsClient(calls: fake)
             s.mutations = fake
-            s.removeAdded(s.sessions)
-            #expect(fake.ops == ["mutate"] && fake.last["kind"] as? String == "session.remove_added", "one call")
-            #expect(fake.last["ids"] as? [String] == ["c", "d"], "only those from a host")
-            fake.replies["mutate"] = ["results": [["id": "c", "ok": false, "code": "not_found", "error": "no such session"]]]
-            s.removeAdded([s.sessions[2]])
-            #expect(s.problem == "Couldn't remove the session: no such session")
-            fake.replies["mutate"] = nil
 
             fake.replies["remote.new"] = [
                 "id": "N1", "name": "fresh", "cwd": "/w", "status": "busy", "kind": "hosted", "unseen": false,
@@ -162,15 +143,10 @@ extension UsesSharedSpeech {
             #expect(entries([shared]).first { $0.title == "Turn Remote off" }?.action == .setRemote([shared], false))
             #expect(!entries([added]).contains { $0.title.hasPrefix("Turn Remote") }, "not for a session from a host")
             #expect(!entries([added]).contains { $0.title == "Open in editor" }, "its folder isn't on this Mac")
-            #expect(entries([gone]).first { $0.title == "Remove from this Mac" }?.action == .removeAdded([gone]))
-            #expect(entries([added]).first { $0.title == "Remove from this Mac" }?.action == .removeAdded([added]), "live ones too")
-            #expect(entries([added]).contains { $0.title == "Archive…" }, "and Archive, which ends it on the host")
-            #expect(!entries([local]).contains { $0.title == "Remove from this Mac" }, "only for sessions added from a host")
+            #expect(entries([added]).contains { $0.title == "Archive…" }, "Archive, which archives it on its host")
+            #expect(!entries([added, gone]).contains { $0.title == "Remove from this Mac" }, "a host's sessions are its own")
             let several = entries([local, shared, added, gone])
             #expect(several.first { $0.title == "Turn Remote on" }?.action == .setRemote([local, shared], true))
-            let remove = try #require(several.first { $0.title == "Remove from this Mac" })
-            #expect(remove.section == "4 sessions" && remove.action == .removeAdded([added, gone]), "only the added ones")
-            #expect(Palette.remoteEntries([added], section: "s", keys: Keymap()).first?.shortcut == "⌥⌘⌫")
             #expect(entries([shared, try makeRemoteSession(id: "e", remote: true)]).contains { $0.title == "Turn Remote off" })
 
             let withHosts = entries([], hosts: ["studio"])

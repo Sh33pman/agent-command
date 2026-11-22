@@ -179,17 +179,7 @@ struct RemoteBrowserView: View {
             }
             Button("Open") { model.open(session) }
                 .buttonStyle(.borderless)
-                .help("Add it if it isn't yet, and show it (return)")
-            if session.added {
-                Button("Remove") { model.remove(session) }
-                    .buttonStyle(.borderless)
-                    .disabled(model.removing.contains(session.id))
-                    .help(Keymap.shared.tip("Remove it from This Mac: it keeps running on the host", .removeAdded))
-            }
-            Button(session.added ? "Added" : "Add") { model.add(session) }
-                .buttonStyle(.borderless)
-                .disabled(session.added || model.adding.contains(session.id))
-                .help(session.added ? "It's in the sidebar" : "Put it in the sidebar (a)")
+                .help("Show it in the sidebar, in its host's tree (return)")
         }
         .padding(.horizontal, 16)
         .frame(height: 42)

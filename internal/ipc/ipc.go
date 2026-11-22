@@ -274,31 +274,30 @@ type Notice struct {
 // Mutation kinds (OpMutate). Selectors are resolved by the client; the
 // daemon gets ids.
 const (
-	MutRename         = "session.rename"       // ID, Text
-	MutSeen           = "session.seen"         // ID: you've looked at it
-	MutDescribe       = "session.describe"     // ID, Text
-	MutArchive        = "session.archive"      // ID
-	MutFinish         = "session.finish"       // ID: stop it (claude stop) and mark it finished
-	MutUnarchive      = "session.unarchive"    // ID
-	MutMove           = "session.move"         // IDs, GroupID
-	MutGroupCreate    = "group.create"         // Text (name), Color -> returns the group
-	MutGroupRename    = "group.rename"         // GroupID, Text
-	MutGroupColor     = "group.color"          // GroupID, Color
-	MutGroupDelete    = "group.delete"         // GroupID
-	MutGroupArchive   = "group.archive"        // GroupID (archives its sessions too)
-	MutGroupUnarchive = "group.unarchive"      // GroupID, Flag = also unarchive sessions
-	MutGroupCollapse  = "group.collapse"       // GroupID ("" = all), Flag = collapsed
-	MutGroupMove      = "group.move"           // GroupID, After or Before: the group it goes next to
-	MutViewMode       = "view.mode"            // Text: groups|list
-	MutViewSort       = "view.sort"            // Text: key, Flag = descending
-	MutViewFocus      = "view.focus"           // GroupID ("" = leave focus mode)
-	MutViewFilter     = "view.filter"          // Text
-	MutViewArchived   = "view.archived"        // Flag = show archived
-	MutInboxRead      = "inbox.read"           // ItemIDs, Flag = read (else unread)
-	MutInboxDismiss   = "inbox.dismiss"        // ItemIDs: take them out of the queue
-	MutPurge          = "session.purge"        // IDs: archived sessions to delete for good (claude rm) -> returns the count
-	MutRemote         = "session.remote"       // ID, Flag = Remote: clients of Hosting may see and use it
-	MutRemoveAdded    = "session.remove_added" // IDs: sessions added from a host, forgotten here (the host keeps them)
+	MutRename         = "session.rename"    // ID, Text
+	MutSeen           = "session.seen"      // ID: you've looked at it
+	MutDescribe       = "session.describe"  // ID, Text
+	MutArchive        = "session.archive"   // ID
+	MutFinish         = "session.finish"    // ID: stop it (claude stop) and mark it finished
+	MutUnarchive      = "session.unarchive" // ID
+	MutMove           = "session.move"      // IDs, GroupID
+	MutGroupCreate    = "group.create"      // Text (name), Color -> returns the group
+	MutGroupRename    = "group.rename"      // GroupID, Text
+	MutGroupColor     = "group.color"       // GroupID, Color
+	MutGroupDelete    = "group.delete"      // GroupID
+	MutGroupArchive   = "group.archive"     // GroupID (archives its sessions too)
+	MutGroupUnarchive = "group.unarchive"   // GroupID, Flag = also unarchive sessions
+	MutGroupCollapse  = "group.collapse"    // GroupID ("" = all), Flag = collapsed
+	MutGroupMove      = "group.move"        // GroupID, After or Before: the group it goes next to
+	MutViewMode       = "view.mode"         // Text: groups|list
+	MutViewSort       = "view.sort"         // Text: key, Flag = descending
+	MutViewFocus      = "view.focus"        // GroupID ("" = leave focus mode)
+	MutViewFilter     = "view.filter"       // Text
+	MutViewArchived   = "view.archived"     // Flag = show archived
+	MutInboxRead      = "inbox.read"        // ItemIDs, Flag = read (else unread)
+	MutInboxDismiss   = "inbox.dismiss"     // ItemIDs: take them out of the queue
+	MutPurge          = "session.purge"     // IDs: archived sessions to delete for good (claude rm) -> returns the count
+	MutRemote         = "session.remote"    // ID, Flag = Remote: clients of Hosting may see and use it
 	// Sets: sessions made together by splitting panes (section 7 of the
 	// design). A session is in one set at most; a set has at least two
 	// sessions, all in one group and on one host, and ends when one is left.
@@ -334,6 +333,10 @@ type Mutation struct {
 	SetID   string   `json:"set_id,omitempty"`
 	After   string   `json:"after,omitempty"`
 	Before  string   `json:"before,omitempty"`
+	// Host makes the change on a known Remote host, for what has no id there
+	// yet (a new group). Ids of a host's sessions, groups and sets go to it
+	// by themselves.
+	Host string `json:"host,omitempty"`
 }
 
 // InboxRequest asks for one session's inbox items, or everyone's with no SessionID.

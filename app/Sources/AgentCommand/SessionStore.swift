@@ -655,13 +655,6 @@ final class SessionStore {
         mutateMany("session.remote", ids, flag: on, failure: on ? "Couldn't make Remote" : "Couldn't turn Remote off for")
     }
 
-    /// Removes sessions added from a host, here only: the host keeps them.
-    func removeAdded(_ targets: [Session]) {
-        let ids = targets.filter { $0.can(.removeAdded) }.map(\.id)
-        mutateMany("session.remove_added", ids, failure: "Couldn't remove")
-        markedIDs.subtract(ids)
-    }
-
     /// Starts a session on a host, then shows it here. done gets why it couldn't, if it couldn't.
     /// setWith puts it in a set with that session from the same host, and placed
     /// then puts it in the panes instead of selecting it: a split.

@@ -3,8 +3,6 @@ package ipc
 import (
 	"encoding/json"
 	"time"
-
-	"github.com/brettmostert/agent-command/internal/remote/api"
 )
 
 // Remote hosts: the other acmds this machine uses Remote sessions on, as a
@@ -14,20 +12,13 @@ const (
 	OpRemoteHosts      = "remote.hosts"        // the known hosts and their connections → []RemoteHost
 	OpRemoteHostAdd    = "remote.hosts.add"    // adds a known host to config.toml (RemoteHostEdit) → RemoteHost
 	OpRemoteHostEdit   = "remote.hosts.edit"   // changes one (RemoteHostEdit: Host names it) → RemoteHost
-	OpRemoteHostRemove = "remote.hosts.remove" // forgets one, and the sessions added from it here (RemoteHostRef.Host)
+	OpRemoteHostRemove = "remote.hosts.remove" // forgets one; its sessions go from here (RemoteHostRef.Host)
 	OpRemoteHostRetry  = "remote.hosts.retry"  // connects now, without waiting out the backoff (RemoteHostRef.Host) → RemoteHost
-	// OpRemoteBrowse lists a host's Remote sessions, and which are added
-	// here (RemoteHostRef.Host → RemoteBrowse).
+	// OpRemoteBrowse connects to a host and lists its own sessions, as it has
+	// them now (RemoteHostRef.Host → RemoteBrowse).
 	OpRemoteBrowse = "remote.browse"
-	// OpRemoteSessionAdd adds a host's session here (RemoteHostRef.Host, and
-	// ID the host's id) → *core.Session, the local session. Adding one that's
-	// already added returns it.
-	OpRemoteSessionAdd = "remote.sessions.add"
-	// OpRemoteSessionRemove removes an added session here, whatever its state
-	// (RemoteHostRef.ID, the local id). The session on the host isn't touched.
-	OpRemoteSessionRemove = "remote.sessions.remove"
-	// OpRemoteNew starts a session on a host and adds it here
-	// (RemoteNewRequest → *core.Session, the local session).
+	// OpRemoteNew starts a session on a host, in its folder and group there
+	// (RemoteNewRequest → Session, the host's: it shows in the host's tree).
 	OpRemoteNew = "remote.new"
 	// The host's folders and harnesses, for the Where picker.
 	OpRemoteFoldersRecent = "remote.folders.recent" // RemoteHostRef.Host → api.FolderList
@@ -109,22 +100,15 @@ type RemoteHostRef struct {
 	ID   string `json:"id,omitempty"`
 }
 
-// RemoteBrowse is a host's Remote sessions.
+// RemoteBrowse is a host's own sessions, each with its host.
 type RemoteBrowse struct {
-	Host     string                `json:"host"`
-	Sessions []RemoteBrowseSession `json:"sessions"`
+	Host     string     `json:"host"`
+	Sessions []*Session `json:"sessions"`
 }
 
-// RemoteBrowseSession is one of a host's Remote sessions; LocalID is the
-// session here when it's added.
-type RemoteBrowseSession struct {
-	api.Session
-	Added   bool   `json:"added"`
-	LocalID string `json:"local_id,omitempty"`
-}
-
-// RemoteNewRequest starts a session on a host (api.NewSession), and puts the
-// local session in GroupID ("" = Default).
+// RemoteNewRequest starts a session on a host: in Dir there ("~" and
+// relative paths from its home), in GroupID, one of the host's groups ("" =
+// its Default), or in a set with SetWith, one of its sessions.
 type RemoteNewRequest struct {
 	Host    string   `json:"host"`
 	Dir     string   `json:"dir"`

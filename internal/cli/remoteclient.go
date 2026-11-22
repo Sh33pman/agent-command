@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -38,7 +40,7 @@ const (
 
 func remoteClientCmds() []*cobra.Command {
 	return []*cobra.Command{newRemoteAddCmd(), newRemoteEditCmd(), newRemoteRemoveCmd(), newRemoteListCmd(),
-		newRemoteRetryCmd(), newRemoteBrowseCmd(), newRemoteOpenCmd(), newRemoteAttachCmd(), newRemoteDropCmd()}
+		newRemoteRetryCmd(), newRemoteBrowseCmd(), newRemoteAttachCmd()}
 }
 
 // hostExit is the exit code for a host in state, 0 when the state isn't a
@@ -355,78 +357,71 @@ func newRemoteRetryCmd() *cobra.Command {
 	}
 }
 
-// browse lists host's Remote sessions.
-func (c *client) browse(host string) (ipc.RemoteBrowse, error) {
+// hostSessions are a host's sessions, as its tree shows here: the most
+// recently active first.
+func (c *client) hostSessions(host string) ([]*core.Session, error) {
 	var b ipc.RemoteBrowse
-	err := c.hostCall(host, ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: host}, &b)
-	return b, err
+	if err := c.hostCall(host, ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: host}, &b); err != nil {
+		return nil, err
+	}
+	return sessionsOn(snapshotOf(ipc.Snapshot{Sessions: b.Sessions}), host), nil
+}
+
+func sessionsOn(snap snapshot, host string) []*core.Session {
+	var out []*core.Session
+	for _, s := range snap.Sessions {
+		if s.Host == host && s.Status != core.StatusArchived {
+			out = append(out, s)
+		}
+	}
+	slices.SortFunc(out, func(a, b *core.Session) int {
+		return cmp.Or(cmpTime(b.LastEventAt, b.CreatedAt).Compare(cmpTime(a.LastEventAt, a.CreatedAt)), strings.Compare(a.ID, b.ID))
+	})
+	return out
 }
 
 func newRemoteBrowseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "browse <host>",
-		Short:             "List a Remote host's Remote sessions, and which are added here",
-		Long:              "Lists the sessions a Remote host offers. Open one with acmd remote open <host> <#|id|name>.",
+		Short:             "List a Remote host's sessions, as its tree shows here",
+		Long:              "Lists the sessions a Remote host has, the most recently active first. Attach to one with acmd remote attach <host> <#|id|name>.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeHosts,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var b ipc.RemoteBrowse
+			var list []*core.Session
 			err := withDaemon(cmd, func(c *client) error {
 				var err error
-				b, err = c.browse(args[0])
+				list, err = c.hostSessions(args[0])
 				return err
 			})
 			if err != nil {
 				return err
 			}
-			if jsonOut {
-				return writeBrowseJSON(jsonWriter(cmd), b)
+			if done, err := emitJSON(cmd, ipc.SessionsOf(list)); done {
+				return err
 			}
-			return writeBrowse(cmd.OutOrStdout(), b)
+			return writeBrowse(cmd.OutOrStdout(), args[0], list)
 		},
 	}
 	return cmd
 }
 
-func writeBrowse(w io.Writer, b ipc.RemoteBrowse) error {
-	if len(b.Sessions) == 0 {
-		_, err := fmt.Fprintf(w, "%s has no Remote sessions. On %s, make one with acmd remote on <session>.\n", b.Host, b.Host)
+func writeBrowse(w io.Writer, host string, list []*core.Session) error {
+	if len(list) == 0 {
+		_, err := fmt.Fprintf(w, "%s has no sessions yet, or hasn't said: see acmd remote list.\n", host)
 		return err
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "#\tSTATUS\tNAME\tHARNESS\tDIR\tADDED\tLAST\tID")
-	for i, s := range b.Sessions {
-		status := s.Status
+	fmt.Fprintln(tw, "#\tSTATUS\tNAME\tHARNESS\tDIR\tLAST\tID")
+	for i, s := range list {
+		status := string(s.Status)
 		if s.Unseen {
 			status += "•"
 		}
-		added := "-"
-		if s.Added {
-			added = "added"
-		}
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", i+1, status, display(s.Name, 40), s.Harness, filepath.Base(s.Dir), added,
-			ago(cmpTime(s.LastActivity, s.Created)), s.ID)
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", i+1, status, display(s.Name, 40), s.Harness, filepath.Base(s.Cwd),
+			ago(cmpTime(s.LastEventAt, s.CreatedAt)), s.ID)
 	}
 	return tw.Flush()
-}
-
-// browseJSON is acmd remote browse --json: the sessions with their numbers.
-type browseJSON struct {
-	Host     string          `json:"host"`
-	Sessions []browseSession `json:"sessions"`
-}
-
-type browseSession struct {
-	Number int `json:"number"`
-	ipc.RemoteBrowseSession
-}
-
-func writeBrowseJSON(w io.Writer, b ipc.RemoteBrowse) error {
-	out := browseJSON{Host: b.Host, Sessions: []browseSession{}}
-	for i, s := range b.Sessions {
-		out.Sessions = append(out.Sessions, browseSession{Number: i + 1, RemoteBrowseSession: s})
-	}
-	return printJSON(w, out)
 }
 
 func cmpTime(t, fallback time.Time) time.Time {
@@ -441,29 +436,29 @@ func ago(t time.Time) string {
 	return age(&core.Session{LastEventAt: t})
 }
 
-// resolveRemoteSession finds one of a host's sessions by its id on the host,
-// its number in acmd remote browse (# optional), its name, or a unique prefix
-// of its name or id.
-func resolveRemoteSession(b ipc.RemoteBrowse, sel string) (ipc.RemoteBrowseSession, error) {
+// resolveRemoteSession finds one of a host's sessions by its id, its number
+// in acmd remote browse (# optional), its name, or a unique prefix of its
+// name or id.
+func resolveRemoteSession(host string, list []*core.Session, sel string) (*core.Session, error) {
 	sel = strings.TrimSpace(sel)
-	notFound := fmt.Errorf("%s has no Remote session %q (see acmd remote browse %s)", b.Host, sel, b.Host)
+	notFound := fmt.Errorf("%s has no session %q (see acmd remote browse %s)", host, sel, host)
 	if sel == "" {
-		return ipc.RemoteBrowseSession{}, notFound
+		return nil, notFound
 	}
-	for _, s := range b.Sessions {
+	for _, s := range list {
 		if s.ID == sel {
 			return s, nil
 		}
 	}
 	if n, err := strconv.Atoi(strings.TrimPrefix(sel, "#")); err == nil {
-		if n < 1 || n > len(b.Sessions) {
-			return ipc.RemoteBrowseSession{}, fmt.Errorf("%s has no Remote session number %d (see acmd remote browse %s)", b.Host, n, b.Host)
+		if n < 1 || n > len(list) {
+			return nil, fmt.Errorf("%s has no session number %d (see acmd remote browse %s)", host, n, host)
 		}
-		return b.Sessions[n-1], nil
+		return list[n-1], nil
 	}
-	var exact, prefix []ipc.RemoteBrowseSession
+	var exact, prefix []*core.Session
 	lower := strings.ToLower(sel)
-	for _, s := range b.Sessions {
+	for _, s := range list {
 		name := strings.ToLower(s.Name)
 		switch {
 		case name == lower:
@@ -472,7 +467,7 @@ func resolveRemoteSession(b ipc.RemoteBrowse, sel string) (ipc.RemoteBrowseSessi
 			prefix = append(prefix, s)
 		}
 	}
-	for _, m := range [][]ipc.RemoteBrowseSession{exact, prefix} {
+	for _, m := range [][]*core.Session{exact, prefix} {
 		switch len(m) {
 		case 0:
 			continue
@@ -483,31 +478,18 @@ func resolveRemoteSession(b ipc.RemoteBrowse, sel string) (ipc.RemoteBrowseSessi
 		for i, s := range m {
 			names[i] = fmt.Sprintf("%s (%s)", cmpOr(s.Name, "(unnamed)"), s.ID)
 		}
-		return ipc.RemoteBrowseSession{}, fmt.Errorf("%q matches more than one Remote session on %s: %s", sel, b.Host, strings.Join(names, ", "))
+		return nil, fmt.Errorf("%q matches more than one session on %s: %s", sel, host, strings.Join(names, ", "))
 	}
-	return ipc.RemoteBrowseSession{}, notFound
+	return nil, notFound
 }
 
-// findRemoteSession browses host and resolves sel in it.
-func (c *client) findRemoteSession(host, sel string) (ipc.RemoteBrowseSession, error) {
-	b, err := c.browse(host)
+// findRemoteSession resolves sel among host's sessions.
+func (c *client) findRemoteSession(host, sel string) (*core.Session, error) {
+	list, err := c.hostSessions(host)
 	if err != nil {
-		return ipc.RemoteBrowseSession{}, err
+		return nil, err
 	}
-	return resolveRemoteSession(b, sel)
-}
-
-// addRemoteSession adds s from host here, unless it's added already, and
-// returns the local session's id.
-func (c *client) addRemoteSession(host string, s ipc.RemoteBrowseSession) (string, error) {
-	if s.Added {
-		return s.LocalID, nil
-	}
-	var local ipc.Session
-	if err := c.hostCall(host, ipc.OpRemoteSessionAdd, ipc.RemoteHostRef{Host: host, ID: s.ID}, &local); err != nil {
-		return "", err
-	}
-	return local.ID, nil
+	return resolveRemoteSession(host, list, sel)
 }
 
 // attachTerminal attaches this terminal to a session's socket until it's
@@ -526,7 +508,7 @@ var stdinTerminal = func(cmd *cobra.Command) bool {
 	return ok && isTerminal(f)
 }
 
-// attachLocal attaches to the local session id, saying how to detach.
+// attachLocal attaches to the session id's socket here, saying how to detach.
 func attachLocal(cmd *cobra.Command, id, what string) error {
 	p, err := paths.Default()
 	if err != nil {
@@ -538,130 +520,35 @@ func attachLocal(cmd *cobra.Command, id, what string) error {
 	return err
 }
 
-func sessionWhat(host string, s ipc.RemoteBrowseSession) string {
+func sessionWhat(host string, s *core.Session) string {
 	return fmt.Sprintf("%s on %s", cmpOr(strconv.Quote(s.Name), "session "+s.ID), host)
-}
-
-func newRemoteOpenCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "open <host> <#|id|name>",
-		Short: "Add a Remote host's session here, and attach this terminal to it",
-		Long: "Adds one of a Remote host's Remote sessions here (it shows in the app, like a local\n" +
-			"session) and attaches this terminal to it. Ctrl+] detaches; the session stays added.\n" +
-			"Without a terminal it's only added. The session is its number in acmd remote browse,\n" +
-			"its id on the host, or its name.",
-		Args:              cobra.ExactArgs(2),
-		ValidArgsFunction: completeHostSessions,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			host := args[0]
-			var s ipc.RemoteBrowseSession
-			var local string
-			err := withDaemon(cmd, func(c *client) error {
-				var err error
-				if s, err = c.findRemoteSession(host, args[1]); err != nil {
-					return err
-				}
-				local, err = c.addRemoteSession(host, s)
-				return err
-			})
-			if err != nil {
-				return err
-			}
-			if !stdinTerminal(cmd) {
-				fmt.Fprintf(cmd.OutOrStdout(), "Added %s (%s). Attach to it from a terminal with acmd remote open %s %s.\n",
-					sessionWhat(host, s), local, host, s.ID)
-				return nil
-			}
-			return attachLocal(cmd, local, sessionWhat(host, s))
-		},
-	}
 }
 
 func newRemoteAttachCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "attach <host> <#|id|name>",
-		Short: "Attach this terminal to a Remote host's session, without keeping it added",
-		Long: "Attaches this terminal to one of a Remote host's Remote sessions. A session that isn't\n" +
-			"added here is added for as long as you're attached, and removed here again when you\n" +
-			"detach (Ctrl+]); one that's added already stays added. To keep it, use acmd remote open.",
+		Use:     "attach <host> <#|id|name>",
+		Aliases: []string{"open"},
+		Short:   "Attach this terminal to one of a Remote host's sessions",
+		Long: "Attaches this terminal to one of a Remote host's sessions, through this machine's daemon: Ctrl+]\n" +
+			"detaches. The session is its number in acmd remote browse, its id, or its name. A host's sessions\n" +
+			"show here, and in the app, as the host has them.",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeHostSessions,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !stdinTerminal(cmd) {
-				return errors.New("acmd remote attach needs a terminal (acmd remote open adds the session without one)")
+				return errors.New("acmd remote attach needs a terminal")
 			}
 			host := args[0]
-			var s ipc.RemoteBrowseSession
-			var local string
+			var s *core.Session
 			err := withDaemon(cmd, func(c *client) error {
 				var err error
-				if s, err = c.findRemoteSession(host, args[1]); err != nil {
-					return err
-				}
-				local, err = c.addRemoteSession(host, s)
+				s, err = c.findRemoteSession(host, args[1])
 				return err
 			})
 			if err != nil {
 				return err
 			}
-			err = attachLocal(cmd, local, sessionWhat(host, s))
-			if s.Added {
-				return err
-			}
-			// A fresh connection: the first one's deadline may have passed.
-			rmErr := withDaemon(cmd, func(c *client) error {
-				return c.conn.Call(ipc.OpRemoteSessionRemove, ipc.RemoteHostRef{ID: local}, nil)
-			})
-			if rmErr != nil {
-				rmErr = fmt.Errorf("it's still added here: remove it with acmd remote drop %s: %w", local, rmErr)
-			}
-			return errors.Join(err, rmErr)
-		},
-	}
-}
-
-func newRemoteDropCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "drop <N|id|name-prefix> | drop <host> <#|id|name>",
-		Short: "Remove a session added from a Remote host here; it keeps running on the host",
-		Long: "Removes a session added from a Remote host from this machine (and the app). The session\n" +
-			"on the host isn't touched: add it again with acmd remote open. Name it as acmd list does,\n" +
-			"or by its host and its number, id or name there.",
-		Args:              cobra.RangeArgs(1, 2),
-		ValidArgsFunction: completeDrop,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDaemon(cmd, func(c *client) error {
-				var id, what string
-				if len(args) == 2 {
-					s, err := c.findRemoteSession(args[0], args[1])
-					if err != nil {
-						return err
-					}
-					if !s.Added {
-						return fmt.Errorf("%s isn't added here", sessionWhat(args[0], s))
-					}
-					id, what = s.LocalID, sessionWhat(args[0], s)
-				} else {
-					snap, err := c.snapshot()
-					if err != nil {
-						return err
-					}
-					snap.Sessions = visibleSessions(snap.Sessions)
-					s, err := resolveSession(snap, args[0])
-					if err != nil {
-						return err
-					}
-					if !s.OnHost() {
-						return fmt.Errorf("%s runs on this machine, not on a Remote host (acmd archive ends it)", nameOf(s))
-					}
-					id, what = s.ID, nameOf(s)+" on "+s.Host
-				}
-				if err := c.conn.Call(ipc.OpRemoteSessionRemove, ipc.RemoteHostRef{ID: id}, nil); err != nil {
-					return err
-				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Removed %s here; it keeps running on the host.\n", what)
-				return nil
-			})
+			return attachLocal(cmd, s.ID, sessionWhat(host, s))
 		},
 	}
 }
@@ -703,14 +590,6 @@ func completeHostSessions(cmd *cobra.Command, args []string, toComplete string) 
 	return nil, cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeDrop completes an added session, or a host and then one of its sessions.
-func completeDrop(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	if len(args) == 0 {
-		return append(hostNames(), addedSessionNames(cmd.Context())...), cobra.ShellCompDirectiveNoFileComp
-	}
-	return completeHostSessions(cmd, args, toComplete)
-}
-
 // completionWait bounds what completion asks the daemon.
 const completionWait = 3 * time.Second
 
@@ -744,38 +623,16 @@ func hostSessionNames(ctx context.Context, host string) []string {
 		return nil
 	}
 	defer done()
-	var b ipc.RemoteBrowse
-	if conn.Call(ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: host}, &b) != nil {
-		return nil
-	}
-	var out []string
-	for _, s := range b.Sessions {
-		if s.Name != "" && !strings.ContainsAny(s.Name, " \t") {
-			out = append(out, s.Name+"\t"+s.ID)
-		}
-		out = append(out, s.ID+"\t"+cmpOr(s.Name, "(unnamed)"))
-	}
-	return out
-}
-
-// addedSessionNames are the sessions added here from Remote hosts, by id,
-// each described by its name and host.
-func addedSessionNames(ctx context.Context) []string {
-	conn, done, err := runningDaemon(ctx)
-	if err != nil {
-		return nil
-	}
-	defer done()
 	var wire ipc.Snapshot
 	if conn.Call(ipc.OpSnapshot, nil, &wire) != nil {
 		return nil
 	}
-	snap := snapshotOf(wire)
 	var out []string
-	for _, s := range snap.Sessions {
-		if s.OnHost() && s.ArchivedAt.IsZero() {
-			out = append(out, s.ID+"\t"+cmpOr(s.Name, "(unnamed)")+" on "+s.Host)
+	for _, s := range sessionsOn(snapshotOf(wire), host) {
+		if s.Name != "" && !strings.ContainsAny(s.Name, " \t") {
+			out = append(out, s.Name+"\t"+s.ID)
 		}
+		out = append(out, s.ID+"\t"+cmpOr(s.Name, "(unnamed)"))
 	}
 	return out
 }

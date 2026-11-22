@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
@@ -28,8 +27,8 @@ func codes(r ipc.Results) string {
 	return strings.Join(out, ",")
 }
 
-// Archiving five sessions, two of them on a host that can't be reached:
-// three archive, the host's two say why, and the host is waited for once.
+// Archiving several sessions: each that's there archives, and one that isn't
+// says so. (A batch across a host's sessions: TestSessionsFromARemoteHost.)
 func TestManyIdsGetAResultEach(t *testing.T) {
 	old := remoteCallTimeout
 	remoteCallTimeout = time.Second
@@ -45,14 +44,6 @@ func TestManyIdsGetAResultEach(t *testing.T) {
 		must(t, st.CreateSession(ctx, s))
 		ids = append(ids, s.ID)
 	}
-	for _, n := range []string{"far1", "far2"} {
-		s := &core.Session{Name: n, Cwd: "/r", Status: core.StatusDone, Harness: core.HarnessClaude, Kind: core.KindHosted,
-			Host: "far", RemoteID: "r-" + n}
-		must(t, st.CreateSession(ctx, s))
-		ids = append(ids, s.ID)
-	}
-	must(t, st.SaveKnownHost(ctx, "", config.KnownHost{Name: "far", Address: "127.0.0.1:1",
-		Fingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}))
 	must(t, st.SetAppState(ctx, movedKey, "done"))
 	must(t, st.Close())
 
@@ -61,7 +52,7 @@ func TestManyIdsGetAResultEach(t *testing.T) {
 	began := time.Now()
 	var res ipc.Results
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, IDs: append(ids, "nope", ids[0])}, &res))
-	if got := codes(res); got != "ok,ok,ok,host_unreachable,host_unreachable,not_found" {
+	if got := codes(res); got != "ok,ok,ok,not_found" {
 		t.Fatalf("results = %s: %+v", got, res)
 	}
 	if took := time.Since(began); took > 2500*time.Millisecond {
@@ -81,14 +72,6 @@ func TestManyIdsGetAResultEach(t *testing.T) {
 	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutUnarchive, IDs: ids[:2]}, &res))
 	if codes(res) != "invalid,invalid" {
 		t.Errorf("unarchive = %+v", res)
-	}
-	// Removing added sessions: only a host's.
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemoveAdded, IDs: []string{ids[3], ids[0]}}, &res))
-	if codes(res) != "ok,invalid" {
-		t.Errorf("remove added = %+v", res)
-	}
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemoveAdded, ID: ids[4]}, nil); err == nil {
-		t.Error("remove_added with one id, not ids")
 	}
 }
 

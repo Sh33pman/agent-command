@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
-	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/peer"
 	"github.com/brettmostert/agent-command/internal/remote/api"
@@ -54,24 +53,10 @@ type Update struct {
 
 // Backend is the daemon, which keeps the added sessions.
 type Backend interface {
-	// Added lists the sessions added from hosts.
-	Added(ctx context.Context) ([]Added, error)
-	// Add records s, a session on host, as added here (in group, "" =
-	// Default), and returns the local session.
-	Add(ctx context.Context, host string, s api.Session, group string) (*core.Session, error)
-	// Remove forgets an added session here.
-	Remove(ctx context.Context, id string) error
-	// RenameHost moves the sessions added from host old to its new name.
-	RenameHost(ctx context.Context, old, name string) error
-	// Update applies what the host says about an added session, which it
-	// offers (again).
-	Update(ctx context.Context, id string, u Update) error
-	// Gone marks an added session the host no longer offers.
-	Gone(ctx context.Context, id string) error
-	// Notice is a notification from a host about an added session.
-	Notice(id, host string, n api.Notice)
-	// Changed says something the apps show has changed: a host's state, or
-	// an inbox.
+	// Notice is a notification a host decided on for one of its sessions.
+	Notice(session, host string, n ipc.Notice)
+	// Changed says something the apps show has changed: a host's tree or
+	// state, or an inbox.
 	Changed()
 }
 
@@ -137,11 +122,10 @@ type Client struct {
 	closed   bool
 }
 
-// added is an added session, with its socket.
+// added is one of a host's sessions here, with its local socket.
 type added struct {
 	Added
-	proxy      *proxy
-	hostUnseen *bool // the host's unseen flag, as it last said
+	proxy *proxy
 }
 
 // New makes a Client. Start begins it.
@@ -204,28 +188,13 @@ func backoff(n int, lo, hi time.Duration) time.Duration {
 	return min(d, hi)
 }
 
-// Start reads the added sessions and config.toml, opens a socket for each
-// added session, and connects to the hosts that have them.
-func (c *Client) Start(ctx context.Context) error {
-	list, err := c.b.Added(ctx)
-	if err != nil {
-		return err
-	}
+// Start reads config.toml and the known hosts, and connects to them: each
+// host's sessions get a local socket as its tree arrives.
+func (c *Client) Start(context.Context) error {
 	c.mu.Lock()
 	c.started = true
-	for _, a := range list {
-		c.added[a.ID] = &added{Added: a}
-	}
 	c.mu.Unlock()
-	err = c.Reload()
-	c.mu.Lock()
-	for _, a := range c.added {
-		if !a.Archived {
-			c.openLocked(a)
-		}
-	}
-	c.mu.Unlock()
-	return err
+	return c.Reload()
 }
 
 // Close disconnects every host, closes the sockets and waits for them.

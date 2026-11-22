@@ -82,14 +82,19 @@ enum SidebarLayout {
                      filtering: Bool = false) -> [SidebarRow] {
         let sorted = sort(sessions, by: options.sort, descending: options.descending)
         let ordered = orderedGroups(groups)
-        let hasGroups = ordered.contains { !$0.isDefault }
+        let hasGroups = ordered.contains { !$0.isDefault || !$0.host.isEmpty }
         guard options.mode == .groups, hasGroups else { return sessionRows(sorted, sets: sets) }
 
+        // Each session in its group, on its own host: a host's sessions stay in
+        // the host's groups, and one whose group isn't known goes to its host's
+        // Default.
         let known = Set(ordered.map(\.id))
-        let defaultID = ordered.first(where: \.isDefault)?.id ?? "default"
+        var defaults: [String: String] = [:]
+        for group in ordered where group.isDefault { defaults[group.host] = group.id }
         var byGroup: [String: [Session]] = [:]
         for session in sorted {
-            let group = session.groupID.flatMap { known.contains($0) ? $0 : nil } ?? defaultID
+            let fallback = defaults[session.hostName] ?? "default"
+            let group = session.groupID.flatMap { known.contains($0) ? $0 : nil } ?? fallback
             byGroup[group, default: []].append(session)
         }
         var rows: [SidebarRow] = []
@@ -114,12 +119,19 @@ enum SidebarLayout {
         }
     }
 
-    /// Live groups in the order you arranged them, Default last.
+    /// Live groups in the order you arranged them, Default last: this Mac's,
+    /// then each host's, as the host arranges them.
     static func orderedGroups(_ groups: [SessionGroup]) -> [SessionGroup] {
         groups.filter { !$0.isArchived }.sorted { a, b in
+            if a.host != b.host { return a.host.isEmpty || (!b.host.isEmpty && a.host < b.host) }
             if a.isDefault != b.isDefault { return !a.isDefault }
             return (a.order, a.id) < (b.order, b.id)
         }
+    }
+
+    /// The groups a session can be moved to: its own host's.
+    static func groups(for session: Session, in groups: [SessionGroup]) -> [SessionGroup] {
+        orderedGroups(groups).filter { $0.host == session.hostName }
     }
 
     static func mostUrgent(_ sessions: [Session]) -> SessionAttention? {

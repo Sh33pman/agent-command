@@ -18,7 +18,7 @@ import (
 // reached, its other ids report that at once.
 
 // batchKinds take IDs and return ipc.Results.
-var batchKinds = []string{ipc.MutRename, ipc.MutArchive, ipc.MutUnarchive, ipc.MutRemote, ipc.MutRemoveAdded,
+var batchKinds = []string{ipc.MutRename, ipc.MutArchive, ipc.MutUnarchive, ipc.MutRemote,
 	ipc.MutMove, ipc.MutPurge}
 
 func isBatch(m ipc.Mutation) bool {
@@ -124,17 +124,6 @@ func (d *Daemon) mutateOne(ctx context.Context, m ipc.Mutation) error {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		return d.purge(ctx, m.ID)
-	case ipc.MutRemoveAdded:
-		s, err := d.sessionByID(ctx, m.ID)
-		if err != nil {
-			return err
-		}
-		if !s.OnHost() {
-			return invalid("%s runs on this machine: archive it instead", nameOf(s))
-		}
-		ctx, cancel := context.WithTimeout(ctx, remoteCallTimeout)
-		defer cancel()
-		return d.client.RemoveSession(ctx, m.ID)
 	default:
 		_, err := d.mutate(ctx, m)
 		return err
@@ -159,9 +148,6 @@ func (d *Daemon) purge(ctx context.Context, id string) error {
 		return err
 	}
 	d.forget(id)
-	if sess.OnHost() {
-		d.client.Forget(id)
-	}
 	return nil
 }
 

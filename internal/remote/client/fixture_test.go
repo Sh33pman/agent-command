@@ -18,7 +18,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
-	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/host"
 	"github.com/brettmostert/agent-command/internal/remote/hostapi"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
@@ -56,6 +55,8 @@ func eventually(t *testing.T, what string, cond func() bool) {
 type daemon struct {
 	mu       sync.Mutex
 	sessions []*core.Session
+	groups   []*core.Group
+	sets     []ipc.Set
 	inbox    []core.InboxItem
 	notices  []ipc.Notice
 	sockets  map[string]string
@@ -151,8 +152,23 @@ func (b *daemon) HostSocket(id string) string {
 // The host's settings live in its remoteHost's file (see newRemoteHost).
 func (b *daemon) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
 
-// Call answers with the op it was asked to run.
-func (b *daemon) Call(_ context.Context, op string, _ json.RawMessage) (json.RawMessage, error) {
+// Call answers snapshot with the host's state, and any other op with the op
+// it was asked to run.
+func (b *daemon) Call(_ context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
+	switch op {
+	case ipc.OpSnapshot:
+		return json.Marshal(b.snapshot())
+	case ipc.OpNew:
+		var req ipc.NewRequest
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		s, err := b.NewSession(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(ipc.SessionOf(s))
+	}
 	return json.Marshal(map[string]string{"op": op})
 }
 
@@ -249,87 +265,17 @@ func (r *remoteHost) terminal(id string) string {
 	return sock
 }
 
-// local is the client's daemon in memory (Backend).
+// local is the client's daemon in memory (Backend): the notices and changes
+// the client passes on.
 type local struct {
-	mu       sync.Mutex
-	sessions map[string]*core.Session
-	notices  []string
-	changes  int
-	next     int
-	failAdd  error
+	mu      sync.Mutex
+	notices []string
+	changes int
 }
 
-func newLocal() *local { return &local{sessions: map[string]*core.Session{}} }
+func newLocal() *local { return &local{} }
 
-func (l *local) Added(context.Context) ([]Added, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	var out []Added
-	for _, s := range l.sessions {
-		out = append(out, Added{ID: s.ID, Host: s.Host, RemoteID: s.RemoteID, Archived: s.Status == core.StatusArchived})
-	}
-	return out, nil
-}
-
-func (l *local) Add(_ context.Context, host string, s api.Session, group string) (*core.Session, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.failAdd != nil {
-		return nil, l.failAdd
-	}
-	for _, x := range l.sessions {
-		if x.Host == host && x.RemoteID == s.ID {
-			return x, nil
-		}
-	}
-	l.next++
-	out := Local(host, s)
-	out.ID, out.GroupID = fmt.Sprintf("L%02d", l.next), group
-	l.sessions[out.ID] = out
-	c := *out
-	return &c, nil
-}
-
-func (l *local) Remove(_ context.Context, id string) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.sessions, id)
-	return nil
-}
-
-func (l *local) RenameHost(_ context.Context, old, name string) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, s := range l.sessions {
-		if s.Host == old {
-			s.Host = name
-		}
-	}
-	return nil
-}
-
-func (l *local) Update(_ context.Context, id string, u Update) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if s := l.sessions[id]; s != nil {
-		Apply(s, u.Session)
-		if u.Unseen != nil {
-			s.Unseen = *u.Unseen
-		}
-	}
-	return nil
-}
-
-func (l *local) Gone(_ context.Context, id string) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if s := l.sessions[id]; s != nil {
-		s.HostGone = true
-	}
-	return nil
-}
-
-func (l *local) Notice(id, host string, n api.Notice) {
+func (l *local) Notice(id, host string, n ipc.Notice) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.notices = append(l.notices, id+" "+host+" "+n.Kind+" "+n.Title)
@@ -341,13 +287,10 @@ func (l *local) Changed() {
 	l.changes++
 }
 
-func (l *local) get(id string) core.Session {
+func (l *local) noticesSoFar() []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if s := l.sessions[id]; s != nil {
-		return *s
-	}
-	return core.Session{}
+	return append([]string(nil), l.notices...)
 }
 
 // dials counts the client's dials.
@@ -502,7 +445,42 @@ func logErr(t *testing.T, err error) {
 	}
 }
 
-// Subscribe sends a snapshot.
-func (b *daemon) Subscribe(_ context.Context, _ ipc.SubscribeRequest, send func(ipc.Event) error) error {
-	return send(ipc.Event{Rev: 1, Type: ipc.EventSnapshot, Snapshot: &ipc.Snapshot{}})
+// snapshot is the host's state as its socket would send it.
+func (b *daemon) snapshot() ipc.Snapshot {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return ipc.Snapshot{Sessions: ipc.SessionsOf(b.sessions), Groups: ipc.GroupsOf(b.groups), Sets: append([]ipc.Set(nil), b.sets...),
+		Inbox: append([]core.InboxItem(nil), b.inbox...)}
+}
+
+// Subscribe sends the host's state on every change, as a snapshot, and its
+// new notices as they come.
+func (b *daemon) Subscribe(ctx context.Context, _ ipc.SubscribeRequest, send func(ipc.Event) error) error {
+	var rev, sent uint64
+	for {
+		_, next := b.Changes()
+		snap := b.snapshot()
+		rev++
+		if err := send(ipc.Event{Rev: rev, Type: ipc.EventSnapshot, Snapshot: &snap}); err != nil {
+			return nil
+		}
+		b.mu.Lock()
+		notices := append([]ipc.Notice(nil), b.notices...)
+		b.mu.Unlock()
+		for _, n := range notices {
+			if n.Seq > sent {
+				sent = n.Seq
+				data, _ := json.Marshal(n)
+				rev++
+				if err := send(ipc.Event{Rev: rev, Type: ipc.EventAdded, Entity: ipc.EntityNotice, ID: fmt.Sprint(n.Seq), Data: data}); err != nil {
+					return nil
+				}
+			}
+		}
+		select {
+		case <-next:
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }

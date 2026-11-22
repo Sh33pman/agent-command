@@ -99,15 +99,24 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
     var color = ""
     /// Its place among the groups you arranged; Default has none and comes last.
     var order = 0
+    /// The Remote host it's on, for a host's tree; "" for this Mac's.
+    var host = ""
 
     enum CodingKeys: String, CodingKey {
-        case id, name, color, order
+        case id, name, color, order, host
         case isDefault = "is_default", archivedAt = "archived_at"
     }
 
-    init(id: String, name: String, isDefault: Bool = false, archivedAt: String = "", color: String = "", order: Int = 0) {
+    init(id: String, name: String, isDefault: Bool = false, archivedAt: String = "", color: String = "", order: Int = 0, host: String = "") {
         (self.id, self.name, self.isDefault, self.archivedAt) = (id, name, isDefault, archivedAt)
-        (self.color, self.order) = (color, order)
+        (self.color, self.order, self.host) = (color, order, host)
+    }
+
+    /// Its name in the sidebar: a host's groups say their host, and a host's
+    /// Default is the host's name.
+    var title: String {
+        guard !host.isEmpty else { return name }
+        return isDefault ? host : "\(name) · \(host)"
     }
 
     init(from decoder: Decoder) throws {
@@ -118,6 +127,7 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
         archivedAt = try c.decodeIfPresent(String.self, forKey: .archivedAt) ?? ""
         color = try c.decodeIfPresent(String.self, forKey: .color) ?? ""
         order = try c.decodeIfPresent(Int.self, forKey: .order) ?? 0
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
     }
 
     /// The colours a group can have, in the daemon's order.
@@ -413,7 +423,7 @@ struct Session: Decodable, Identifiable, Equatable {
 /// doesn't know yet are ignored.
 enum SessionCapability: String {
     case resume, attach, archive, unarchive, purge
-    case removeAdded = "remove_added", continueInJob = "continue_in_job"
+    case continueInJob = "continue_in_job"
     case openInEditor = "open_in_editor", setRemote = "set_remote"
 }
 

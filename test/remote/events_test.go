@@ -21,7 +21,7 @@ func TestEvents(t *testing.T) {
 	laptop := newMachine(t, "laptop", clientConfig)
 	laptop.start()
 	laptop.pair("studio", host)
-	local := laptop.addSession("studio", s.ID)
+	local := laptop.hostSession("studio", s.ID)
 
 	// The agent: it sends its hooks as Claude Code does, and stays in front of
 	// the terminal, as an agent waiting for an answer does.

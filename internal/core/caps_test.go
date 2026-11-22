@@ -70,14 +70,14 @@ func TestCapabilities(t *testing.T) {
 		t.Error("an agy session with no conversation yet")
 	}
 	onHost := Session{Harness: HarnessClaude, Status: StatusPaused, Host: "studio", Cwd: "/w", ClaudeSessionID: "c1"}
-	if got := caps(onHost); got != "attach,archive,remove_added" {
+	if got := caps(onHost); got != "attach,archive" {
 		t.Errorf("a host's = %s", got)
 	}
 	onHost.HostGone = true
-	if got := caps(onHost); got != "remove_added" {
+	if got := caps(onHost); got != "" {
 		t.Errorf("gone from its host = %s", got)
 	}
-	if got := (&Session{Status: StatusArchived, Host: "h"}).Capabilities(); got == nil || len(got) != 1 {
+	if got := (&Session{Status: StatusArchived, Host: "h"}).Capabilities(); got == nil || len(got) != 0 {
 		t.Errorf("caps = %v", got)
 	}
 	if got := (&Session{Status: StatusArchived, Host: "h", HostGone: true}).Capabilities(); got == nil {

@@ -97,8 +97,7 @@
       "display_name": "build",
       "capabilities": [
         "attach",
-        "archive",
-        "remove_added"
+        "archive"
       ]
     }
   ],

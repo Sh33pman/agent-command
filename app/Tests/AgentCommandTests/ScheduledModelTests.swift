@@ -87,8 +87,7 @@ private func job(_ id: String, _ name: String, cwd: String = "/w") -> Job {
 
     #expect(try !board.press(45, "n", flags: .command), "⌘ keys are the app's")
     #expect(try !board.press(0, "a"), "keys it doesn't use pass through")
-    #expect(try board.press(51, flags: [.option, .command]), "no session to remove behind Scheduled")
-    #expect(!model.confirmingDelete, "and it isn't a delete")
+    #expect(!model.confirmingDelete)
     try board.press(53)
     #expect(board.closed)
 }

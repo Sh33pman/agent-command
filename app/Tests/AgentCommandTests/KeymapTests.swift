@@ -45,24 +45,6 @@ import Testing
     #expect(keys.label(.newClaude) == "⌘N" && keys.label(.newSession) == "⇧⌘N")
 }
 
-@Test func removeFromThisMacHasItsOwnKey() throws {
-    let keys = Keymap()
-    let combo = try #require(KeyCombo("opt+cmd+delete"))
-    #expect(keys.label(.removeAdded) == "⌥⌘⌫" && KeyAction.removeAdded.section == .app)
-    #expect(keys.action(for: combo, among: KeyAction.allCases) == .removeAdded)
-    #expect(KeyAction.allCases.filter { keys.matches($0, combo) } == [.removeAdded], "nothing else uses it")
-    #expect(keys.clashes(try #require(KeyCombo("shift+cmd+delete")), for: .removeAdded) == [.archive], "next to Archive's")
-    let menu = try #require(combo.menuKey)
-    #expect(menu.key == "\u{8}" && menu.mask == [.option, .command])
-    #expect(KeyAction(rawValue: "app.remove-added") == .removeAdded && !KeyAction.removeAdded.note.isEmpty)
-    #expect(keys.export.sections.first { $0.title == "App" }?.keys.contains { $0.action == "app.remove-added" && $0.keys == ["⌥⌘⌫"] } == true)
-
-    // It can be changed like the others.
-    keys.add(try #require(KeyCombo("ctrl+cmd+delete")), to: .removeAdded)
-    #expect(keys.label(.removeAdded) == "⌃⌘⌫" && keys.isChanged(.removeAdded))
-    keys.reset(.removeAdded)
-    #expect(keys.label(.removeAdded) == "⌥⌘⌫")
-}
 
 @Test func choosingWhatANewSessionRunsHasItsOwnKey() throws {
     let keys = Keymap()

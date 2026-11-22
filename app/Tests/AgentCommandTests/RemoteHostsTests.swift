@@ -23,7 +23,7 @@ func makeRemoteSession(
     // As the daemon says (internal/core/caps.go).
     fields["agent"] = "claude"
     fields["capabilities"] = host.isEmpty ? ["attach", "archive", "open_in_editor", "set_remote"]
-        : (gone ? ["remove_added"] : ["attach", "archive", "remove_added"])
+        : (gone ? [] : ["attach", "archive"])
     return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
 }
 
@@ -78,14 +78,14 @@ func makeRemoteSession(
 
 @Test func browseFoldersAndHarnessesDecode() throws {
     let b: RemoteBrowse = try decode("""
-        {"host": "studio", "sessions": [{"id": "s1", "name": "", "harness": "antigravity", "dir": "/w/api", "status": "waiting",
-         "status_detail": "permission: Write", "unseen": true, "needs_you": 1, "inbox": 2,
-         "last_activity": "2026-11-18T03:00:00Z", "created": "2026-11-18T02:00:00Z", "added": true, "local_id": "L1"}]}
+        {"host": "studio", "sessions": [{"id": "s1", "name": "", "harness": "antigravity", "cwd": "/w/api", "status": "waiting",
+         "status_detail": "permission: Write", "unseen": true, "host": "studio",
+         "last_event_at": "2026-11-18T03:00:00Z", "created_at": "2026-11-18T02:00:00Z"}]}
         """)
     let s = try #require(b.sessions.first)
     #expect(b.host == "studio" && s.id == "s1" && s.displayName == "api" && s.harnessTitle == "Antigravity")
-    #expect(s.statusLine == "waiting · permission: Write" && s.unseen && s.needsYou == 1 && s.inbox == 2)
-    #expect(s.added && s.localID == "L1" && s.lastActivity.hasPrefix("2026") && s.created.hasPrefix("2026"))
+    #expect(s.statusLine == "waiting · permission: Write" && s.unseen && s.dir == "/w/api")
+    #expect(s.added && s.localID == "s1" && s.lastActivity.hasPrefix("2026") && s.created.hasPrefix("2026"), "it's here, by its own id")
     let plain: RemoteSession = try decode(#"{"id": "x", "name": "n", "status": "busy", "harness": "zsh"}"#)
     #expect(plain.statusLine == "busy" && plain.harnessTitle == "zsh" && plain.displayName == "n")
     #expect(RemoteSession(id: "y").harnessTitle == "Claude", "no harness is Claude's, as for local sessions")
@@ -187,7 +187,7 @@ func makeRemoteSession(
 
     let local = SessionPlace(try makeRemoteSession(id: "a"), hosts: hosts)
     #expect(local.hostBadge == nil && local.shared == nil && !local.dimmed && local.note == nil)
-    #expect(local.canToggleRemote && !local.canRemove && local.canArchive && local.help == nil)
+    #expect(local.canToggleRemote && local.canArchive && local.help == nil)
 
     let shared = SessionPlace(try makeRemoteSession(id: "b", remote: true), hosts: hosts)
     #expect(shared.shared == "shared" && shared.help == "Remote: clients of Hosting can use it" && shared.canToggleRemote)
@@ -196,10 +196,10 @@ func makeRemoteSession(
 
     let up = SessionPlace(try makeRemoteSession(id: "c", host: "studio"), hosts: hosts)
     #expect(up.hostBadge == "↗ studio" && !up.dimmed && up.note == nil && !up.canToggleRemote && up.help == "On studio")
-    #expect(up.canRemove && up.canArchive, "a live added session can be removed here, or archived (ending it there)")
+    #expect(up.canArchive, "a host's session is archived on its host")
 
     let down = SessionPlace(try makeRemoteSession(id: "d", host: "laptop"), hosts: hosts)
-    #expect(down.dimmed && down.note == "reconnecting…" && down.help == "On laptop: reconnecting…" && down.canRemove && down.canArchive)
+    #expect(down.dimmed && down.note == "reconnecting…" && down.help == "On laptop: reconnecting…" && down.canArchive)
 
     let waiting = SessionPlace(try makeRemoteSession(id: "e", host: "new"), hosts: hosts)
     #expect(waiting.dimmed && waiting.note == "waiting for approval")
@@ -208,9 +208,8 @@ func makeRemoteSession(
     #expect(unknown.dimmed && unknown.note == "reconnecting…", "a host missing from the list counts as unreachable")
 
     let gone = SessionPlace(try makeRemoteSession(id: "g", host: "studio", gone: true), hosts: hosts)
-    #expect(gone.dimmed && gone.note == "no longer available" && gone.canRemove && !gone.canToggleRemote)
-    #expect(!gone.canArchive, "gone from its host: it can only be removed")
-    #expect(!shared.canRemove && shared.canArchive, "a session shared from this Mac is this Mac's")
+    #expect(gone.dimmed && gone.note == "no longer available" && !gone.canToggleRemote && !gone.canArchive)
+    #expect(shared.canArchive, "a session shared from this Mac is this Mac's")
 }
 
 @Test func theSidebarFilterKeepsItsChoice() throws {

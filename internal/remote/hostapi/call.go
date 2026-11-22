@@ -30,7 +30,7 @@ func Callable(op catalog.Op) bool {
 func usesHosts(name string) bool {
 	switch name {
 	case ipc.OpRemoteHosts, ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteHostRemove, ipc.OpRemoteHostRetry,
-		ipc.OpRemoteBrowse, ipc.OpRemoteSessionAdd, ipc.OpRemoteSessionRemove, ipc.OpRemoteNew,
+		ipc.OpRemoteBrowse, ipc.OpRemoteNew,
 		ipc.OpRemoteFoldersRecent, ipc.OpRemoteFoldersList, ipc.OpRemoteFoldersMkdir, ipc.OpRemoteHarnesses,
 		ipc.OpRemoteCall, ipc.OpRemoteConfigGet, ipc.OpRemoteConfigSet:
 		return true

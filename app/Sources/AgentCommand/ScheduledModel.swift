@@ -442,7 +442,7 @@ final class ScheduledModel {
             return true
         }
         // There's no pane to split or move to, sidebar to go to, or session to remove, behind Scheduled.
-        let covered = KeyAction.paneActions + [.focusSidebar, .removeAdded]
+        let covered = KeyAction.paneActions + [.focusSidebar]
         if isEditing {
             switch keys.action(for: combo, among: [.save, .leave, .closePane] + covered) {
             case .save:

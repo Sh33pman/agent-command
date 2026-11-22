@@ -19,7 +19,6 @@ struct SidebarView: View {
     /// Turns Remote on or off for a session on this Mac.
     var setRemote: (Session, Bool) -> Void = { _, _ in }
     /// Removes a session added from a host, here only.
-    var removeAdded: (Session) -> Void = { _ in }
     /// Asks for a new group's name, then moves these sessions into it.
     var newGroup: ([Session]) -> Void = { _ in }
     /// Asks for a group's new name.
@@ -176,9 +175,9 @@ struct SidebarView: View {
     /// The groups a session can move to, and a new one.
     @ViewBuilder private func moveToGroupMenu(_ session: Session) -> some View {
         Menu("Move to Group") {
-            ForEach(SidebarLayout.orderedGroups(store.groups)) { group in
+            ForEach(SidebarLayout.groups(for: session, in: store.groups)) { group in
                 if group.id != session.groupID {
-                    Button(group.name) { store.moveSessions(store.actionTargets(forRow: session).map(\.id), to: group.id) }
+                    Button(group.title) { store.moveSessions(store.actionTargets(forRow: session).map(\.id), to: group.id) }
                 }
             }
             Divider()
@@ -225,9 +224,6 @@ struct SidebarView: View {
                                     Button(session.isRemote ? "Turn Remote Off" : "Turn Remote On") {
                                         setRemote(session, !session.isRemote)
                                     }
-                                }
-                                if place.canRemove {
-                                    Button("Remove from This Mac") { removeAdded(session) }
                                 }
                                 if place.canArchive {
                                     Button("Archive…") { archive(session) }
@@ -321,7 +317,7 @@ struct GroupHeaderRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(header.collapsed ? "▸" : "▾").foregroundStyle(theme.dim)
-            Text(header.group.name).fontWeight(.bold).foregroundStyle(Self.color(header.group.color, theme: theme)).lineLimit(1)
+            Text(header.group.title).fontWeight(.bold).foregroundStyle(Self.color(header.group.color, theme: theme)).lineLimit(1)
             Spacer(minLength: 0)
             if header.collapsed, let urgent = header.urgent {
                 Text(urgent.reason == "unseen_done" ? "done" : urgent.reason.replacingOccurrences(of: "_", with: " "))

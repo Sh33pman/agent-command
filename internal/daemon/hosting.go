@@ -25,15 +25,11 @@ func (d *Daemon) startRemote() {
 		Now:         d.cfg.Now,
 		OnChange:    d.changes.bump,
 	})
-	// What clients may do: the host API, on Remote sessions only.
+	// What clients may do: the host API. Its own session ops are the Remote
+	// sessions; call, subscribe and attaching reach the whole host (Direct
+	// Connect), so turning Remote off doesn't drop a client attached.
 	hostapi.Register(d.remote, hostBackend{d}, hostapi.Options{Home: d.cfg.Home})
 	d.remote.Reload() // it logs what's wrong
-	// A session turned local drops the clients attached to it at once.
-	d.OnRemoteChanged(func(c RemoteChange) {
-		if !c.Remote {
-			d.remote.CloseSession(c.SessionID)
-		}
-	})
 }
 
 func isRemoteOp(op string) bool {

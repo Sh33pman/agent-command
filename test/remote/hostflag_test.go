@@ -84,8 +84,17 @@ func TestHostFlag(t *testing.T) {
 	if _, err := laptop.acmd("--host", "nowhere", "list"); err == nil {
 		t.Error("an unknown host listed")
 	}
-	// Without --host, this machine's own.
-	if out, err := laptop.acmd("list", "--json"); err != nil || strings.Contains(out, private.ID) {
-		t.Errorf("laptop's own list: %v %s", err, out)
+	// Without --host, this machine's list, with the host's tree in it: the
+	// host's sessions named by their host.
+	laptop.hostSession("studio", private.ID)
+	out, err = laptop.acmd("list", "--json")
+	var here []ipc.Session
+	if err != nil || json.Unmarshal([]byte(out), &here) != nil {
+		t.Fatalf("laptop's list: %v %s", err, out)
+	}
+	for _, s := range here {
+		if s.ID == private.ID && s.Host != "studio" {
+			t.Errorf("the host's session without its host: %+v", s)
+		}
 	}
 }

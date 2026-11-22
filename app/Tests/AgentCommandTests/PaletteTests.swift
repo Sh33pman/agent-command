@@ -151,19 +151,18 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
     #expect(both.note.hasPrefix("Terminals end") && both.note.hasSuffix("continue the conversation."))
 }
 
-@Test func archivingASessionFromAHostSaysItEndsThere() throws {
+@Test func archivingASessionFromAHostSaysItsArchivedThere() throws {
     let added = try makeRemoteSession(id: "api", host: "studio")
     let other = try makeRemoteSession(id: "web", host: "laptop")
     let gone = try makeRemoteSession(id: "old", host: "studio", gone: true)
     let local = try makeRemoteSession(id: "here")
     let one = try #require(Palette.archivePrompt([added]))
-    #expect(one.note.hasSuffix("It ends on studio too. To keep it running there, use Remove from This Mac instead."))
+    #expect(one.note.hasSuffix("It is archived on studio, its host."))
     let mixed = try #require(Palette.archivePrompt([local, added]))
-    #expect(mixed.note.contains("api ends on studio too."))
-    let both = try #require(Palette.archivePrompt([added, other]))
-    #expect(both.note.hasSuffix("Sessions added from a host end there too. To keep them running there, use Remove from This Mac instead."))
-    #expect(!(try #require(Palette.archivePrompt([local]))).note.contains("Remove from This Mac"))
-    #expect(!(try #require(Palette.archivePrompt([gone]))).note.contains("Remove from This Mac"), "it's gone from there already")
+    #expect(mixed.note.contains("api is archived on studio, its host."))
+    let both = try #require(Palette.archivePrompt([added, other, gone]))
+    #expect(both.note.hasSuffix("Sessions on a host are archived there."))
+    #expect(!(try #require(Palette.archivePrompt([local]))).note.contains("host"))
 }
 
 @Test func paletteOffersTheNextSessionNeedingYouWhenThereIsOne() throws {

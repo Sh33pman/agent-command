@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,22 +16,25 @@ import (
 	"github.com/brettmostert/agent-command/internal/term"
 )
 
-// addSession adds a host's session to this client, and returns the local one.
-func (m *machine) addSession(host, id string) *ipc.Session {
+// hostSession is a host's session as it shows here, in the host's tree,
+// once it does: its id is the host's.
+func (m *machine) hostSession(host, id string) *ipc.Session {
 	m.t.Helper()
-	var s ipc.Session
-	m.call(ipc.OpRemoteSessionAdd, ipc.RemoteHostRef{Host: host, ID: id}, &s)
-	if s.Host != host || s.RemoteID != id || s.ID == id || s.Kind != core.KindHosted {
-		m.t.Fatalf("added = %+v", s)
+	var s *ipc.Session
+	m.waitFor("the host's session here", func() bool {
+		s = m.session(id)
+		return s != nil && s.Host == host
+	})
+	if s.RemoteID != id || s.Kind != core.KindHosted {
+		m.t.Fatalf("here = %+v", s)
 	}
-	return &s
+	return s
 }
 
-// TestBrowseShowsOnlyRemoteSessions: a client sees a host's Remote sessions
-// and nothing else. A session that isn't Remote can't be listed, added,
-// attached, renamed or ended, by the client daemon or by a client calling the
-// host API itself.
-func TestBrowseShowsOnlyRemoteSessions(t *testing.T) {
+// TestTheHostsTreeShowsHere: a client sees all of a host's sessions, as the
+// host has them (Direct Connect). The host API's own session ops, for the
+// app's older Remote features, still see only Remote sessions.
+func TestTheHostsTreeShowsHere(t *testing.T) {
 	host := newMachine(t, "host", hostConfig(freePort(t), true))
 	host.start()
 	shared := host.newSession("shared", true)
@@ -43,18 +45,11 @@ func TestBrowseShowsOnlyRemoteSessions(t *testing.T) {
 
 	var browse ipc.RemoteBrowse
 	laptop.call(ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: "studio"}, &browse)
-	if len(browse.Sessions) != 1 || browse.Sessions[0].ID != shared.ID || browse.Sessions[0].Harness != core.HarnessTerminal ||
-		browse.Sessions[0].Added {
+	if len(browse.Sessions) != 2 || browse.Sessions[0].Harness != core.HarnessTerminal || browse.Sessions[0].Host != "studio" {
 		t.Fatalf("browse = %+v", browse)
 	}
-	if err := laptop.try(ipc.OpRemoteSessionAdd, ipc.RemoteHostRef{Host: "studio", ID: private.ID}, nil); err == nil {
-		t.Error("added a session that isn't Remote")
-	}
-	laptop.addSession("studio", shared.ID)
-	laptop.call(ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: "studio"}, &browse)
-	if len(browse.Sessions) != 1 || !browse.Sessions[0].Added || browse.Sessions[0].LocalID == "" {
-		t.Errorf("browse after the add = %+v", browse)
-	}
+	laptop.hostSession("studio", shared.ID)
+	laptop.hostSession("studio", private.ID)
 
 	// The host API itself, as any authorized client could call it.
 	c := dialHost(t, host)
@@ -119,7 +114,7 @@ func TestAttach(t *testing.T) {
 	laptop := newMachine(t, "laptop", clientConfig)
 	laptop.start()
 	laptop.pair("studio", host)
-	local := laptop.addSession("studio", s.ID)
+	local := laptop.hostSession("studio", s.ID)
 	if got := laptop.session(local.ID); got == nil || got.Host != "studio" || got.Name != "shared" || got.HostGone {
 		t.Fatalf("snapshot = %+v", got)
 	}
@@ -150,7 +145,7 @@ func TestAttach(t *testing.T) {
 }
 
 // TestCreateOnHost: a session made from the client runs on the host, in the
-// folder and with the harness asked for. It's Remote there and added here.
+// folder and with the harness asked for, and shows here in the host's tree.
 func TestCreateOnHost(t *testing.T) {
 	host := newMachine(t, "host", hostConfig(freePort(t), true))
 	host.start()
@@ -173,15 +168,13 @@ func TestCreateOnHost(t *testing.T) {
 		t.Fatalf("new = %+v", local)
 	}
 	on := host.session(local.RemoteID)
-	if on == nil || !on.Remote || on.Harness != core.HarnessTerminal || on.Name != "made" {
+	if on == nil || on.Harness != core.HarnessTerminal || on.Name != "made" {
 		t.Fatalf("on the host: %+v", on)
 	}
 	if resolved, _ := filepath.EvalSymlinks(want); on.Cwd != want && on.Cwd != resolved {
 		t.Errorf("cwd %s, want %s", on.Cwd, want)
 	}
-	if got := laptop.session(local.ID); got == nil || got.RemoteID != local.RemoteID {
-		t.Errorf("snapshot = %+v", got)
-	}
+	laptop.hostSession("studio", local.ID)
 
 	host.waitFor("the session's host", func() bool { return term.Running(host.p.HostSocket(local.RemoteID)) })
 	p := attach(t, laptop.p.HostSocket(local.ID), 24, 80)
@@ -192,8 +185,9 @@ func TestCreateOnHost(t *testing.T) {
 	}
 }
 
-// TestRemoteOff: turning Remote off on the host ends the client's pane within
-// a second, and the session shows that the host no longer offers it.
+// TestRemoteOff: turning Remote off on the host is about the app's older
+// Remote features: a client with the host's tree keeps its pane, and the
+// session stays listed (Direct Connect).
 func TestRemoteOff(t *testing.T) {
 	host := newMachine(t, "host", hostConfig(freePort(t), true))
 	host.start()
@@ -201,40 +195,15 @@ func TestRemoteOff(t *testing.T) {
 	laptop := newMachine(t, "laptop", clientConfig)
 	laptop.start()
 	laptop.pair("studio", host)
-	local := laptop.addSession("studio", s.ID)
+	local := laptop.hostSession("studio", s.ID)
 	p := attach(t, laptop.p.HostSocket(local.ID), 24, 80)
 	p.in <- []byte("echo attached-$((2+2))\n")
 	p.sees(t, "attached-4")
 
-	off := time.Now()
 	host.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, ID: s.ID, Flag: false}, nil)
-	if err := p.ended(t, time.Second); !errors.Is(err, term.ErrEnded) {
-		t.Errorf("the pane ended with %v", err)
-	}
-	t.Logf("the pane ended %v after Remote went off", time.Since(off))
-	laptop.waitFor("the session to be gone", func() bool {
-		got := laptop.session(local.ID)
-		return got != nil && got.HostGone
-	})
-	var browse ipc.RemoteBrowse
-	laptop.call(ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: "studio"}, &browse)
-	if len(browse.Sessions) != 0 {
-		t.Errorf("browse = %+v", browse)
-	}
-	// The host's own session carries on.
-	if !term.Running(host.p.HostSocket(s.ID)) {
-		t.Error("the session ended on the host")
-	}
-
-	// Remote again: it's back, and attaches again.
-	host.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRemote, ID: s.ID, Flag: true}, nil)
-	laptop.waitFor("the session to be back", func() bool {
-		got := laptop.session(local.ID)
-		return got != nil && !got.HostGone
-	})
-	again := attach(t, laptop.p.HostSocket(local.ID), 24, 80)
-	again.in <- []byte("echo again-$((3+3))\n")
-	again.sees(t, "again-6")
+	laptop.waitFor("the change here", func() bool { got := laptop.session(local.ID); return got != nil && !got.Remote })
+	p.in <- []byte("echo still-$((3+3))\n")
+	p.sees(t, "still-6")
 }
 
 // TestRevoke: a revoked client is disconnected at once, and can't get back in.
@@ -245,7 +214,7 @@ func TestRevoke(t *testing.T) {
 	laptop := newMachine(t, "laptop", clientConfig)
 	laptop.start()
 	laptop.pair("studio", host)
-	local := laptop.addSession("studio", s.ID)
+	local := laptop.hostSession("studio", s.ID)
 	p := attach(t, laptop.p.HostSocket(local.ID), 24, 80)
 	p.in <- []byte("echo attached-$((2+2))\n")
 	p.sees(t, "attached-4")
@@ -294,7 +263,7 @@ func TestHostRestart(t *testing.T) {
 	laptop := newMachine(t, "laptop", clientConfig)
 	laptop.start()
 	laptop.pair("studio", host)
-	local := laptop.addSession("studio", s.ID)
+	local := laptop.hostSession("studio", s.ID)
 	p := attach(t, laptop.p.HostSocket(local.ID), 24, 80)
 	p.in <- []byte("echo before-$((2+2))\n")
 	p.sees(t, "before-4")
@@ -323,7 +292,7 @@ func TestTwoHosts(t *testing.T) {
 		host.start()
 		s := host.newSession("on-"+name, true)
 		laptop.pair(name, host)
-		local := laptop.addSession(name, s.ID)
+		local := laptop.hostSession(name, s.ID)
 		p := attach(t, laptop.p.HostSocket(local.ID), 24, 80)
 		p.in <- []byte("echo " + name + "-$((" + string(rune('1'+i)) + "*10))\n")
 		panes = append(panes, p)

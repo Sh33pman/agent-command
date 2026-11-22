@@ -90,10 +90,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                     guard let self else { return }
                     self.store.setRemote(self.store.actionTargets(forRow: session), on)
                 },
-                removeAdded: { [weak self] session in
-                    guard let self else { return }
-                    self.store.removeAdded(self.store.actionTargets(forRow: session))
-                },
                 newGroup: { [weak self] sessions in self?.showNewGroup(sessions) },
                 renameGroup: { [weak self] group in self?.showRenameGroup(group) }
             ))
@@ -469,12 +465,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     @objc private func archiveSelection() {
         archive(store.actionTargets)
-    }
-
-    /// Takes the sessions added from a host off this Mac: they keep running there.
-    /// Any others are left alone, so it does nothing without one.
-    @objc private func removeAddedSelection() {
-        store.removeAdded(store.actionTargets)
     }
 
     @objc private func renameSelection() {
@@ -871,7 +861,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let model = RemoteBrowserModel(client: store.remoteClient, hosts: { [weak store] in store?.remoteHosts ?? [] }, host: host)
         model.close = { [weak self] in self?.closePopup() }
         model.handlesKey = { [weak self] event in event.window === self?.window }
-        model.adopt = { [weak self] session in self?.store.adopt(session) }
         model.focus = { [weak self] id in
             self?.closePopup()
             self?.store.show(id)
@@ -1181,7 +1170,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .toggleHosting: toggleHosting()
         case .remoteSettings: openSettings(at: .remote)
         case .setRemote(let sessions, let on): store.setRemote(sessions, on)
-        case .removeAdded(let sessions): store.removeAdded(sessions)
         case .remoteHosts: showRemoteHosts()
         case .newOnHost(let host): askHarness(firstTime: false, host: host)
         case .togglePopupReading: PopupSettings.shared.autoPlay.toggle()
@@ -1304,7 +1292,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         remoteItem.target = self
         file.submenu?.addItem(remoteItem)
         file.submenu?.addItem(menuItem("Archive…", #selector(archiveSelection), .archive))
-        file.submenu?.addItem(menuItem("Remove from This Mac", #selector(removeAddedSelection), .removeAdded))
         menu.addItem(file)
         let view = NSMenuItem()
         view.submenu = NSMenu(title: "Panes")

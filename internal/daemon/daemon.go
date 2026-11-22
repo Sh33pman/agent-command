@@ -385,6 +385,9 @@ func changesState(op string) bool {
 }
 
 func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
+	if out, done, err := d.forwardToHost(ctx, req); done { // a host's: it makes the change
+		return out, err
+	}
 	if isJobOp(req.Op) {
 		return d.handleJob(ctx, req)
 	}

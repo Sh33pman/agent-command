@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>macOS and Linux Plan</title>
+<style>
+  :root {
+    --bg: #f7f6f2;
+    --surface: #ffffff;
+    --surface-2: #efede6;
+    --ink: #1c1b18;
+    --ink-2: #5d5a52;
+    --rule: #dcd9cf;
+    --edge: #a9a598;
+    --accent: #1f6fd0;
+    --accent-tint: rgba(31, 111, 208, 0.11);
+    --req: #b3261e;
+    --req-tint: rgba(179, 38, 30, 0.10);
+    --rec: #1f6fd0;
+    --rec-tint: rgba(31, 111, 208, 0.11);
+    --opt: #5d5a52;
+    --opt-tint: rgba(93, 90, 82, 0.12);
+    --yes: #1a7f4b;
+    --yes-tint: rgba(26, 127, 75, 0.12);
+    --code-bg: #efede6;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151513;
+      --surface: #1e1e1b;
+      --surface-2: #272724;
+      --ink: #eceae3;
+      --ink-2: #a5a297;
+      --rule: #34332f;
+      --edge: #6b695f;
+      --accent: #6aa9f4;
+      --accent-tint: rgba(106, 169, 244, 0.14);
+      --req: #f2857d;
+      --req-tint: rgba(242, 133, 125, 0.14);
+      --rec: #6aa9f4;
+      --rec-tint: rgba(106, 169, 244, 0.14);
+      --opt: #a5a297;
+      --opt-tint: rgba(165, 162, 151, 0.14);
+      --yes: #5fcf95;
+      --yes-tint: rgba(95, 207, 149, 0.14);
+      --code-bg: #272724;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151513;
+    --surface: #1e1e1b;
+    --surface-2: #272724;
+    --ink: #eceae3;
+    --ink-2: #a5a297;
+    --rule: #34332f;
+    --edge: #6b695f;
+    --accent: #6aa9f4;
+    --accent-tint: rgba(106, 169, 244, 0.14);
+    --req: #f2857d;
+    --req-tint: rgba(242, 133, 125, 0.14);
+    --rec: #6aa9f4;
+    --rec-tint: rgba(106, 169, 244, 0.14);
+    --opt: #a5a297;
+    --opt-tint: rgba(165, 162, 151, 0.14);
+    --yes: #5fcf95;
+    --yes-tint: rgba(95, 207, 149, 0.14);
+    --code-bg: #272724;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 var(--sans);
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 48px 16px 96px; }
+  header.top { margin-bottom: 32px; }
+  .eyebrow {
+    font: 600 12px/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin: 0 0 12px;
+  }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .byline { color: var(--ink-2); font-size: 14px; margin: 0; }
+  h2 {
+    font-size: 24px; line-height: 1.25; letter-spacing: -0.01em;
+    margin: 56px 0 12px; padding-top: 24px; border-top: 1px solid var(--rule);
+  }
+  h3 { font-size: 17px; margin: 32px 0 8px; }
+  p { margin: 0 0 14px; max-width: 70ch; }
+  ul { margin: 0 0 14px; padding-left: 22px; max-width: 70ch; }
+  li { margin-bottom: 6px; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code {
+    font: 0.875em var(--mono);
+    background: var(--code-bg);
+    padding: 1px 5px; border-radius: 4px;
+    overflow-wrap: anywhere;
+  }
+  blockquote {
+    margin: 0 0 14px; padding: 2px 0 2px 14px;
+    border-left: 3px solid var(--edge); color: var(--ink-2);
+  }
+
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin: 0 0 24px;
+  }
+  .verdict .big { font-size: 20px; font-weight: 650; line-height: 1.35; margin: 0 0 8px; max-width: none; }
+  .verdict p:last-child { margin-bottom: 0; }
+
+  nav.toc {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 0 0 8px; padding: 0; list-style: none;
+  }
+  nav.toc a {
+    display: inline-block; font-size: 13px; text-decoration: none;
+    color: var(--ink-2); border: 1px solid var(--rule); border-radius: 999px;
+    padding: 4px 12px; background: var(--surface);
+  }
+  nav.toc a:hover { color: var(--ink); border-color: var(--edge); }
+
+  .tbl { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.45; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule); }
+  th {
+    font: 600 11.5px/1.3 var(--mono); letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--ink-2); background: var(--surface-2); white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; min-width: 150px; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.pick td { background: var(--accent-tint); }
+
+  .pill {
+    display: inline-block; font: 600 11.5px/1 var(--mono);
+    padding: 4px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill.req { color: var(--req); background: var(--req-tint); }
+  .pill.rec { color: var(--rec); background: var(--rec-tint); }
+  .pill.opt { color: var(--opt); background: var(--opt-tint); }
+  .pill.yes { color: var(--yes); background: var(--yes-tint); }
+  .ticket { font: 12px var(--mono); color: var(--ink-2); white-space: nowrap; }
+
+  figure { margin: 8px 0 20px; }
+  .diagram { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); padding: 8px; }
+  .diagram svg { display: block; width: 100%; min-width: 660px; height: auto; font-family: var(--sans); }
+  figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 8px; max-width: 70ch; }
+  svg .box { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+  svg .box.new { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 2; }
+  svg .band { fill: var(--surface-2); stroke: var(--edge); stroke-width: 1.25; }
+  svg .line { fill: none; stroke: var(--edge); stroke-width: 1.25; }
+  svg .head { fill: var(--edge); }
+  svg .head.new { fill: var(--accent); }
+  svg text { fill: var(--ink); font-size: 11.5px; }
+  svg text.t { font-size: 15px; font-weight: 600; }
+  svg text.n { font-size: 13px; font-weight: 600; }
+  svg text.q { fill: var(--ink-2); }
+
+  .checks { list-style: none; padding: 0; max-width: 74ch; }
+  .checks li { position: relative; padding-left: 30px; margin-bottom: 10px; }
+  .checks li::before {
+    content: ""; position: absolute; left: 0; top: 4px;
+    width: 16px; height: 16px; border: 1.5px solid var(--edge); border-radius: 4px;
+  }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 13.5px; }
+  footer p { max-width: 80ch; }
+</style>
+</head>
+<body>
+<main>
+
+<header class="top">
+  <p class="eyebrow">Agent Command &middot; platform plan</p>
+  <h1>Agent Command on macOS and Linux</h1>
+  <p class="byline">15 November 2026 &middot; repo at commit <code>e043dd1</code> &middot; nothing in the code has been changed</p>
+</header>
+
+<div class="verdict">
+  <p class="big">Keep Swift. Build a second, thin app for Linux over the same Go core.</p>
+  <p>Nothing about Linux requires replacing Swift, and replacing it would cost the macOS app its Ghostty terminal. The Go core (daemon, CLI, session hosts) already builds and passes its tests on Linux. What Linux lacks is a window.</p>
+  <p>One finding changes the current Linux plan: Ghostty v1.4.0, the pinned release, can only draw into a macOS or iOS view. On Linux it refuses to create a surface, so the Linux app needs a different terminal widget.</p>
+</div>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#changes">Three changes</a>
+  <a href="#today">Today</a>
+  <a href="#ties">What ties it to macOS</a>
+  <a href="#options">Options</a>
+  <a href="#parts">Changes by part</a>
+  <a href="#build">Build and CI</a>
+  <a href="#plan">Plan</a>
+  <a href="#risks">Risks</a>
+  <a href="#decisions">Decisions</a>
+</nav>
+
+<h2 id="changes">Three technology changes</h2>
+<p>Everything else stays as it is: Swift, AppKit and SwiftUI on macOS, Go for the core, SQLite, and libghostty-vt in the hosts.</p>
+<div class="tbl"><table>
+  <thead><tr><th>Change</th><th>From</th><th>To</th><th>Need</th></tr></thead>
+  <tbody>
+    <tr><td>Terminal widget on Linux</td><td>A libghostty surface, as on macOS</td><td>VTE, GTK's terminal widget, running <code>acmd host attach</code></td><td><span class="pill req">Required</span></td></tr>
+    <tr><td>Language of the Linux app</td><td>Zig with zig-gobject (33 lines so far)</td><td>Go with GTK4 and libadwaita. Rust if the Go bindings fail a 3-day trial</td><td><span class="pill rec">Recommended</span></td></tr>
+    <tr><td>Where UI logic lives</td><td>In each app: Swift today, a second copy on Linux next</td><td>In the Go daemon, sent to both apps as rows ready to draw</td><td><span class="pill rec">Recommended</span></td></tr>
+  </tbody>
+</table></div>
+<p>The first change is forced. PR 3 of PAN-62 (a Ghostty surface in <code>GtkGLArea</code>) cannot work without patching Ghostty.</p>
+<p>This also answers PAN-76. The one-week trial it proposes for option A is not needed: reading Ghostty's header settles it. Option B (GTK4 with VTE) is the route.</p>
+<p>Read aloud is the one feature with no Linux path today, because its engine needs Apple Silicon. Ship Linux without it first.</p>
+
+<h2 id="today">Where it stands today</h2>
+<p>The app is already a client of a portable core, which is why Linux is within reach. The daemon owns sessions, the Inbox and scheduled jobs. A host process owns each session's terminal. The macOS app draws what the daemon reports, and each pane simply runs <code>acmd host attach --session &lt;id&gt;</code> inside a terminal view.</p>
+<div class="tbl"><table>
+  <thead><tr><th>Part</th><th>Where</th><th>Built with</th><th>Size</th><th>On Linux today</th></tr></thead>
+  <tbody>
+    <tr><td>Core: daemon, <code>acmd</code> CLI, hooks, hosts, jobs, store</td><td><code>cmd/</code>, <code>internal/</code></td><td>Go 1.27, SQLite (pure Go)</td><td class="num">18,100 lines<br>12,100 of tests</td><td>Builds and passes tests in CI on Ubuntu. Some macOS behaviour still leaks through (PAN-77)</td></tr>
+    <tr><td>Terminal state in the hosts</td><td><code>internal/vt</code></td><td>libghostty-vt through cgo</td><td class="num">3 files</td><td>Builds. The library supports Linux by design</td></tr>
+    <tr><td>macOS app</td><td><code>app/</code></td><td>Swift, AppKit, SwiftUI, GhosttyKit</td><td class="num">12,400 lines<br>3,300 of tests</td><td>Cannot build. macOS 26 and Apple Silicon only</td></tr>
+    <tr><td>Read aloud</td><td><code>helpers/acmd-speech</code></td><td>Swift, MLX, Kokoro-82M</td><td class="num">3 files</td><td>Cannot build. MLX needs Apple Silicon</td></tr>
+    <tr><td>Linux app</td><td><code>app-linux/</code></td><td>Zig, GTK4, libadwaita</td><td class="num">33 lines</td><td>Opens an empty window. CI never builds it</td></tr>
+    <tr><td>Release</td><td><code>.github/</code>, <code>packaging/</code></td><td>Homebrew cask, built on <code>macos-26</code></td><td class="num">5 workflows</td><td>No Linux package</td></tr>
+  </tbody>
+</table></div>
+<p>About 5,200 of the Swift app's 12,400 lines are models and logic, not views: Inbox order, pane sets, the keymap, the schedule builder, Markdown editing. That is the part a second app would otherwise write again.</p>
+<p>The daemon protocol is the seam between core and app. It is newline-delimited JSON over a unix socket, at protocol version 1, and the Swift app copies its types by hand (PAN-74).</p>
+
+<h2 id="ties">What ties it to macOS</h2>
+<p>One dependency decides the shape of the Linux work: the Ghostty terminal surface exists only for Apple platforms.</p>
+
+<h3>The Ghostty surface</h3>
+<p>The macOS app draws terminals through Ghostty's embedding API, <code>ghostty.h</code>. At v1.4.0 that API cannot be used on Linux:</p>
+<ul>
+  <li><a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/include/ghostty.h"><code>include/ghostty.h</code></a> lists two platforms, <code>GHOSTTY_PLATFORM_MACOS</code> and <code>GHOSTTY_PLATFORM_IOS</code>. A surface is created from an <code>NSView</code> or a <code>UIView</code>. There is no third choice.</li>
+  <li><a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/src/apprt/embedded.zig"><code>src/apprt/embedded.zig</code></a> returns <code>error.UnsupportedPlatform</code> for both when built for anything but Darwin.</li>
+  <li>The header says so itself:</li>
+</ul>
+<blockquote>The only consumer of this API is the macOS app &hellip; External embedders should instead use <code>libghostty-vt</code>.</blockquote>
+<p><code>ghostty-internal.so</code> does build on Linux, which is what <code>app-linux/build.zig</code> links. It builds, but it cannot open a terminal. <code>libghostty-vt</code>, which the hosts already use, is the supported library. It keeps terminal state and does not draw.</p>
+
+<h3>In the macOS app</h3>
+<div class="tbl"><table>
+  <thead><tr><th>macOS piece</th><th>Used for</th><th>Linux equivalent</th><th>Catch</th></tr></thead>
+  <tbody>
+    <tr><td>GhosttyKit surface on Metal</td><td>Terminal panes</td><td>VTE widget</td><td>Not Ghostty's rendering. Kitty graphics and keyboard protocol support need checking</td></tr>
+    <tr><td>AppKit and SwiftUI</td><td>Windows, sidebar, forms, menus</td><td>GTK4 and libadwaita</td><td>None. Both are mature</td></tr>
+    <tr><td><code>NSPanel</code> above every app</td><td>Reply popup</td><td>Layer shell on KDE, Sway and Hyprland. A normal window on GNOME</td><td>GNOME on Wayland gives apps no always-on-top. The largest gap in parity</td></tr>
+    <tr><td>Carbon hot keys</td><td>&#8963;&#8984;A and &#8963;&#8984;O from any app</td><td>The GlobalShortcuts portal, or <code>acmd</code> commands bound in the desktop's own settings</td><td>Wayland apps cannot grab keys themselves. Portal support varies by desktop</td></tr>
+    <tr><td><code>NSStatusItem</code></td><td>Menu bar icon</td><td>StatusNotifierItem tray icon</td><td>GNOME needs an extension to show it</td></tr>
+    <tr><td>Dock badge</td><td>Unread count</td><td>Unity launcher API over D-Bus</td><td>KDE and Ubuntu Dock only. Optional</td></tr>
+    <tr><td><code>UNUserNotificationCenter</code></td><td>Notifications that open a session</td><td><code>GNotification</code> with actions</td><td>Needs an installed <code>.desktop</code> file</td></tr>
+    <tr><td><code>SMAppService</code></td><td>Open at login</td><td>A <code>.desktop</code> file in <code>~/.config/autostart</code></td><td>None</td></tr>
+    <tr><td><code>NSWorkspace</code> and <code>open</code></td><td>URLs, the editor</td><td><code>xdg-open</code> and the editor's command on <code>PATH</code></td><td>None. The Go side already uses the command on its own outside macOS</td></tr>
+    <tr><td>Core Text font registration</td><td>The bundled fonts</td><td>Fontconfig application fonts</td><td>None</td></tr>
+    <tr><td>&#8984; shortcuts</td><td>The keymap</td><td>Ctrl+Shift and Alt</td><td>Ctrl+letter belongs to the terminal. PAN-62 already plans this</td></tr>
+  </tbody>
+</table></div>
+
+<h3>In the Go core</h3>
+<div class="tbl"><table>
+  <thead><tr><th>macOS piece</th><th>Used for</th><th>On Linux</th></tr></thead>
+  <tbody>
+    <tr><td><code>pmset</code> and a sudoers rule</td><td>Waking the Mac for a job</td><td>No waker at first. The daemon already reports "can't wake". Later <code>rtcwake</code> or a systemd timer</td></tr>
+    <tr><td><code>/bin/zsh</code> as the default shell</td><td>Terminal sessions</td><td>The user's shell. A bug today (PAN-77)</td></tr>
+    <tr><td><code>osascript</code>, <code>terminal-notifier</code></td><td>Notifications without the app</td><td><code>notify-send</code>. Done</td></tr>
+    <tr><td><code>sw_vers</code></td><td>Bug reports</td><td><code>/etc/os-release</code></td></tr>
+    <tr><td>Per-user temp folder</td><td>Socket folder</td><td><code>XDG_RUNTIME_DIR</code>. Falls back to shared <code>/tmp</code> today (PAN-78)</td></tr>
+    <tr><td>Started on demand by the app or CLI</td><td>The background service</td><td>The same, plus an optional systemd user service so jobs run after a restart</td></tr>
+    <tr><td>MLX and Metal</td><td>Read aloud</td><td>Nothing yet. Kokoro on ONNX Runtime is the likely route</td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="options">Options compared</h2>
+<p>Three choices are open: whether one app or two, what draws the terminal on Linux, and what language the Linux app is in.</p>
+
+<h3>One app or two</h3>
+<p>Two native apps over one core is the only option that keeps Ghostty's terminal on macOS. A single toolkit must draw the terminal the same way on both systems, and Ghostty's surface exists on only one.</p>
+<div class="tbl"><table>
+  <thead><tr><th>Strategy</th><th>Swift</th><th>Ghostty terminal on macOS</th><th>New UI work</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr class="pick"><td>Two native apps over one core</td><td>Stays</td><td>Kept</td><td>One GTK4 app, kept thin</td><td><span class="pill yes">Recommended</span></td></tr>
+    <tr><td>One web-technology app: Tauri, Electron or Wails with xterm.js</td><td>Replaced</td><td>Lost on both systems</td><td>All of it, plus native code per system for the popup, hot keys and tray</td><td>Only if Windows or use from a browser becomes a goal</td></tr>
+    <tr><td>One cross-platform toolkit: Qt, Flutter or GPUI</td><td>Replaced</td><td>Lost. Each brings its own terminal widget or none</td><td>All of it, in C++, Dart or Rust</td><td>No</td></tr>
+    <tr><td>Swift on both, with GTK bindings on Linux</td><td>Stays, and its logic is shared</td><td>Kept</td><td>One GTK4 app in Swift</td><td>No. Swift's GTK bindings are young, and the daemon can share the logic instead</td></tr>
+    <tr><td>A terminal UI in Go</td><td>Stays</td><td>Kept</td><td>Small</td><td>An optional extra that also works over SSH. Not the Linux app</td></tr>
+  </tbody>
+</table></div>
+<p>Replacing Swift would rewrite 12,400 lines of working, tested code for no gain on macOS. The popup, hot keys, tray icon and login item need native code per system in any toolkit.</p>
+<p>Two apps have one real cost: each UI feature is built twice. The repo has had 224 commits in the 16 days since 2026-10-30, 40 of them in the app. A second app that owns its own logic will fall behind at that pace. That is why the third change matters.</p>
+
+<h3>The terminal on Linux</h3>
+<div class="tbl"><table>
+  <thead><tr><th>Option</th><th>Work</th><th>Risk</th><th>Result</th></tr></thead>
+  <tbody>
+    <tr class="pick"><td>VTE widget</td><td>Days</td><td>Low. Packaged on Debian and Arch, and used by GNOME Console and Ptyxis</td><td>A solid terminal that is not Ghostty's. Ghostty's themes still apply as colour palettes</td></tr>
+    <tr><td>Patch Ghostty to add a Linux platform to its embedding API</td><td>Weeks, then again at each Ghostty upgrade</td><td>High. A private fork of an API its authors call internal</td><td>Ghostty's rendering</td></tr>
+    <tr><td>Our own renderer over libghostty-vt</td><td>Months</td><td>High. Fonts, shaping, selection and input methods are all ours to write</td><td>Ghostty's engine, our drawing. <a href="https://github.com/ghostty-org/ghostling">Ghostling</a> is upstream's example</td></tr>
+    <tr><td>No terminal in the app: open sessions in the user's own terminal</td><td>Days</td><td>Low</td><td>No splits or pane sets</td></tr>
+  </tbody>
+</table></div>
+<p>Start with VTE, behind one small interface: a pane is a widget that runs a command. If Ghostty later ships a drawing library or a Linux platform, only that widget changes. Its <a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/README.md">README</a> says libghostty is being split into several libraries, starting with libghostty-vt.</p>
+
+<h3>The language of the Linux app</h3>
+<p>Zig was chosen to link Ghostty's library. With VTE that reason is gone, and the app becomes an ordinary GTK4 program.</p>
+<div class="tbl"><table>
+  <thead><tr><th>Language</th><th>GTK4 bindings</th><th>Shared with the core</th><th>Catch</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr class="pick"><td>Go</td><td>gotk4 (cgo) or puregotk (no cgo)</td><td>Imports <code>internal/core</code>, <code>internal/ipc</code> and <code>internal/schedule</code> directly. Same lint, tests, coverage gates and CodeQL</td><td>Smaller binding communities. The VTE binding is unconfirmed</td><td><span class="pill yes">First choice</span> if the trial passes</td></tr>
+    <tr><td>Rust</td><td>gtk4-rs, libadwaita-rs, vte4-rs. The best kept outside C</td><td>Nothing. A third copy of the wire types</td><td>A fourth language in the repo</td><td>Fallback</td></tr>
+    <tr><td>Zig</td><td>zig-gobject, as Ghostty's own GTK app uses</td><td>Nothing</td><td>The language changes at each release, and its version is tied to Ghostty's</td><td>Stop. Zig stays as the build tool for libghostty-vt</td></tr>
+    <tr><td>Swift</td><td>Young</td><td>The Swift models</td><td>Toolchain and packaging on Debian and Arch</td><td>No</td></tr>
+    <tr><td>Python with PyGObject</td><td>Complete</td><td>Nothing</td><td>Quick to write, hard to keep correct at this size</td><td>No</td></tr>
+  </tbody>
+</table></div>
+<p>The trial takes about 3 days: a GTK4 window in Go, a libadwaita sidebar filled from a daemon snapshot, and one VTE pane attached to a host. It passes if it builds on Debian stable and Arch, typing and resizing work, and opening and closing panes leaks nothing.</p>
+
+<h2 id="parts">Changes by part</h2>
+<p>The core takes on more, the macOS app gets smaller, and the Linux app is new. "Required" means Linux cannot ship without it.</p>
+
+<figure>
+  <div class="diagram">
+    <svg viewBox="0 0 760 508" role="img" aria-label="One Go core, two thin apps">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="head"/></marker>
+      </defs>
+      <text class="t" x="24" y="28">One Go core, two thin apps</text>
+      <rect class="box new" x="24" y="42" width="12" height="12" rx="3"/><text class="q" x="44" y="52">New for Linux</text>
+      <rect class="box" x="140" y="42" width="12" height="12" rx="3"/><text class="q" x="160" y="52">Exists today</text>
+
+      <rect class="box" x="24" y="68" width="336" height="88" rx="8"/>
+      <text class="n" x="40" y="92">macOS app</text>
+      <text x="40" y="108">Swift, AppKit, SwiftUI</text>
+      <text x="40" y="124">Terminal: Ghostty surface on Metal</text>
+      <text class="q" x="40" y="140">Stays. Hands its logic to the daemon</text>
+
+      <rect class="box new" x="400" y="68" width="336" height="88" rx="8"/>
+      <text class="n" x="416" y="92">Linux app</text>
+      <text x="416" y="108">Go, GTK4, libadwaita</text>
+      <text x="416" y="124">Terminal: VTE widget</text>
+      <text class="q" x="416" y="140">New. Replaces the Zig scaffold</text>
+
+      <path class="line" d="M192 156V179" marker-end="url(#arr)"/>
+      <path class="line" d="M568 156V179" marker-end="url(#arr)"/>
+      <path class="line" d="M380 236V259" marker-end="url(#arr)"/>
+
+      <rect class="band" x="24" y="180" width="712" height="56" rx="8"/>
+      <text class="n" x="380" y="203" text-anchor="middle">One contract for both apps</text>
+      <text x="380" y="222" text-anchor="middle">Daemon socket (JSON lines, protocol 2), and panes that run acmd host attach</text>
+
+      <rect class="box" x="24" y="260" width="712" height="224" rx="8"/>
+      <text class="n" x="40" y="282">Go core, the same on both systems</text>
+
+      <rect class="box" x="40" y="292" width="216" height="88" rx="8"/>
+      <text class="n" x="56" y="316">Daemon</text>
+      <text x="56" y="332">Sessions, Inbox, jobs, SQLite</text>
+      <text x="56" y="348">Decides notifications</text>
+      <text class="q" x="56" y="364">Adds: rows ready to draw</text>
+
+      <rect class="box" x="272" y="292" width="216" height="88" rx="8"/>
+      <text class="n" x="288" y="316">Session hosts</text>
+      <text x="288" y="332">One per session, owns the PTY</text>
+      <text x="288" y="348">State kept by libghostty-vt</text>
+      <text class="q" x="288" y="364">Unchanged</text>
+
+      <rect class="box" x="504" y="292" width="216" height="88" rx="8"/>
+      <text class="n" x="520" y="316">acmd CLI and hooks</text>
+      <text x="520" y="332">Commands, Claude Code hooks</text>
+      <text x="520" y="348">Setup, doctor, config</text>
+      <text class="q" x="520" y="364">Unchanged</text>
+
+      <rect class="box" x="40" y="396" width="332" height="72" rx="8"/>
+      <text class="n" x="56" y="420">Platform: macOS</text>
+      <text x="56" y="436">pmset wake, osascript, open</text>
+      <text class="q" x="56" y="452">Moves behind one package</text>
+
+      <rect class="box new" x="388" y="396" width="332" height="72" rx="8"/>
+      <text class="n" x="404" y="420">Platform: Linux</text>
+      <text x="404" y="436">notify-send, login shell, XDG paths, systemd</text>
+      <text class="q" x="404" y="452">New. No waker at first</text>
+    </svg>
+  </div>
+  <figcaption>Both apps reach the core the same two ways: the daemon socket for state, and a host command in each pane for the terminal. Only the coloured boxes are new.</figcaption>
+</figure>
+
+<h3>Go core</h3>
+<div class="tbl"><table>
+  <thead><tr><th>Change</th><th>Why</th><th>Need</th><th>Ticket</th></tr></thead>
+  <tbody>
+    <tr><td>Use the user's shell, and no waker, on Linux</td><td>Today Linux sessions default to <code>/bin/zsh</code> and the scheduler runs <code>pmset</code></td><td><span class="pill req">Required</span></td><td class="ticket">PAN-77</td></tr>
+    <tr><td>Keep sockets out of shared <code>/tmp</code>, check the folder's owner, and check who connects to host sockets</td><td>A host socket types into a shell</td><td><span class="pill req">Required</span></td><td class="ticket">PAN-78</td></tr>
+    <tr><td><code>acmd</code> opens the Linux app when it is installed, found on <code>PATH</code></td><td><code>openApp</code> only prints a hint on Linux today</td><td><span class="pill req">Required</span></td><td class="ticket">PAN-62 PR 5</td></tr>
+    <tr><td>One <code>internal/platform</code> package for notify, wake, open, shell, OS version and wording</td><td>Platform choices sit in a dozen places, by three mechanisms</td><td><span class="pill rec">Recommended</span></td><td class="ticket">PAN-77</td></tr>
+    <tr><td>Fixture files for every protocol message, and <code>acmd paths --json</code></td><td>Both apps test against the same files and stop working out paths</td><td><span class="pill rec">Recommended</span></td><td class="ticket">PAN-74</td></tr>
+    <tr><td>Explicit wire types and protocol 2</td><td><code>core.Session</code> goes over the socket by its Go field names. Do it before the Linux app reads a snapshot</td><td><span class="pill rec">Recommended</span></td><td class="ticket">PAN-74</td></tr>
+    <tr><td>Send rows ready to draw: sidebar rows, attention order, Inbox groups, the action list for the keymap</td><td>Each app then only draws. <code>core.Layout</code> already does this for the CLI</td><td><span class="pill rec">Recommended</span></td><td class="ticket">PAN-76 D</td></tr>
+    <tr><td>A systemd user service for the daemon</td><td>Scheduled jobs run after a restart without opening the app</td><td><span class="pill opt">Optional</span></td><td class="ticket">New</td></tr>
+  </tbody>
+</table></div>
+
+<h3>macOS app</h3>
+<p>No technology changes. Swift, AppKit, SwiftUI and GhosttyKit stay.</p>
+<div class="tbl"><table>
+  <thead><tr><th>Change</th><th>Why</th><th>Need</th></tr></thead>
+  <tbody>
+    <tr><td>Decode the shared fixture files in its tests</td><td>A renamed field fails a test instead of a release</td><td><span class="pill rec">Recommended</span></td></tr>
+    <tr><td>Delete the logic the daemon takes over</td><td>About 5,200 lines are candidates. Less to keep in step with Linux</td><td><span class="pill rec">Recommended</span></td></tr>
+    <tr><td>Ask the daemon for paths</td><td><code>DaemonPaths</code> repeats <code>internal/paths</code> without its XDG handling</td><td><span class="pill rec">Recommended</span></td></tr>
+  </tbody>
+</table></div>
+
+<h3>Linux app</h3>
+<div class="tbl"><table>
+  <thead><tr><th>Change</th><th>Why</th><th>Need</th></tr></thead>
+  <tbody>
+    <tr><td>Replace the Zig scaffold with a Go GTK4 app in the same module, for example <code>cmd/agent-command-ui</code></td><td>It can import the core's packages. Rust if the trial fails</td><td><span class="pill rec">Recommended</span></td></tr>
+    <tr><td>VTE panes that run <code>acmd host attach --session &lt;id&gt;</code></td><td>The same contract the macOS panes use</td><td><span class="pill req">Required</span></td></tr>
+    <tr><td>Stop building <code>ghostty-internal.so</code> on Linux</td><td>Nothing can use it. Keep libghostty-vt and the themes</td><td><span class="pill rec">Recommended</span></td></tr>
+    <tr><td>Use the id <code>com.brettmostert.agent-command</code></td><td>The scaffold uses <code>com.agentcommand.ui</code>. Notifications and the <code>.desktop</code> file key on it</td><td><span class="pill req">Required</span></td></tr>
+    <tr><td>First release: window, sidebar, panes and splits, pane sets, keymap, status bar, themes, notifications</td><td>The scope PAN-62 already sets, plus notifications</td><td><span class="pill req">Required</span></td></tr>
+    <tr><td>Then: Inbox, scheduled jobs, settings, command popup, shortcuts editor, resume, bug report</td><td>Parity with macOS</td><td><span class="pill rec">Recommended</span></td></tr>
+    <tr><td>Then: reply popup, tray icon, global shortcuts</td><td>These depend on the desktop. See the catches above</td><td><span class="pill opt">Optional</span> per desktop</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Read aloud</h3>
+<p>Leave it off on Linux and have <code>acmd speech status</code> say why. The Go side already talks to the engine over a socket, so a Linux engine can be added later without touching the apps. Kokoro on ONNX Runtime is the likely choice. The Makefile refuses an engine that links espeak, which is GPL, and that rule has to hold on Linux too.</p>
+
+<h2 id="build">Build, packaging and CI</h2>
+<p>Linux adds one build, two package formats and three CI jobs. The macOS pipeline does not change.</p>
+
+<h3>Build</h3>
+<ul>
+  <li><strong>Tools on Linux:</strong> Go, Zig 0.17.0 to build libghostty-vt, <code>pkg-config</code>, and the development packages for GTK4, libadwaita and VTE.</li>
+  <li><strong>Outputs:</strong> <code>agent-command</code> with its <code>acmd</code> link, and <code>agent-command-ui</code>. The first links libghostty-vt statically and needs nothing else. The second needs GTK, libadwaita and VTE at run time.</li>
+  <li><strong>Architectures:</strong> amd64 first. arm64 is a decision, listed below. macOS stays Apple Silicon only.</li>
+  <li><strong>Oldest system:</strong> build release binaries on Debian stable, so they run on anything newer. Take the minimum GTK and libadwaita versions from what Debian stable ships.</li>
+  <li><strong><code>scripts/build-ghostty.sh</code>:</strong> drop the <code>-Dapp-runtime=none</code> build on Linux, and check the theme archive against the hash in Ghostty's manifest (PAN-82, PAN-91).</li>
+</ul>
+
+<h3>Packages</h3>
+<div class="tbl"><table>
+  <thead><tr><th>Format</th><th>For</th><th>How</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td><code>.deb</code></td><td>Debian, Ubuntu</td><td>nfpm in the release job</td><td>First Linux release</td></tr>
+    <tr><td><code>PKGBUILD</code></td><td>Arch, through the AUR</td><td><code>agent-command-bin</code> from the release, <code>agent-command</code> from source</td><td>First Linux release</td></tr>
+    <tr><td>Tarball</td><td>Everything else</td><td>The release job</td><td>First Linux release</td></tr>
+    <tr><td>Flatpak, Snap</td><td>Sandboxed installs</td><td>Not planned</td><td>The sandbox blocks what acmd does: hosts with PTYs, hooks in <code>~/.claude</code>, the user's shell and editor</td></tr>
+  </tbody>
+</table></div>
+<p>A package installs the two binaries, a <code>.desktop</code> file, the icon, Ghostty's themes, the bundled fonts, shell completions and the optional systemd user service. Hooks are per user, so a package cannot add them. The app offers them on first launch, as it does on macOS, and <code>acmd init</code> adds them from a terminal.</p>
+
+<h3>CI and release</h3>
+<div class="tbl"><table>
+  <thead><tr><th>Change</th><th>Why</th><th>Ticket</th></tr></thead>
+  <tbody>
+    <tr><td>Build and test in <code>debian:stable</code> and <code>archlinux:latest</code> containers</td><td>Those are the targets. Today only <code>ubuntu-latest</code> runs</td><td class="ticket">PAN-81</td></tr>
+    <tr><td>Build the Linux app and run its tests with GTK installed</td><td>Nothing builds it today</td><td class="ticket">PAN-81</td></tr>
+    <tr><td>Run <code>make vuln</code>, and CodeQL with <code>GOOS: linux</code></td><td><code>*_linux.go</code> is never scanned</td><td class="ticket">PAN-81</td></tr>
+    <tr><td>A Linux job in <code>release.yml</code> that builds, packages, checksums and attests</td><td>Linux runners are free and do not queue behind the Mac runners</td><td class="ticket">PAN-82, PAN-75</td></tr>
+    <tr><td>One test on each side that decodes the protocol fixtures</td><td>Drift between Go and Swift fails a PR</td><td class="ticket">PAN-74</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Documents</h3>
+<p><code>docs/linux-support-plan.md</code> and the plan in PAN-62 both describe a Ghostty surface in GTK. Both need updating once this is agreed. PAN-62 also refers to <code>docs/linux-ui-features.md</code> and <code>openspec/changes/linux-ui-mvp</code>, which are not in the repo.</p>
+
+<h2 id="plan">Plan</h2>
+<p>Five phases. Phase 1 ends with a headless Linux release and phase 3 with the app. Durations are rough estimates in working weeks for one developer.</p>
+
+<figure>
+  <div class="diagram">
+    <svg viewBox="0 0 760 254" role="img" aria-label="A headless Linux release after phase 1, the app after phase 3">
+      <text class="t" x="24" y="28">A headless Linux release after phase 1, the app after phase 3</text>
+
+      <rect class="box" x="24" y="56" width="136" height="120" rx="8"/>
+      <text class="n" x="36" y="80">0 Decide</text>
+      <text x="36" y="100">Agree the choices</text>
+      <text x="36" y="116">GTK and VTE trial</text>
+      <text class="q" x="36" y="160">3 days</text>
+
+      <rect class="box" x="168" y="56" width="136" height="120" rx="8"/>
+      <text class="n" x="180" y="80">1 Core</text>
+      <text x="180" y="100">Platform package</text>
+      <text x="180" y="116">Socket safety</text>
+      <text x="180" y="132">Debian, Arch in CI</text>
+      <text class="q" x="180" y="160">1 week</text>
+
+      <rect class="box" x="312" y="56" width="136" height="120" rx="8"/>
+      <text class="n" x="324" y="80">2 Thin apps</text>
+      <text x="324" y="100">Fixtures, paths</text>
+      <text x="324" y="116">Protocol 2</text>
+      <text x="324" y="132">Rows ready to draw</text>
+      <text class="q" x="324" y="160">1 to 2 weeks</text>
+
+      <rect class="box new" x="456" y="56" width="136" height="120" rx="8"/>
+      <text class="n" x="468" y="80">3 Linux app</text>
+      <text x="468" y="100">Window, sidebar</text>
+      <text x="468" y="116">VTE panes, splits</text>
+      <text x="468" y="132">Keymap, themes</text>
+      <text class="q" x="468" y="160">2 to 3 weeks</text>
+
+      <rect class="box" x="600" y="56" width="136" height="120" rx="8"/>
+      <text class="n" x="612" y="80">4 Parity</text>
+      <text x="612" y="100">Inbox, jobs</text>
+      <text x="612" y="116">Settings, popups</text>
+      <text x="612" y="132">Tray, shortcuts</text>
+      <text class="q" x="612" y="160">3 to 4 weeks</text>
+
+      <path class="line" d="M24 204H736"/>
+      <path class="head" d="M164 196l8 8l-8 8l-8 -8z"/>
+      <path class="head" d="M308 196l8 8l-8 8l-8 -8z"/>
+      <path class="head" d="M452 196l8 8l-8 8l-8 -8z"/>
+      <path class="head new" d="M596 196l8 8l-8 8l-8 -8z"/>
+      <path class="head" d="M728 196l8 8l-8 8l-8 -8z"/>
+      <text class="q" x="164" y="230" text-anchor="middle">Trial passes</text>
+      <text class="q" x="308" y="230" text-anchor="middle">Headless release</text>
+      <text class="q" x="452" y="230" text-anchor="middle">macOS as before</text>
+      <text x="596" y="230" text-anchor="middle" font-weight="600">First app release</text>
+      <text class="q" x="736" y="230" text-anchor="end">Parity</text>
+    </svg>
+  </div>
+  <figcaption>Each diamond is the test that ends a phase. Bands are not to scale.</figcaption>
+</figure>
+
+<div class="tbl"><table>
+  <thead><tr><th>Phase</th><th>What</th><th>Estimate</th><th>Done when</th></tr></thead>
+  <tbody>
+    <tr><td>0. Decide and try</td><td>Agree this document. Run the Go, GTK4 and VTE trial</td><td class="num">3 days</td><td>The trial passes, or Rust is chosen</td></tr>
+    <tr><td>1. Core complete on Linux</td><td>PAN-77, PAN-78, <code>acmd</code> opens the app, the systemd service, Debian and Arch in CI, a <code>.deb</code> and a <code>PKGBUILD</code> without the app</td><td class="num">1 week</td><td>A headless release: daemon, CLI and hosts. Sessions attach from any terminal</td></tr>
+    <tr><td>2. Thin apps</td><td>Fixtures, <code>acmd paths --json</code>, protocol 2, rows ready to draw. The macOS app adopts them</td><td class="num">1 to 2 weeks</td><td>macOS behaves as before with less Swift</td></tr>
+    <tr class="pick"><td>3. Linux app, first release</td><td>Window, sidebar, VTE panes and splits, pane sets, keymap, status bar, themes, notifications</td><td class="num">2 to 3 weeks</td><td>Daily use on Debian and Arch</td></tr>
+    <tr><td>4. Parity</td><td>Inbox, scheduled jobs, settings, command popup, shortcuts editor, resume, bug report. Then popup, tray and global shortcuts per desktop</td><td class="num">3 to 4 weeks</td><td>The feature list matches macOS, with the desktop gaps written down</td></tr>
+    <tr><td>Later</td><td>Read aloud on Linux, waking for jobs, Ghostty rendering on Linux, a terminal UI</td><td class="num">Not estimated</td><td>Each is optional</td></tr>
+  </tbody>
+</table></div>
+<p>That is about 8 to 10 weeks to parity. Phase 2 can run beside phase 3 if two people work on it, since one is in Go and Swift and the other in the Linux app.</p>
+
+<h2 id="risks">Risks</h2>
+<div class="tbl"><table>
+  <thead><tr><th>Risk</th><th>Effect</th><th>Answer</th></tr></thead>
+  <tbody>
+    <tr><td>Go's GTK bindings are too weak, or have no VTE binding</td><td>The Linux app moves to Rust and shares no code with the core</td><td>The 3-day trial decides before anything is built on them</td></tr>
+    <tr><td>VTE handles keys differently from Ghostty</td><td>Shift+Enter and similar keys may not reach Claude Code as on macOS</td><td>Test in the trial. The app can send the bytes itself</td></tr>
+    <tr><td>VTE lacks features Ghostty has, such as Kitty graphics</td><td>Some output draws differently on Linux</td><td>Accept and document. Revisit when Ghostty can draw on Linux</td></tr>
+    <tr><td>GNOME on Wayland has no always-on-top</td><td>The reply popup cannot sit above other apps there</td><td>Notifications with reply actions on GNOME. Layer shell elsewhere</td></tr>
+    <tr><td>Protocol 2 while old hosts and apps still run after an upgrade</td><td>A mixed-version failure</td><td>Accept both versions for a period, as PAN-74 suggests</td></tr>
+    <tr><td>The two apps drift apart</td><td>Linux lags macOS feature by feature</td><td>Logic in the daemon, shared fixtures, one feature checklist in the repo</td></tr>
+    <tr><td>A Ghostty upgrade changes libghostty-vt's API</td><td>The hosts stop building</td><td>Already contained: every call is in <code>internal/vt</code></td></tr>
+  </tbody>
+</table></div>
+
+<h2 id="decisions">Decisions needed</h2>
+<ul class="checks">
+  <li>Keep Swift and build two apps over one core?</li>
+  <li>Use VTE on Linux, and drop the Ghostty surface from PAN-62's PR 3?</li>
+  <li>Move the Linux app from Zig to Go, subject to the trial? PAN-62 is in progress in Zig, so its owner should agree before PR 2.</li>
+  <li>Is a headless release worth shipping first, or should Linux wait for the app?</li>
+  <li>Which desktops must the reply popup work on: GNOME, KDE, Hyprland or Sway?</li>
+  <li>amd64 only, or arm64 as well?</li>
+  <li>Protocol 2 now, while there is one app to update?</li>
+  <li>Are read aloud and waking for jobs wanted on Linux at all?</li>
+</ul>
+
+<footer>
+  <p><strong>Sources.</strong> Ghostty at the pinned tag:
+    <a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/include/ghostty.h">include/ghostty.h</a>,
+    <a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/src/apprt/embedded.zig">src/apprt/embedded.zig</a>,
+    <a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/src/renderer/OpenGL.zig">src/renderer/OpenGL.zig</a>,
+    <a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/include/ghostty/vt/render.h">include/ghostty/vt/render.h</a>
+    and the <a href="https://github.com/ghostty-org/ghostty/blob/v1.4.0/README.md">README</a>.</p>
+  <p>The repo at commit <code>e043dd1</code>, and Linear tickets PAN-62, PAN-74, PAN-76, PAN-77, PAN-78, PAN-81 and PAN-82. Line counts are from <code>wc -l</code>. The state of the Go and Rust GTK bindings, and of VTE's keyboard support, was not verified and is what the trial is for.</p>
+</footer>
+
+</main>
+</body>
+</html>

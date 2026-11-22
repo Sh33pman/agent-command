@@ -90,6 +90,9 @@ type Group struct {
 	IsDefault  bool      `json:"is_default,omitempty"`
 	CreatedAt  time.Time `json:"created_at,omitzero"`
 	ArchivedAt time.Time `json:"archived_at,omitzero"`
+	// Host is the Remote host a group is on, for a host's tree; "" for this
+	// machine's.
+	Host string `json:"host,omitempty"`
 }
 
 // ViewState is how the list is shown.

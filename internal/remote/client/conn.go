@@ -29,10 +29,9 @@ type hostConn struct {
 	blocked          bool // a fingerprint mismatch: not tried again until the entry changes
 	leaseUntil       time.Time
 	stopped          bool
-	// items are the open inbox items of each of the host's Remote sessions,
-	// added or not, as its events last said: a session added later starts
-	// with its own.
-	items map[string][]api.InboxItem
+	// tree is what the host has, as its event stream says (events.go): kept
+	// while it's offline, so its sessions stay listed.
+	tree *tree
 	// ops are the ops the host serves, as its info said when it connected.
 	ops []string
 
@@ -43,7 +42,7 @@ type hostConn struct {
 }
 
 func newHostConn(c *Client, kh config.KnownHost) *hostConn {
-	return &hostConn{c: c, cfg: kh, state: ipc.HostIdle, since: c.o.Now(), changed: make(chan struct{}), items: map[string][]api.InboxItem{},
+	return &hostConn{c: c, cfg: kh, state: ipc.HostIdle, since: c.o.Now(), changed: make(chan struct{}),
 		kick: make(chan struct{}, 1), stop: make(chan struct{})}
 }
 
@@ -91,19 +90,9 @@ func (h *hostConn) stopLocked() {
 	}
 }
 
-// wantedLocked says whether the host should be connected: it has added
-// sessions that aren't archived, or it's been used lately.
-func (h *hostConn) wantedLocked() bool {
-	if h.c.o.Now().Before(h.leaseUntil) {
-		return true
-	}
-	for _, a := range h.c.added {
-		if a.Host == h.cfg.Name && !a.Archived {
-			return true
-		}
-	}
-	return false
-}
+// wantedLocked says whether the host should be connected: always, to show
+// its tree, while it's known.
+func (h *hostConn) wantedLocked() bool { return true }
 
 func (h *hostConn) statusLocked() ipc.RemoteHost {
 	st := ipc.RemoteHost{Name: h.cfg.Name, Address: h.cfg.Address, Fingerprint: h.cfg.Fingerprint, Cert: h.cfg.Cert,
@@ -156,7 +145,11 @@ func (h *hostConn) run() {
 			}
 			continue
 		}
-		h.setLocked(ipc.HostConnecting, "", time.Time{})
+		// A host waiting for its user to approve this machine still is while
+		// it's tried again: it says so, rather than "connecting".
+		if h.state != ipc.HostPending {
+			h.setLocked(ipc.HostConnecting, "", time.Time{})
+		}
 		kh := h.cfg
 		c.mu.Unlock()
 
@@ -331,23 +324,36 @@ func (h *hostConn) serve(conn *wire.Conn) {
 	}
 }
 
-// follow applies the host's events until the stream ends, which ends the
-// connection: the next one starts with a snapshot.
+// follow keeps the host's tree from its event stream until the stream ends,
+// which ends the connection: the next one starts with a snapshot.
 func (h *hostConn) follow(conn *wire.Conn) {
 	defer func() { _ = conn.Close() }()
 	ctx, cancel := context.WithTimeout(h.c.ctx, h.c.o.DialTimeout)
-	s, err := conn.Open(ctx, api.OpEvents, nil, nil)
+	s, err := conn.Open(ctx, api.OpSubscribe, ipc.SubscribeRequest{Types: treeTypes}, nil)
 	cancel()
 	if err != nil {
-		h.c.o.Log.Printf("remote host %s: events: %v", h.cfg.Name, err)
+		h.c.o.Log.Printf("remote host %s: its changes: %v", h.cfg.Name, err)
 		return
 	}
 	defer func() { _ = s.Close() }()
 	for {
-		var ev api.Event
+		var ev ipc.Event
 		if err := s.Receive(&ev); err != nil {
 			return
 		}
-		h.c.applyEvent(h, ev)
+		c := h.c
+		c.mu.Lock()
+		if h.tree == nil {
+			h.tree = newTree()
+		}
+		n := h.tree.apply(ev)
+		c.syncLocked(h)
+		host := h.cfg.Name
+		h.notifyLocked()
+		c.mu.Unlock()
+		if n != nil && n.Kind != "" {
+			c.b.Notice(n.SessionID, host, *n)
+		}
+		c.b.Changed()
 	}
 }

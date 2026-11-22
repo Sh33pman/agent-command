@@ -178,34 +178,32 @@ struct RemoteSession: Decodable, Equatable, Identifiable {
     var inbox = 0
     var lastActivity = ""
     var created = ""
-    var added = false
-    /// The session here, once it's added.
+    /// Every host session is here, in the host's tree, under its own id.
+    var added = true
     var localID = ""
 
     enum CodingKeys: String, CodingKey {
-        case id, name, harness, dir, status, unseen, inbox, created, added
-        case statusDetail = "status_detail", needsYou = "needs_you", lastActivity = "last_activity", localID = "local_id"
+        case id, name, harness, cwd, status, unseen
+        case statusDetail = "status_detail", lastActivity = "last_event_at", created = "created_at"
     }
 
-    init(id: String, name: String = "", added: Bool = false, localID: String = "") {
-        (self.id, self.name, self.added, self.localID) = (id, name, added, localID)
+    init(id: String, name: String = "") {
+        (self.id, self.name, self.localID) = (id, name, id)
     }
 
+    /// One of a host's sessions, as browse lists it (internal/ipc.Session).
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = c.value(.id, "")
         name = c.value(.name, "")
         harness = c.value(.harness, "")
-        dir = c.value(.dir, "")
+        dir = c.value(.cwd, "")
         status = c.value(.status, "")
         statusDetail = c.value(.statusDetail, "")
         unseen = c.value(.unseen, false)
-        needsYou = c.value(.needsYou, 0)
-        inbox = c.value(.inbox, 0)
         lastActivity = c.value(.lastActivity, "")
         created = c.value(.created, "")
-        added = c.value(.added, false)
-        localID = c.value(.localID, "")
+        localID = id
     }
 
     var displayName: String { name.isEmpty ? (dir as NSString).lastPathComponent : name }
@@ -214,7 +212,7 @@ struct RemoteSession: Decodable, Equatable, Identifiable {
     var statusLine: String { statusDetail.isEmpty ? status : "\(status) · \(statusDetail)" }
 }
 
-/// A host's Remote sessions (internal/ipc.RemoteBrowse).
+/// A host's sessions (internal/ipc.RemoteBrowse).
 struct RemoteBrowse: Decodable, Equatable {
     var host = ""
     var sessions: [RemoteSession] = []
@@ -334,7 +332,6 @@ struct SessionPlace: Equatable {
     /// Said instead of its state: "reconnecting…", "no longer available".
     var note: String?
     /// Added from a host: Remove from This Mac takes it off here, and the host keeps it.
-    var canRemove = false
     /// Archive ends it, on its host too. One gone from its host can only be removed.
     var canArchive = true
     /// Remote can be turned on or off: only for this Mac's sessions.
@@ -342,7 +339,6 @@ struct SessionPlace: Equatable {
 
     /// hosts are the known hosts, and clients the connections attached to it.
     init(_ session: Session, hosts: [RemoteHost], clients: Int = 0) {
-        canRemove = session.can(.removeAdded)
         canArchive = session.can(.archive)
         canToggleRemote = session.can(.setRemote)
         guard session.isOnHost else {

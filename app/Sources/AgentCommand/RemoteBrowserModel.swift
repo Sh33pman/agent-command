@@ -19,10 +19,6 @@ import Observation
     private(set) var loading = false
     /// Why the host's sessions couldn't be listed, or an Open or Add failed.
     private(set) var error: String?
-    /// The sessions being added, by their id on the host.
-    private(set) var adding: Set<String> = []
-    /// The sessions being removed from this Mac, by their id on the host.
-    private(set) var removing: Set<String> = []
     private(set) var retrying: Set<String> = []
     @ObservationIgnored private var monitor: Any?
     /// Whether a key is the browser's: not one typed in another window.
@@ -31,8 +27,6 @@ import Observation
 
     /// Closes the browser.
     @ObservationIgnored var close: () -> Void = {}
-    /// Puts a session just added in the sidebar.
-    @ObservationIgnored var adopt: (Session) -> Void = { _ in }
     /// Shows a session here, by its id here, and closes the browser.
     @ObservationIgnored var focus: (String) -> Void = { _ in }
     /// Opens ⌘⇧N with this host chosen.
@@ -120,57 +114,19 @@ import Observation
 
     // MARK: Sessions
 
-    /// Adds it, if it isn't yet, then shows it.
+    /// Shows it: a host's sessions are here already, in its tree.
     func open(_ session: RemoteSession) {
-        if session.added, !session.localID.isEmpty { return focus(session.localID) }
-        add(session) { [weak self] local in self?.focus(local.id) }
-    }
-
-    func add(_ session: RemoteSession, then: ((Session) -> Void)? = nil) {
-        guard let name = host?.name, !adding.contains(session.id) else { return }
-        guard !session.added else { return }
-        adding.insert(session.id)
-        client.addSession(host: name, id: session.id) { [weak self] result in
-            guard let self else { return }
-            self.adding.remove(session.id)
-            switch result {
-            case .success(let local):
-                if let i = self.sessions.firstIndex(where: { $0.id == session.id }) {
-                    self.sessions[i].added = true
-                    self.sessions[i].localID = local.id
-                }
-                self.adopt(local)
-                then?(local)
-            case .failure(let failure):
-                self.error = errorText(failure)
-            }
-        }
-    }
-
-    /// Takes an added session off this Mac. The host keeps it, so it can be added again.
-    func remove(_ session: RemoteSession) {
-        guard session.added, !session.localID.isEmpty, !removing.contains(session.id) else { return }
-        removing.insert(session.id)
-        client.removeSession(session.localID) { [weak self] failure in
-            guard let self else { return }
-            self.removing.remove(session.id)
-            if let failure { return self.error = errorText(failure) }
-            if let i = self.sessions.firstIndex(where: { $0.id == session.id }) {
-                self.sessions[i].added = false
-                self.sessions[i].localID = ""
-            }
-        }
+        focus(session.id)
     }
 
     // MARK: Keys
 
     /// The browser's keys, like the Inbox's: the arrows (or ⌃J ⌃K) move, left
     /// and right go between hosts and sessions, return opens, escape goes back.
-    /// a adds, Remove from This Mac's shortcut removes, n starts a session on the
-    /// host, r retries and c copies its fingerprint.
+    /// n starts a session on the host, r retries and c copies its fingerprint.
     func handle(_ combo: KeyCombo) -> Bool {
         let keys = Keymap.shared
-        switch keys.action(for: combo, among: [.up, .down, .left, .right, .open, .back, .closePane, .removeAdded]) {
+        switch keys.action(for: combo, among: [.up, .down, .left, .right, .open, .back, .closePane]) {
         case .up: move(-1)
         case .down: move(1)
         case .left: panel = .hosts
@@ -184,12 +140,9 @@ import Observation
         case .back:
             if panel == .sessions { panel = .hosts } else { close() }
         case .closePane: close()
-        case .removeAdded: if let session = cursorSession { remove(session) }
         default:
             guard combo.mods.isEmpty else { return !combo.mods.contains(.command) }
-            if combo == KeyCombo("a"), let session = cursorSession {
-                add(session)
-            } else if combo == KeyCombo("n"), let host {
+            if combo == KeyCombo("n"), let host {
                 newSession(host.name)
             } else if combo == KeyCombo("r"), let host, host.canRetry {
                 retry(host)
@@ -226,8 +179,6 @@ import Observation
 
     /// The keys, for the browser's bottom line.
     static func hint(_ keys: Keymap = .shared) -> String {
-        let remove = keys.label(.removeAdded)
-        return "↑↓ move  ←→ hosts and sessions  return open  a add  " + (remove.isEmpty ? "" : "\(remove) remove  ")
-            + "n new session  r retry  c copy  esc close"
+        "↑↓ move  ←→ hosts and sessions  return open  n new session  r retry  c copy  esc close"
     }
 }

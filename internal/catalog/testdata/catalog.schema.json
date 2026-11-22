@@ -707,7 +707,7 @@
     },
     {
       "name": "remote.browse",
-      "description": "Lists a host's Remote sessions, and which are added here.",
+      "description": "Connects to a host and lists its own sessions, as it has them now.",
       "scope": "read",
       "kind": "read",
       "grant": "host",
@@ -1016,7 +1016,7 @@
     },
     {
       "name": "remote.new",
-      "description": "Starts a session on a host and adds it here.",
+      "description": "Starts a session on a host, in its folder and group there: it shows in the host's tree.",
       "scope": "act",
       "kind": "change",
       "grant": "host",
@@ -1106,35 +1106,6 @@
       },
       "output": {
         "$ref": "#/$defs/ipc.RemoteClient"
-      }
-    },
-    {
-      "name": "remote.sessions.add",
-      "description": "Adds a host's session here.",
-      "scope": "act",
-      "kind": "change",
-      "grant": "host",
-      "transport": {
-        "op": "remote.sessions.add"
-      },
-      "input": {
-        "$ref": "#/$defs/ipc.RemoteHostRef"
-      },
-      "output": {
-        "$ref": "#/$defs/ipc.Session"
-      }
-    },
-    {
-      "name": "remote.sessions.remove",
-      "description": "Removes a session added from a host. The session on the host isn't touched.",
-      "scope": "act",
-      "kind": "change",
-      "grant": "entities",
-      "transport": {
-        "op": "remote.sessions.remove"
-      },
-      "input": {
-        "$ref": "#/$defs/ipc.RemoteHostRef"
       }
     },
     {
@@ -1287,23 +1258,6 @@
       "transport": {
         "op": "mutate",
         "kind": "session.remote"
-      },
-      "input": {
-        "$ref": "#/$defs/ipc.Mutation"
-      },
-      "output": {
-        "$ref": "#/$defs/ipc.Results"
-      }
-    },
-    {
-      "name": "session.remove_added",
-      "description": "Forgets sessions added from a host, here only: the host keeps them.",
-      "scope": "act",
-      "kind": "change",
-      "grant": "entities",
-      "transport": {
-        "op": "mutate",
-        "kind": "session.remove_added"
       },
       "input": {
         "$ref": "#/$defs/ipc.Mutation"
@@ -2319,6 +2273,9 @@
         "archived_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "host": {
+          "type": "string"
         }
       },
       "type": "object",
@@ -2782,6 +2739,9 @@
         },
         "before": {
           "type": "string"
+        },
+        "host": {
+          "type": "string"
         }
       },
       "type": "object",
@@ -2968,7 +2928,7 @@
         },
         "sessions": {
           "items": {
-            "$ref": "#/$defs/ipc.RemoteBrowseSession"
+            "$ref": "#/$defs/ipc.Session"
           },
           "type": "array"
         }
@@ -2977,64 +2937,6 @@
       "required": [
         "host",
         "sessions"
-      ]
-    },
-    "ipc.RemoteBrowseSession": {
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "harness": {
-          "type": "string"
-        },
-        "dir": {
-          "type": "string"
-        },
-        "status": {
-          "type": "string"
-        },
-        "status_detail": {
-          "type": "string"
-        },
-        "unseen": {
-          "type": "boolean"
-        },
-        "needs_you": {
-          "type": "integer"
-        },
-        "inbox": {
-          "type": "integer"
-        },
-        "last_activity": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "created": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "added": {
-          "type": "boolean"
-        },
-        "local_id": {
-          "type": "string"
-        }
-      },
-      "type": "object",
-      "required": [
-        "id",
-        "name",
-        "harness",
-        "dir",
-        "status",
-        "needs_you",
-        "inbox",
-        "last_activity",
-        "created",
-        "added"
       ]
     },
     "ipc.RemoteCall": {

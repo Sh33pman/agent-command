@@ -236,20 +236,6 @@ struct InboxModelTests {
         #expect(h.model.panel == .messages)
     }
 
-    @Test func removeFromThisMacsKeyActsOnASessionFromAHost() throws {
-        let sessions = [try makeRemoteSession(id: "a"), try makeRemoteSession(id: "c", host: "studio")]
-        let h = try Harness(queue: [], sessions: sessions, showsCursor: false)
-        let fake = FakeCalls()
-        h.store.mutations = fake
-        h.model.setPanel(.sessions)
-        h.model.click(filter: .session("a"))
-        #expect(try h.press(51, flags: [.option, .command]))
-        #expect(fake.asked.isEmpty, "a session on this Mac stays")
-        h.model.click(filter: .session("c"))
-        #expect(try h.press(51, flags: [.option, .command]))
-        #expect(fake.ops == ["mutate"] && fake.last["ids"] as? [String] == ["c"])
-    }
-
     @Test func marksApplyToSessionsActions() throws {
         let sessions = [try makeSession(id: "a", claude: "c"), try makeSession(id: "b", claude: "c")]
         let h = try Harness(queue: [], sessions: sessions, showsCursor: false)

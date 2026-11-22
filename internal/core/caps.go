@@ -25,7 +25,6 @@ const (
 	CanArchive       = "archive"         // end it, and keep it in the archive
 	CanUnarchive     = "unarchive"       // bring it back from the archive
 	CanPurge         = "purge"           // delete it from the archive
-	CanRemoveAdded   = "remove_added"    // forget a host's session here (the host keeps it)
 	CanContinueInJob = "continue_in_job" // a scheduled job can send it a prompt
 	CanOpenInEditor  = "open_in_editor"  // its folder is on this machine
 	CanSetRemote     = "set_remote"      // turn Remote on or off for it
@@ -85,7 +84,6 @@ func (s *Session) Capabilities() []string {
 	// A terminal has no conversation to come back to.
 	add(local && archived && s.Harness != HarnessTerminal, CanUnarchive)
 	add(local && archived, CanPurge)
-	add(!local, CanRemoveAdded)
 	// A Claude session, or a terminal Claude was typed in once its hooks gave
 	// the conversation; Antigravity's once its first hook has given its id.
 	conversation := s.ClaudeSessionID != ""

@@ -326,9 +326,6 @@ final class InboxModel {
     }
 
     /// Takes the sessions added from a host off this Mac. The host keeps them.
-    func removeAdded(_ sessions: [Session]) {
-        store.removeAdded(sessions)
-    }
 
     /// The sessions an action on sessions applies to, from whichever panel has the keyboard.
     private var sessionTargets: [Session] {
@@ -556,13 +553,12 @@ final class InboxModel {
             }
             return true
         }
-        switch keys.action(for: combo, among: [.closePane, .focusSidebar, .readAloud, .rename, .archive, .removeAdded]) {
+        switch keys.action(for: combo, among: [.closePane, .focusSidebar, .readAloud, .rename, .archive]) {
         case .closePane: close()
         case .focusSidebar: if !showsCursor { setPanel(panel == .sessions ? .messages : .sessions) }
         case .readAloud: toggleSpeech()
         case .rename: rename(sessionTargets)
         case .archive: archive(sessionTargets)
-        case .removeAdded: removeAdded(sessionTargets)
         default:
             // There's no pane to split or move to behind the Inbox.
             if keys.action(for: combo, among: KeyAction.paneActions) != nil { return true }

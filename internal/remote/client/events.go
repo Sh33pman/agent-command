@@ -2,209 +2,228 @@ package client
 
 import (
 	"cmp"
-	"context"
+	"encoding/json"
 	"slices"
+	"strconv"
 
 	"github.com/brettmostert/agent-command/internal/core"
-	"github.com/brettmostert/agent-command/internal/remote/api"
+	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
-// applyEvent merges an event from a host into what's here: its added
-// sessions' state, their inbox items and notifications. The daemon is told
-// after c.mu is released.
-func (c *Client) applyEvent(h *hostConn, ev api.Event) {
-	var ops []func(context.Context) error
-	c.mu.Lock()
-	host := h.cfg.Name
-	byRemote := map[string]*added{}
-	for _, a := range c.sortedAddedLocked(host) {
-		byRemote[a.RemoteID] = a
-	}
-	update := func(a *added, s api.Session) {
-		if a.Archived {
-			return
-		}
-		u := Update{Session: s}
-		if a.hostUnseen != nil && *a.hostUnseen != s.Unseen {
-			u.Unseen = &s.Unseen
-		}
-		a.hostUnseen = &s.Unseen
-		ops = append(ops, func(ctx context.Context) error { return c.b.Update(ctx, a.ID, u) })
-	}
-	gone := func(a *added) {
-		c.inbox.set(a.ID, host, nil)
-		ops = append(ops, func(ctx context.Context) error { return c.b.Gone(ctx, a.ID) })
-	}
-	switch ev.Type {
-	case api.EventSnapshot:
-		live := map[string]api.Session{}
-		for _, s := range ev.Sessions {
-			live[s.ID] = s
-		}
-		items := map[string][]api.InboxItem{}
-		for _, it := range ev.Inbox {
-			items[it.SessionID] = append(items[it.SessionID], it)
-		}
-		h.items = items
-		for _, a := range byRemote {
-			if s, ok := live[a.RemoteID]; ok {
-				update(a, s)
-				c.inbox.set(a.ID, host, items[a.RemoteID])
-			} else {
-				gone(a)
-			}
-		}
-	case api.EventAdded, api.EventChanged:
-		if a := byRemote[sessionID(ev)]; a != nil {
-			update(a, *ev.Session)
-		}
-	case api.EventRemoved:
-		delete(h.items, ev.ID)
-		if a := byRemote[ev.ID]; a != nil {
-			gone(a)
-		}
-	case api.EventInbox:
-		h.items[ev.ID] = ev.Inbox
-		if a := byRemote[ev.ID]; a != nil {
-			c.inbox.set(a.ID, host, ev.Inbox)
-		}
-	case api.EventNotice:
-		if ev.Notice != nil {
-			if a := byRemote[ev.Notice.SessionID]; a != nil && !a.Archived {
-				n := *ev.Notice
-				ops = append(ops, func(context.Context) error { c.b.Notice(a.ID, host, n); return nil })
-			}
-		}
-	}
-	h.notifyLocked()
-	c.mu.Unlock()
-	for _, op := range ops {
-		if err := op(c.ctx); err != nil {
-			c.o.Log.Printf("remote host %s: %v", host, err)
-		}
+// Each host's tree: its sessions, groups and sets as the host has them, its
+// open inbox items and its notices, kept from its event stream (subscribe).
+// Ids stay as the host made them. Each of its own sessions that isn't
+// archived gets a local socket that relays to it (proxy.go).
+
+// treeTypes are what the client follows of a host.
+var treeTypes = []string{ipc.EntitySession, ipc.EntityGroup, ipc.EntitySet, ipc.EntityInbox, ipc.EntityNotice}
+
+type tree struct {
+	sessions map[string]*ipc.Session
+	groups   map[string]*ipc.Group
+	sets     map[string]ipc.Set
+	inbox    map[int64]core.InboxItem
+	order    map[string][]string // ids by entity type, as they came
+}
+
+func newTree() *tree {
+	return &tree{sessions: map[string]*ipc.Session{}, groups: map[string]*ipc.Group{}, sets: map[string]ipc.Set{},
+		inbox: map[int64]core.InboxItem{}, order: map[string][]string{}}
+}
+
+func (t *tree) keep(typ, id string) {
+	if !slices.Contains(t.order[typ], id) {
+		t.order[typ] = append(t.order[typ], id)
 	}
 }
 
-func sessionID(ev api.Event) string {
-	if ev.Session == nil {
-		return ""
-	}
-	return ev.Session.ID
+func (t *tree) drop(typ, id string) {
+	t.order[typ] = slices.DeleteFunc(t.order[typ], func(x string) bool { return x == id })
 }
 
-// inbox is the open inbox items of the added sessions, as their hosts last
-// said, with local ids: negative, so they never meet the daemon's own.
-type inbox struct {
-	ids     map[inboxKey]int64
-	next    int64
-	items   map[string][]core.InboxItem // by local session id
-	read    map[int64]bool              // read here
-	handled map[int64]bool              // dismissed or answered here
-}
-
-type inboxKey struct {
-	host string
-	id   int64
-}
-
-func newInbox() inbox {
-	return inbox{ids: map[inboxKey]int64{}, items: map[string][]core.InboxItem{}, read: map[int64]bool{}, handled: map[int64]bool{}}
-}
-
-// set replaces a session's items with what its host says.
-func (in *inbox) set(session, host string, items []api.InboxItem) {
-	keep := map[int64]bool{}
-	var out []core.InboxItem
-	for _, it := range items {
-		k := inboxKey{host, it.ID}
-		id, ok := in.ids[k]
-		if !ok {
-			in.next--
-			id = in.next
-			in.ids[k] = id
+// apply follows one event, and returns a notice the host decided on now.
+func (t *tree) apply(ev ipc.Event) *ipc.Notice {
+	if ev.Type == ipc.EventSnapshot && ev.Snapshot != nil {
+		*t = *newTree()
+		s := ev.Snapshot
+		for _, x := range s.Sessions {
+			t.sessions[x.ID] = x
+			t.keep(ipc.EntitySession, x.ID)
 		}
-		keep[id] = true
-		out = append(out, core.InboxItem{ID: id, SessionID: session, Kind: it.Kind, Text: it.Text, Options: it.Options,
-			Multipart: it.Multipart, At: it.At, Read: it.Read, State: core.InboxOpen, Host: host})
-	}
-	// What was read or handled here stays so while the host still has it.
-	for _, old := range in.items[session] {
-		if !keep[old.ID] {
-			delete(in.read, old.ID)
-			delete(in.handled, old.ID)
-			for k, id := range in.ids {
-				if id == old.ID {
-					delete(in.ids, k)
-				}
-			}
+		for _, x := range s.Groups {
+			t.groups[x.ID] = x
+			t.keep(ipc.EntityGroup, x.ID)
 		}
-	}
-	if len(out) == 0 {
-		delete(in.items, session)
-	} else {
-		in.items[session] = out
-	}
-}
-
-// Inbox is the open items of the added sessions, oldest first.
-func (c *Client) Inbox() []core.InboxItem {
-	if c == nil {
+		for _, x := range s.Sets {
+			t.sets[x.ID] = x
+			t.keep(ipc.EntitySet, x.ID)
+		}
+		for _, x := range s.Inbox {
+			t.inbox[x.ID] = x
+		}
 		return nil
 	}
+	removed := ev.Type == ipc.EventRemoved
+	switch ev.Entity {
+	case ipc.EntitySession:
+		var x ipc.Session
+		if removed || json.Unmarshal(ev.Data, &x) != nil {
+			delete(t.sessions, ev.ID)
+			t.drop(ev.Entity, ev.ID)
+			return nil
+		}
+		t.sessions[ev.ID] = &x
+		t.keep(ev.Entity, ev.ID)
+	case ipc.EntityGroup:
+		var x ipc.Group
+		if removed || json.Unmarshal(ev.Data, &x) != nil {
+			delete(t.groups, ev.ID)
+			t.drop(ev.Entity, ev.ID)
+			return nil
+		}
+		t.groups[ev.ID] = &x
+		t.keep(ev.Entity, ev.ID)
+	case ipc.EntitySet:
+		var x ipc.Set
+		if removed || json.Unmarshal(ev.Data, &x) != nil {
+			delete(t.sets, ev.ID)
+			t.drop(ev.Entity, ev.ID)
+			return nil
+		}
+		t.sets[ev.ID] = x
+		t.keep(ev.Entity, ev.ID)
+	case ipc.EntityInbox:
+		id, _ := strconv.ParseInt(ev.ID, 10, 64)
+		var x core.InboxItem
+		if removed || json.Unmarshal(ev.Data, &x) != nil {
+			delete(t.inbox, id)
+			return nil
+		}
+		t.inbox[id] = x
+	case ipc.EntityNotice:
+		var n ipc.Notice
+		if ev.Type == ipc.EventAdded && json.Unmarshal(ev.Data, &n) == nil {
+			return &n
+		}
+	}
+	return nil
+}
+
+// own says whether a host's session is its own, not one it uses from yet
+// another host: that host's to offer.
+func own(s *ipc.Session) bool { return s.Host == "" }
+
+// syncLocked follows a host's tree here: a socket for each of its own
+// sessions that isn't archived, and their inbox items (c.mu is held).
+func (c *Client) syncLocked(h *hostConn) {
+	host := h.cfg.Name
+	live := map[string]bool{}
+	for _, s := range h.tree.sessions {
+		if own(s) && s.Status != core.StatusArchived {
+			live[s.ID] = true
+		}
+	}
+	for id, a := range c.added {
+		if a.Host == host && !live[id] {
+			c.closeProxyLocked(a)
+			c.inbox.set(id, host, nil)
+			delete(c.added, id)
+		}
+	}
+	for id := range live {
+		a := c.added[id]
+		if a == nil {
+			a = &added{Added: Added{ID: id, Host: host, RemoteID: id}}
+			c.added[id] = a
+		}
+		c.openLocked(a)
+	}
+	bySession := map[string][]core.InboxItem{}
+	for _, it := range h.tree.inbox {
+		if live[it.SessionID] && it.State == core.InboxOpen {
+			bySession[it.SessionID] = append(bySession[it.SessionID], it)
+		}
+	}
+	for id := range live {
+		items := bySession[id]
+		slices.SortFunc(items, func(a, b core.InboxItem) int { return cmp.Or(a.At.Compare(b.At), cmp.Compare(a.ID, b.ID)) })
+		c.inbox.setItems(id, host, items)
+	}
+}
+
+// Tree is the hosts' sessions, groups and sets, each with its host, as the
+// hosts have them.
+type Tree struct {
+	Sessions []*ipc.Session
+	Groups   []*ipc.Group
+	Sets     []ipc.Set
+}
+
+// Tree is what the known hosts have, as they last said: each host's own
+// sessions, its groups and its sets, in the order they came, named by host.
+func (c *Client) Tree() Tree {
+	var out Tree
+	if c == nil {
+		return out
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var out []core.InboxItem
-	for _, items := range c.inbox.items {
-		for _, it := range items {
-			if !c.inbox.handled[it.ID] {
-				it.Read = it.Read || c.inbox.read[it.ID]
-				out = append(out, it)
+	for _, name := range c.order {
+		h := c.hosts[name]
+		if h == nil || h.tree == nil {
+			continue
+		}
+		t := h.tree
+		for _, id := range t.order[ipc.EntitySession] {
+			if s := t.sessions[id]; s != nil && own(s) {
+				x := *s
+				x.Host, x.RemoteID, x.HostGone = name, id, false
+				// What can be done with it from here: what its host says, but
+				// its folder isn't on this machine, and a job here can't go on
+				// in it.
+				x.Capabilities = slices.DeleteFunc(slices.Clone(s.Capabilities), func(c string) bool {
+					return c == core.CanOpenInEditor || c == core.CanContinueInJob
+				})
+				out.Sessions = append(out.Sessions, &x)
+			}
+		}
+		for _, id := range t.order[ipc.EntityGroup] {
+			if g := t.groups[id]; g != nil {
+				x := *g
+				x.Host = name
+				out.Groups = append(out.Groups, &x)
+			}
+		}
+		for _, id := range t.order[ipc.EntitySet] {
+			if st, ok := t.sets[id]; ok && st.Host == "" {
+				st.Host = name
+				out.Sets = append(out.Sets, st)
 			}
 		}
 	}
-	slices.SortFunc(out, func(a, b core.InboxItem) int { return cmp.Or(a.At.Compare(b.At), cmp.Compare(b.ID, a.ID)) })
 	return out
 }
 
-// SessionInbox is one added session's open items, newest first.
-func (c *Client) SessionInbox(session string) []core.InboxItem {
-	var out []core.InboxItem
-	for _, it := range c.Inbox() {
-		if it.SessionID == session {
-			out = append(out, it)
-		}
+// HostOf is the known host a session, group or set is on, by its id.
+func (c *Client) HostOf(id string) (string, bool) {
+	if c == nil || id == "" {
+		return "", false
 	}
-	slices.Reverse(out)
-	return out
-}
-
-// InboxItem is an added session's open item, by its local id.
-func (c *Client) InboxItem(id int64) (core.InboxItem, bool) {
-	for _, it := range c.Inbox() {
-		if it.ID == id {
-			return it, true
-		}
-	}
-	return core.InboxItem{}, false
-}
-
-// SetInboxRead marks items read or unread here.
-func (c *Client) SetInboxRead(ids []int64, read bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, id := range ids {
-		c.inbox.read[id] = read
+	for name, h := range c.hosts {
+		if h.tree == nil {
+			continue
+		}
+		if s := h.tree.sessions[id]; s != nil && own(s) {
+			return name, true
+		}
+		if h.tree.groups[id] != nil {
+			return name, true
+		}
+		if st, ok := h.tree.sets[id]; ok && st.Host == "" {
+			return name, true
+		}
 	}
-	c.changedLocked()
-}
-
-// HandleInbox takes items out of the queue here: dismissed, or answered.
-// The host's own inbox follows when its session moves on.
-func (c *Client) HandleInbox(ids []int64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for _, id := range ids {
-		c.inbox.handled[id] = true
-	}
-	c.changedLocked()
+	return "", false
 }

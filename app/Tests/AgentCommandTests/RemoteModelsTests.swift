@@ -54,7 +54,7 @@ private func connected(_ names: String...) -> [RemoteHost] { names.map { RemoteH
 @Test func eachRemoteOpSendsWhatTheDaemonReads() throws {
     let fake = FakeCalls()
     let c = client(fake)
-    fake.replies = ["remote.sessions.add": session, "remote.new": session, "remote.hosts.add": ["name": "studio", "state": "connecting"]]
+    fake.replies = ["remote.new": session, "remote.hosts.add": ["name": "studio", "state": "connecting"]]
     var results: [String] = []
     func note<T>(_ r: Result<T, Error>) { results.append(r.failure == nil ? "ok" : "fail") }
 
@@ -68,13 +68,6 @@ private func connected(_ names: String...) -> [RemoteHost] { names.map { RemoteH
     #expect(fake.ops.last == "remote.hosts.retry" && fake.last as? [String: String] == ["host": "studio"])
     c.browse("studio") { note($0) }
     #expect(fake.ops.last == "remote.browse" && fake.last as? [String: String] == ["host": "studio"])
-    c.addSession(host: "studio", id: "s1") { r in
-        #expect((try? r.get())?.id == "L9")
-        note(r)
-    }
-    #expect(fake.ops.last == "remote.sessions.add" && fake.last as? [String: String] == ["host": "studio", "id": "s1"])
-    c.removeSession("L9") { results.append($0 == nil ? "ok" : "fail") }
-    #expect(fake.ops.last == "remote.sessions.remove" && fake.last as? [String: String] == ["id": "L9"])
     c.newSession(host: "studio", dir: "~/src", harness: "claude") { note($0) }
     #expect(fake.ops.last == "remote.new" && fake.last as? [String: String] == ["host": "studio", "dir": "~/src", "harness": "claude"])
     c.newSession(host: "studio", dir: "/w", harness: nil) { note($0) }
@@ -89,7 +82,7 @@ private func connected(_ names: String...) -> [RemoteHost] { names.map { RemoteH
     #expect(fake.ops.last == "remote.folders.mkdir" && fake.last as? [String: String] == ["host": "studio", "path": "/w/new"])
     c.harnesses(host: "studio") { note($0) }
     #expect(fake.ops.last == "remote.harnesses" && fake.last as? [String: String] == ["host": "studio"])
-    #expect(results.allSatisfy { $0 == "ok" } && results.count == 14)
+    #expect(results.allSatisfy { $0 == "ok" } && results.count == 12)
 
     fake.failures["remote.browse"] = "there's no Remote host named \"x\""
     var message = ""
@@ -111,8 +104,8 @@ struct RemoteBrowserTests {
     }
 
     private let listing: [String: Any] = ["host": "studio", "sessions": [
-        ["id": "s1", "name": "api", "status": "busy"],
-        ["id": "s2", "name": "web", "status": "done", "added": true, "local_id": "L2"],
+        ["id": "s1", "name": "api", "status": "busy", "cwd": "/w/api", "host": "studio"],
+        ["id": "s2", "name": "web", "status": "done", "cwd": "/w/web", "host": "studio"],
     ]]
 
     @Test func itListsTheFirstHostsSessions() {
@@ -166,69 +159,19 @@ struct RemoteBrowserTests {
         #expect(m.listed == "laptop" && !m.loading)
     }
 
-    @Test func openAddsThenShows() throws {
+    /// A host's sessions are here already, in its tree: opening one shows it.
+    @Test func openShowsIt() throws {
         let fake = FakeCalls()
         fake.replies["remote.browse"] = listing
-        fake.replies["remote.sessions.add"] = session
         let m = model(fake)
-        var adopted: [String] = []
         var focused: [String] = []
-        m.adopt = { adopted.append($0.id) }
         m.focus = { focused.append($0) }
         m.load()
-
         m.open(m.sessions[1])
-        #expect(focused == ["L2"] && fake.ops.last == "remote.browse", "already added: it only shows")
         m.open(m.sessions[0])
-        #expect(fake.ops.last == "remote.sessions.add" && fake.last as? [String: String] == ["host": "studio", "id": "s1"])
-        #expect(adopted == ["L9"] && focused == ["L2", "L9"])
-        #expect(m.sessions[0].added && m.sessions[0].localID == "L9")
-        m.add(m.sessions[0])
-        #expect(fake.ops.filter { $0 == "remote.sessions.add" }.count == 1, "added already")
-
-        fake.failures["remote.sessions.add"] = "the host has no session s3"
-        m.add(RemoteSession(id: "s3"))
-        #expect(m.error == "the host has no session s3" && m.adding.isEmpty)
-    }
-
-    @Test func removeTakesAnAddedSessionOffThisMac() {
-        let fake = FakeCalls()
-        fake.replies["remote.browse"] = listing
-        let m = model(fake)
-        m.load()
-        m.remove(m.sessions[0])
-        #expect(fake.ops == ["remote.browse"], "one that isn't added has nothing to remove")
-
-        fake.holding = true
-        m.remove(m.sessions[1])
-        #expect(m.removing == ["s2"])
-        m.remove(m.sessions[1])
-        fake.release()
-        #expect(fake.ops == ["remote.browse", "remote.sessions.remove"], "once")
-        #expect(fake.last as? [String: String] == ["id": "L2"], "by its id here")
-        #expect(!m.sessions[1].added && m.sessions[1].localID.isEmpty && m.removing.isEmpty, "the row goes back to Add")
-        fake.holding = false
-
-        fake.replies["remote.sessions.add"] = session
-        m.add(m.sessions[1])
-        #expect(m.sessions[1].added && m.sessions[1].localID == "L9", "and it can be added again")
-
-        fake.failures["remote.sessions.remove"] = "no such session"
-        m.remove(m.sessions[1])
-        #expect(m.error == "no such session" && m.sessions[1].added && m.removing.isEmpty)
-    }
-
-    @Test func removeFromThisMacsKeyWorksOnTheCursor() throws {
-        let fake = FakeCalls()
-        fake.replies["remote.browse"] = listing
-        let m = model(fake)
-        m.load()
-        let combo = try #require(KeyCombo("opt+cmd+delete"))
-        #expect(m.handle(combo) && fake.ops == ["remote.browse"], "taken, with no session under the cursor")
-        m.setCursor(m.sessions[1])
-        #expect(m.handle(combo))
-        #expect(fake.ops.last == "remote.sessions.remove" && !m.sessions[1].added)
-        #expect(RemoteBrowserModel.hint(Keymap()).contains("a add  ⌥⌘⌫ remove  n new session"))
+        #expect(focused == ["s2", "s1"] && fake.ops == ["remote.browse"], "by the host's own ids, with no call")
+        #expect(m.sessions[0].dir == "/w/api" && m.sessions[0].added && m.sessions[0].localID == "s1")
+        #expect(RemoteBrowserModel.hint(Keymap()).contains("return open  n new session"))
     }
 
     @Test func retryConnectsNow() {
@@ -244,7 +187,6 @@ struct RemoteBrowserTests {
     @Test func theKeysMoveOpenAndAct() throws {
         let fake = FakeCalls()
         fake.replies["remote.browse"] = listing
-        fake.replies["remote.sessions.add"] = session
         let hosts = [RemoteHost(name: "studio", state: .connected), {
             var h = RemoteHost(name: "laptop", state: .pending)
             h.ourFingerprint = "SHA256:me"
@@ -269,8 +211,8 @@ struct RemoteBrowserTests {
         #expect(press("right") && m.panel == .sessions && m.cursorSession?.id == "s1")
         #expect(press("down") && m.cursorSession?.id == "s2")
         #expect(press("down") && m.cursorSession?.id == "s2")
-        #expect(press("return") && focused == ["L2"])
-        #expect(press("up") && press("a") && fake.ops.last == "remote.sessions.add")
+        #expect(press("return") && focused == ["s2"])
+        #expect(press("up") && press("a") && !fake.ops.contains("remote.sessions.add"), "a isn't Add any more")
         #expect(press("left") && m.panel == .hosts && m.cursorSession == nil)
         #expect(press("return") && m.panel == .sessions)
         #expect(press("escape") && m.panel == .hosts && closed == 0)

@@ -72,7 +72,10 @@ func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, e
 	if err != nil {
 		return ipc.Snapshot{}, err
 	}
-	return ipc.Snapshot{Sessions: ipc.SessionsOf(sessions), Groups: ipc.GroupsOf(groups), Sets: wireSets(sets), ViewState: ipc.ViewStateOf(vs), Notices: d.notices(), Inbox: d.withHostInbox(queue),
+	// The known hosts' trees, as they have them.
+	tree := d.client.Tree()
+	return ipc.Snapshot{Sessions: append(ipc.SessionsOf(sessions), tree.Sessions...), Groups: append(ipc.GroupsOf(groups), tree.Groups...),
+		Sets: append(wireSets(sets), tree.Sets...), ViewState: ipc.ViewStateOf(vs), Notices: d.notices(), Inbox: d.withHostInbox(queue),
 		Jobs: jobs, Wake: wake, Remote: remote, RemoteHosts: d.remoteHosts(),
 		Settings: config.Values(d.config()), Health: d.health(sessions, jobs, wake, remote), Dismissed: dismissed,
 		Features: d.features(), Update: d.update(), Speech: d.speechStatus()}, nil
@@ -82,9 +85,6 @@ func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, e
 func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 	if isBatch(m) {
 		return d.mutateMany(ctx, m)
-	}
-	if done, err := d.mutateOnHost(ctx, m); done { // goes to the host, without d.mu held
-		return nil, err
 	}
 	if m.Kind == ipc.MutRemote { // takes d.mu itself: its subscribers run without it
 		return nil, d.setRemote(ctx, m.ID, m.Flag)
@@ -127,8 +127,6 @@ func (d *Daemon) mutate(ctx context.Context, m ipc.Mutation) (any, error) {
 			core.Apply(s, core.Event{Kind: core.EventUnarchived, Time: d.eventTime(s)})
 			return nil
 		})
-	case ipc.MutRemoveAdded:
-		return nil, invalid("remove_added takes ids")
 	case ipc.MutMove:
 		return nil, st.MoveSessions(ctx, m.GroupID, m.IDs...)
 	case ipc.MutGroupCreate:
@@ -308,9 +306,6 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 		}
 	}
 	core.Apply(s, core.Event{Kind: core.EventArchived, Time: d.eventTime(s)})
-	if s.OnHost() { // no socket, and it no longer keeps its host connected
-		d.client.SetArchived(s.ID, true)
-	}
 	if err := d.store.CloseInboxItems(ctx, s.ID); err != nil {
 		return err
 	}

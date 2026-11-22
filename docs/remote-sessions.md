@@ -100,19 +100,17 @@ On the host:
 
 On the client:
 
-- **App:** open **Remote hosts…** from the command palette (or **Browse Remote Hosts…** in Settings → Remote → Known hosts). It covers the main window, like the Inbox. Choose the host on the left, then **Open** a session (return), or **Add** it (a) to put it in the sidebar. A session already added has **Remove** (⌥⌘⌫) to take it off this Mac again, and goes back to **Add**. The browser's keys: ↑ ↓ move, ← → go between hosts and sessions, r retries a host now, n starts a new session on it, and c copies your fingerprint.
+- **App:** nothing to do: once a host is known and connected, its sessions show in the sidebar, after this Mac's, **arranged as the host has them**: its groups (named "API · studio"), its sets, and its Default (named after the host). **Remote hosts…** in the command palette lists a host's sessions to open one, and starts new ones there (n). The browser's keys: ↑ ↓ move, ← → go between hosts and sessions, return shows a session, r retries a host now, n starts a new session on it, and c copies your fingerprint.
 - **CLI:**
 
   ```sh
-  acmd remote browse studio          # its Remote sessions, numbered
-  acmd remote open studio 1          # add it here and attach this terminal; Ctrl+] detaches
+  acmd remote browse studio          # its sessions, numbered
+  acmd remote attach studio 1        # attach this terminal; Ctrl+] detaches
   ```
 
-The session now shows in the client's sidebar with "↗ studio". While the host can't be reached, its row is greyed and reconnects by itself. If the host stops offering it (it was ended, or made local), its row says "no longer available".
+A host's sessions show with "↗ studio". While the host can't be reached, their rows are greyed and reconnect by themselves. A change you make to one (renaming, archiving, moving it between the host's groups) is made on the host, so every client of the host sees the same tree. A host's sessions stay in its own groups and sets: they can't be moved into this Mac's.
 
-To take an added session off the client, use **Remove from This Mac**: in its menu in the sidebar or the Inbox, in the File menu, in the palette (**Remove from this Mac**), with ⌥⌘⌫ (change it in Settings → Keyboard), or **Remove** in the Remote Hosts browser. It's removed here only, and its pane closes. It keeps running on the host, so you can add it again. **Archive…** (⇧⌘⌫) is different: it ends the session on the host too, and its confirmation says so. A session that's "no longer available" can only be removed. `acmd remote drop` does the same from a terminal.
-
-Once a known host exists, the sidebar has a filter next to "Sessions": All, Local (the sessions that run on this Mac, Remote ones included), Remote (every session added from a host), or one host's sessions.
+Once a known host exists, the sidebar has a filter next to "Sessions": All, Local (the sessions that run on this Mac, Remote ones included), Remote (every host's sessions), or one host's sessions.
 
 To start a new session on the host from the client: ⇧⌘N, then choose the host on its **Where** line, which lists This Mac and every known host (tab changes it), and a folder from the host's own folders. The palette's **Session on studio…**, and **New Session on studio…** in the Remote Hosts browser, open ⇧⌘N with the host already chosen. Or `acmd new --on studio --dir ~/code/app`.
 
@@ -288,15 +286,13 @@ On the client:
 | Command | What it does |
 |---|---|
 | `add <name> <host:port> (--fingerprint SHA256:…\|--cert file)` | Adds a known host, and shows this Mac's fingerprint for the host to authorize. |
-| `edit <name> [--name N] [--address host:port] [--fingerprint …\|--cert file]` | Changes a known host. Its added sessions move along when it's renamed. |
-| `remove <name> [-y]` | Forgets a host, and the sessions added from it here. They keep running on the host. |
-| `list [--json]` | The known hosts, each one's state, and how many of its sessions are added here. |
+| `edit <name> [--name N] [--address host:port] [--fingerprint …\|--cert file]` | Changes a known host. Its sessions here are named by its new name. |
+| `remove <name> [-y]` | Forgets a host: its sessions go from here. They keep running on the host. |
+| `list [--json]` | The known hosts, each one's state, and how many of its sessions are here. |
 | `retry <name>` | Connects now, waits up to 15 seconds, and exits with the code for how it went. |
-| `browse <host> [--json]` | The host's Remote sessions, numbered, and which are added here. |
-| `open <host> <#\|id\|name>` | Adds the session here and attaches this terminal. Ctrl+] detaches; it stays added. |
-| `attach <host> <#\|id\|name>` | Attaches without keeping it added: it's removed here again when you detach. |
-| `drop <session>` or `drop <host> <#\|id\|name>` | Removes an added session here. It keeps running on the host. |
-| `acmd new --on <host> [--dir D] [--harness H] [--name N] [--prompt P] [--group G]` | Starts a session on the host (in its home, without `--dir`) and adds it here. |
+| `browse <host> [--json]` | The host's sessions, numbered, the most recently active first. |
+| `attach <host> <#\|id\|name>` (or `open`) | Attaches this terminal to one of them. Ctrl+] detaches. |
+| `acmd new --on <host> [--dir D] [--harness H] [--name N] [--prompt P] [--group G]` | Starts a session on the host (in its home, without `--dir`): it shows here in the host's tree. |
 
 On either:
 

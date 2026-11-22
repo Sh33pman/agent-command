@@ -245,3 +245,37 @@ extension UsesSharedSpeech {
     #expect(rows.map(\.id) == ["group:api", "api", "group:web"])
     #expect(Set(rows.map(\.id)).count == rows.count)
 }
+
+/// A host's tree comes after this Mac's groups, as the host arranges it: its
+/// groups named with the host, its Default as the host itself, and its sessions
+/// only ever in its own groups.
+@Test func eachHostsTreeFollowsThisMacsGroups() throws {
+    let groups = [
+        SessionGroup(id: "default", name: "Default", isDefault: true),
+        SessionGroup(id: "mine", name: "Mine", order: 1),
+        SessionGroup(id: "s-default", name: "Default", isDefault: true, host: "studio"),
+        SessionGroup(id: "s-api", name: "API", order: 2, host: "studio"),
+        SessionGroup(id: "b-ops", name: "Ops", order: 1, host: "box"),
+    ]
+    var onStudio = try makeRemoteSession(id: "h1", host: "studio")
+    onStudio.groupID = "s-api"
+    var lost = try makeRemoteSession(id: "h2", host: "studio")
+    lost.groupID = "gone" // a group the host no longer has: its own Default
+    var onBox = try makeRemoteSession(id: "h3", host: "box")
+    onBox.groupID = "b-ops"
+    let rows = SidebarLayout.rows(sessions: [try session("a", group: "mine"), onStudio, lost, onBox], groups: groups, sets: [],
+                                  options: SidebarOptions())
+    let titles = rows.compactMap { row -> String? in
+        if case .header(let h) = row { return h.group.title }
+        return nil
+    }
+    #expect(titles == ["Mine", "Ops · box", "API · studio", "studio"])
+    #expect(SidebarLayout.sessionIDs(rows) == ["a", "h3", "h1", "h2"])
+    #expect(SidebarLayout.groups(for: onStudio, in: groups).map(\.id) == ["s-api", "s-default"], "only its host's groups")
+    #expect(SidebarLayout.groups(for: try session("a"), in: groups).map(\.id) == ["mine", "default"])
+    let g: SessionGroup = try JSONDecoder().decode(SessionGroup.self, from: Data(#"{"id":"x","name":"N","host":"studio"}"#.utf8))
+    #expect(g.host == "studio" && g.title == "N · studio")
+    // Moving a host's sessions offers only that host's groups.
+    let entries = Palette.groupEntries([onStudio], section: "s", groups: groups).map(\.title)
+    #expect(entries.contains("Move to studio") && !entries.contains("Move to Mine") && !entries.contains { $0.contains("box") })
+}

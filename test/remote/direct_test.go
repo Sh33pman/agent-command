@@ -127,4 +127,36 @@ func TestDirectConnect(t *testing.T) {
 	p := attach(t, relayTo(t, c, a.ID), 24, 80)
 	p.in <- []byte("echo direct-$((6*7))\n")
 	p.sees(t, "direct-42")
+
+	// A desktop client, through its own daemon, sees the same tree for that
+	// host: its group and set, each session where the host has it.
+	laptop := newMachine(t, "laptop", clientConfig)
+	laptop.start()
+	laptop.pair("studio", host)
+	laptop.hostSession("studio", a.ID)
+	laptop.hostSession("studio", b.ID)
+	var here ipc.Snapshot
+	laptop.waitFor("the host's group and set", func() bool {
+		here = laptop.snapshot()
+		groups, sets := 0, 0
+		for _, x := range here.Groups {
+			if x.ID == g.ID && x.Host == "studio" && x.Name == "API" {
+				groups++
+			}
+		}
+		for _, x := range here.Sets {
+			if x.Host == "studio" && x.Parent == g.ID {
+				sets++
+			}
+		}
+		return groups == 1 && sets == 1
+	})
+	for _, x := range here.Sessions {
+		if want := byID[x.ID]; want != nil && (x.GroupID != want.GroupID || x.Parent != want.Parent || x.Order != want.Order || x.Host != "studio") {
+			t.Errorf("%s here: %+v, on the host %+v", x.ID, x, want)
+		}
+	}
+	// A change made here happens on the host.
+	laptop.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, ID: b.ID, Text: "renamed here"}, nil)
+	host.waitFor("the rename on the host", func() bool { s := host.session(b.ID); return s != nil && s.Name == "renamed here" })
 }

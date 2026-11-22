@@ -438,19 +438,6 @@ func (p *pane) sees(t *testing.T, text string) {
 	waitFor(t, fmt.Sprintf("%q in the pane", text), func() bool { return strings.Contains(p.out.String(), text) })
 }
 
-// ended waits up to within for the pane to end, and returns why.
-func (p *pane) ended(t *testing.T, within time.Duration) error {
-	t.Helper()
-	select {
-	case err := <-p.done:
-		p.done <- err // for the cleanup
-		return err
-	case <-time.After(within):
-		t.Fatalf("the pane was still attached after %v", within)
-		return nil
-	}
-}
-
 type syncBuf struct {
 	mu sync.Mutex
 	b  bytes.Buffer

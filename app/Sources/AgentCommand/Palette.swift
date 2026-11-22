@@ -40,7 +40,6 @@ enum PaletteAction: Equatable {
     /// Remote on or off for this Mac's sessions.
     case setRemote([Session], Bool)
     /// Removes sessions added from a host that it no longer has.
-    case removeAdded([Session])
     /// The Remote Hosts browser.
     case remoteHosts
     /// ⌘⇧N with this host chosen.
@@ -112,8 +111,9 @@ enum Palette {
     /// Moving sessions to each group none of them is in already, and to a new one.
     static func groupEntries(_ sessions: [Session], section: String, groups: [SessionGroup]) -> [PaletteEntry] {
         var list: [PaletteEntry] = []
-        for group in SidebarLayout.orderedGroups(groups) where !sessions.allSatisfy({ $0.groupID == group.id }) {
-            list.append(PaletteEntry(section: section, title: "Move to \(group.name)", key: group.id,
+        let hosts = Set(sessions.map(\.hostName))
+        for group in SidebarLayout.orderedGroups(groups) where hosts == [group.host] && !sessions.allSatisfy({ $0.groupID == group.id }) {
+            list.append(PaletteEntry(section: section, title: "Move to \(group.title)", key: group.id,
                                      action: .moveToGroup(sessions, group: group.id)))
         }
         list.append(PaletteEntry(section: section, title: "Move to a new group…", action: .newGroup(sessions)))
@@ -248,11 +248,6 @@ enum Palette {
             let on = local.contains { !$0.isRemote }
             list.append(PaletteEntry(section: section, title: on ? "Turn Remote on" : "Turn Remote off", action: .setRemote(local, on)))
         }
-        let added = targets.filter(\.isOnHost)
-        if !added.isEmpty {
-            list.append(PaletteEntry(
-                section: section, title: "Remove from this Mac", shortcut: keys.label(.removeAdded), action: .removeAdded(added)))
-        }
         return list
     }
 
@@ -267,13 +262,13 @@ enum Palette {
         if sessions.contains(where: { !$0.isTerminal }) {
             notes.append("Agents stop. You can unarchive them later and continue the conversation.")
         }
-        // Archive ends a session added from a host on the host as well.
-        let added = sessions.filter { $0.isOnHost && !$0.isHostGone }
-        if added.count == 1, let one = added.first {
+        // A host's session is archived on its host: it's the host's.
+        let onHosts = sessions.filter(\.isOnHost)
+        if onHosts.count == 1, let one = onHosts.first {
             let name = sessions.count == 1 ? "It" : one.displayName
-            notes.append("\(name) ends on \(one.hostName) too. To keep it running there, use Remove from This Mac instead.")
-        } else if added.count > 1 {
-            notes.append("Sessions added from a host end there too. To keep them running there, use Remove from This Mac instead.")
+            notes.append("\(name) is archived on \(one.hostName), its host.")
+        } else if onHosts.count > 1 {
+            notes.append("Sessions on a host are archived there.")
         }
         return (title, notes.joined(separator: " "))
     }

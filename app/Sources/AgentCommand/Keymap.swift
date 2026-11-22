@@ -246,7 +246,6 @@ enum KeyAction: String, CaseIterable, Identifiable {
     case readAloud = "app.read-aloud"
     case rename = "app.rename"
     case archive = "app.archive"
-    case removeAdded = "app.remove-added"
     case togglePopup = "app.toggle-popup"
     case shortcuts = "app.shortcuts"
     case settings = "app.settings"
@@ -332,7 +331,6 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .readAloud: "Read aloud, or stop reading"
         case .rename: "Rename"
         case .archive: "Archive"
-        case .removeAdded: "Remove from This Mac"
         case .togglePopup: "Turn the popup on or off"
         case .shortcuts: "Keyboard shortcuts"
         case .settings: "Settings"
@@ -383,7 +381,6 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .focusSidebar: "In the Inbox: switches between sessions and messages."
         case .rename: "In Scheduled: edits the job."
         case .archive: "In Scheduled: deletes the job."
-        case .removeAdded: "Only a session added from a host, which keeps running there."
         case .openInEditor: "The session's folder. ⌘-click a file in a terminal to open it at its line."
         case .closePane: "Closes the Inbox, the popup or Scheduled when one is open."
         case .open: "In the Inbox, on the open message: answer or reply. In Scheduled: edit."
@@ -413,7 +410,6 @@ enum KeyAction: String, CaseIterable, Identifiable {
         case .readAloud: ["shift+cmd+s"]
         case .rename: ["cmd+r"]
         case .archive: ["shift+cmd+delete"]
-        case .removeAdded: ["opt+cmd+delete"]
         case .togglePopup: ["opt+cmd+i"]
         case .shortcuts: ["cmd+/"]
         case .settings: ["cmd+,"]

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.75.0](https://github.com/brettmostert/agent-command/compare/v0.74.0...v0.75.0) (2026-11-22)
+
+
+### Features
+
+* an event stream: a snapshot, then each entity added, updated or removed ([#125](https://github.com/brettmostert/agent-command/issues/125)) ([6a1306f](https://github.com/brettmostert/agent-command/commit/6a1306f32e0a13cd8b3936283ff80ea2cb68d891))
+
 ## [0.74.0](https://github.com/brettmostert/agent-command/compare/v0.73.0...v0.74.0) (2026-11-22)
 
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.74.0](https://github.com/brettmostert/agent-command/compare/v0.73.0...v0.74.0) (2026-11-22)
+
+
+### Features
+
+* caller identity, who made each change, and inbox.permission_answers ([#123](https://github.com/brettmostert/agent-command/issues/123)) ([9119f5a](https://github.com/brettmostert/agent-command/commit/9119f5abe12aed16cea2f529b2216b9aac363870))
+* each client's notification profile, dismissed warnings and keymap in the daemon ([#122](https://github.com/brettmostert/agent-command/issues/122)) ([d4897c9](https://github.com/brettmostert/agent-command/commit/d4897c9c4a400077fa7558d5d2e946eec4b3596b))
+
 ## [0.73.0](https://github.com/brettmostert/agent-command/compare/v0.72.0...v0.73.0) (2026-11-22)
 
 

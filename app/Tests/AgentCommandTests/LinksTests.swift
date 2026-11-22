@@ -48,7 +48,23 @@ import Testing
     #expect(FileLink(path: "/abs/x").resolved(in: "/w") == "/abs/x")
     #expect(FileLink(path: "~/n.md").resolved(in: "/w", home: "/Users/me") == "/Users/me/n.md")
     #expect(FileLink(path: "~").resolved(in: "/w", home: "/Users/me") == "/Users/me")
-    #expect(link.editArguments(in: "/w/proj") == ["edit", "--in", "/w/proj", "/w/proj/src/main.go", "--line", "4", "--column", "2"])
-    #expect(FileLink(path: "a.go", line: 9).editArguments(in: "/w") == ["edit", "--in", "/w", "/w/a.go", "--line", "9"])
-    #expect(FileLink(path: "a.go").editArguments(in: "/w") == ["edit", "--in", "/w", "/w/a.go"])
+    // What the daemon's editor.open gets.
+    #expect(link.editorOpen(in: "/w/proj") == EditorOpen(path: "/w/proj/src/main.go", in: "/w/proj", line: 4, column: 2))
+    #expect(FileLink(path: "a.go", line: 9).editorOpen(in: "/w") == EditorOpen(path: "/w/a.go", in: "/w", line: 9))
+    #expect(FileLink(path: "a.go").editorOpen(in: "/w") == EditorOpen(path: "/w/a.go", in: "/w"))
+    #expect(FileLink(path: "a.go", column: 3).editorOpen(in: "/w").column == nil, "a column only with a line")
+}
+
+/// Opening in the editor asks acmd's background service, which says why it
+/// couldn't.
+@MainActor @Test func openingInTheEditorAsksTheDaemon() throws {
+    let store = SessionStore()
+    let fake = FakeCalls()
+    store.mutations = fake
+    var failure: String? = "unset"
+    store.openInEditor(EditorOpen(id: "s1")) { failure = $0 }
+    #expect(fake.ops == ["editor.open"] && fake.last["id"] as? String == "s1" && failure == nil)
+    fake.failures["editor.open"] = "no editor chosen yet"
+    store.openInEditor(EditorOpen(path: "/w/a.go", in: "/w", line: 3)) { failure = $0 }
+    #expect(fake.last["path"] as? String == "/w/a.go" && fake.last["line"] as? Int == 3 && failure == "no editor chosen yet")
 }

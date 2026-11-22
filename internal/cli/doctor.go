@@ -233,3 +233,18 @@ func daemonHealth(ctx context.Context, env doctor.Env) ([]ipc.Health, error) {
 	}
 	return s.Health, nil
 }
+
+// daemonDoctor makes acmd doctor's checks for the daemon (the doctor op).
+func daemonDoctor(ctx context.Context) ipc.DoctorReport {
+	out := ipc.DoctorReport{Checks: []ipc.DoctorCheck{}}
+	env, err := doctorEnv()
+	if err != nil {
+		out.Checks = append(out.Checks, ipc.DoctorCheck{Section: "acmd", Status: ipc.DoctorFail, Text: err.Error()})
+		return out
+	}
+	statuses := map[doctor.Status]string{doctor.OK: ipc.DoctorOK, doctor.Info: ipc.DoctorInfo, doctor.Warn: ipc.DoctorWarn, doctor.Fail: ipc.DoctorFail}
+	for _, c := range doctor.Run(ctx, env).Checks {
+		out.Checks = append(out.Checks, ipc.DoctorCheck{Section: c.Section, Status: statuses[c.Status], Text: c.Text, Fix: c.Fix})
+	}
+	return out
+}

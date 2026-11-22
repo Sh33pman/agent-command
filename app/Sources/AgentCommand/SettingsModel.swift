@@ -323,13 +323,36 @@ enum ShellWords {
         }
     }
 
-    /// Re-adds the agents' hooks and replaces a stale background service.
+    /// Re-adds the agents' hooks and the rest of acmd's setup (the init op),
+    /// then checks it again.
     func repairSetup() {
-        command(["doctor", "--fix"], key: "doctor", keepsOutput: true)
+        busy = "doctor"
+        client.calls.call("init", Data("{}".utf8)) { [weak self] result in
+            guard let self else { return }
+            if case .failure(let failure) = result {
+                self.busy = nil
+                self.report = "Couldn't set acmd up: \(errorText(failure))"
+                return
+            }
+            self.checkSetup()
+        }
     }
 
+    /// The checks acmd doctor makes, by acmd's background service.
     func checkSetup() {
-        command(["doctor"], key: "doctor", keepsOutput: true)
+        busy = "doctor"
+        error = nil
+        client.calls.call("doctor", Data("{}".utf8)) { [weak self] result in
+            guard let self else { return }
+            self.busy = nil
+            switch result {
+            case .success(let data):
+                self.report = ((try? JSONDecoder().decode(DoctorReport.self, from: data)) ?? DoctorReport()).text
+            case .failure(let failure):
+                self.report = "Couldn't check the setup: \(errorText(failure))"
+            }
+            self.load()
+        }
     }
 
     private func command(_ args: [String], key: String, keepsOutput: Bool = false) {

@@ -113,6 +113,12 @@ type Config struct {
 	CheckHealth func(ctx context.Context) []ipc.Health
 	// HealthFiles are the agents' settings files: a change checks again.
 	HealthFiles []string
+	// Doctor makes acmd doctor's checks (the doctor op). nil refuses.
+	Doctor func(ctx context.Context) ipc.DoctorReport
+	// OpenEditor opens a folder or a file in the editor chosen, on this
+	// machine (the editor.open op): Path is absolute, a session's folder is
+	// already resolved. nil refuses.
+	OpenEditor func(ctx context.Context, r ipc.EditorOpen) error
 	// Init sets acmd up as `acmd init` does (the init op). nil refuses.
 	Init func(ctx context.Context) (ipc.InitResult, error)
 	// OSVersion is the OS's version, for reports ("" when unknown).

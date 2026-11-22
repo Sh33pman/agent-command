@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -31,51 +32,7 @@ func newEditCmd() *cobra.Command {
 		Example: "  acmd edit src/main.go:42\n  acmd edit --in ~/code/app README.md --line 10",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			base := in
-			if base == "" {
-				wd, err := os.Getwd()
-				if err != nil {
-					return err
-				}
-				base = wd
-			}
-			file, l, c := resolveEditPath(base, args[0])
-			if line > 0 {
-				l, c = line, col
-			}
-			info, err := os.Stat(file)
-			if err != nil {
-				return fmt.Errorf("can't open %s: %w", file, errors.Unwrap(err))
-			}
-			p, err := paths.Default()
-			if err != nil {
-				return err
-			}
-			cfg, err := config.Load(p.Config())
-			if err != nil {
-				return err
-			}
-			if cfg.Editor.Preset == "" {
-				return errors.New("no editor chosen yet: run acmd editor set, or choose one in the app's Settings → Editor")
-			}
-			dir := filepath.Dir(file)
-			if info.IsDir() {
-				dir = file
-			}
-			if in != "" {
-				dir = in
-			}
-			pathList := loginPath()
-			op := &editor.Opener{
-				Editor: cfg.Editor, Env: loginEnv(p), Launch: editLaunch,
-				Look:   func(n string) (string, error) { return setup.LookPathIn(n, pathList) },
-				Exists: isExecutableFile,
-			}
-			folder := editor.Folder(dir, cfg.Editor.Target)
-			if info.IsDir() {
-				return op.Open(cmd.Context(), file)
-			}
-			return op.OpenFile(cmd.Context(), folder, file, l, c)
+			return openInEditor(cmd.Context(), in, args[0], line, col)
 		},
 	}
 	f := cmd.Flags()
@@ -119,4 +76,56 @@ func cutHome(p string) (string, bool) {
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// openInEditor opens path in the editor chosen with acmd editor set, at line
+// and col (0: where the file's :line:col says, if it does), in the window of
+// its folder. A relative path is read from in, else from here. The daemon
+// runs it for the editor.open op.
+func openInEditor(ctx context.Context, in, path string, line, col int) error {
+	base := in
+	if base == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		base = wd
+	}
+	file, l, c := resolveEditPath(base, path)
+	if line > 0 {
+		l, c = line, col
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		return fmt.Errorf("can't open %s: %w", file, errors.Unwrap(err))
+	}
+	p, err := paths.Default()
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load(p.Config())
+	if err != nil {
+		return err
+	}
+	if cfg.Editor.Preset == "" {
+		return errors.New("no editor chosen yet: run acmd editor set, or choose one in the app's Settings → Editor")
+	}
+	dir := filepath.Dir(file)
+	if info.IsDir() {
+		dir = file
+	}
+	if in != "" {
+		dir = in
+	}
+	pathList := loginPath()
+	op := &editor.Opener{
+		Editor: cfg.Editor, Env: loginEnv(p), Launch: editLaunch,
+		Look:   func(n string) (string, error) { return setup.LookPathIn(n, pathList) },
+		Exists: isExecutableFile,
+	}
+	folder := editor.Folder(dir, cfg.Editor.Target)
+	if info.IsDir() {
+		return op.Open(ctx, file)
+	}
+	return op.OpenFile(ctx, folder, file, l, c)
 }

@@ -130,6 +130,34 @@
       }
     },
     {
+      "name": "doctor",
+      "description": "Returns the checks acmd doctor makes: acmd itself, the agents and their hooks, the editor, the background service.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "doctor"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.DoctorReport"
+      }
+    },
+    {
+      "name": "editor.open",
+      "description": "Opens a session's folder, or a file at a line, in the editor chosen in Settings, on this machine.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "host_only": true,
+      "runs_code": true,
+      "transport": {
+        "op": "editor.open"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.EditorOpen"
+      }
+    },
+    {
       "name": "event",
       "description": "Delivers an agent's hook event from `acmd hook`.",
       "scope": "act",
@@ -2308,6 +2336,62 @@
         "speech",
         "editor"
       ]
+    },
+    "ipc.DoctorCheck": {
+      "properties": {
+        "section": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "fix": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "section",
+        "status",
+        "text"
+      ]
+    },
+    "ipc.DoctorReport": {
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/ipc.DoctorCheck"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "checks"
+      ]
+    },
+    "ipc.EditorOpen": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "in": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        },
+        "column": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
     },
     "ipc.Event": {
       "properties": {

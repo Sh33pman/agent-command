@@ -825,3 +825,57 @@ struct DaemonHello: Decodable, Equatable {
         ops = Set(try c.decodeIfPresent([String].self, forKey: .ops) ?? [])
     }
 }
+
+/// Opens something in the editor chosen in Settings, on this Mac
+/// (internal/ipc.EditorOpen): a session's folder, or a file at a line.
+struct EditorOpen: Encodable, Equatable {
+    var id: String?
+    var path: String?
+    var `in`: String?
+    var line: Int?
+    var column: Int?
+}
+
+/// What acmd doctor finds (internal/ipc.DoctorReport).
+struct DoctorReport: Decodable, Equatable {
+    struct Check: Decodable, Equatable {
+        var section = ""
+        var status = "ok"
+        var text = ""
+        var fix: String?
+    }
+
+    var checks: [Check] = []
+
+    /// The report as acmd doctor prints it: each section's checks, a fix
+    /// under each problem, then what it comes to.
+    var text: String {
+        var sections: [String] = []
+        var bySection: [String: [Check]] = [:]
+        for check in checks {
+            if bySection[check.section] == nil { sections.append(check.section) }
+            bySection[check.section, default: []].append(check)
+        }
+        let marks = ["ok": "✓", "info": "·", "warn": "!", "fail": "✗"]
+        var lines: [String] = []
+        for (i, section) in sections.enumerated() {
+            if i > 0 { lines.append("") }
+            lines.append(section)
+            for check in bySection[section] ?? [] {
+                lines.append("  \(marks[check.status] ?? "·") \(check.text)")
+                if let fix = check.fix, !fix.isEmpty, check.status == "warn" || check.status == "fail" {
+                    lines.append("      fix: \(fix)")
+                }
+            }
+        }
+        let fails = checks.count { $0.status == "fail" }, warns = checks.count { $0.status == "warn" }
+        lines.append("")
+        if fails == 0 && warns == 0 {
+            lines.append("Everything looks good.")
+        } else {
+            func plural(_ n: Int, _ word: String) -> String { n == 1 ? "1 \(word)" : "\(n) \(word)s" }
+            lines.append("\(plural(fails, "problem")), \(plural(warns, "warning")).")
+        }
+        return lines.joined(separator: "\n")
+    }
+}

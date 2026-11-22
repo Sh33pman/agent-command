@@ -746,6 +746,15 @@ final class SessionStore {
         }
     }
 
+    /// Opens a folder or file in the editor chosen in Settings, through the
+    /// daemon: done gets why it couldn't, or nil.
+    func openInEditor(_ request: EditorOpen, done: @escaping (String?) -> Void) {
+        let data = (try? JSONEncoder().encode(request)) ?? Data()
+        mutations.call("editor.open", data) { result in
+            if case .failure(let error) = result { done(errorText(error)) } else { done(nil) }
+        }
+    }
+
     /// Resumes a stopped session.
     func resume(_ id: String, done: @escaping () -> Void) {
         struct Mutation: Encodable {

@@ -72,13 +72,8 @@ struct FileLink: Equatable {
         return (full as NSString).standardizingPath
     }
 
-    /// acmd edit's arguments for it.
-    func editArguments(in folder: String) -> [String] {
-        var args = ["edit", "--in", folder, resolved(in: folder)]
-        if line > 0 {
-            args += ["--line", String(line)]
-            if column > 0 { args += ["--column", String(column)] }
-        }
-        return args
+    /// The daemon's editor.open for it.
+    func editorOpen(in folder: String) -> EditorOpen {
+        EditorOpen(path: resolved(in: folder), in: folder, line: line > 0 ? line : nil, column: line > 0 && column > 0 ? column : nil)
     }
 }

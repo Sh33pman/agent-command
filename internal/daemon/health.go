@@ -228,7 +228,7 @@ func (d *Daemon) setDismissed(ctx context.Context, clientID string, ids []string
 
 func isHealthOp(op string) bool {
 	switch op {
-	case ipc.OpHealthDismiss, ipc.OpHealthRestore, ipc.OpInit, ipc.OpReportDetails, ipc.OpReportPage:
+	case ipc.OpHealthDismiss, ipc.OpHealthRestore, ipc.OpInit, ipc.OpReportDetails, ipc.OpReportPage, ipc.OpDoctor, ipc.OpEditorOpen:
 		return true
 	}
 	return false
@@ -260,6 +260,17 @@ func (d *Daemon) handleHealth(ctx context.Context, req ipc.Request) (any, error)
 			}
 		}
 		return ids, d.setDismissed(ctx, ref.ClientID, ids)
+	case ipc.OpDoctor:
+		if d.cfg.Doctor == nil {
+			return nil, &codedError{code: ipc.CodeNotSupported, err: errors.New("this daemon can't check acmd's setup: run acmd doctor")}
+		}
+		return d.cfg.Doctor(ctx), nil
+	case ipc.OpEditorOpen:
+		r, err := decode[ipc.EditorOpen](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return nil, d.openEditor(ctx, r)
 	case ipc.OpInit:
 		if d.cfg.Init == nil {
 			return nil, errors.New("this daemon can't set acmd up: run acmd init on the host")
@@ -315,4 +326,28 @@ func sessionName(s *core.Session) string {
 		return s.Name
 	}
 	return filepath.Base(s.Cwd)
+}
+
+// openEditor opens a session's folder, or a file, in the editor chosen on
+// this machine. A host's session's folder isn't on this machine.
+func (d *Daemon) openEditor(ctx context.Context, r ipc.EditorOpen) error {
+	if d.cfg.OpenEditor == nil {
+		return &codedError{code: ipc.CodeNotSupported, err: errors.New("this daemon can't open an editor")}
+	}
+	switch {
+	case r.ID != "":
+		d.mu.Lock()
+		s, err := d.store.Session(ctx, r.ID)
+		d.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		if s.Cwd == "" {
+			return invalid("that session has no folder yet")
+		}
+		return d.cfg.OpenEditor(ctx, ipc.EditorOpen{Path: s.Cwd})
+	case r.Path == "":
+		return badRequest("open what? name a session (id) or a path")
+	}
+	return d.cfg.OpenEditor(ctx, r)
 }

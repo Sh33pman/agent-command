@@ -119,6 +119,8 @@ const (
 	OpHealthDismiss = "health.dismiss" // HealthRef: a client stops showing a warning → []string (its dismissed ids)
 	OpHealthRestore = "health.restore" // HealthRef.ClientID: it shows them all again → []string
 	OpInit          = "init"           // sets acmd up as `acmd init` does → InitResult
+	OpDoctor        = "doctor"         // the checks acmd doctor makes → DoctorReport
+	OpEditorOpen    = "editor.open"    // opens a folder or file in the editor chosen, on this machine (EditorOpen)
 	OpReportDetails = "report.details" // ReportRequest.Kind → ReportDetails
 	OpReportPage    = "report.page"    // ReportRequest → ReportPage
 )
@@ -216,4 +218,37 @@ type Harness struct {
 type Harnesses struct {
 	Harnesses []Harness `json:"harnesses"`
 	Default   string    `json:"default,omitempty"`
+}
+
+// DoctorReport is what acmd doctor finds (OpDoctor): each check, by section.
+type DoctorReport struct {
+	Checks []DoctorCheck `json:"checks"`
+}
+
+// DoctorCheck is one check: its section, how it stands (a Doctor* status),
+// what it found, and how to fix it ("" when there's nothing to do).
+type DoctorCheck struct {
+	Section string `json:"section"`
+	Status  string `json:"status"`
+	Text    string `json:"text"`
+	Fix     string `json:"fix,omitempty"`
+}
+
+// Doctor check statuses, from best to worst.
+const (
+	DoctorOK   = "ok"
+	DoctorInfo = "info"
+	DoctorWarn = "warn"
+	DoctorFail = "fail"
+)
+
+// EditorOpen opens something in the editor chosen in Settings, on this
+// machine (OpEditorOpen): a session's folder (ID), or a file or folder
+// (Path; a relative one is in In, whose window it opens in) at a line.
+type EditorOpen struct {
+	ID     string `json:"id,omitempty"`
+	Path   string `json:"path,omitempty"`
+	In     string `json:"in,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	Column int    `json:"column,omitempty"`
 }

@@ -169,15 +169,27 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     acmd.said = ""
     m.setWake(true)
     #expect(m.error == "Couldn't change wake.")
-    acmd.said = "hooks: ok"
-    acmd.fail = []
+    // Checking the setup asks acmd's background service, not acmd: its
+    // checks, drawn as acmd doctor prints them.
+    let ran = acmd.calls.count
+    fake.replies["doctor"] = ["checks": [
+        ["section": "Claude Code", "status": "ok", "text": "hooks installed"],
+        ["section": "Claude Code", "status": "fail", "text": "too old", "fix": "brew upgrade claude"],
+        ["section": "Editor", "status": "warn", "text": "none chosen", "fix": "acmd editor set"],
+    ]]
     m.checkSetup()
-    #expect(m.report == "hooks: ok" && acmd.calls.last == ["doctor"])
-    acmd.fail = ["doctor"]
-    acmd.said = "hooks: missing"
+    #expect(fake.ops.suffix(2) == ["doctor", "config.get"] && acmd.calls.count == ran, "no acmd run; then the settings again")
+    #expect(m.report == "Claude Code\n  ✓ hooks installed\n  ✗ too old\n      fix: brew upgrade claude\n\nEditor\n  ! none chosen\n      fix: acmd editor set\n\n1 problem, 1 warning.")
+    fake.replies["doctor"] = ["checks": [["section": "acmd", "status": "ok", "text": "fine"]]]
     m.repairSetup()
-    #expect(m.report == "hooks: missing" && m.error == nil, "doctor's report says what's wrong")
-    #expect(acmd.calls.last == ["doctor", "--fix"])
+    #expect(fake.ops.suffix(3) == ["init", "doctor", "config.get"] && m.report?.hasSuffix("Everything looks good.") == true, "fixed, then checked again")
+    fake.failures["init"] = "no hooks file"
+    m.repairSetup()
+    #expect(m.report == "Couldn't set acmd up: no hooks file" && m.busy == nil)
+    fake.failures["doctor"] = "the service is down"
+    m.checkSetup()
+    #expect(m.report == "Couldn't check the setup: the service is down")
+    #expect(acmd.calls.count == ran, "only waking runs acmd")
 }
 
 @MainActor @Test func theFontIsSetInTheAppsGhosttyConfig() {

@@ -207,6 +207,10 @@ func localOps() []Op {
 		// Health: what's wrong with the host, and putting it right.
 		act(ipc.OpHealthDismiss, "Stops showing a warning to one client.", host, ipc.HealthRef{}, []string{}),
 		act(ipc.OpHealthRestore, "Shows a client every warning it dismissed again.", host, ipc.HealthRef{}, []string{}),
+		read(ipc.OpDoctor, "Returns the checks acmd doctor makes: acmd itself, the agents and their hooks, the editor, the background service.",
+			host, nil, ipc.DoctorReport{}),
+		act(ipc.OpEditorOpen, "Opens a session's folder, or a file at a line, in the editor chosen in Settings, on this machine.",
+			host, ipc.EditorOpen{}, nil).hostOnly().runsCode(),
 		admin(ipc.OpInit, "Sets acmd up as acmd init does: the agents' hooks, the settings, and the login shell's environment.",
 			host, nil, ipc.InitResult{}).runsCode(),
 		read(ipc.OpReportDetails, "Returns what a report adds about the host: its version, OS, and for a bug the end of its log, cleaned of secrets.",

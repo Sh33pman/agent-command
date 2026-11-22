@@ -25,6 +25,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/hook"
+	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/procenv"
 	"github.com/brettmostert/agent-command/internal/report"
@@ -80,6 +81,10 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			cfg.CheckHealth = checkHealth
 			cfg.HealthFiles = healthFiles()
 			cfg.Init = daemonInit
+			cfg.Doctor = daemonDoctor
+			cfg.OpenEditor = func(ctx context.Context, r ipc.EditorOpen) error {
+				return openInEditor(ctx, r.In, r.Path, r.Line, r.Column)
+			}
 			cfg.OSVersion = macOSVersion
 			if claude, env, err := claudeCommand(p); err == nil {
 				cli := claudecli.New(claude, env)

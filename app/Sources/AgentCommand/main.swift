@@ -883,8 +883,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// folder isn't on this Mac.
     private func openInEditor(_ session: Session) {
         guard !session.cwd.isEmpty, !session.isOnHost else { return NSSound.beep() }
-        Acmd.run(["open", session.id]) { [weak self] ok, output in
-            if !ok { self?.editorFailed(output) }
+        store.openInEditor(EditorOpen(id: session.id)) { [weak self] failure in
+            if let failure { self?.editorFailed(failure) }
         }
     }
 
@@ -894,15 +894,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         let folder = sessionID.flatMap { id in store.sessions.first { $0.id == id }?.cwd }.flatMap { $0.isEmpty ? nil : $0 }
             ?? NSHomeDirectory()
         guard FileManager.default.fileExists(atPath: file.resolved(in: folder)) else { return NSSound.beep() }
-        Acmd.run(file.editArguments(in: folder)) { [weak self] ok, output in
-            if !ok { self?.editorFailed(output) }
+        store.openInEditor(file.editorOpen(in: folder)) { [weak self] failure in
+            if let failure { self?.editorFailed(failure) }
         }
     }
 
     private func editorFailed(_ output: String) {
         let alert = NSAlert()
         alert.messageText = "Couldn't open your editor"
-        alert.informativeText = output.isEmpty ? "acmd didn't say why." : output
+        alert.informativeText = output.isEmpty ? "acmd's background service didn't say why." : output
         let choose = output.contains("no editor chosen") || output.contains("acmd editor set")
         if choose {
             alert.addButton(withTitle: "Choose an Editor…")

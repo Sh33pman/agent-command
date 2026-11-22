@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
 )
@@ -37,7 +38,7 @@ func (a *API) attach(ctx context.Context, c *wire.Call, s *wire.Stream) error {
 	if err := c.Decode(&ref); err != nil {
 		return err
 	}
-	if _, _, err := a.find(ctx, ref.ID); err != nil {
+	if err := a.attachable(ctx, ref.ID); err != nil {
 		return err
 	}
 	conn, err := net.DialTimeout("unix", a.b.HostSocket(ref.ID), dialTimeout)
@@ -56,13 +57,27 @@ func (a *API) attach(ctx context.Context, c *wire.Call, s *wire.Stream) error {
 	return nil
 }
 
-// watch ends the relay when the session stops being visible: Remote turned
-// off, archived or gone. (Turning Remote off also closes it through Hosting
-// straight away.)
+// attachable says whether a paired device may attach to a session: any of
+// this host's own that isn't archived (Direct Connect), not only Remote ones.
+func (a *API) attachable(ctx context.Context, id string) error {
+	st, err := a.b.State(ctx)
+	if err != nil {
+		return err
+	}
+	for _, s := range st.Sessions {
+		if s.ID == id && s.Status != core.StatusArchived {
+			return nil
+		}
+	}
+	return notFound(id)
+}
+
+// watch ends the relay when the session can't be attached any more: archived
+// or gone.
 func (a *API) watch(ctx context.Context, id string, r *relay) {
 	for {
 		_, next := a.b.Changes()
-		if _, _, err := a.find(ctx, id); wire.IsCode(err, wire.CodeNotFound) {
+		if err := a.attachable(ctx, id); wire.IsCode(err, wire.CodeNotFound) {
 			_ = r.Close()
 			return
 		}

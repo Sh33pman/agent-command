@@ -69,13 +69,6 @@ func TestBrowseShowsOnlyRemoteSessions(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"attach", func() error {
-			s, err := c.Open(context.Background(), api.OpSessionAttach, api.SessionRef{ID: private.ID}, nil)
-			if err == nil {
-				_ = s.Close()
-			}
-			return err
-		}},
 		{"rename", func() error {
 			return c.Call(context.Background(), api.OpSessionRename, api.Rename{ID: private.ID, Name: "taken"}, nil)
 		}},

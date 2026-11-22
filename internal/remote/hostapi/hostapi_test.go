@@ -294,8 +294,12 @@ func TestNonRemoteSessionsAreNotFound(t *testing.T) {
 	for _, id := range []string{"l1", "r2", "nope"} {
 		wantCode(t, "rename "+id, f.call(api.OpSessionRename, api.Rename{ID: id, Name: "x"}, nil), wire.CodeNotFound)
 		wantCode(t, "end "+id, f.call(api.OpSessionEnd, api.End{ID: id}, nil), wire.CodeNotFound)
+	}
+	// Attaching is Direct Connect: any of the host's sessions but an archived
+	// one (l1 isn't Remote, and has no terminal running here).
+	for id, code := range map[string]string{"l1": api.CodeNotRunning, "r2": wire.CodeNotFound, "nope": wire.CodeNotFound} {
 		_, err := f.open(api.OpSessionAttach, api.SessionRef{ID: id})
-		wantCode(t, "attach "+id, err, wire.CodeNotFound)
+		wantCode(t, "attach "+id, err, code)
 	}
 	// Not found reads the same whether the session exists or not.
 	err1 := f.call(api.OpSessionEnd, api.End{ID: "l1"}, nil)
@@ -678,12 +682,27 @@ func TestAttachRelaysTheTerminal(t *testing.T) {
 	}
 }
 
+// An attach ends when its session is archived. Turning Remote off doesn't
+// end it: attaching is Direct Connect, the whole host.
+func TestAttachEndsWhenArchived(t *testing.T) {
+	f := newFixture(t)
+	f.seed()
+	f.terminal("r1")
+	p := attachPane(t, f.proxy("r1"), 24, 80)
+	p.in <- []byte("echo up-$((4+4))\n")
+	eventually(t, "attached", func() bool { return strings.Contains(p.out.String(), "up-8") })
+	f.b.edit("r1", func(s *core.Session) { s.Remote = false })
+	p.in <- []byte("echo still-$((5+5))\n")
+	eventually(t, "still attached", func() bool { return strings.Contains(p.out.String(), "still-10") })
+	f.b.edit("r1", func(s *core.Session) { s.Status = core.StatusArchived })
+	p.ended(t, "archived", time.Second)
+}
+
 func TestAttachEndsWhenNoLongerVisible(t *testing.T) {
 	for _, tc := range []struct {
 		what string
 		fn   func(*core.Session)
 	}{
-		{"Remote off", func(s *core.Session) { s.Remote = false }},
 		{"archived", func(s *core.Session) { s.Status = core.StatusArchived }},
 	} {
 		t.Run(tc.what, func(t *testing.T) {

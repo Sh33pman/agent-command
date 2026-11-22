@@ -23,5 +23,10 @@ func writeSetting(path, section, key string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(text), 0o600)
+	// Written whole, as an editor saves: a reload never reads it half written.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(text), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

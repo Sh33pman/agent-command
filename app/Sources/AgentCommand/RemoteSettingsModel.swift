@@ -163,6 +163,12 @@ enum RemoteRequestResponse: Equatable {
         change("remote.rename", Ref(client: client.fingerprint, name: name), key: "client:\(client.fingerprint)")
     }
 
+    /// What a client may do here: read, act or admin.
+    func setScope(_ client: RemoteClient, _ scope: String) {
+        guard scope != client.scope else { return }
+        change("remote.scope", Ref(client: client.fingerprint, scope: scope), key: "client:\(client.fingerprint)")
+    }
+
     func revoke(_ client: RemoteClient) {
         change("remote.revoke", Ref(client: client.fingerprint), key: "client:\(client.fingerprint)")
     }
@@ -195,6 +201,7 @@ enum RemoteRequestResponse: Equatable {
         var fingerprint: String?
         var cert: String?
         var enabled: Bool?
+        var scope: String?
     }
 
     struct Cert: Encodable, Equatable {

@@ -90,6 +90,8 @@ func (d *Daemon) handleRemote(req ipc.Request) (any, error) {
 		return h.Revoke(ref.Client)
 	case ipc.OpRemoteRename:
 		return h.Rename(ref.Client, ref.Name)
+	case ipc.OpRemoteScope:
+		return h.SetScope(ref.Client, ref.Scope)
 	case ipc.OpRemoteDisconnect:
 		n, err := h.Disconnect(ref.Client)
 		return ipc.RemoteDisconnected{Closed: n}, err

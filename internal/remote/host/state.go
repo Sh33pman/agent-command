@@ -89,6 +89,9 @@ func (m *MemoryData) AddAuthorizedClient(c config.AuthorizedClient) error {
 	for i, have := range m.Clients {
 		if have.Fingerprint == c.Fingerprint {
 			m.Clients[i].Name = c.Name
+			if c.Scope != "" {
+				m.Clients[i].Scope = c.Scope
+			}
 			return nil
 		}
 	}

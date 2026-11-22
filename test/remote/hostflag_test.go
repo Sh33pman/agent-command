@@ -67,12 +67,16 @@ func TestHostFlag(t *testing.T) {
 		return err == nil && strings.Contains(out, "hi-there")
 	})
 
-	// Not for another machine: admin ops, the host's own machine's, its hosts.
+	// A newly approved machine may act, not admin; nor what's the host's own.
 	var rc json.RawMessage
 	err = laptop.try(ipc.OpRemoteCall, ipc.RemoteCall{Host: "studio", Op: ipc.OpInit}, &rc)
 	var re *ipc.RemoteError
-	if !errors.As(err, &re) || re.Code != "forbidden" {
+	if !errors.As(err, &re) || re.Code != "permission_denied" {
 		t.Errorf("init on the host: %v", err)
+	}
+	err = laptop.try(ipc.OpRemoteCall, ipc.RemoteCall{Host: "studio", Op: ipc.OpSpeechSay}, &rc)
+	if !errors.As(err, &re) || re.Code != "forbidden" {
+		t.Errorf("speech on the host: %v", err)
 	}
 	if _, err := laptop.acmd("--host", "studio", "open", "1"); err == nil || !strings.Contains(err.Error(), "doesn't take --host") {
 		t.Errorf("open: %v", err)

@@ -230,12 +230,12 @@ func TestRemoteOutput(t *testing.T) {
 	writeRemoteClients(&b, nil)
 	since := time.Date(2026, 11, 18, 9, 0, 0, 0, time.Local)
 	writeRemoteClients(&b, []ipc.RemoteClient{
-		{Name: "laptop", Fingerprint: "SHA256:a", Connections: []ipc.RemoteConnection{
+		{Name: "laptop", Fingerprint: "SHA256:a", Scope: "act", Connections: []ipc.RemoteConnection{
 			{ID: "c1", Addr: "10.0.0.2:5000", Since: since, Sessions: []string{"s1", "s2"}},
 			{ID: "c2", Addr: "10.0.0.2:5001", Since: since}}},
-		{Name: "desk", Fingerprint: "SHA256:b"}})
-	for _, want := range []string{"No authorized clients.", "laptop  SHA256:a     c1: from 10.0.0.2:5000 since 2026-11-18 09:00, attached to s1, s2\n",
-		"\n                     c2: from 10.0.0.2:5001", "desk    SHA256:b     -\n"} {
+		{Name: "desk", Fingerprint: "SHA256:b", Scope: "admin"}})
+	for _, want := range []string{"No authorized clients.", "NAME    MAY    FINGERPRINT", "laptop  act    SHA256:a     c1: from 10.0.0.2:5000 since 2026-11-18 09:00, attached to s1, s2\n",
+		"c2: from 10.0.0.2:5001", "desk    admin  SHA256:b     -\n"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("clients lack %q:\n%s", want, b.String())
 		}

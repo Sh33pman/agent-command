@@ -122,6 +122,16 @@ func TestRemoteRename(t *testing.T) {
 			t.Errorf("rename %v accepted", args)
 		}
 	}
+	// What a client may do here.
+	if out := mustRun(t, "remote", "scope", "travel", "read"); out != "travel may now read on this host.\n" {
+		t.Errorf("scope: %q", out)
+	}
+	if out := mustRun(t, "remote", "clients"); !strings.Contains(out, "travel  read") {
+		t.Errorf("clients:\n%s", out)
+	}
+	if _, err := acmd(t, "remote", "scope", "travel", "root"); err == nil {
+		t.Error("root accepted")
+	}
 }
 
 func TestConfigSetReloadsHosting(t *testing.T) {

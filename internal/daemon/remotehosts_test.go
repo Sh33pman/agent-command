@@ -184,6 +184,8 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	must(t, err)
 	_, err = h.Authorize(me.Fingerprint(), "laptop")
 	must(t, err)
+	_, err = h.SetScope("laptop", config.ScopeAdmin) // as pairings made before scopes are
+	must(t, err)
 
 	// This machine.
 	must(t, writeSetting(p.Config(), "notify", "enabled", true))
@@ -289,8 +291,8 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	if ran["op"] != ipc.OpSnapshot {
 		t.Errorf("remote.call = %v", ran)
 	}
-	if err := call(ipc.OpRemoteCall, ipc.RemoteCall{Host: "studio", Op: ipc.OpInit}, nil); err == nil || !strings.Contains(err.Error(), "can't be run from another machine") {
-		t.Errorf("init on the host: %v", err)
+	if err := call(ipc.OpRemoteCall, ipc.RemoteCall{Host: "studio", Op: ipc.OpSpeechSay}, nil); err == nil || !strings.Contains(err.Error(), "can't be run from another machine") {
+		t.Errorf("speech on the host: %v", err)
 	}
 	if err := call(ipc.OpRemoteCall, "x", nil); err == nil {
 		t.Error("a call that isn't one")

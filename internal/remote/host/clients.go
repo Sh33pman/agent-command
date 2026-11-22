@@ -86,6 +86,9 @@ type authorized struct {
 func (h *Host) clientsLocked() []authorized {
 	out := make([]authorized, 0, len(h.remote.AuthorizedClients)+len(h.added))
 	for _, ac := range h.remote.AuthorizedClients {
+		if ac.Scope == "" { // listed before scopes: everything it could do
+			ac.Scope = config.ScopeAdmin
+		}
 		out = append(out, authorized{ac, true})
 	}
 	for _, ac := range h.added {
@@ -203,7 +206,7 @@ func (h *Host) Clients() []ipc.RemoteClient {
 	list := h.clientsLocked()
 	out := make([]ipc.RemoteClient, 0, len(list))
 	for _, ac := range list {
-		c := ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint, InConfig: ac.inConfig}
+		c := ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint, InConfig: ac.inConfig, Scope: ac.ScopeOf()}
 		for _, rc := range conns {
 			if identity.Equal(rc.Fingerprint, ac.Fingerprint) {
 				c.Connections = append(c.Connections, rc)
@@ -425,4 +428,47 @@ func (h *Host) SetHosting(on bool) (ipc.RemoteStatus, error) {
 		h.Reload()
 	}
 	return h.Status(), err
+}
+
+// Scope is what the client with this fingerprint may do here: "" when it
+// isn't authorized.
+func (h *Host) Scope(fingerprint string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ac, ok := h.authorizedLocked(fingerprint)
+	if !ok {
+		return ""
+	}
+	return ac.ScopeOf()
+}
+
+// SetScope changes what an authorized client may do here: read, act or
+// admin.
+func (h *Host) SetScope(client, scope string) (ipc.RemoteClient, error) {
+	switch scope {
+	case config.ScopeRead, config.ScopeAct, config.ScopeAdmin:
+	default:
+		return ipc.RemoteClient{}, fmt.Errorf("a client may read, act or admin, not %q", scope)
+	}
+	h.mu.Lock()
+	ac, err := h.findClientLocked(client)
+	if err == nil && ac.inConfig {
+		err = fmt.Errorf("%q is %w", ac.Name, ErrInConfig)
+	}
+	if err == nil {
+		err = h.o.Data.AddAuthorizedClient(config.AuthorizedClient{Name: ac.Name, Fingerprint: ac.Fingerprint, Scope: scope})
+	}
+	if err != nil {
+		h.mu.Unlock()
+		return ipc.RemoteClient{}, err
+	}
+	for i := range h.added {
+		if identity.Equal(h.added[i].Fingerprint, ac.Fingerprint) {
+			h.added[i].Scope = scope
+		}
+	}
+	h.mu.Unlock()
+	h.o.Log.Printf("remote: %q (%s) may now %s", ac.Name, ac.Fingerprint, scope)
+	h.changed()
+	return ipc.RemoteClient{Name: ac.Name, Fingerprint: ac.Fingerprint, Scope: scope}, nil
 }

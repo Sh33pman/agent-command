@@ -1093,6 +1093,22 @@
       }
     },
     {
+      "name": "remote.scope",
+      "description": "Changes what an authorized client may do here: read, act or admin.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "remote.scope"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.RemoteRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.RemoteClient"
+      }
+    },
+    {
       "name": "remote.sessions.add",
       "description": "Adds a host's session here.",
       "scope": "act",
@@ -3073,6 +3089,9 @@
             "$ref": "#/$defs/ipc.RemoteConnection"
           },
           "type": "array"
+        },
+        "scope": {
+          "type": "string"
         }
       },
       "type": "object",
@@ -3345,6 +3364,9 @@
         },
         "enabled": {
           "type": "boolean"
+        },
+        "scope": {
+          "type": "string"
         }
       },
       "type": "object"

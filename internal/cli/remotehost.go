@@ -162,21 +162,21 @@ func writeRemoteClients(w io.Writer, clients []ipc.RemoteClient) {
 		return
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tFINGERPRINT\tCONNECTED")
+	fmt.Fprintln(tw, "NAME\tMAY\tFINGERPRINT\tCONNECTED")
 	for _, c := range clients {
 		if len(c.Connections) == 0 {
-			fmt.Fprintf(tw, "%s\t%s\t-\n", c.Name, c.Fingerprint)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t-\n", c.Name, c.Scope, c.Fingerprint)
 		}
 		for i, rc := range c.Connections {
-			name, fp := c.Name, c.Fingerprint
+			name, scope, fp := c.Name, c.Scope, c.Fingerprint
 			if i > 0 {
-				name, fp = "", ""
+				name, scope, fp = "", "", ""
 			}
 			conn := fmt.Sprintf("%s: from %s since %s", rc.ID, rc.Addr, rc.Since.Local().Format("2006-01-02 15:04"))
 			if len(rc.Sessions) > 0 {
 				conn += ", attached to " + strings.Join(rc.Sessions, ", ")
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", name, fp, conn)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, scope, fp, conn)
 		}
 	}
 	_ = tw.Flush()

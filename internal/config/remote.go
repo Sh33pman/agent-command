@@ -43,6 +43,24 @@ type RemoteClient struct {
 type AuthorizedClient struct {
 	Name        string `toml:"name"`
 	Fingerprint string `toml:"fingerprint"`
+	// Scope is what it may do here: ScopeRead, ScopeAct or ScopeAdmin. ""
+	// is ScopeAct, what a newly approved client gets.
+	Scope string `toml:"scope,omitempty"`
+}
+
+// What an authorized client may do on the host (internal/catalog's scopes).
+const (
+	ScopeRead  = "read"
+	ScopeAct   = "act"
+	ScopeAdmin = "admin"
+)
+
+// ScopeOf is a client's scope, ScopeAct when it isn't set.
+func (c AuthorizedClient) ScopeOf() string {
+	if c.Scope == "" {
+		return ScopeAct
+	}
+	return c.Scope
 }
 
 // KnownHost is one [[remote.hosts]]: a Remote host this client can connect to,

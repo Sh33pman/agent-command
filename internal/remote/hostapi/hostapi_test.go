@@ -208,6 +208,8 @@ func newFixture(t *testing.T) *fixture {
 	must(t, err)
 	_, err = f.h.Authorize(client.Fingerprint(), "laptop")
 	must(t, err)
+	_, err = f.h.SetScope("laptop", config.ScopeAdmin) // as pairings made before scopes are
+	must(t, err)
 	st := f.h.Status()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -512,6 +514,7 @@ func (nopRegistrar) HandleStream(string, wire.StreamHandler) {}
 func (nopRegistrar) Attach(*wire.Conn, string, io.Closer) func() {
 	return func() {}
 }
+func (nopRegistrar) Scope(string) string { return "" }
 
 // terminal runs a shell under a term.Server for session id.
 func (f *fixture) terminal(id string) string {

@@ -44,6 +44,9 @@ import (
 // field isn't one.
 const Version = 1
 
+// MinVersion is the oldest host API this side still speaks.
+const MinVersion = 1
+
 // The ops.
 const (
 	OpSessionsList  = "sessions.list"  // no arguments → SessionList

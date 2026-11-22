@@ -234,6 +234,16 @@ private func changes(_ fake: FakeCalls) -> [String] {
     #expect(changed == 13 && m.busy == nil && m.error == nil, "each change reads everything again")
     #expect(!fake.ops.contains("acmd"), "no process")
 
+    // What a client may do: changed when it's another.
+    let before = fake.asked.count
+    m.setScope(laptop, "act")
+    #expect(fake.asked.count == before, "it may act already")
+    m.setScope(laptop, "read")
+    let asked = fake.asked.dropFirst(before).first
+    #expect(asked?.op == "remote.scope" && asked?.input as? [String: String] == ["client": "SHA256:l", "scope": "read"])
+    let decoded = try JSONDecoder().decode(RemoteClient.self, from: Data(#"{"name":"d","fingerprint":"f","scope":"admin"}"#.utf8))
+    #expect(decoded.scope == "admin" && RemoteClient(name: "n", fingerprint: "f").scope == "act" && RemoteClient.scopes.count == 3)
+
     fake.failures["remote.cert"] = "the cert and key don't belong together"
     m.useOwnCert(.host, cert: "/a", key: "/b")
     #expect(m.error == "the cert and key don't belong together")

@@ -88,3 +88,25 @@ func newRemoteRenameCmd() *cobra.Command {
 		},
 	}
 }
+
+func newRemoteScopeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "scope <name|fingerprint> read|act|admin",
+		Short: "Change what an authorized client may do on this host",
+		Long: "read: list and read everything, follow changes, read screens. act: also start, attach to and type into\n" +
+			"sessions, answer the Inbox, rename, archive and move (what a newly approved client gets). admin: also\n" +
+			"change settings and Hosting, approve clients, purge, and set what runs.",
+		Args:      cobra.ExactArgs(2),
+		ValidArgs: []string{"read", "act", "admin"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withDaemon(cmd, func(c *client) error {
+				var rc ipc.RemoteClient
+				if err := c.call(ipc.OpRemoteScope, ipc.RemoteRef{Client: args[0], Scope: args[1]}, &rc); err != nil {
+					return err
+				}
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s may now %s on this host.\n", rc.Name, rc.Scope)
+				return err
+			})
+		},
+	}
+}

@@ -96,7 +96,7 @@ struct RemoteSettings: View {
         .sheet(item: $approving) { request in
             NameSheet(
                 title: "Approve \(request.displayName)?", action: "Approve", name: request.commonName,
-                note: "It can use this Mac's Remote sessions from now on. Fingerprint \(request.fingerprint).") { remote.approve(request, name: $0) }
+                note: "It can use this Mac's sessions from now on: start, attach to and answer them, but not change settings (change that in its menu). Fingerprint \(request.fingerprint).") { remote.approve(request, name: $0) }
         }
     }
 
@@ -238,6 +238,10 @@ struct RemoteSettings: View {
                         .font(.caption)
                     Menu {
                         Button("Rename…") { renaming = client }.disabled(client.inConfig)
+                        Picker("May", selection: Binding(get: { client.scope }, set: { remote.setScope(client, $0) })) {
+                            ForEach(RemoteClient.scopes, id: \.scope) { Text($0.label).tag($0.scope) }
+                        }
+                        .disabled(client.inConfig)
                         Button("Disconnect") { remote.disconnect(client) }.disabled(!client.isConnected)
                         Divider()
                         Button("Revoke…", role: .destructive) { revoking = client }.disabled(client.inConfig)

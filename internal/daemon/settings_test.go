@@ -137,7 +137,10 @@ func TestHandEditsApplyLive(t *testing.T) {
 	waitFor("a hand edit", func(s ipc.Snapshot) bool { return s.Settings["default_harness"] == "antigravity" })
 
 	b, _ := os.ReadFile(p.Config())
-	must(t, os.WriteFile(p.Config(), append(b, []byte("\nbroken = \n")...), 0o600))
+	// Written whole, as an editor saves: a reload never reads it half written.
+	tmp := p.Config() + ".tmp"
+	must(t, os.WriteFile(tmp, append(b, []byte("\nbroken = \n")...), 0o600))
+	must(t, os.Rename(tmp, p.Config()))
 	bump(2)
 	s := waitFor("a bad edit", func(s ipc.Snapshot) bool { return len(s.Health) == 1 })
 	h := s.Health[0]

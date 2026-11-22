@@ -60,3 +60,30 @@ func TestKnownHosts(t *testing.T) {
 		t.Fatal("removed twice")
 	}
 }
+
+func TestClientScopes(t *testing.T) {
+	s, p := open(t)
+	must(t, s.AddAuthorizedClient(ctx, config.AuthorizedClient{Name: "old", Fingerprint: "SHA256:o"}))
+	// Back to before scopes, and up again: clients from then keep admin.
+	for _, q := range []string{`ALTER TABLE remote_clients DROP COLUMN scope`, `PRAGMA user_version = 16`} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	must(t, s.Close())
+	s2, err := Open(ctx, p)
+	must(t, err)
+	defer s2.Close()
+	must(t, s2.AddAuthorizedClient(ctx, config.AuthorizedClient{Name: "new", Fingerprint: "SHA256:n"}))
+	got, err := s2.AuthorizedClients(ctx)
+	must(t, err)
+	if len(got) != 2 || got[0].ScopeOf() != config.ScopeAdmin || got[1].ScopeOf() != config.ScopeAct {
+		t.Fatalf("scopes = %+v", got)
+	}
+	must(t, s2.AddAuthorizedClient(ctx, config.AuthorizedClient{Name: "new", Fingerprint: "SHA256:n", Scope: config.ScopeRead}))
+	must(t, s2.AddAuthorizedClient(ctx, config.AuthorizedClient{Name: "renamed", Fingerprint: "SHA256:n"})) // a rename keeps it
+	got, _ = s2.AuthorizedClients(ctx)
+	if got[1].Name != "renamed" || got[1].Scope != config.ScopeRead {
+		t.Errorf("after a rename: %+v", got[1])
+	}
+}

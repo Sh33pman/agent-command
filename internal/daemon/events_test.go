@@ -224,8 +224,7 @@ func TestASlowClientResyncs(t *testing.T) {
 	if d.events.active(d.cfg.Now()) {
 		t.Error("still followed long after")
 	}
-	d.events.forget()
-	if d.events.built || d.events.log != nil {
+	if !d.events.forgetIfIdle(d.cfg.Now()) || d.events.built || d.events.log != nil {
 		t.Error("forgotten")
 	}
 }

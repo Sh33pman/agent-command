@@ -847,6 +847,12 @@ func TestClientsInConfigAreReadOnly(t *testing.T) {
 	if _, err := f.h.Rename("server", "srv"); !errors.Is(err, ErrInConfig) {
 		t.Errorf("rename: %v", err)
 	}
+	if _, err := f.h.SetScope("server", config.ScopeRead); !errors.Is(err, ErrInConfig) {
+		t.Errorf("scope: %v", err)
+	}
+	if got := f.h.Scope(server.Fingerprint()); got != config.ScopeAdmin {
+		t.Errorf("config.toml's client from before scopes: %q, want admin", got)
+	}
 	// Names stay unique across both.
 	if c, err := f.h.Authorize(f.client("other").Fingerprint(), "server"); err != nil || c.Name != "server-2" {
 		t.Errorf("authorize = %+v, %v", c, err)
@@ -890,5 +896,35 @@ func TestRename(t *testing.T) {
 	}
 	if _, err := f.h.Rename("nobody", "x"); err == nil {
 		t.Error("renamed nobody")
+	}
+}
+
+// A newly approved client may act; its scope changes on the host.
+func TestScopes(t *testing.T) {
+	f := newFixture(t, true)
+	laptop := f.client("laptop")
+	f.authorize(laptop, "laptop")
+	if got := f.h.Scope(laptop.Fingerprint()); got != config.ScopeAct {
+		t.Errorf("new = %q", got)
+	}
+	got, err := f.h.SetScope("laptop", config.ScopeRead)
+	must(t, err)
+	if got.Scope != config.ScopeRead || f.h.Scope(laptop.Fingerprint()) != config.ScopeRead || f.h.Clients()[0].Scope != config.ScopeRead {
+		t.Errorf("read: %+v %+v", got, f.h.Clients())
+	}
+	if d, _ := f.data.AuthorizedClients(); d[0].Scope != config.ScopeRead {
+		t.Errorf("kept = %+v", d)
+	}
+	if _, err := f.h.Rename("laptop", "work"); err != nil || f.h.Scope(laptop.Fingerprint()) != config.ScopeRead {
+		t.Errorf("a rename changed the scope: %v", err)
+	}
+	if _, err := f.h.SetScope("work", "root"); err == nil {
+		t.Error("root")
+	}
+	if _, err := f.h.SetScope("nobody", config.ScopeAct); err == nil {
+		t.Error("no such client")
+	}
+	if f.h.Scope("SHA256:nobody") != "" {
+		t.Error("a scope for no one")
 	}
 }

@@ -416,3 +416,49 @@ func TestOddHosts(t *testing.T) {
 		}
 	}
 }
+
+// A side that speaks a range connects to one that speaks a version in it:
+// they use the newest both have.
+func TestVersionRanges(t *testing.T) {
+	for _, c := range []struct{ lo, hi, theirLo, theirHi, want int }{
+		{1, 1, 1, 2, 1}, {1, 3, 2, 5, 3}, {2, 3, 1, 1, 0}, {1, 1, 2, 2, 0}, {1, 2, 2, 2, 2},
+	} {
+		if got := negotiate(c.lo, c.hi, c.theirLo, c.theirHi); got != c.want {
+			t.Errorf("negotiate(%d-%d, %d-%d) = %d, want %d", c.lo, c.hi, c.theirLo, c.theirHi, got, c.want)
+		}
+	}
+	for _, c := range []struct {
+		h      Hello
+		lo, hi int
+	}{
+		{Hello{Proto: 1}, 1, 1}, {Hello{Proto: 2, ProtoMin: 1, ProtoMax: 3}, 1, 3}, {Hello{ProtoMax: 4}, 4, 4}, {Hello{Proto: 2, ProtoMin: 5}, 2, 2},
+	} {
+		if lo, hi := c.h.Range(); lo != c.lo || hi != c.hi {
+			t.Errorf("%+v: %d-%d, want %d-%d", c.h, lo, hi, c.lo, c.hi)
+		}
+	}
+	if s := (&VersionError{Ours: Hello{Proto: 1}, Theirs: Hello{ProtoMin: 2, ProtoMax: 3, Name: "studio"}}).Error(); !strings.Contains(s, "studio speaks Remote protocol 2 to 3") {
+		t.Errorf("message = %s", s)
+	}
+
+	// A newer client that still speaks this version: the host agrees on it.
+	host := newIdentity(t)
+	a, b := loopback(t)
+	defer a.Close()
+	got := make(chan error, 1)
+	go func() {
+		_, err := Accept(context.Background(), b, ServerConfig{Identity: host, Hello: Hello{Version: "0.60.0", Name: "studio"}, Authorize: allow})
+		got <- err
+	}()
+	tc := tls.Client(a, ClientTLS(newIdentity(t), host.Fingerprint()))
+	if err := writeLine(tc, Hello{Proto: Proto + 1, ProtoMin: Proto, ProtoMax: Proto + 1, Version: "0.90.0", Name: "laptop"}); err != nil {
+		t.Fatal(err)
+	}
+	var w Welcome
+	if err := readLine(bufio.NewReader(tc), &w); err != nil {
+		t.Fatal(err)
+	}
+	if w.Status != StatusOK || w.Proto != Proto || w.ProtoMax != Proto {
+		t.Errorf("welcome = %+v", w)
+	}
+}

@@ -166,7 +166,7 @@ func (h *Host) info(context.Context, *wire.Call) (any, error) {
 		return nil, errors.New("hosting is off")
 	}
 	return wire.Info{Name: id.CommonName, Fingerprint: id.Fingerprint(), Version: h.o.Version, Proto: wire.Proto,
-		API: api.Version, Ops: h.mux.Ops()}, nil
+		API: api.Version, APIMin: api.MinVersion, Ops: h.mux.Ops()}, nil
 }
 
 // Close stops Hosting, ends every connection and waits for them.

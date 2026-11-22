@@ -123,12 +123,19 @@ struct RemoteClient: Decodable, Equatable, Identifiable {
     var connections: [RemoteConnection] = []
     /// Listed in config.toml: renamed or revoked there, not here.
     var inConfig = false
+    /// What it may do on this Mac: read, act or admin.
+    var scope = "act"
 
     var id: String { fingerprint }
+
+    /// What each scope lets a client do, for the menu.
+    static let scopes: [(scope: String, label: String)] = [
+        ("read", "Read Only"), ("act", "Use Sessions"), ("admin", "Everything, Settings Too"),
+    ]
     var isConnected: Bool { !connections.isEmpty }
 
     enum CodingKeys: String, CodingKey {
-        case name, fingerprint, connections
+        case name, fingerprint, connections, scope
         case inConfig = "in_config"
     }
 
@@ -142,6 +149,7 @@ struct RemoteClient: Decodable, Equatable, Identifiable {
         fingerprint = c.value(.fingerprint, "")
         connections = c.value(.connections, [])
         inConfig = c.value(.inConfig, false)
+        scope = c.value(.scope, "act")
     }
 }
 

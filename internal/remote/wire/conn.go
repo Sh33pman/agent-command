@@ -91,7 +91,12 @@ func accept(ctx context.Context, tc *tls.Conn, addr string, cfg ServerConfig) (*
 		return nil, &PeerError{peer, fmt.Errorf("reading the hello: %w", err)}
 	}
 	me := cfg.Hello
-	me.Proto = Proto
+	me.Proto, me.ProtoMin, me.ProtoMax = Proto, ProtoMin, Proto
+	theirLo, theirHi := peer.Range()
+	agreed := negotiate(ProtoMin, Proto, theirLo, theirHi)
+	if agreed > 0 {
+		me.Proto = agreed
+	}
 	v := cfg.Authorize(peer)
 	w := Welcome{Hello: me, Status: v.Status, Message: v.Message}
 	var refused error
@@ -101,7 +106,7 @@ func accept(ctx context.Context, tc *tls.Conn, addr string, cfg ServerConfig) (*
 	case v.Status != StatusOK:
 		w.Status = StatusUnauthorized
 		refused = refusal(ErrUnauthorized, v.Message)
-	case peer.Proto != Proto:
+	case agreed == 0:
 		w.Status = StatusVersion
 		refused = &VersionError{Ours: me, Theirs: peer.Hello}
 		w.Message = refused.Error()
@@ -153,7 +158,7 @@ func handshake(ctx context.Context, tc *tls.Conn, addr string, me Hello) (*Conn,
 		}
 		return nil, err
 	}
-	me.Proto = Proto
+	me.Proto, me.ProtoMin, me.ProtoMax = Proto, ProtoMin, Proto
 	if err := writeLine(tc, me); err != nil {
 		return nil, err
 	}
@@ -170,7 +175,7 @@ func handshake(ctx context.Context, tc *tls.Conn, addr string, me Hello) (*Conn,
 		return nil, refusal(ErrPending, w.Message)
 	case w.Status == StatusUnauthorized:
 		return nil, refusal(ErrUnauthorized, w.Message)
-	case w.Status == StatusVersion || w.Proto != Proto:
+	case w.Status == StatusVersion || w.Proto < ProtoMin || w.Proto > Proto:
 		return nil, &VersionError{Ours: me, Theirs: w.Hello}
 	case w.Status != StatusOK:
 		return nil, fmt.Errorf("the host answered %q: %s", w.Status, w.Message)

@@ -370,8 +370,18 @@ func TestIdleHostDisconnects(t *testing.T) {
 	if string(raw) != `{"op":"snapshot"}` {
 		t.Errorf("call = %s", raw)
 	}
-	if _, err := l.c.Call(ctx5(), "studio", ipc.OpInit, nil); err == nil {
-		t.Error("init ran on the host")
+	if _, err := l.c.Call(ctx5(), "studio", ipc.OpSpeechSay, nil); err == nil {
+		t.Error("the host's own speech ran from here")
+	}
+	// A host that doesn't list call (an older acmd) says so, rather than failing oddly.
+	l.c.mu.Lock()
+	hc, _ := l.c.hostLocked("studio")
+	hc.ops = []string{wire.OpPing}
+	l.c.mu.Unlock()
+	var ce *wire.CallError
+	if _, err := l.c.Call(ctx5(), "studio", ipc.OpSnapshot, nil); !errors.As(err, &ce) || ce.Code != ipc.CodeNotSupported ||
+		!strings.Contains(ce.Message, "update it") {
+		t.Errorf("an older host: %v", err)
 	}
 	l.waitState("studio", ipc.HostConnected)
 	l.waitState("studio", ipc.HostIdle)

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -32,6 +33,8 @@ type hostConn struct {
 	// added or not, as its events last said: a session added later starts
 	// with its own.
 	items map[string][]api.InboxItem
+	// ops are the ops the host serves, as its info said when it connected.
+	ops []string
 
 	changed chan struct{} // closed, and replaced, on every change
 	kick    chan struct{} // wakes run: something wants it, or the entry changed
@@ -157,7 +160,7 @@ func (h *hostConn) run() {
 		kh := h.cfg
 		c.mu.Unlock()
 
-		conn, err := h.dial(kh)
+		conn, ops, err := h.dial(kh)
 
 		c.mu.Lock()
 		h.tries++
@@ -201,7 +204,7 @@ func (h *hostConn) run() {
 			continue
 		}
 		h.failures = 0
-		h.conn, h.peer = conn, conn.Peer
+		h.conn, h.peer, h.ops = conn, conn.Peer, ops
 		h.setLocked(ipc.HostConnected, "", time.Time{})
 		c.o.Log.Printf("remote host %s: connected to %s (acmd %s)", kh.Name, kh.Address, conn.Peer.Version)
 		c.mu.Unlock()
@@ -220,16 +223,16 @@ func (h *hostConn) run() {
 
 // dial connects to the host as the client identity, and checks it speaks
 // the host API.
-func (h *hostConn) dial(kh config.KnownHost) (*wire.Conn, error) {
+func (h *hostConn) dial(kh config.KnownHost) (*wire.Conn, []string, error) {
 	c := h.c
 	id, err := c.identity()
 	if err != nil {
-		return nil, &localError{fmt.Errorf("the client identity: %w", err)}
+		return nil, nil, &localError{fmt.Errorf("the client identity: %w", err)}
 	}
 	pinned := kh.Fingerprint
 	if pinned == "" && kh.Cert != "" {
 		if pinned, err = identity.FingerprintFromPEMFile(kh.Cert); err != nil {
-			return nil, &localError{fmt.Errorf("the host's cert: %w", err)}
+			return nil, nil, &localError{fmt.Errorf("the host's cert: %w", err)}
 		}
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, c.o.DialTimeout)
@@ -243,18 +246,21 @@ func (h *hostConn) dial(kh config.KnownHost) (*wire.Conn, error) {
 	}()
 	conn, err := c.o.Dial(ctx, kh.Address, id, pinned, wire.Hello{Version: c.o.Version, Name: id.CommonName})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var info wire.Info
 	if err := conn.Call(ctx, wire.OpInfo, nil, &info); err != nil {
 		_ = conn.Close()
-		return nil, err
+		return nil, nil, err
 	}
-	if info.API != api.Version {
+	// The host's API versions and this client's overlap: the client uses the
+	// ops the host lists.
+	theirLo := cmp.Or(info.APIMin, info.API)
+	if info.API < api.MinVersion || theirLo > api.Version {
 		_ = conn.Close()
-		return nil, &apiError{theirs: info.API, version: info.Version}
+		return nil, nil, &apiError{theirs: info.API, version: info.Version}
 	}
-	return conn, nil
+	return conn, info.Ops, nil
 }
 
 // localError is a problem on this side: the identity, or the host's cert.

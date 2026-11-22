@@ -48,8 +48,13 @@ import (
 	"io"
 )
 
-// Proto is the protocol version both sides must speak.
-const Proto = 1
+// Proto is the newest protocol version this side speaks, and ProtoMin the
+// oldest it still does: the two sides use the newest version both speak
+// (after 1.0 an old version stays supported for 3 months).
+const (
+	Proto    = 1
+	ProtoMin = 1
+)
 
 // MaxLine bounds one line of JSON: a header, a reply or a hello.
 const MaxLine = 4 << 20
@@ -57,9 +62,37 @@ const MaxLine = 4 << 20
 // Hello introduces a side: the protocol it speaks, its acmd version and its
 // machine's name.
 type Hello struct {
-	Proto   int    `json:"proto"`
-	Version string `json:"version"`
-	Name    string `json:"name,omitempty"`
+	// Proto is the version in use: in a client's hello the newest it speaks,
+	// in the host's the one the two agreed on.
+	Proto int `json:"proto"`
+	// ProtoMin and ProtoMax are the range the side speaks (an older side
+	// sends only Proto: that one version).
+	ProtoMin int    `json:"proto_min,omitempty"`
+	ProtoMax int    `json:"proto_max,omitempty"`
+	Version  string `json:"version"`
+	Name     string `json:"name,omitempty"`
+}
+
+// Range is the versions a hello says its side speaks.
+func (h Hello) Range() (lo, hi int) {
+	hi = h.ProtoMax
+	if hi == 0 {
+		hi = h.Proto
+	}
+	lo = h.ProtoMin
+	if lo == 0 || lo > hi {
+		lo = hi
+	}
+	return lo, hi
+}
+
+// negotiate is the newest version both ranges have, or 0 for none.
+func negotiate(lo, hi, theirLo, theirHi int) int {
+	v := min(hi, theirHi)
+	if v < max(lo, theirLo) {
+		return 0
+	}
+	return v
 }
 
 // What the host makes of a client's hello.
@@ -112,8 +145,17 @@ type VersionError struct {
 }
 
 func (e *VersionError) Error() string {
-	return fmt.Sprintf("protocol mismatch: %s speaks Remote protocol %d (acmd %s), this acmd speaks %d (acmd %s): update the older one",
-		nameOr(e.Theirs.Name, "the other side"), e.Theirs.Proto, nameOr(e.Theirs.Version, "unknown"), e.Ours.Proto, nameOr(e.Ours.Version, "unknown"))
+	return fmt.Sprintf("protocol mismatch: %s speaks Remote protocol %s (acmd %s), this acmd speaks %s (acmd %s): update the older one",
+		nameOr(e.Theirs.Name, "the other side"), rangeText(e.Theirs), nameOr(e.Theirs.Version, "unknown"), rangeText(e.Ours),
+		nameOr(e.Ours.Version, "unknown"))
+}
+
+func rangeText(h Hello) string {
+	lo, hi := h.Range()
+	if lo == hi {
+		return fmt.Sprint(hi)
+	}
+	return fmt.Sprintf("%d to %d", lo, hi)
 }
 
 func nameOr(s, fallback string) string {

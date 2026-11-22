@@ -67,6 +67,7 @@ const (
 	OpRemoteRevoke     = "remote.revoke"              // un-authorizes a client and drops it (RemoteRef.Client) → RemoteClient
 	OpRemoteDisconnect = "remote.disconnect"          // drops a client's connections (RemoteRef.Client) → RemoteDisconnected
 	OpRemoteRename     = "remote.rename"              // renames an authorized client (RemoteRef.Client, Name) → RemoteClient
+	OpRemoteScope      = "remote.scope"               // changes what an authorized client may do (RemoteRef.Client, Scope) → RemoteClient
 	OpRemoteIdentity   = "remote.identity"            // this machine's identity, for both roles → RemoteIdentity
 	OpRemoteRegenerate = "remote.identity.regenerate" // makes a new identity, and uses it → RemoteIdentity
 	OpRemoteCert       = "remote.cert"                // a cert and key of your own for a role, or acmd's again (RemoteCert) → RemoteIdentity
@@ -84,6 +85,8 @@ type RemoteRef struct {
 	// by (named after the cert when Name is "").
 	Cert    string `json:"cert,omitempty"`
 	Enabled bool   `json:"enabled,omitempty"`
+	// Scope is a client's new scope (OpRemoteScope): read, act or admin.
+	Scope string `json:"scope,omitempty"`
 }
 
 // RemoteStatus is Hosting: whether it's on, where it listens, and why not
@@ -145,6 +148,8 @@ type RemoteClient struct {
 	// file, not by ops.
 	InConfig    bool               `json:"in_config,omitempty"`
 	Connections []RemoteConnection `json:"connections,omitempty"`
+	// Scope is what it may do here: read, act or admin.
+	Scope string `json:"scope,omitempty"`
 }
 
 // RemoteConnection is a client connected now.

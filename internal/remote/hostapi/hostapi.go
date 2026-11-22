@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
@@ -60,6 +61,9 @@ type Registrar interface {
 	Handle(op string, fn wire.Handler)
 	HandleStream(op string, fn wire.StreamHandler)
 	Attach(c *wire.Conn, session string, stream io.Closer) (release func())
+	// Scope is what the client with this fingerprint may do: read, act or
+	// admin ("" when it isn't authorized).
+	Scope(fingerprint string) string
 }
 
 // Options configure the API.
@@ -80,20 +84,21 @@ func Register(r Registrar, b Backend, o Options) *API {
 		o.Home, _ = os.UserHomeDir()
 	}
 	a := &API{b: b, r: r, home: o.Home}
-	r.Handle(api.OpSessionsList, a.list)
-	r.HandleStream(api.OpSessionAttach, a.attach)
-	r.Handle(api.OpSessionNew, a.newSession)
-	r.Handle(api.OpSessionRename, a.rename)
-	r.Handle(api.OpSessionEnd, a.end)
-	r.Handle(api.OpFoldersRecent, a.recentFolders)
-	r.Handle(api.OpFoldersList, a.listFolders)
-	r.Handle(api.OpFoldersMkdir, a.mkdir)
-	r.Handle(api.OpHarnessesList, a.harnesses)
-	r.HandleStream(api.OpEvents, a.events)
-	r.Handle(api.OpConfigGet, a.configGet)
-	r.Handle(api.OpConfigSet, a.configSet)
-	r.Handle(api.OpCall, a.call)
-	r.HandleStream(api.OpSubscribe, a.subscribe)
+	read, act, admin := config.ScopeRead, config.ScopeAct, config.ScopeAdmin
+	r.Handle(api.OpSessionsList, a.need(read, a.list))
+	r.HandleStream(api.OpSessionAttach, a.needStream(act, a.attach))
+	r.Handle(api.OpSessionNew, a.need(act, a.newSession))
+	r.Handle(api.OpSessionRename, a.need(act, a.rename))
+	r.Handle(api.OpSessionEnd, a.need(act, a.end))
+	r.Handle(api.OpFoldersRecent, a.need(read, a.recentFolders))
+	r.Handle(api.OpFoldersList, a.need(read, a.listFolders))
+	r.Handle(api.OpFoldersMkdir, a.need(act, a.mkdir))
+	r.Handle(api.OpHarnessesList, a.need(read, a.harnesses))
+	r.HandleStream(api.OpEvents, a.needStream(read, a.events))
+	r.Handle(api.OpConfigGet, a.need(read, a.configGet))
+	r.Handle(api.OpConfigSet, a.need(admin, a.configSet))
+	r.Handle(api.OpCall, a.call) // by the op it runs
+	r.HandleStream(api.OpSubscribe, a.needStream(read, a.subscribe))
 	return a
 }
 

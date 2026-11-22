@@ -148,6 +148,7 @@ func localOps() []Op {
 		admin(ipc.OpRemoteRevoke, "Un-authorizes a client and drops its connections.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 		admin(ipc.OpRemoteDisconnect, "Drops a client's connections, or one connection.", host, ipc.RemoteRef{}, ipc.RemoteDisconnected{}),
 		admin(ipc.OpRemoteRename, "Renames an authorized client. It stays authorized and connected.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
+		admin(ipc.OpRemoteScope, "Changes what an authorized client may do here: read, act or admin.", host, ipc.RemoteRef{}, ipc.RemoteClient{}),
 		{Name: ipc.OpRemoteIdentity, Description: "Returns this machine's identity: as a host, and as a client when that's another one.",
 			Scope: ScopeAdmin, Kind: KindRead, Grant: host, Output: ipc.RemoteIdentity{}},
 		admin(ipc.OpRemoteRegenerate, "Makes a new identity and uses it. Every peer that trusts this machine must trust the new fingerprint.",

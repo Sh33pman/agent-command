@@ -227,6 +227,9 @@ func (c *Client) MakeFolder(ctx context.Context, r ipc.RemoteFolderRequest) (api
 // Call runs one of a host's daemon ops (api.OpCall), and answers its data as
 // the host sent it.
 func (c *Client) Call(ctx context.Context, host, op string, data json.RawMessage) (json.RawMessage, error) {
+	if err := c.needs(ctx, host, api.OpCall); err != nil {
+		return nil, err
+	}
 	var out json.RawMessage
 	err := c.call(ctx, host, api.OpCall, api.CallRequest{Op: op, Data: data}, &out)
 	return out, err

@@ -224,6 +224,8 @@ func (r *remoteHost) authorize(fp string) {
 	r.t.Helper()
 	_, err := r.h.Authorize(fp, "laptop")
 	must(r.t, err)
+	_, err = r.h.SetScope("laptop", config.ScopeAdmin) // as pairings made before scopes are
+	must(r.t, err)
 }
 
 // terminal runs a shell under a term.Server for session id.

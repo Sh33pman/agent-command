@@ -12,6 +12,7 @@ type Info struct {
 	Fingerprint string   `json:"fingerprint"` // its identity's
 	Version     string   `json:"version"`     // its acmd
 	Proto       int      `json:"proto"`
-	API         int      `json:"api,omitempty"` // the host API's version (internal/remote/api)
-	Ops         []string `json:"ops"`           // the ops it serves
+	API         int      `json:"api,omitempty"`     // the newest host API version it speaks (internal/remote/api)
+	APIMin      int      `json:"api_min,omitempty"` // the oldest it still speaks
+	Ops         []string `json:"ops"`               // the ops it serves
 }

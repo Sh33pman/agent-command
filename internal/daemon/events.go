@@ -196,40 +196,54 @@ func (e *eventStream) publish(snap ipc.Snapshot) error {
 	return nil
 }
 
-// forget drops what the stream knows, when no one has followed it for a
-// while: a client that comes back gets a new snapshot.
-func (e *eventStream) forget() {
+// forgetIfIdle drops what the stream knows when no one has followed it for
+// a while, and says whether it did: a client that comes back gets a new
+// snapshot. It's one step, so a client subscribing meanwhile isn't missed.
+func (e *eventStream) forgetIfIdle(now time.Time) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.activeLocked(now) {
+		return false
+	}
 	if e.built {
 		e.rev++
 		e.base, e.log, e.last, e.built = e.rev, nil, nil, false
 	}
+	return true
 }
 
 // active says whether anyone follows the stream, or did a moment ago.
 func (e *eventStream) active(now time.Time) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.activeLocked(now)
+}
+
+func (e *eventStream) activeLocked(now time.Time) bool {
 	return len(e.subs) > 0 || !e.idle.IsZero() && now.Sub(e.idle) < eventKeep
 }
 
 // followEvents builds the stream from the daemon's changes while anyone
 // follows it.
 func (d *Daemon) followEvents(ctx context.Context) {
+	var seen uint64 // the revision the last snapshot was built after
 	for {
-		_, next := d.changes.current()
-		select {
-		case <-ctx.Done():
-			return
-		case <-d.stop:
-			return
-		case <-next:
-		case <-d.events.refresh:
+		rev, next := d.changes.current()
+		if rev == seen {
+			select {
+			case <-ctx.Done():
+				return
+			case <-d.stop:
+				return
+			case <-next:
+			case <-d.events.refresh:
+			}
 		}
 		time.Sleep(eventSettle)
-		if !d.events.active(d.cfg.Now()) {
-			d.events.forget()
+		// The revision before the snapshot is built: a change made while it's
+		// built moves it on, and the loop goes round again for it.
+		seen, _ = d.changes.current()
+		if d.events.forgetIfIdle(d.cfg.Now()) {
 			continue
 		}
 		if err := d.publishEvents(ctx); err != nil {
@@ -283,15 +297,6 @@ func (d *Daemon) subscribe(ctx context.Context, req ipc.SubscribeRequest) (*subs
 			return nil, nil, invalid("no entity type %q: they're %v", t, ipc.EntityTypes)
 		}
 	}
-	e := d.events
-	e.mu.Lock()
-	built := e.built
-	e.mu.Unlock()
-	if !built {
-		if err := d.publishEvents(ctx); err != nil {
-			return nil, nil, err
-		}
-	}
 	s := &subscriber{types: req.Types, clientID: callerOf(ctx).clientID, ch: make(chan ipc.Event, eventBuffer)}
 	dismissed, err := d.dismissed(ctx, s.clientID)
 	if err != nil {
@@ -299,9 +304,26 @@ func (d *Daemon) subscribe(ctx context.Context, req ipc.SubscribeRequest) (*subs
 	}
 	b, _ := json.Marshal(dismissed)
 	s.dismissed = string(b)
+	// Registered first, so the stream isn't forgotten while it's built; then
+	// built if no one followed it; then what it gets first, which covers
+	// everything queued for it meanwhile.
+	e := d.events
+	e.mu.Lock()
+	e.subs[s] = true
+	built := e.built
+	e.mu.Unlock()
+	if !built {
+		if err := d.publishEvents(ctx); err != nil {
+			d.unsubscribe(s)
+			return nil, nil, err
+		}
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.subs[s] = true
+	for len(s.ch) > 0 {
+		<-s.ch
+	}
+	s.behind.Store(false)
 	if req.Since > 0 && req.Since >= e.base && req.Since <= e.rev {
 		var missed []ipc.Event
 		for _, ev := range e.log {

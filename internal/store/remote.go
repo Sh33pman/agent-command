@@ -13,7 +13,7 @@ import (
 
 // AuthorizedClients lists the authorized clients, oldest first.
 func (s *Store) AuthorizedClients(ctx context.Context) ([]config.AuthorizedClient, error) {
-	rows, err := s.q.QueryContext(ctx, `SELECT name, fingerprint FROM remote_clients ORDER BY added_at, rowid`)
+	rows, err := s.q.QueryContext(ctx, `SELECT name, fingerprint, scope FROM remote_clients ORDER BY added_at, rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -21,7 +21,7 @@ func (s *Store) AuthorizedClients(ctx context.Context) ([]config.AuthorizedClien
 	var out []config.AuthorizedClient
 	for rows.Next() {
 		var c config.AuthorizedClient
-		if err := rows.Scan(&c.Name, &c.Fingerprint); err != nil {
+		if err := rows.Scan(&c.Name, &c.Fingerprint, &c.Scope); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -30,10 +30,12 @@ func (s *Store) AuthorizedClients(ctx context.Context) ([]config.AuthorizedClien
 }
 
 // AddAuthorizedClient adds a client, or renames the one with its
-// fingerprint.
+// fingerprint, and changes its scope when c names one.
 func (s *Store) AddAuthorizedClient(ctx context.Context, c config.AuthorizedClient) error {
-	_, err := s.q.ExecContext(ctx, `INSERT INTO remote_clients (fingerprint, name, added_at) VALUES (?, ?, ?)
-		ON CONFLICT (fingerprint) DO UPDATE SET name = excluded.name`, c.Fingerprint, c.Name, ms(s.now().UTC()))
+	_, err := s.q.ExecContext(ctx, `INSERT INTO remote_clients (fingerprint, name, added_at, scope) VALUES (?, ?, ?, ?)
+		ON CONFLICT (fingerprint) DO UPDATE SET name = excluded.name,
+			scope = CASE WHEN excluded.scope != '' THEN excluded.scope ELSE remote_clients.scope END`,
+		c.Fingerprint, c.Name, ms(s.now().UTC()), c.Scope)
 	return err
 }
 

@@ -497,3 +497,29 @@ func (c *Client) sortedAddedLocked(host string) []*added {
 	})
 	return out
 }
+
+// needs connects to a host and checks it serves op: an older host that
+// doesn't is not_supported, naming its acmd.
+func (c *Client) needs(ctx context.Context, host, op string) error {
+	if _, err := c.connect(ctx, host); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	h, err := c.hostLocked(host)
+	if err != nil {
+		return err
+	}
+	if len(h.ops) > 0 && !slices.Contains(h.ops, op) {
+		return &wire.CallError{Op: host, Code: ipc.CodeNotSupported,
+			Message: fmt.Sprintf("%s's acmd (%s) can't do that yet: update it", host, cmpOr(h.peer.Version, "older"))}
+	}
+	return nil
+}
+
+func cmpOr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
+}

@@ -104,7 +104,8 @@ final class SessionStore {
     /// Whether the main window is open: closing it leaves the app running in the background.
     @ObservationIgnored var isWindowShown = true
     /// Whether you're in the main window, as against another app or the app in the background.
-    var isInMainWindow: Bool { NSApp.isActive && isWindowShown }
+    /// (No app at all, as in tests run in any order, is not in front.)
+    var isInMainWindow: Bool { NSApp?.isActive == true && isWindowShown }
     @ObservationIgnored private var news: InboxNews?
     /// Called when the queue changes, for an open Inbox.
     @ObservationIgnored var onInboxChanged: (() -> Void)?

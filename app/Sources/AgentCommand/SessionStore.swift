@@ -395,7 +395,6 @@ final class SessionStore {
         struct Watch: Encodable {
             let rev: UInt64
             let wait_ms: Int
-            let app: Bool
         }
         struct Watched: Decodable {
             let rev: UInt64
@@ -425,7 +424,7 @@ final class SessionStore {
                 var rev: UInt64 = 0
                 while true {
                     let watched: Watched = try conn.call(
-                        "watch", Watch(rev: rev, wait_ms: 25_000, app: true))
+                        "watch", Watch(rev: rev, wait_ms: 25_000))
                     rev = watched.rev
                     let snapshot: Snapshot = try conn.call("snapshot", SnapshotRequest(client_id: clientID))
                     publish(snapshot)
@@ -513,13 +512,7 @@ final class SessionStore {
     }
 
     /// This app's id with the daemon, so it keeps a layout of its own. Made once.
-    var clientID: String {
-        let key = "clientID"
-        if let id = defaults.string(forKey: key), !id.isEmpty { return id }
-        let id = UUID().uuidString
-        defaults.set(id, forKey: key)
-        return id
-    }
+    var clientID: String { ClientIdentity.id(defaults) }
 
     /// Makes sets in the daemon: the one-off move of sets from panes saved
     /// before it kept them. One that can't be made is left out.

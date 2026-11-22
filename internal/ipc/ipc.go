@@ -250,9 +250,8 @@ type Snapshot struct {
 	Speech *SpeechState `json:"speech,omitempty"`
 }
 
-// Notice is a notification the daemon decided on. Emitter is the view
-// whose sidebar shows it; "" means the daemon showed it itself (no view
-// with a visible sidebar).
+// Notice is a notification the daemon decided on, and the clients it chose
+// to show it (To).
 type Notice struct {
 	Seq       uint64 `json:"seq"`
 	SessionID string `json:"session_id"`
@@ -261,12 +260,11 @@ type Notice struct {
 	Body      string `json:"body,omitempty"`
 	Urgent    bool   `json:"urgent,omitempty"`
 	Sound     string `json:"sound,omitempty"`
-	Emitter   string `json:"emitter,omitempty"` // a view's id, or EmitterApp
-	Host      string `json:"host,omitempty"`    // the Remote host, for a session added from one
+	Host      string `json:"host,omitempty"` // the Remote host, for a session added from one
+	// To are the clients that show it, by id (notify.route). None: the host
+	// showed it itself.
+	To []string `json:"to,omitempty"`
 }
-
-// EmitterApp in a Notice means the app shows it.
-const EmitterApp = "app"
 
 // Mutation kinds (OpMutate). Selectors are resolved by the client; the
 // daemon gets ids.
@@ -351,8 +349,6 @@ type InboxAnswer struct {
 type WatchRequest struct {
 	Rev    uint64 `json:"rev"`
 	WaitMS int    `json:"wait_ms,omitempty"`
-	// App marks the app's watch, which tells the daemon the app can show notices.
-	App bool `json:"app,omitempty"`
 }
 
 // WatchResponse is the current revision.
@@ -435,6 +431,82 @@ type Hello struct {
 	Proto   int    `json:"proto"`
 	Version string `json:"version"`
 	Pid     int    `json:"pid,omitempty"`
+	// The client, in a client's hello: who it is, so the daemon knows who's
+	// there (OpClients) and who shows each notice. A client without an id
+	// (the CLI, a hook) isn't registered.
+	Client *ClientHello `json:"client,omitempty"`
+}
+
+// ClientHello is what a client says about itself on every connection.
+type ClientHello struct {
+	// ID is the client's own, kept by it across runs.
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`             // a Kind*: mac, linux, windows, tui, android, cli
+	Device string `json:"device,omitempty"` // the machine's name, for people
+	// Caps are what it can do: Cap* values.
+	Caps []string `json:"caps,omitempty"`
+	// OnHost: it runs on the host's own machine.
+	OnHost bool `json:"on_host,omitempty"`
+}
+
+// Client kinds. More may come: a client shows one it doesn't know as it is.
+const (
+	KindMac     = "mac"
+	KindLinux   = "linux"
+	KindWindows = "windows"
+	KindTUI     = "tui"
+	KindAndroid = "android"
+	KindCLI     = "cli"
+)
+
+// What a client can do.
+const (
+	CapNotify = "notify" // shows notices
+	CapSound  = "sound"  // plays their sound
+	CapAttach = "attach" // shows a session's terminal
+	CapSpeech = "speech" // reads aloud
+)
+
+// Presence is how the person is using a client.
+const (
+	PresenceActive       = "active"       // in front, in use
+	PresenceIdle         = "idle"         // open, but no input for a few minutes
+	PresenceBackground   = "background"   // open, but not in front
+	PresenceDisconnected = "disconnected" // not connected (the daemon says, not the client)
+)
+
+// OpClients lists the client registry (→ []Client). OpClientPresence is a
+// client saying how it's used (ClientPresence; no data). OpNoticeGet reads
+// a recent notice by its id (NoticeRef → Notice).
+const (
+	OpClients        = "clients"
+	OpClientPresence = "client.presence"
+	OpNoticeGet      = "notice.get"
+)
+
+// Client is one client in the registry.
+type Client struct {
+	ClientHello
+	// Presence is PresenceDisconnected when it isn't connected.
+	Presence string `json:"presence"`
+	// Focus is the session it shows, when it says.
+	Focus      string    `json:"focus,omitempty"`
+	Connected  bool      `json:"connected"`
+	FirstSeen  time.Time `json:"first_seen,omitzero"`
+	LastSeen   time.Time `json:"last_seen,omitzero"`
+	LastActive time.Time `json:"last_active,omitzero"`
+}
+
+// ClientPresence is a client saying how it's used now, and the session it
+// shows ("" for none).
+type ClientPresence struct {
+	Presence string `json:"presence"`
+	Focus    string `json:"focus,omitempty"`
+}
+
+// NoticeRef names a notice by its id.
+type NoticeRef struct {
+	ID uint64 `json:"id"`
 }
 
 // HookEvent is what `acmd hook` sends: the raw payload is parsed by the

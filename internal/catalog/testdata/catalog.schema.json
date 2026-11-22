@@ -26,6 +26,35 @@
       }
     },
     {
+      "name": "client.presence",
+      "description": "Says how the calling client is used now (active, idle, background) and the session it shows. The client must name itself in its hello.",
+      "scope": "act",
+      "kind": "change",
+      "grant": "host",
+      "transport": {
+        "op": "client.presence"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.ClientPresence"
+      }
+    },
+    {
+      "name": "clients",
+      "description": "Lists the clients that use this daemon: each one's kind, device, what it can do, and how it's used now.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "clients"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/ipc.Client"
+        },
+        "type": "array"
+      }
+    },
+    {
       "name": "config.get",
       "description": "Describes every setting (type, default, allowed values, host or device, whether it runs code) and returns the values in effect.",
       "scope": "read",
@@ -558,6 +587,22 @@
       },
       "output": {
         "$ref": "#/$defs/ipc.Session"
+      }
+    },
+    {
+      "name": "notice.get",
+      "description": "Reads a recent notice by its id.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "entities",
+      "transport": {
+        "op": "notice.get"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.NoticeRef"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Notice"
       }
     },
     {
@@ -1922,6 +1967,100 @@
         "since"
       ]
     },
+    "ipc.Client": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "caps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "on_host": {
+          "type": "boolean"
+        },
+        "presence": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "first_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_active": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "presence",
+        "connected",
+        "first_seen",
+        "last_seen",
+        "last_active"
+      ]
+    },
+    "ipc.ClientHello": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "caps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "on_host": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ]
+    },
+    "ipc.ClientPresence": {
+      "properties": {
+        "presence": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "presence"
+      ]
+    },
     "ipc.ConfigSet": {
       "properties": {
         "values": {
@@ -2173,6 +2312,9 @@
         },
         "pid": {
           "type": "integer"
+        },
+        "client": {
+          "$ref": "#/$defs/ipc.ClientHello"
         }
       },
       "type": "object",
@@ -2557,11 +2699,14 @@
         "sound": {
           "type": "string"
         },
-        "emitter": {
-          "type": "string"
-        },
         "host": {
           "type": "string"
+        },
+        "to": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object",
@@ -2569,6 +2714,17 @@
         "seq",
         "session_id",
         "kind"
+      ]
+    },
+    "ipc.NoticeRef": {
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
       ]
     },
     "ipc.PaneLoc": {
@@ -3689,9 +3845,6 @@
         },
         "wait_ms": {
           "type": "integer"
-        },
-        "app": {
-          "type": "boolean"
         }
       },
       "type": "object",

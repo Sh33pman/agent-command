@@ -432,9 +432,9 @@ extension UsesSharedSpeech {
 
     @Suite @MainActor
     struct AppNotifierTests {
-        private func notice(_ seq: UInt64, kind: String = "done", session: String = "a", emitter: String = "app") throws -> Notice {
+        private func notice(_ seq: UInt64, kind: String = "done", session: String = "a", to: [String] = ["this-app"]) throws -> Notice {
             try JSONDecoder().decode(Notice.self, from: JSONSerialization.data(withJSONObject: [
-                "seq": seq, "session_id": session, "kind": kind, "emitter": emitter,
+                "seq": seq, "session_id": session, "kind": kind, "to": to,
             ] as [String: Any]))
         }
 
@@ -470,8 +470,10 @@ extension UsesSharedSpeech {
 
         @Test func aBannerIsForTheAppWhenYoureNotLookingAndThePopupWont() throws {
             let n = AppNotifier()
+            n.clientID = "this-app"
             #expect(n.shouldShow(try notice(1)))
-            #expect(!n.shouldShow(try notice(1, emitter: "fallback")), "another part of acmd is showing it")
+            #expect(!n.shouldShow(try notice(1, to: ["another-client"])), "the daemon chose another client")
+            #expect(!n.shouldShow(try notice(1, to: [])), "the daemon showed it itself")
             n.isLooking = { $0 == "a" }
             #expect(!n.shouldShow(try notice(1, session: "a")))
             #expect(n.shouldShow(try notice(1, session: "b")))

@@ -41,13 +41,6 @@ func (c *changes) current() (uint64, <-chan struct{}) {
 }
 
 func (d *Daemon) watch(ctx context.Context, req ipc.WatchRequest) (ipc.WatchResponse, error) {
-	if req.App {
-		d.appWatches.Add(1)
-		defer func() {
-			d.appLastWatch.Store(d.cfg.Now().UnixNano())
-			d.appWatches.Add(-1)
-		}()
-	}
 	wait := time.Duration(req.WaitMS) * time.Millisecond
 	if wait > maxWait {
 		wait = maxWait

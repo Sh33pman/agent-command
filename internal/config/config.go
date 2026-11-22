@@ -40,6 +40,7 @@ type Config struct {
 	Speech         Speech  `toml:"speech"`
 	Remote         Remote  `toml:"remote"`
 	Updates        Updates `toml:"updates"`
+	Clients        Clients `toml:"clients"`
 }
 
 // Updates is the [updates] section.
@@ -81,6 +82,33 @@ type Notify struct {
 	DoneMinDuration string `toml:"done_min_duration"` // only "finished" for turns at least this long
 	Cooldown        string `toml:"cooldown"`          // at most one notification per session per this
 	Sound           string `toml:"sound"`             // "" for silent
+	// Route is which clients show a notice: RouteOne or RouteAll.
+	Route string `toml:"route"`
+}
+
+// Where notices go (notify.route).
+const (
+	// RouteOne: the client you're using, else the desktop client used most
+	// recently, else the host's own notification.
+	RouteOne = "one"
+	// RouteAll: every connected client that shows notifications.
+	RouteAll = "all"
+)
+
+// Clients is the [clients] section: the apps and other clients that use this
+// daemon.
+type Clients struct {
+	// ForgetAfter forgets a client not seen for this long ("0": never).
+	ForgetAfter string `toml:"forget_after"`
+}
+
+// ForgetAfterDuration is ForgetAfter, 0 for never (or when it doesn't parse).
+func (c Clients) ForgetAfterDuration() time.Duration {
+	d, err := time.ParseDuration(c.ForgetAfter)
+	if err != nil || d < 0 {
+		return 0
+	}
+	return d
 }
 
 // Durations parses DoneMinDuration and Cooldown (defaults when invalid).
@@ -110,7 +138,8 @@ func Default() Config {
 		ClaudeCommand: "claude",
 		AgyCommand:    "agy",
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
-			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default"},
+			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default", Route: RouteOne},
+		Clients: Clients{ForgetAfter: "720h"},
 		Editor:  Editor{RunIn: "background", Target: "cwd"},
 		Speech:  Speech{Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
 		Remote:  DefaultRemote(),
@@ -199,6 +228,14 @@ done_min_duration = "10s"
 cooldown = "20s"
 # "default" plays the notification sound; "" is silent.
 sound = "default"
+# Which clients show a notice: "one" (the one you're using, else the desktop
+# app you used last, else this machine's own notification) or "all".
+route = "one"
+
+[clients]
+# Forget an app or other client not seen for this long: its layout,
+# notification choices and dismissed warnings. "0" keeps them for good.
+forget_after = "720h"
 
 [speech]
 # Read aloud on this machine. Turning it on downloads the model.

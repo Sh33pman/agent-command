@@ -822,7 +822,7 @@ func TestEvents(t *testing.T) {
 	}
 	f.b.change(func() {
 		f.b.inbox[0].State = core.InboxStale
-		f.b.notices = append(f.b.notices, ipc.Notice{Seq: 5, SessionID: "r1", Kind: "done", Title: "✓ api finished", Emitter: "app"})
+		f.b.notices = append(f.b.notices, ipc.Notice{Seq: 5, SessionID: "r1", Kind: "done", Title: "✓ api finished", To: []string{"mac-1"}})
 	})
 	evs := e.expect(api.EventChanged, api.EventInbox, api.EventNotice)
 	if evs[0].Session.Inbox != 0 || evs[1].ID != "r1" || len(evs[1].Inbox) != 0 ||

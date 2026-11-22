@@ -16,10 +16,6 @@ import (
 
 const keepNotices = 50
 
-// appGap is how long after a watch ends the app still counts as running: it starts
-// the next one straight after reading what changed.
-const appGap = 5 * time.Second
-
 type notifier struct {
 	cfg       config.Notify
 	doneMin   time.Duration
@@ -106,37 +102,24 @@ func (d *Daemon) transition(s *core.Session, tr core.Transition) {
 	d.addNotice(no)
 }
 
-// addNotice picks the emitter and records the notice; without one the
-// fallback shows it now.
+// addNotice picks the clients that show the notice (route) and records it;
+// with none, the fallback shows it now.
 func (d *Daemon) addNotice(no ipc.Notice) {
 	n := d.notify
 	n.seq++
 	no.Seq = n.seq
-	no.Emitter = d.emitter()
+	route := n.cfg.Route
+	if no.Kind == "withdraw" {
+		route = config.RouteAll // whichever showed it takes it back
+	}
+	no.To = d.route(route)
 	n.notices = append(n.notices, no)
 	if len(n.notices) > keepNotices {
 		n.notices = n.notices[len(n.notices)-keepNotices:]
 	}
-	if no.Emitter == "" && no.Kind != "withdraw" && d.cfg.Fallback != nil {
+	if len(no.To) == 0 && no.Kind != "withdraw" && d.cfg.Fallback != nil {
 		go d.cfg.Fallback(no)
 	}
-}
-
-// emitter is the app if it's running; otherwise the daemon shows it itself.
-func (d *Daemon) emitter() string {
-	if d.appRunning() {
-		return ipc.EmitterApp
-	}
-	return ""
-}
-
-// appRunning reports whether the app is watching, or was a moment ago.
-func (d *Daemon) appRunning() bool {
-	if d.appWatches.Load() > 0 {
-		return true
-	}
-	last := d.appLastWatch.Load()
-	return last != 0 && d.cfg.Now().Sub(time.Unix(0, last)) < appGap
 }
 
 // forget drops what the notifier keeps about a session that has been deleted.

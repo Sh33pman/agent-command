@@ -169,6 +169,9 @@ func localOps() []Op {
 		read(ipc.OpRemoteHarnesses, "Lists the harnesses a host can start.", host, ipc.RemoteHostRef{}, api.Harnesses{}),
 		act(ipc.OpRemoteCall, "Runs one of a host's ops on it, as acmd --host does. The host decides which ops a paired device may run: not admin ones, nor ones for its own machine only.", host, ipc.RemoteCall{}, nil).runsCode(),
 
+		read(ipc.OpClients, "Lists the clients that use this daemon: each one's kind, device, what it can do, and how it's used now.", host, nil, []ipc.Client{}),
+		act(ipc.OpClientPresence, "Says how the calling client is used now (active, idle, background) and the session it shows. The client must name itself in its hello.", host, ipc.ClientPresence{}, nil),
+		read(ipc.OpNoticeGet, "Reads a recent notice by its id.", entities, ipc.NoticeRef{}, ipc.Notice{}),
 		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
 
 		read(ipc.OpSessionScreen, "Returns a session's screen and recent history as plain text: all of it, or its last lines. Sessions on this machine only, for now.",

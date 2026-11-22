@@ -9,6 +9,8 @@ import UserNotifications
 final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// Whether you're looking at this session right now.
     @ObservationIgnored var isLooking: (String) -> Bool = { _ in false }
+    /// This app's id with the daemon: it shows the notices for it.
+    @ObservationIgnored var clientID = ClientIdentity.id()
     /// Whether the popup shows this kind of notice, so a banner would repeat it.
     @ObservationIgnored var popupShows: (String) -> Bool = { _ in false }
     /// Called with the session of a clicked notification.
@@ -194,7 +196,7 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// Whether a notice becomes a banner: not if you're looking, or the popup shows it.
     func shouldShow(_ notice: Notice) -> Bool {
-        notice.isForApp && !isLooking(notice.sessionID) && !popupShows(notice.kind)
+        notice.isFor(clientID) && !isLooking(notice.sessionID) && !popupShows(notice.kind)
     }
 
     /// Shows it even with the app in front: you may be looking at another session.

@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private var popupReturn: (cursor: String?, marks: Set<String>)?
     private let sidebarKeys = SidebarKeyView()
     private let notifier = AppNotifier()
+    /// Tells the daemon how this app is used, for who shows each notice.
+    private let presence = PresenceReporter()
+    private var presenceTimer: Timer?
     /// Hosting, its clients and requests: alive with the app, so a request badges and notifies.
     private let remote = RemoteSettingsModel()
     /// The Remote hosts this Mac connects to, for Settings.
@@ -143,6 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         store.onSetsChanged = { [weak pane] sets in pane?.reconcile(sets: sets) }
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }
         notifier.isLooking = { [weak store] id in store?.isInMainWindow == true && store?.visibleIDs.contains(id) == true }
+        presence.focus = { [weak store] in store?.selectedID ?? "" }
+        presenceTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.presence.update() }
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
         // The daemon says what's wrong, for this Mac and its clients alike.
         notifier.moreWarnings = { [weak store, weak self] in
@@ -1364,10 +1369,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         notifier.refreshPermission()
         GhosttyRuntime.shared.setFocus(true)
         store.markLookedAtSeen()
+        presence.setActive(true)
     }
 
     func applicationDidResignActive(_ notification: Notification) {
         GhosttyRuntime.shared.setFocus(false)
+        presence.setActive(false)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

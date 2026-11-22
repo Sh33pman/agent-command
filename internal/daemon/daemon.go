@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -131,9 +130,8 @@ type Daemon struct {
 	stop  chan struct{}
 	once  sync.Once
 
-	changes      changes      // bumped on every state change (OpWatch)
-	appWatches   atomic.Int32 // the app's open watches (notify.go)
-	appLastWatch atomic.Int64 // when its last one ended, in Unix nanoseconds
+	changes changes   // bumped on every state change (OpWatch)
+	reg     *registry // the clients (clients.go)
 
 	notify *notifier   // d.mu
 	bg     *background // d.mu (background.go)
@@ -239,6 +237,9 @@ func Run(ctx context.Context, cfg Config) error {
 	d.refreshNotify()
 	d.mu.Unlock()
 	defer os.Remove(sock)
+	if err := d.loadClients(ctx); err != nil {
+		return err
+	}
 	if err := d.moveRemoteData(ctx); err != nil {
 		cfg.Log.Printf("config: %v", err)
 	}
@@ -256,6 +257,7 @@ func Run(ctx context.Context, cfg Config) error {
 	cfg.Log.Printf("listening on %s (version %s, pid %d)", sock, cfg.Version, os.Getpid())
 	go d.background(ctx)
 	go d.scheduler(ctx)
+	go d.keepForgetting(ctx)
 
 	go func() {
 		select {
@@ -321,10 +323,15 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 		return
 	}
 	r := bufio.NewReaderSize(c, 64*1024)
+	who := &caller{}
+	ctx = context.WithValue(ctx, callerKey{}, who)
 	for {
 		var req ipc.Request
 		if err := ipc.ReadJSON(r, &req); err != nil {
 			return
+		}
+		if req.Op == ipc.OpHello && who.clientID == "" {
+			defer d.hello(ctx, helloOf(req.Data), who)()
 		}
 		data, err := d.handle(ctx, req)
 		if err == nil && changesState(req.Op) {
@@ -399,6 +406,8 @@ func (d *Daemon) handle(ctx context.Context, req ipc.Request) (any, error) {
 		return nil, d.ApplyHook(ctx, ev)
 	case ipc.OpHarnesses:
 		return d.harnesses(), nil
+	case ipc.OpClients, ipc.OpClientPresence, ipc.OpNoticeGet:
+		return d.handleClients(ctx, req)
 	case ipc.OpSessionScreen:
 		r, err := decode[ipc.ScreenRequest](req.Data)
 		if err != nil {

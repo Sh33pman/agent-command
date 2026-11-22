@@ -41,7 +41,7 @@ func TestConfigShowAndSet(t *testing.T) {
 	cfg, err := config.Load(file)
 	must(t, err)
 	want := config.Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true, OnPaused: true,
-		DoneMinDuration: "10s", Cooldown: "1m30s", Sound: ""}
+		DoneMinDuration: "10s", Cooldown: "1m30s", Sound: "", Route: config.RouteOne}
 	if cfg.Notify != want || !cfg.AgentRemoteControl || strings.Join(cfg.ClaudeArgs, " ") != "--model opus" ||
 		cfg.Speech.Voice != "am_adam:0.5,af_sky:0.5" || cfg.Speech.Speed != 1.25 || cfg.Editor.Target != "git_root" ||
 		cfg.ClaudeCommand != "/usr/local/bin/claude" || cfg.AgyCommand != "/opt/agy/bin/agy" || strings.Join(cfg.AgyArgs, " ") != "--mode plan" ||

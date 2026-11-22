@@ -1,0 +1,271 @@
+package daemon
+
+import (
+	"cmp"
+	"context"
+	"encoding/json"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/store"
+)
+
+// The client registry: who uses this daemon, how, and who shows each notice
+// (notify.route). Each client says who it is in its hello, on every
+// connection; one without an id (the CLI, a hook) isn't registered.
+
+// clientGap is how long after its last connection closes a client still
+// counts as connected: it opens the next one straight after.
+const clientGap = 5 * time.Second
+
+// forgetEvery is how often clients not seen for clients.forget_after are
+// forgotten.
+const forgetEvery = 6 * time.Hour
+
+// desktopKinds are clients on a computer, which show a notice when the one
+// you're using can't.
+var desktopKinds = []string{ipc.KindMac, ipc.KindLinux, ipc.KindWindows, ipc.KindTUI}
+
+type registered struct {
+	store.Client
+	conns int       // open connections
+	gone  time.Time // when the last one closed
+}
+
+type registry struct {
+	mu      sync.Mutex
+	clients map[string]*registered
+}
+
+// caller is who sent a request: the client named in its connection's hello.
+type caller struct{ clientID string }
+
+type callerKey struct{}
+
+func callerOf(ctx context.Context) *caller {
+	if c, ok := ctx.Value(callerKey{}).(*caller); ok {
+		return c
+	}
+	return &caller{}
+}
+
+// loadClients reads the registry.
+func (d *Daemon) loadClients(ctx context.Context) error {
+	cs, err := d.store.Clients(ctx)
+	if err != nil {
+		return err
+	}
+	d.reg = &registry{clients: map[string]*registered{}}
+	for _, c := range cs {
+		d.reg.clients[c.ID] = &registered{Client: c}
+	}
+	return nil
+}
+
+// hello registers the client a connection's hello names, and returns a
+// function that marks the connection closed.
+func (d *Daemon) hello(ctx context.Context, h *ipc.ClientHello, who *caller) func() {
+	if h == nil || h.ID == "" || d.reg == nil {
+		return func() {}
+	}
+	c := store.Client{ID: h.ID, Kind: h.Kind, Device: h.Device, Caps: h.Caps, OnHost: h.OnHost}
+	if err := d.store.SaveClient(ctx, c); err != nil {
+		d.cfg.Log.Printf("clients: %v", err)
+	}
+	now := d.cfg.Now()
+	d.reg.mu.Lock()
+	r := d.reg.clients[h.ID]
+	if r == nil {
+		r = &registered{Client: c}
+		r.FirstSeen = now
+		d.reg.clients[h.ID] = r
+	}
+	r.Kind, r.Device, r.Caps, r.OnHost, r.LastSeen = c.Kind, c.Device, c.Caps, c.OnHost, now
+	r.conns++
+	d.reg.mu.Unlock()
+	who.clientID = h.ID
+	return func() {
+		d.reg.mu.Lock()
+		r.conns--
+		r.gone, r.LastSeen = d.cfg.Now(), d.cfg.Now()
+		d.reg.mu.Unlock()
+		_ = d.store.TouchClient(context.WithoutCancel(ctx), h.ID)
+	}
+}
+
+func (d *Daemon) connectedLocked(r *registered) bool {
+	return r.conns > 0 || (!r.gone.IsZero() && d.cfg.Now().Sub(r.gone) < clientGap)
+}
+
+// presence records how a client is used now.
+func (d *Daemon) presence(ctx context.Context, p ipc.ClientPresence) error {
+	id := callerOf(ctx).clientID
+	if id == "" || d.reg == nil {
+		return invalid("say who you are in the hello first")
+	}
+	switch p.Presence {
+	case ipc.PresenceActive, ipc.PresenceIdle, ipc.PresenceBackground:
+	default:
+		return invalid("presence is active, idle or background, not %q", p.Presence)
+	}
+	active := p.Presence == ipc.PresenceActive
+	if err := d.store.SetPresence(ctx, id, p.Presence, p.Focus, active); err != nil {
+		return err
+	}
+	d.reg.mu.Lock()
+	if r := d.reg.clients[id]; r != nil {
+		r.Presence, r.Focus, r.LastSeen = p.Presence, p.Focus, d.cfg.Now()
+		if active {
+			r.LastActive = d.cfg.Now()
+		}
+	}
+	d.reg.mu.Unlock()
+	return nil
+}
+
+// clientList is the registry, the most recently seen first.
+func (d *Daemon) clientList() []ipc.Client {
+	out := []ipc.Client{}
+	if d.reg == nil {
+		return out
+	}
+	d.reg.mu.Lock()
+	defer d.reg.mu.Unlock()
+	for _, r := range d.reg.clients {
+		c := ipc.Client{ClientHello: ipc.ClientHello{ID: r.ID, Kind: r.Kind, Device: r.Device, Caps: r.Caps, OnHost: r.OnHost},
+			Presence: r.Presence, Focus: r.Focus, Connected: d.connectedLocked(r),
+			FirstSeen: r.FirstSeen, LastSeen: r.LastSeen, LastActive: r.LastActive}
+		if !c.Connected {
+			c.Presence = ipc.PresenceDisconnected
+		}
+		out = append(out, c)
+	}
+	slices.SortFunc(out, func(a, b ipc.Client) int { return cmp.Or(b.LastSeen.Compare(a.LastSeen), cmp.Compare(a.ID, b.ID)) })
+	return out
+}
+
+// route picks the clients that show a notice: with RouteAll every connected
+// client that shows notices; with RouteOne the one you're using, else the
+// desktop client used most recently. None: the host shows it itself.
+func (d *Daemon) route(how string) []string {
+	if d.reg == nil {
+		return nil
+	}
+	d.reg.mu.Lock()
+	defer d.reg.mu.Unlock()
+	var can []*registered
+	for _, r := range d.reg.clients {
+		if d.connectedLocked(r) && slices.Contains(r.Caps, ipc.CapNotify) {
+			can = append(can, r)
+		}
+	}
+	// The most recently used first.
+	slices.SortFunc(can, func(a, b *registered) int {
+		return cmp.Or(b.LastActive.Compare(a.LastActive), b.LastSeen.Compare(a.LastSeen), cmp.Compare(a.ID, b.ID))
+	})
+	if how == config.RouteAll {
+		out := make([]string, 0, len(can))
+		for _, r := range can {
+			out = append(out, r.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	for _, r := range can {
+		if r.Presence == ipc.PresenceActive {
+			return []string{r.ID}
+		}
+	}
+	for _, r := range can {
+		if slices.Contains(desktopKinds, r.Kind) {
+			return []string{r.ID}
+		}
+	}
+	return nil
+}
+
+// noticeByID is a recent notice.
+func (d *Daemon) noticeByID(ref ipc.NoticeRef) (ipc.Notice, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, n := range d.notices() {
+		if n.Seq == ref.ID {
+			return n, nil
+		}
+	}
+	return ipc.Notice{}, &codedError{code: ipc.CodeNotFound, err: invalid("no recent notice %d", ref.ID)}
+}
+
+// forgetClients forgets the clients not seen for clients.forget_after, unless
+// that's 0, and says how many.
+func (d *Daemon) forgetClients(ctx context.Context) int {
+	after := d.config().Clients.ForgetAfterDuration()
+	if after <= 0 || d.reg == nil {
+		return 0
+	}
+	ids, err := d.store.ForgetClients(ctx, d.cfg.Now().Add(-after))
+	if err != nil {
+		d.cfg.Log.Printf("clients: %v", err)
+		return 0
+	}
+	d.reg.mu.Lock()
+	for _, id := range ids {
+		if r := d.reg.clients[id]; r != nil && r.conns == 0 {
+			delete(d.reg.clients, id)
+		}
+	}
+	d.reg.mu.Unlock()
+	for _, id := range ids {
+		_ = d.store.SetAppState(ctx, dismissedKey(id), "")
+	}
+	return len(ids)
+}
+
+// keepForgetting forgets old clients now and every forgetEvery.
+func (d *Daemon) keepForgetting(ctx context.Context) {
+	d.forgetClients(ctx)
+	t := time.NewTicker(forgetEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.stop:
+			return
+		case <-t.C:
+			d.forgetClients(ctx)
+		}
+	}
+}
+
+func (d *Daemon) handleClients(ctx context.Context, req ipc.Request) (any, error) {
+	switch req.Op {
+	case ipc.OpClients:
+		return d.clientList(), nil
+	case ipc.OpClientPresence:
+		p, err := decode[ipc.ClientPresence](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return nil, d.presence(ctx, p)
+	case ipc.OpNoticeGet:
+		r, err := decode[ipc.NoticeRef](req.Data)
+		if err != nil {
+			return nil, err
+		}
+		return d.noticeByID(r)
+	}
+	return nil, nil
+}
+
+// helloOf reads a hello's client, if it names one.
+func helloOf(data json.RawMessage) *ipc.ClientHello {
+	var h ipc.Hello
+	if json.Unmarshal(data, &h) != nil {
+		return nil
+	}
+	return h.Client
+}

@@ -53,9 +53,9 @@ private func iso(_ secondsAgo: TimeInterval) -> String {
 
 @Test func aNoticeFillsInWhatItOmits() throws {
     let notice = try decode(Notice.self, ["seq": 4, "session_id": "s", "kind": "withdraw"])
-    #expect(notice.isWithdrawal && !notice.isForApp && notice.title.isEmpty && notice.sound.isEmpty)
-    let shown = try decode(Notice.self, ["seq": 5, "session_id": "s", "kind": "done", "emitter": "app", "title": "T"])
-    #expect(!shown.isWithdrawal && shown.isForApp && shown.title == "T")
+    #expect(notice.isWithdrawal && !notice.isFor("me") && notice.title.isEmpty && notice.sound.isEmpty)
+    let shown = try decode(Notice.self, ["seq": 5, "session_id": "s", "kind": "done", "to": ["me", "other"], "title": "T"])
+    #expect(!shown.isWithdrawal && shown.isFor("me") && !shown.isFor("third") && shown.title == "T")
 }
 
 @Test func aConversationCanBeFound() throws {

@@ -224,7 +224,8 @@ struct Notice: Decodable {
     let title: String
     let body: String
     let sound: String
-    let emitter: String
+    /// The clients the daemon chose to show it, by id (notify.route).
+    let to: [String]
     /// The Remote host, for a session added from one.
     let host: String
 
@@ -236,10 +237,11 @@ struct Notice: Decodable {
     }
 
     var isWithdrawal: Bool { kind == "withdraw" }
-    var isForApp: Bool { emitter == "app" }
+    /// Whether the daemon chose the client with this id to show it.
+    func isFor(_ client: String) -> Bool { to.contains(client) }
 
     private enum CodingKeys: String, CodingKey {
-        case seq, kind, title, body, sound, emitter, host
+        case seq, kind, title, body, sound, to, host
         case sessionID = "session_id"
     }
 
@@ -251,7 +253,7 @@ struct Notice: Decodable {
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
         body = try c.decodeIfPresent(String.self, forKey: .body) ?? ""
         sound = try c.decodeIfPresent(String.self, forKey: .sound) ?? ""
-        emitter = try c.decodeIfPresent(String.self, forKey: .emitter) ?? ""
+        to = try c.decodeIfPresent([String].self, forKey: .to) ?? []
         host = try c.decodeIfPresent(String.self, forKey: .host) ?? ""
     }
 }
@@ -525,8 +527,9 @@ final class DaemonConnection {
         struct Hello: Codable {
             let proto: Int
             let version: String
+            var client: ClientHello? = nil
         }
-        let theirs: Hello = try call("hello", Hello(proto: Self.proto, version: "app"))
+        let theirs: Hello = try call("hello", Hello(proto: Self.proto, version: "app", client: ClientIdentity.hello()))
         guard theirs.proto == Self.proto else {
             close(fd)
             throw DaemonError(message: "daemon speaks protocol \(theirs.proto), the app \(Self.proto)")

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -48,7 +49,7 @@ func TestNotifyDecisions(t *testing.T) {
 	step(core.StatusBusy, 0)
 	step(core.StatusWaiting, time.Second)
 	n := d.notices()
-	if len(n) != 1 || n[0].Kind != "waiting" || !n[0].Urgent || n[0].Title != "⚠ auth needs you" || n[0].Body != "permission: Bash" || n[0].Emitter != "" {
+	if len(n) != 1 || n[0].Kind != "waiting" || !n[0].Urgent || n[0].Title != "⚠ auth needs you" || n[0].Body != "permission: Bash" || len(n[0].To) != 0 {
 		t.Fatalf("waiting: %+v", n)
 	}
 	step(core.StatusBusy, time.Second) // answered: withdraw
@@ -115,41 +116,119 @@ func TestNotifyOff(t *testing.T) {
 	}
 }
 
-// With the app watching, it shows notices; once it's gone, it doesn't.
-func TestAppRunning(t *testing.T) {
-	clock := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
-	d := &Daemon{cfg: Config{Now: func() time.Time { return clock }}}
-	if d.appRunning() {
-		t.Error("no app yet")
+// connect registers a client as its hello would, and returns how to close it.
+func connect(t *testing.T, d *Daemon, id, kind string, caps ...string) (*caller, func()) {
+	t.Helper()
+	who := &caller{}
+	return who, d.hello(context.Background(), &ipc.ClientHello{ID: id, Kind: kind, Device: "laptop", Caps: caps}, who)
+}
+
+func use(t *testing.T, d *Daemon, who *caller, presence string) {
+	t.Helper()
+	must(t, d.presence(context.WithValue(context.Background(), callerKey{}, who), ipc.ClientPresence{Presence: presence, Focus: "s1"}))
+}
+
+// notify.route = one: the client you're using, else the desktop client used
+// last, else the host's own notification. all: every connected one.
+func TestNoticesGoWhereYouAre(t *testing.T) {
+	d, clock, fallback := notifyDaemon(t, config.Default().Notify)
+	must(t, d.loadClients(context.Background()))
+	s := &core.Session{ID: "s1", Name: "auth", Cwd: "/w/api"}
+	notice := func() ipc.Notice {
+		t.Helper()
+		*clock = clock.Add(time.Minute) // past the cooldown
+		d.transition(s, core.Transition{From: core.StatusBusy, To: core.StatusDone})
+		d.transition(s, core.Transition{From: core.StatusDone, To: core.StatusError})
+		n := d.notices()
+		return n[len(n)-1]
 	}
-	d.appWatches.Add(1)
-	if !d.appRunning() {
-		t.Error("watching")
+	if n := notice(); len(n.To) != 0 {
+		t.Fatalf("nobody there: %+v", n)
 	}
-	d.appLastWatch.Store(clock.UnixNano())
-	d.appWatches.Add(-1)
-	clock = clock.Add(appGap - time.Second)
-	if !d.appRunning() {
-		t.Error("between watches")
+	waitFor(t, "the host's own notification", func() bool { return len(fallback()) == 1 })
+	mac, closeMac := connect(t, d, "mac-1", ipc.KindMac, ipc.CapNotify, ipc.CapSound)
+	linux, closeLinux := connect(t, d, "linux-1", ipc.KindLinux, ipc.CapNotify)
+	connect(t, d, "phone", ipc.KindAndroid, ipc.CapNotify)
+	connect(t, d, "script", ipc.KindCLI) // doesn't show notices
+	if n := notice(); !slices.Equal(n.To, []string{"linux-1"}) && !slices.Equal(n.To, []string{"mac-1"}) {
+		t.Errorf("no one active: a desktop client, got %v", n.To)
 	}
-	clock = clock.Add(2 * time.Second)
-	if d.appRunning() {
-		t.Error("should have gone")
+	use(t, d, mac, ipc.PresenceActive)
+	*clock = clock.Add(time.Second)
+	use(t, d, linux, ipc.PresenceActive)
+	if n := notice(); !slices.Equal(n.To, []string{"linux-1"}) {
+		t.Errorf("the one used last: %v", n.To)
+	}
+	use(t, d, linux, ipc.PresenceIdle)
+	use(t, d, mac, ipc.PresenceActive)
+	if n := notice(); !slices.Equal(n.To, []string{"mac-1"}) {
+		t.Errorf("the active one: %v", n.To)
+	}
+	d.notify.cfg.Route = config.RouteAll
+	if n := notice(); !slices.Equal(n.To, []string{"linux-1", "mac-1", "phone"}) {
+		t.Errorf("all: %v", n.To)
+	}
+	before := len(fallback())
+	closeMac()
+	closeLinux()
+	*clock = clock.Add(clientGap + time.Second)
+	d.notify.cfg.Route = config.RouteOne
+	if n := notice(); len(n.To) != 0 {
+		t.Errorf("only a phone, which comes later: %v", n.To)
+	}
+	waitFor(t, "the host's own notification", func() bool { return len(fallback()) == before+1 })
+	// Notices by id.
+	last := d.notices()[len(d.notices())-1]
+	if got, err := d.noticeByID(ipc.NoticeRef{ID: last.Seq}); err != nil || got.Seq != last.Seq {
+		t.Errorf("by id: %+v %v", got, err)
+	}
+	if _, err := d.noticeByID(ipc.NoticeRef{ID: 9999}); resultOf("", err).Code != ipc.CodeNotFound {
+		t.Errorf("no such notice: %v", err)
 	}
 }
 
-// The app shows notices while it runs, so the fallback doesn't too.
-func TestNoticeGoesToTheApp(t *testing.T) {
-	d, _, fallback := notifyDaemon(t, config.Default().Notify)
-	d.appWatches.Add(1)
-	s := &core.Session{ID: "s1", Name: "auth", Cwd: "/w/api"}
-	d.transition(s, core.Transition{From: core.StatusBusy, To: core.StatusWaiting})
-	n := d.notices()
-	if len(n) != 1 || n[0].Emitter != ipc.EmitterApp {
-		t.Fatalf("notices: %+v", n)
+// The registry says who's there and how they're used; ones not seen for
+// clients.forget_after are forgotten, unless it's 0.
+func TestTheClientRegistry(t *testing.T) {
+	d, clock, _ := notifyDaemon(t, config.Default().Notify)
+	ctx := context.Background()
+	must(t, d.loadClients(ctx))
+	mac, closeMac := connect(t, d, "mac-1", ipc.KindMac, ipc.CapNotify)
+	use(t, d, mac, ipc.PresenceBackground)
+	if err := d.presence(context.WithValue(ctx, callerKey{}, mac), ipc.ClientPresence{Presence: "asleep"}); err == nil {
+		t.Error("asleep")
 	}
-	if got := fallback(); len(got) != 0 {
-		t.Errorf("fallback: %+v", got)
+	if err := d.presence(ctx, ipc.ClientPresence{Presence: ipc.PresenceActive}); err == nil {
+		t.Error("presence from no one")
+	}
+	if d.hello(ctx, &ipc.ClientHello{Kind: ipc.KindCLI}, &caller{}); len(d.clientList()) != 1 {
+		t.Error("a client without an id was registered")
+	}
+	list := d.clientList()
+	if len(list) != 1 || list[0].Presence != ipc.PresenceBackground || !list[0].Connected || list[0].Focus != "s1" || list[0].Device != "laptop" {
+		t.Errorf("clients = %+v", list)
+	}
+	closeMac()
+	*clock = clock.Add(time.Minute)
+	if list = d.clientList(); list[0].Connected || list[0].Presence != ipc.PresenceDisconnected {
+		t.Errorf("gone: %+v", list)
+	}
+	// It's remembered, as the store has it.
+	must(t, d.loadClients(ctx))
+	if list = d.clientList(); len(list) != 1 || list[0].Kind != ipc.KindMac {
+		t.Errorf("reloaded: %+v", list)
+	}
+	d.cfg.ConfigFile = filepath.Join(t.TempDir(), "config.toml")
+	_, err := d.settings().Set(map[string]any{"clients.forget_after": "0"})
+	must(t, err)
+	*clock = clock.Add(365 * 24 * time.Hour)
+	if n := d.forgetClients(ctx); n != 0 {
+		t.Errorf("0 forgot %d", n)
+	}
+	_, err = d.settings().Set(map[string]any{"clients.forget_after": "720h"})
+	must(t, err)
+	if n := d.forgetClients(ctx); n != 1 || len(d.clientList()) != 0 {
+		t.Errorf("forgot %d: %+v", n, d.clientList())
 	}
 }
 

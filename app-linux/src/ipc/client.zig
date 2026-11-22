@@ -71,7 +71,6 @@ pub const Hello = struct {
 pub const WatchRequest = struct {
     rev: u64,
     wait_ms: i32 = 25000,
-    app: bool = false,
 };
 
 pub const WatchResponse = struct {
@@ -639,7 +638,7 @@ pub const WatchLoop = struct {
             while (self.running.load(.acquire)) {
                 // Keep app=false until notification rendering is implemented in the UI,
                 // otherwise the daemon suppresses its fallback notifier.
-                const resp = client.watch(.{ .rev = rev, .wait_ms = 25000, .app = false }) catch break;
+                const resp = client.watch(.{ .rev = rev, .wait_ms = 25000 }) catch break;
                 if (resp.rev != rev) {
                     rev = resp.rev;
                     const snap = client.snapshot() catch break;

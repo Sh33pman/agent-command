@@ -147,6 +147,13 @@ var Specs = []Spec{
 		Description: `"default" plays the notification sound; empty is silent.`,
 		get:         func(c Config) any { return c.Notify.Sound }},
 
+	{Key: "notify.route", Type: TypeChoice, Default: RouteOne, Choices: []string{RouteOne, RouteAll}, Where: WhereHost,
+		Description: `Which clients show a notice: "one" shows it on the one you're using (else the desktop app you used last, else the host's own notification); "all" on every connected one.`,
+		get:         func(c Config) any { return c.Notify.Route }},
+	{Key: "clients.forget_after", Type: TypeDuration, Default: "720h", Where: WhereHost,
+		Description: `Forget an app or other client not seen for this long: its layout, notification choices and dismissed warnings. "0" keeps them for good.`,
+		get:         func(c Config) any { return c.Clients.ForgetAfter }},
+
 	{Key: "speech.enabled", Type: TypeBool, Default: false, Where: WhereDevice,
 		Description: "Read aloud on this machine: speech buttons, and the model downloaded when it's turned on.",
 		get:         func(c Config) any { return c.Speech.Enabled }},

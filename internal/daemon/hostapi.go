@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"slices"
@@ -98,13 +99,20 @@ func (b hostBackend) Config() ipc.ConfigState { return b.d.configState() }
 // would, with the error's code kept.
 func (b hostBackend) Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
 	d := b.d
-	out, err := d.handle(ctx, ipc.Request{Op: op, Data: data})
+	who := &caller{remote: "a paired device"}
+	if p, ok := hostapi.PeerOf(ctx); ok {
+		who.remote = cmp.Or(p.Name, p.CommonName, p.Fingerprint, who.remote)
+	}
+	ctx = context.WithValue(ctx, callerKey{}, who)
+	req := ipc.Request{Op: op, Data: data}
+	out, err := d.handle(ctx, req)
 	if err != nil {
 		r := resultOf("", err)
 		return nil, wire.Errorf(r.Code, "%s", r.Error)
 	}
 	if changesState(op) {
 		d.changes.bump()
+		d.audit(ctx, req)
 	}
 	if out == nil {
 		return nil, nil

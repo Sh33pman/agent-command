@@ -25,6 +25,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/peer"
+	"github.com/brettmostert/agent-command/internal/proc"
 	"github.com/brettmostert/agent-command/internal/reconcile"
 	"github.com/brettmostert/agent-command/internal/remote/client"
 	"github.com/brettmostert/agent-command/internal/remote/host"
@@ -84,6 +85,9 @@ type Config struct {
 	// HostAgent asks a session's host for its agent's last OSC 7501 report,
 	// on the same tick (default: through its host).
 	HostAgent func(sessionID string) (term.AgentState, bool)
+	// ProcInfo looks up a process, to tell who's on the socket (default:
+	// proc.Lookup).
+	ProcInfo func(pid int) (proc.Proc, error)
 	// HostScreen reads a session's screen as text when its agent reports it
 	// waits on you, for the answers it shows (default: through its host).
 	HostScreen func(sessionID string) (string, bool)
@@ -325,6 +329,7 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 	}
 	r := bufio.NewReaderSize(c, 64*1024)
 	who := &caller{}
+	who.pid, _ = peer.PID(c)
 	ctx = context.WithValue(ctx, callerKey{}, who)
 	for {
 		var req ipc.Request
@@ -337,6 +342,7 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 		data, err := d.handle(ctx, req)
 		if err == nil && changesState(req.Op) {
 			d.changes.bump()
+			d.audit(ctx, req)
 		}
 		resp := ipc.Response{OK: err == nil}
 		if err != nil {

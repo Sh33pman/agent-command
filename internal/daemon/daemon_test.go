@@ -16,6 +16,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/proc"
 	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/term"
 )
@@ -49,7 +50,9 @@ func start(t *testing.T, p paths.Paths, opts ...func(*Config)) *running {
 	cfg := Config{Paths: p, Version: testVersion, Log: log.New(io.Discard, "", 0),
 		// The fake hosts run `sleep`, which would count as the shell in front and
 		// end every terminal's agent: tests that want this set their own.
-		HostFront: func(string) (term.Front, bool) { return term.Front{}, false }}
+		HostFront: func(string) (term.Front, bool) { return term.Front{}, false },
+		// The tests may run under an agent: they say who's on the socket themselves.
+		ProcInfo: func(int) (proc.Proc, error) { return proc.Proc{}, errors.New("not looked up in tests") }}
 	for _, o := range opts {
 		o(&cfg)
 	}

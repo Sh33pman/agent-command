@@ -41,7 +41,26 @@ type Config struct {
 	Remote         Remote  `toml:"remote"`
 	Updates        Updates `toml:"updates"`
 	Clients        Clients `toml:"clients"`
+	Inbox          Inbox   `toml:"inbox"`
 }
+
+// Inbox is the [inbox] section.
+type Inbox struct {
+	// PermissionAnswers is who may answer a permission prompt on this machine:
+	// AnswersPeople, AnswersOutsideSessions or AnswersAnyone.
+	PermissionAnswers string `toml:"permission_answers"`
+}
+
+// Who may answer a permission prompt (inbox.permission_answers).
+const (
+	// AnswersPeople refuses an answer from a process an agent (claude, agy)
+	// started.
+	AnswersPeople = "people"
+	// AnswersOutsideSessions refuses any answer from inside an acmd session.
+	AnswersOutsideSessions = "outside_sessions"
+	// AnswersAnyone refuses none.
+	AnswersAnyone = "anyone"
+)
 
 // Updates is the [updates] section.
 type Updates struct {
@@ -140,6 +159,7 @@ func Default() Config {
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
 			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default", Route: RouteOne},
 		Clients: Clients{ForgetAfter: "720h"},
+		Inbox:   Inbox{PermissionAnswers: AnswersPeople},
 		Editor:  Editor{RunIn: "background", Target: "cwd"},
 		Speech:  Speech{Voice: "af_heart:0.6,af_bella:0.4", Speed: 1.0},
 		Remote:  DefaultRemote(),
@@ -236,6 +256,12 @@ route = "one"
 # Forget an app or other client not seen for this long: its layout,
 # notification choices and dismissed warnings. "0" keeps them for good.
 forget_after = "720h"
+
+[inbox]
+# Who may answer a permission prompt on this machine: "people" refuses an
+# answer from a program an agent started, "outside_sessions" any answer from
+# inside an acmd session, "anyone" none. Remote clients go by their pairing.
+permission_answers = "people"
 
 [speech]
 # Read aloud on this machine. Turning it on downloads the model.

@@ -219,6 +219,9 @@ func (d *Daemon) answerOnHost(ctx context.Context, a ipc.InboxAnswer) error {
 	if !ok {
 		return errors.New("this is no longer waiting for an answer")
 	}
+	if err := d.mayAnswer(ctx, it.Kind); err != nil {
+		return err
+	}
 	s, err := d.sessionByID(ctx, it.SessionID)
 	if err != nil {
 		return err

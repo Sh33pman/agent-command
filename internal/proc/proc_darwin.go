@@ -1,6 +1,6 @@
 //go:build darwin
 
-package hook
+package proc
 
 import (
 	"bytes"
@@ -12,9 +12,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// procInfo reads a process's parent, name and argv from the kernel via
+// Lookup reads a process's parent, name and argv from the kernel via
 // sysctl (fast: no `ps` subprocess on the hook's hot path).
-func procInfo(pid int) (Proc, error) {
+func Lookup(pid int) (Proc, error) {
 	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
 	if err != nil {
 		return Proc{}, err

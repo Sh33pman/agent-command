@@ -154,6 +154,11 @@ var Specs = []Spec{
 		Description: `Forget an app or other client not seen for this long: its layout, notification choices and dismissed warnings. "0" keeps them for good.`,
 		get:         func(c Config) any { return c.Clients.ForgetAfter }},
 
+	{Key: "inbox.permission_answers", Type: TypeChoice, Default: AnswersPeople,
+		Choices: []string{AnswersPeople, AnswersOutsideSessions, AnswersAnyone}, Where: WhereHost,
+		Description: `Who may answer a permission prompt on this machine: "people" refuses an answer from a program an agent (claude, agy) started; "outside_sessions" any answer from inside an acmd session; "anyone" none. Remote clients go by their pairing.`,
+		get:         func(c Config) any { return c.Inbox.PermissionAnswers }},
+
 	{Key: "speech.enabled", Type: TypeBool, Default: false, Where: WhereDevice,
 		Description: "Read aloud on this machine: speech buttons, and the model downloaded when it's turned on.",
 		get:         func(c Config) any { return c.Speech.Enabled }},

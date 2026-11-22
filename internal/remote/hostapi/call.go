@@ -73,9 +73,18 @@ func (a *API) call(ctx context.Context, c *wire.Call) (any, error) {
 			return nil, err
 		}
 	}
-	data, err := a.b.Call(ctx, req.Op, req.Data)
+	data, err := a.b.Call(context.WithValue(ctx, peerKey{}, c.Conn.Peer), req.Op, req.Data)
 	if err != nil {
 		return nil, err
 	}
 	return data, nil
+}
+
+type peerKey struct{}
+
+// PeerOf is the paired device a call (api.OpCall) came from, for the
+// daemon's record of who made each change.
+func PeerOf(ctx context.Context) (wire.Peer, bool) {
+	p, ok := ctx.Value(peerKey{}).(wire.Peer)
+	return p, ok
 }

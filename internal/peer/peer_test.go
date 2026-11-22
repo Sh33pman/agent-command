@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // pair is a connected unix socket, as the server sees it.
@@ -60,5 +61,39 @@ func TestCheckRejectsWhatIsNotAUnixSocket(t *testing.T) {
 	defer b.Close()
 	if err := Check(a); err == nil {
 		t.Fatal("a pipe passed")
+	}
+}
+
+func TestPIDIsTheOtherEnd(t *testing.T) {
+	dir, err := os.MkdirTemp("", "peerpid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	ln, err := net.Listen("unix", filepath.Join(dir, "s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := net.Dial("unix", filepath.Join(dir, "s"))
+		if err == nil {
+			time.Sleep(200 * time.Millisecond)
+			c.Close()
+		}
+	}()
+	c, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if pid, ok := PID(c); !ok || pid != os.Getpid() {
+		t.Errorf("pid = %d %v, want this process (%d)", pid, ok, os.Getpid())
+	}
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	if _, ok := PID(a); ok {
+		t.Error("a pipe has a pid")
 	}
 }

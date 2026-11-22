@@ -54,7 +54,7 @@ func TestClients(t *testing.T) {
 func TestDismissedWarningsMoveToTheRegistry(t *testing.T) {
 	s, p := open(t)
 	for _, q := range []string{
-		`ALTER TABLE clients DROP COLUMN profile`, `ALTER TABLE clients DROP COLUMN dismissed`, `ALTER TABLE clients DROP COLUMN keymap`,
+		`ALTER TABLE clients DROP COLUMN profile`, `ALTER TABLE clients DROP COLUMN dismissed`, `ALTER TABLE clients DROP COLUMN keymap`, `ALTER TABLE events DROP COLUMN caller`,
 		`INSERT INTO app_state (key, value) VALUES ('health.dismissed:mac-1', '["hooks"]'), ('health.dismissed:old', '')`,
 		`PRAGMA user_version = 14`,
 	} {

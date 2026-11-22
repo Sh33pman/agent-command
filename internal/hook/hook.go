@@ -23,17 +23,12 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/proc"
 	"github.com/brettmostert/agent-command/internal/procenv"
 )
 
 // Proc is a process as seen by the hook.
-type Proc struct {
-	Pid  int
-	PPid int
-	Comm string
-	Args []string
-	TTY  string // controlling terminal, e.g. /dev/ttys010 ("" = none)
-}
+type Proc = proc.Proc
 
 // Options configures Run; zero values use the real environment.
 type Options struct {
@@ -240,7 +235,7 @@ func (o *Options) defaults() {
 		o.ParentPid = os.Getppid()
 	}
 	if o.ProcInfo == nil {
-		o.ProcInfo = procInfo
+		o.ProcInfo = proc.Lookup
 	}
 	if o.Spawn == nil {
 		o.Spawn = SpawnDaemon

@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -231,19 +230,6 @@ func TestFindClaude(t *testing.T) {
 	}
 }
 
-func TestProcInfoRealProcess(t *testing.T) {
-	p, err := procInfo(os.Getpid())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.PPid != os.Getppid() || p.Comm == "" || len(p.Args) == 0 || !strings.HasSuffix(p.Args[0], filepath.Base(os.Args[0])) {
-		t.Errorf("procInfo(self) = %+v (os.Args[0]=%s)", p, os.Args[0])
-	}
-	if _, err := procInfo(999999); err == nil {
-		t.Error("expected error for a nonexistent pid")
-	}
-}
-
 func waitForSocket(t *testing.T, p paths.Paths) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -255,19 +241,6 @@ func waitForSocket(t *testing.T, p paths.Paths) {
 			t.Fatal("daemon socket didn't appear")
 		}
 		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-func TestTTYPathDarwin(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("darwin only")
-	}
-	p, err := procInfo(os.Getpid())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.TTY != "" && !strings.HasPrefix(p.TTY, "/dev/ttys") {
-		t.Errorf("tty %q", p.TTY)
 	}
 }
 

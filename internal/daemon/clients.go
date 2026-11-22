@@ -41,8 +41,15 @@ type registry struct {
 	clients map[string]*registered
 }
 
-// caller is who sent a request: the client named in its connection's hello.
-type caller struct{ clientID string }
+// caller is who sent a request: the client named in its connection's hello,
+// the process on the other end of the socket, or a paired device (caller.go).
+type caller struct {
+	clientID string
+	pid      int
+	remote   string // the paired device, for a call from another machine
+	once     sync.Once
+	line     lineage
+}
 
 type callerKey struct{}
 

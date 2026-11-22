@@ -18,6 +18,8 @@ type LoggedEvent struct {
 	Kind            string
 	Detail          string
 	ToolName        string
+	// Caller is who made a change (an op's), as the daemon describes them.
+	Caller string
 }
 
 // AppendEvent logs an event and keeps the log at MaxEvents rows.
@@ -25,8 +27,8 @@ func (s *Store) AppendEvent(ctx context.Context, e LoggedEvent) error {
 	if e.At.IsZero() {
 		e.At = s.now()
 	}
-	res, err := s.q.ExecContext(ctx, `INSERT INTO events (at, session_id, claude_session_id, kind, detail, tool_name)
-		VALUES (?,?,?,?,?,?)`, ms(e.At), e.SessionID, e.ClaudeSessionID, e.Kind, e.Detail, e.ToolName)
+	res, err := s.q.ExecContext(ctx, `INSERT INTO events (at, session_id, claude_session_id, kind, detail, tool_name, caller)
+		VALUES (?,?,?,?,?,?,?)`, ms(e.At), e.SessionID, e.ClaudeSessionID, e.Kind, e.Detail, e.ToolName, e.Caller)
 	if err != nil {
 		return err
 	}
@@ -43,7 +45,7 @@ func (s *Store) AppendEvent(ctx context.Context, e LoggedEvent) error {
 
 // RecentEvents returns up to n events, newest first; sessionID filters when set.
 func (s *Store) RecentEvents(ctx context.Context, sessionID string, n int) ([]LoggedEvent, error) {
-	q := `SELECT id, at, session_id, claude_session_id, kind, detail, tool_name FROM events`
+	q := `SELECT id, at, session_id, claude_session_id, kind, detail, tool_name, caller FROM events`
 	args := []any{}
 	if sessionID != "" {
 		q += ` WHERE session_id = ?`
@@ -58,7 +60,7 @@ func (s *Store) RecentEvents(ctx context.Context, sessionID string, n int) ([]Lo
 	for rows.Next() {
 		var e LoggedEvent
 		var at int64
-		if err := rows.Scan(&e.ID, &at, &e.SessionID, &e.ClaudeSessionID, &e.Kind, &e.Detail, &e.ToolName); err != nil {
+		if err := rows.Scan(&e.ID, &at, &e.SessionID, &e.ClaudeSessionID, &e.Kind, &e.Detail, &e.ToolName, &e.Caller); err != nil {
 			return nil, err
 		}
 		e.At = fromMS(at)

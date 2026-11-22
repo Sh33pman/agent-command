@@ -75,6 +75,9 @@ func (d *Daemon) answerInbox(ctx context.Context, a ipc.InboxAnswer) error {
 	if err != nil {
 		return err
 	}
+	if err := d.mayAnswer(ctx, it.Kind); err != nil {
+		return err
+	}
 	if err := d.typeKeys(it.SessionID, keys); err != nil {
 		return err
 	}

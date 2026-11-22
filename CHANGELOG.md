@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.77.0](https://github.com/brettmostert/agent-command/compare/v0.76.0...v0.77.0) (2026-11-22)
+
+
+### Features
+
+* each host's tree shows here as the host has it ([#130](https://github.com/brettmostert/agent-command/issues/130)) ([dfcc8cc](https://github.com/brettmostert/agent-command/commit/dfcc8ccae3fb5a579b6d2257deab6dbec56427f0))
+
 ## [0.76.0](https://github.com/brettmostert/agent-command/compare/v0.75.0...v0.76.0) (2026-11-22)
 
 

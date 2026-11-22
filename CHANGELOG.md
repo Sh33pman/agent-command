@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.76.0](https://github.com/brettmostert/agent-command/compare/v0.75.0...v0.76.0) (2026-11-22)
+
+
+### Features
+
+* attach to any of a host's sessions (Direct Connect) ([#129](https://github.com/brettmostert/agent-command/issues/129)) ([f7a9161](https://github.com/brettmostert/agent-command/commit/f7a916199250c1894e2518b95b22a188b7759a15))
+* scopes for each pairing, and version ranges for Remote ([#127](https://github.com/brettmostert/agent-command/issues/127)) ([c205009](https://github.com/brettmostert/agent-command/commit/c205009ca9ac5dfa5e5f665ce922d6cc90752d17))
+
 ## [0.75.0](https://github.com/brettmostert/agent-command/compare/v0.74.0...v0.75.0) (2026-11-22)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.82.0](https://github.com/brettmostert/agent-command/compare/v0.81.2...v0.82.0) (2026-11-22)
+
+
+### Features
+
+* a host's notices go to the machine you're using ([#147](https://github.com/brettmostert/agent-command/issues/147)) ([14beec7](https://github.com/brettmostert/agent-command/commit/14beec79c3a4a226e72e39af84c38e5a046690dc))
+
 ## [0.81.2](https://github.com/brettmostert/agent-command/compare/v0.81.1...v0.81.2) (2026-11-22)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.79.0](https://github.com/brettmostert/agent-command/compare/v0.78.0...v0.79.0) (2026-11-22)
+
+
+### Features
+
+* form edits carry the version they loaded ([#136](https://github.com/brettmostert/agent-command/issues/136)) ([ab6e282](https://github.com/brettmostert/agent-command/commit/ab6e2821fb02ea6a69e5cee2328c00af2e726499))
+
 ## [0.78.0](https://github.com/brettmostert/agent-command/compare/v0.77.1...v0.78.0) (2026-11-22)
 
 

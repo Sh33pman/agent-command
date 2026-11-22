@@ -242,3 +242,28 @@ func checkHost(kh config.KnownHost, hosts []config.KnownHost, replacing string) 
 	}
 	return kh, nil
 }
+
+// SetPresence is how this machine is used now: active while any of its UIs
+// is, else idle or background. Each connected host is told now, and each
+// that connects later when it does.
+func (c *Client) SetPresence(presence string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	if presence == c.presence {
+		c.mu.Unlock()
+		return
+	}
+	c.presence = presence
+	targets := map[*hostConn]*wire.Conn{}
+	for _, h := range c.hosts {
+		if h.conn != nil {
+			targets[h] = h.conn
+		}
+	}
+	c.mu.Unlock()
+	for h, conn := range targets {
+		go h.tellPresence(conn, presence)
+	}
+}

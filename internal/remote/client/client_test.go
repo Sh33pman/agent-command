@@ -725,3 +725,36 @@ func TestHostSettings(t *testing.T) {
 		t.Error("a host that isn't known")
 	}
 }
+
+// This machine's presence goes to each host: now, when it changes, and to a
+// host when it connects. An op carries the UI that asked.
+func TestPresenceAndTheUIGoToTheHost(t *testing.T) {
+	l := newLaptop(t)
+	r := newRemoteHost(t, "studio")
+	r.authorize(l.fingerprint())
+	calls := func() string {
+		r.b.mu.Lock()
+		defer r.b.mu.Unlock()
+		return strings.Join(r.b.called, "\n")
+	}
+	l.c.SetPresence(ipc.PresenceActive) // before any host: kept for when one connects
+	_, err := l.c.AddHost(ipc.RemoteHostEdit{Name: "studio", Address: r.addr(), Fingerprint: r.h.Status().Fingerprint})
+	must(t, err)
+	eventually(t, "told on connecting", func() bool { return strings.Contains(calls(), `client.presence {"presence":"active"}`) })
+	l.c.SetPresence(ipc.PresenceActive) // the same: nothing new to tell
+	l.c.SetPresence(ipc.PresenceIdle)
+	eventually(t, "told of the change", func() bool { return strings.Contains(calls(), `client.presence {"presence":"idle"}`) })
+	if n := strings.Count(calls(), `"presence":"active"`); n != 1 {
+		t.Errorf("told active %d times", n)
+	}
+	ctx := ipc.WithClient(ctx5(), &ipc.ClientHello{ID: "ui-1", Kind: ipc.KindMac})
+	_, err = l.c.Call(ctx, "studio", ipc.OpStatus, nil)
+	must(t, err)
+	if !strings.Contains(calls(), "status null from ui-1") && !strings.Contains(calls(), "status  from ui-1") {
+		t.Errorf("the host got %s", calls())
+	}
+	if l.c.Fingerprint() != l.fingerprint() || (*Client)(nil).Fingerprint() != "" {
+		t.Error("fingerprint")
+	}
+	(*Client)(nil).SetPresence(ipc.PresenceActive)
+}

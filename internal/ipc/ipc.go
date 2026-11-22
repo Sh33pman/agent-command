@@ -493,6 +493,22 @@ func WithRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, requestIDKey{}, id)
 }
 
+type clientKey struct{}
+
+// WithClient carries the UI an op is for with ctx, on its way to a host.
+func WithClient(ctx context.Context, c *ClientHello) context.Context {
+	if c == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, clientKey{}, c)
+}
+
+// ClientOf is the UI ctx carries, or nil.
+func ClientOf(ctx context.Context) *ClientHello {
+	c, _ := ctx.Value(clientKey{}).(*ClientHello)
+	return c
+}
+
 // RequestIDOf is the request id ctx carries, or "".
 func RequestIDOf(ctx context.Context) string {
 	id, _ := ctx.Value(requestIDKey{}).(string)
@@ -540,6 +556,9 @@ const (
 	KindTUI     = "tui"
 	KindAndroid = "android"
 	KindCLI     = "cli"
+	// KindMachine is a paired machine, as its host sees it: its daemon stands
+	// for its UIs, and passes a notice on to the one you're using there.
+	KindMachine = "machine"
 )
 
 // What a client can do.

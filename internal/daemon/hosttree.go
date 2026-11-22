@@ -43,7 +43,7 @@ func (d *Daemon) callHost(ctx context.Context, host, op string, data json.RawMes
 	if !d.client.Knows(host) {
 		return nil, &codedError{code: ipc.CodeNotFound, err: errors.New("there's no Remote host named " + quote(host))}
 	}
-	ctx, cancel := context.WithTimeout(ctx, remoteCallTimeout)
+	ctx, cancel := context.WithTimeout(ipc.WithClient(ctx, d.uiOf(ctx)), remoteCallTimeout)
 	defer cancel()
 	raw, err := d.client.Call(ctx, host, op, data)
 	if err != nil {

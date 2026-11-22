@@ -27,7 +27,8 @@ const forgetEvery = 6 * time.Hour
 
 // desktopKinds are clients on a computer, which show a notice when the one
 // you're using can't.
-var desktopKinds = []string{ipc.KindMac, ipc.KindLinux, ipc.KindWindows, ipc.KindTUI}
+// A paired machine is one too: its daemon shows it on its UI you're using.
+var desktopKinds = []string{ipc.KindMac, ipc.KindLinux, ipc.KindWindows, ipc.KindTUI, ipc.KindMachine}
 
 type registered struct {
 	store.Client
@@ -47,8 +48,13 @@ type caller struct {
 	clientID string
 	pid      int
 	remote   string // the paired device, for a call from another machine
-	once     sync.Once
-	line     lineage
+	// machine is the paired machine a call came from, by its fingerprint:
+	// its registered client here (machineConnected). clientID is then the
+	// UI on it that asked, when it said.
+	machine string
+	device  string // that UI's device and kind, for the record
+	once    sync.Once
+	line    lineage
 }
 
 type callerKey struct{}
@@ -97,12 +103,14 @@ func (d *Daemon) hello(ctx context.Context, h *ipc.ClientHello, who *caller) fun
 	r.conns++
 	d.reg.mu.Unlock()
 	who.clientID = h.ID
+	d.tellHosts()
 	return func() {
 		d.reg.mu.Lock()
 		r.conns--
 		r.gone, r.LastSeen = d.cfg.Now(), d.cfg.Now()
 		d.reg.mu.Unlock()
 		_ = d.store.TouchClient(context.WithoutCancel(ctx), h.ID)
+		d.tellHosts()
 	}
 }
 
@@ -110,9 +118,11 @@ func (d *Daemon) connectedLocked(r *registered) bool {
 	return r.conns > 0 || (!r.gone.IsZero() && d.cfg.Now().Sub(r.gone) < clientGap)
 }
 
-// presence records how a client is used now.
+// presence records how a client is used now: a UI on this machine, or a
+// paired machine as a whole.
 func (d *Daemon) presence(ctx context.Context, p ipc.ClientPresence) error {
-	id := callerOf(ctx).clientID
+	who := callerOf(ctx)
+	id := cmp.Or(who.machine, who.clientID)
 	if id == "" || d.reg == nil {
 		return invalid("say who you are in the hello first")
 	}
@@ -133,7 +143,88 @@ func (d *Daemon) presence(ctx context.Context, p ipc.ClientPresence) error {
 		}
 	}
 	d.reg.mu.Unlock()
+	if who.machine == "" {
+		d.tellHosts() // a UI here: this machine's hosts hear of it
+	}
 	return nil
+}
+
+// machineConnected registers a paired machine while its connection lasts
+// (design 6.9, 6.12): its daemon stands for its UIs, so the host routes a
+// notice to the machine you're using, and that machine routes it on to its
+// UI. It's known by its fingerprint, named as its pairing is.
+func (d *Daemon) machineConnected(fingerprint, name string) func() {
+	if d.reg == nil || fingerprint == "" {
+		return func() {}
+	}
+	ctx := context.Background()
+	c := store.Client{ID: fingerprint, Kind: ipc.KindMachine, Device: name, Caps: []string{ipc.CapNotify}}
+	if err := d.store.SaveClient(ctx, c); err != nil {
+		d.cfg.Log.Printf("clients: %v", err)
+	}
+	now := d.cfg.Now()
+	d.reg.mu.Lock()
+	r := d.reg.clients[fingerprint]
+	if r == nil {
+		r = &registered{Client: c}
+		r.FirstSeen = now
+		d.reg.clients[fingerprint] = r
+	}
+	r.Kind, r.Device, r.Caps, r.LastSeen = c.Kind, c.Device, c.Caps, now
+	r.conns++
+	d.reg.mu.Unlock()
+	return func() {
+		d.reg.mu.Lock()
+		r.conns--
+		r.gone, r.LastSeen = d.cfg.Now(), d.cfg.Now()
+		d.reg.mu.Unlock()
+		_ = d.store.TouchClient(ctx, fingerprint)
+	}
+}
+
+// machinePresence is how this machine is used now, for its hosts: active
+// while any of its UIs is, else idle while any is open, else background.
+func (d *Daemon) machinePresence() string {
+	if d.reg == nil {
+		return ipc.PresenceBackground
+	}
+	d.reg.mu.Lock()
+	defer d.reg.mu.Unlock()
+	out := ipc.PresenceBackground
+	for _, r := range d.reg.clients {
+		if r.Kind == ipc.KindMachine || !d.connectedLocked(r) || r.conns == 0 {
+			continue
+		}
+		switch r.Presence {
+		case ipc.PresenceActive:
+			return ipc.PresenceActive
+		case ipc.PresenceIdle:
+			out = ipc.PresenceIdle
+		}
+	}
+	return out
+}
+
+// tellHosts passes this machine's presence on to its hosts.
+func (d *Daemon) tellHosts() {
+	if d.client != nil {
+		d.client.SetPresence(d.machinePresence())
+	}
+}
+
+// uiOf is the UI a request came from, to name on a host: its id, kind and
+// device. nil when the caller didn't say who it is.
+func (d *Daemon) uiOf(ctx context.Context) *ipc.ClientHello {
+	id := callerOf(ctx).clientID
+	if id == "" || d.reg == nil {
+		return nil
+	}
+	d.reg.mu.Lock()
+	defer d.reg.mu.Unlock()
+	if r := d.reg.clients[id]; r != nil {
+		return &ipc.ClientHello{ID: r.ID, Kind: r.Kind, Device: r.Device}
+	}
+	return &ipc.ClientHello{ID: id}
 }
 
 // clientList is the registry, the most recently seen first.

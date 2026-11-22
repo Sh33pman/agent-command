@@ -125,6 +125,7 @@ func (a *API) call(ctx context.Context, c *wire.Call) (any, error) {
 		}
 	}
 	ctx = ipc.WithRequestID(context.WithValue(ctx, peerKey{}, c.Conn.Peer), req.RequestID)
+	ctx = ipc.WithClient(ctx, req.Client)
 	data, err := a.b.Call(ctx, req.Op, req.Data)
 	if err != nil {
 		return nil, err

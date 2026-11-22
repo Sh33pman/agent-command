@@ -108,6 +108,8 @@ On the client:
   acmd remote attach studio 1        # attach this terminal; Ctrl+] detaches
   ```
 
+**Notifications** follow you: a host shows each notification on the machine you're using, as `notify.route` says (`one`, the default, or `all`). Each paired machine counts as one client there, active while you use any of its apps, and passes the notification on to its app you're using. A change you make from a machine is recorded on the host with the app that made it.
+
 A host's sessions show with "↗ studio". While the host can't be reached, their rows are greyed and reconnect by themselves. A change you make to one (renaming, archiving, moving it between the host's groups) is made on the host, so every client of the host sees the same tree. A host's sessions stay in its own groups and sets: they can't be moved into this Mac's.
 
 Once a known host exists, the sidebar has a filter next to "Sessions": All, Local (the sessions that run on this Mac, Remote ones included), Remote (every host's sessions), or one host's sessions.

@@ -3,6 +3,7 @@ package client
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -300,6 +301,10 @@ func (h *hostConn) serve(conn *wire.Conn) {
 	c := h.c
 	defer func() { _ = conn.Close() }()
 	go h.follow(conn)
+	c.mu.Lock()
+	presence := c.presence
+	c.mu.Unlock()
+	go h.tellPresence(conn, presence)
 	for {
 		select {
 		case <-conn.Done():
@@ -355,5 +360,21 @@ func (h *hostConn) follow(conn *wire.Conn) {
 			c.b.Notice(n.SessionID, host, *n)
 		}
 		c.b.Changed()
+	}
+}
+
+// tellPresence tells the host how this machine is used now (design 6.9):
+// the host routes its notices to the machine you're using, as to its own
+// UIs. It's best effort: a host that can't be told keeps the last it heard.
+func (h *hostConn) tellPresence(conn *wire.Conn, presence string) {
+	if presence == "" {
+		return
+	}
+	c := h.c
+	data, _ := json.Marshal(ipc.ClientPresence{Presence: presence})
+	ctx, cancel := context.WithTimeout(c.ctx, c.o.DialTimeout)
+	defer cancel()
+	if err := conn.Call(ctx, api.OpCall, api.CallRequest{Op: ipc.OpClientPresence, Data: data}, nil); err != nil {
+		c.o.Log.Printf("remote host %s: presence: %v", h.cfg.Name, err)
 	}
 }

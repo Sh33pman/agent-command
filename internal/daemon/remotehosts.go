@@ -177,6 +177,11 @@ func (b clientBackend) Notice(id, host string, n ipc.Notice) {
 		return
 	}
 	if n.Kind != "withdraw" {
+		// The host routes its notices to the machine you're using, as to its
+		// own UIs: one it routed elsewhere isn't this machine's to show.
+		if !slices.Contains(n.To, d.client.Fingerprint()) {
+			return
+		}
 		on := map[string]bool{"waiting": no.cfg.OnWaiting, "error": no.cfg.OnError, "done": no.cfg.OnDone, "paused": no.cfg.OnPaused}
 		if !no.cfg.Enabled || !on[n.Kind] {
 			return

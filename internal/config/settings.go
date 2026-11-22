@@ -149,7 +149,7 @@ var Specs = []Spec{
 		get:         func(c Config) any { return c.Notify.Sound }},
 
 	{Key: "notify.route", Type: TypeChoice, Default: RouteOne, Choices: []string{RouteOne, RouteAll}, Where: WhereHost,
-		Description: `Which clients show a notice: "one" shows it on the one you're using (else the desktop app you used last, else the host's own notification); "all" on every connected one.`,
+		Description: `Which clients show a notice: "one" shows it on the one you're using (else the desktop app you used last, else the host's own notification); "all" on every connected one. A paired machine counts as one client, as you use its apps, and shows it on its app you're using.`,
 		get:         func(c Config) any { return c.Notify.Route }},
 	{Key: "clients.forget_after", Type: TypeDuration, Default: "720h", Where: WhereHost,
 		Description: `Forget an app or other client not seen for this long: its layout, notification choices and dismissed warnings. "0" keeps them for good.`,

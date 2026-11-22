@@ -81,6 +81,7 @@ func (d *Daemon) describe(who *caller) string {
 	}
 	add("remote", who.remote)
 	add("client", who.clientID)
+	add("device", who.device)
 	if who.pid > 0 {
 		add("pid", fmt.Sprint(who.pid))
 		l := d.procOf(who)

@@ -64,6 +64,7 @@ type daemon struct {
 	rev      uint64
 	ch       chan struct{}
 	file     *config.File
+	called   []string // ops run through call, with the UI that asked
 }
 
 func newDaemon() *daemon { return &daemon{sockets: map[string]string{}, ch: make(chan struct{})} }
@@ -154,7 +155,14 @@ func (b *daemon) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
 
 // Call answers snapshot with the host's state, and any other op with the op
 // it was asked to run.
-func (b *daemon) Call(_ context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
+func (b *daemon) Call(ctx context.Context, op string, data json.RawMessage) (json.RawMessage, error) {
+	b.mu.Lock()
+	ui := ""
+	if c := ipc.ClientOf(ctx); c != nil {
+		ui = " from " + c.ID
+	}
+	b.called = append(b.called, op+" "+string(data)+ui)
+	b.mu.Unlock()
 	switch op {
 	case ipc.OpSnapshot:
 		return json.Marshal(b.snapshot())

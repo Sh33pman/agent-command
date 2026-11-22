@@ -382,9 +382,19 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 		t.Error("answered twice")
 	}
 
-	// A notice from the host names it.
+	// A notice the host routed elsewhere (to one of its own UIs) isn't shown
+	// here; one it routed to this machine is, naming the host.
 	b.change(func() {
-		b.notices = []ipc.Notice{{Seq: 1, SessionID: "r1", Kind: "waiting", Title: "⚠ api needs you"}}
+		b.notices = []ipc.Notice{{Seq: 1, SessionID: "r1", Kind: "waiting", Title: "elsewhere", To: []string{"host-ui"}}}
+	})
+	time.Sleep(200 * time.Millisecond)
+	for _, n := range snapshot().Notices {
+		if strings.Contains(n.Title, "elsewhere") {
+			t.Errorf("shown here: %+v", n)
+		}
+	}
+	b.change(func() {
+		b.notices = append(b.notices, ipc.Notice{Seq: 2, SessionID: "r1", Kind: "waiting", Title: "⚠ api needs you", To: []string{me.Fingerprint()}})
 	})
 	waitFor(t, "the notice", func() bool {
 		for _, n := range snapshot().Notices {

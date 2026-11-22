@@ -52,6 +52,11 @@ type Options struct {
 	// OnChange is called after anything the apps show changes: Hosting's
 	// status, connections, attaches or requests.
 	OnChange func()
+	// OnConnect is called when an authorized client connects, with its
+	// fingerprint and its name here; the function it returns is called when
+	// that connection closes. The daemon registers the client's machine with
+	// it (design 6.9, 6.12).
+	OnConnect func(fingerprint, name string) (closed func())
 	// Listen opens a TCP listener (net.Listen by default).
 	Listen func(addr string) (net.Listener, error)
 }
@@ -323,7 +328,12 @@ func (h *Host) serve(raw net.Conn, ln net.Listener, id *identity.Identity) {
 	}
 	h.o.Log.Printf("remote: %s connected (acmd %s)", h.who(c), c.Peer.Version)
 	h.changed()
+	closed := func() {}
+	if h.o.OnConnect != nil {
+		closed = h.o.OnConnect(c.Peer.Fingerprint, cn.name)
+	}
 	h.mux.Serve(h.ctx, c)
+	closed()
 	h.unregister(cn)
 	h.o.Log.Printf("remote: %s disconnected", h.who(c))
 	h.changed()

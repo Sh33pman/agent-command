@@ -113,6 +113,7 @@ type Client struct {
 	hosts    map[string]*hostConn // by name
 	order    []string             // config.toml's, then the ones added through ops
 	inConfig map[string]bool      // the hosts config.toml lists
+	presence string               // this machine's, as each host is told (SetPresence)
 	added    map[string]*added    // by local id
 	id       *identity.Identity
 	idErr    error
@@ -304,6 +305,16 @@ func (c *Client) apply(r config.Remote) {
 		}
 	}
 	c.changedLocked()
+}
+
+// Fingerprint is this machine's identity: what its hosts know it by.
+func (c *Client) Fingerprint() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.fingerprintLocked()
 }
 
 func (c *Client) fingerprintLocked() string {

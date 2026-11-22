@@ -24,6 +24,7 @@ func (d *Daemon) startRemote() {
 		Log:         d.cfg.Log,
 		Now:         d.cfg.Now,
 		OnChange:    d.changes.bump,
+		OnConnect:   d.machineConnected,
 	})
 	// What clients may do: the host API. Its own session ops are the Remote
 	// sessions; call, subscribe and attaching reach the whole host (Direct

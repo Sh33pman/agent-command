@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -102,6 +103,12 @@ func (b hostBackend) Call(ctx context.Context, op string, data json.RawMessage) 
 	who := &caller{remote: "a paired device"}
 	if p, ok := hostapi.PeerOf(ctx); ok {
 		who.remote = cmp.Or(p.Name, p.CommonName, p.Fingerprint, who.remote)
+		who.machine = p.Fingerprint
+	}
+	// The UI on that machine that asked: recorded as who did it.
+	if ui := ipc.ClientOf(ctx); ui != nil {
+		who.clientID = ui.ID
+		who.device = strings.TrimSpace(ui.Device + " " + ui.Kind)
 	}
 	ctx = context.WithValue(ctx, callerKey{}, who)
 	req := ipc.Request{Op: op, Data: data}

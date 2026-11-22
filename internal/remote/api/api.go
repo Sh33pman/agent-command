@@ -43,6 +43,7 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/errcode"
+	"github.com/brettmostert/agent-command/internal/ipc"
 )
 
 // Version is the host API's version, in wire.Info's API. It's bumped on any
@@ -84,6 +85,9 @@ type CallRequest struct {
 	Data json.RawMessage `json:"data,omitempty"`
 	// RequestID makes a creating op safe to retry, as ipc.Request's.
 	RequestID string `json:"request_id,omitempty"`
+	// Client is the UI on the paired machine that asked (its id, kind and
+	// device), so the host records who did it, not only the pairing.
+	Client *ipc.ClientHello `json:"client,omitempty"`
 }
 
 // Error codes the host API answers with, besides wire's: errcode's, as

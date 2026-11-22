@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.80.0](https://github.com/brettmostert/agent-command/compare/v0.79.0...v0.80.0) (2026-11-22)
+
+
+### Features
+
+* the Inbox, job runs and conversations come a page at a time ([#139](https://github.com/brettmostert/agent-command/issues/139)) ([b87d0ce](https://github.com/brettmostert/agent-command/commit/b87d0cecc1a251d071b19d40639ddd082d1628f4))
+
 ## [0.79.0](https://github.com/brettmostert/agent-command/compare/v0.78.0...v0.79.0) (2026-11-22)
 
 

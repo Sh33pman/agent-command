@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.0](https://github.com/brettmostert/agent-command/compare/v0.89.0...v0.90.0) (2026-11-23)
+
+
+### Features
+
+* acmd attach, acmd inbox and acmd watch, from any terminal ([#176](https://github.com/brettmostert/agent-command/issues/176)) ([7f0fc89](https://github.com/brettmostert/agent-command/commit/7f0fc8996fdc6c924aab2721e1e8fd3baf374585))
+
 ## [0.89.0](https://github.com/brettmostert/agent-command/compare/v0.88.0...v0.89.0) (2026-11-23)
 
 

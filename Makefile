@@ -31,6 +31,20 @@ export PATH := $(BIN):$(PATH)
 # screen, as the app's build does. Without it they replay recent output, and
 # full-screen programs need a redraw after attach. `acmd version` says which.
 BUILD_TAGS := $(if $(wildcard build/ghostty/vt/include/ghostty/vt.h),libghostty,)
+# On Linux, acmd is one static binary, so the brew formula's build runs on any
+# distribution, glibc or musl: Go's own DNS and user lookups, and libghostty-vt
+# and libc linked in. Without libghostty-vt there's no C code to link.
+ifeq ($(UNAME_S),Linux)
+ifneq ($(BUILD_TAGS),)
+BUILD_TAGS   += netgo osusergo
+STATIC_FLAGS := -linkmode external -extldflags "-static"
+BUILD_CGO    := 1
+else
+BUILD_CGO    := 0
+endif
+else
+BUILD_CGO    := 1
+endif
 
 # Coverage gates: all code, internal/core and internal/remote.
 COVER_MIN_TOTAL  := 60
@@ -153,8 +167,9 @@ check-ghostty: ## Report new Ghostty releases and advisories that haven't been r
 	go run ./scripts/check-ghostty
 
 .PHONY: check-cask
-check-cask: ## Render the Homebrew cask with dummy values and run brew style and audit (macOS)
+check-cask: ## Render the Homebrew cask and formula with dummy values and run brew style and audit (macOS)
 	scripts/check-cask.sh
+	scripts/check-formula.sh
 
 .PHONY: speech-test
 speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
@@ -237,7 +252,7 @@ linux-ui: ## Build ./dist/agent-command-ui (needs scripts/build-ghostty.sh first
 .PHONY: build
 build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) for this machine
 	mkdir -p $(DIST)
-	CGO_ENABLED=1 go build -trimpath -tags '$(BUILD_TAGS)' -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
+	CGO_ENABLED=$(BUILD_CGO) go build -trimpath -tags '$(BUILD_TAGS)' -ldflags '$(LDFLAGS) $(STATIC_FLAGS)' -o $(DIST)/agent-command ./cmd/agent-command
 	ln -sf agent-command $(DIST)/acmd
 ifeq ($(UNAME_S),Darwin)
 	$(MAKE) speech-helper SPEECH_OUT=$(DIST)/acmd-speech

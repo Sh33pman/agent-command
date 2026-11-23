@@ -61,11 +61,22 @@ Every command that reads or changes state takes `--json`, which prints the answe
 
 `acmd --help` lists them too.
 
-## Install (macOS 26 or later, Apple Silicon)
+## Install
+
+**The app** (macOS 26 or later, Apple Silicon):
 
 ```sh
 brew install --cask brettmostert/tap/agent-command
 ```
+
+**acmd on its own**, for a machine with no screen, or one you reach only from another: Linux (amd64 and arm64, any distribution), WSL2 and macOS 26 or later on Apple Silicon. On Linux and WSL2, install [Homebrew](https://brew.sh) first.
+
+```sh
+brew install brettmostert/tap/acmd
+acmd init
+```
+
+`acmd init` adds the Claude Code hooks and installs the service, which runs acmd's daemon from boot on Linux and WSL2 and from login on macOS (see below). The install tries it too, but Homebrew's sandbox may stop it, so run it once yourself: it's safe to rerun. WSL2 is Linux here, and needs systemd turned on for the service. A headless Mac needs automatic login (System Settings → Users & Groups), since a launchd agent starts at login. To use the machine from another, see [A headless host](docs/remote-sessions.md#a-headless-host). On a Mac, install either the app or the formula: the app brings its own acmd for now. Upgrade with `brew upgrade acmd`: the next acmd command restarts the daemon. Before `brew uninstall acmd`, run `acmd uninstall`.
 
 The install adds the app's Claude Code hooks, removing any old ones first. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it. Upgrade with `brew upgrade --cask agent-command`. The daemon looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
 

@@ -114,6 +114,47 @@ Once a known host exists, the sidebar has a filter next to "Sessions": All, Loca
 
 To start a new session on the host from the client: ⇧⌘N, then choose the host on its **Where** line, which lists This Mac and every known host (tab changes it), and a folder from the host's own folders. The palette's **Session on studio…**, and **New Session on studio…** in the Remote Hosts browser, open ⇧⌘N with the host already chosen. Or `acmd new --on studio --dir ~/code/app`.
 
+## A headless host
+
+A machine with no screen, or one you only reach from another, can be a host: a Linux server, a WSL2 install, or a Mac with no one at it. It runs acmd on its own, without the app, and its daemon runs from boot (from login on a Mac).
+
+1. **Install acmd** on the host, over SSH:
+
+   ```sh
+   brew install brettmostert/tap/acmd
+   acmd init
+   ```
+
+   `acmd init` adds the Claude Code hooks and installs the service: a systemd user unit on Linux and WSL2, with lingering on, so the daemon starts at boot with no one logged in, and a launchd agent on macOS, which starts at login (turn on automatic login for a Mac with no one at it). Check it with `acmd service status`. If lingering couldn't be turned on, it says to run `sudo loginctl enable-linger $USER`. WSL2 needs systemd turned on first: add `[boot]` and `systemd=true` to `/etc/wsl.conf`, then run `wsl --shutdown` from Windows.
+
+2. **Sign in to Claude** on the host, as you would on any machine (run `claude` once).
+
+3. **Turn Hosting on, on all interfaces**, and note the host's fingerprint:
+
+   ```sh
+   acmd config set remote.host.listen all
+   acmd remote hosting on
+   acmd remote status
+   acmd remote identity
+   ```
+
+4. **On the client, add the host**, with the host's address and fingerprint:
+
+   ```sh
+   acmd remote add server server.local:7433 --fingerprint SHA256:…
+   ```
+
+   Or in the app: Settings → Remote → Known hosts → **Add Host…**.
+
+5. **On the host, approve the client**, checking that its fingerprint is the one the client showed:
+
+   ```sh
+   acmd remote requests
+   acmd remote requests approve <id> --name laptop
+   ```
+
+The host's sessions then show on the client, and you start new ones there with `acmd new --on server`, or ⇧⌘N in the app. The daemon keeps running across reboots, so Hosting and scheduled jobs do too. Upgrade with `brew upgrade acmd`: sessions keep running, and the next acmd command restarts the daemon as the new version.
+
 ## Over the internet with Cloudflare Tunnel
 
 To reach a host that isn't on your network, don't open a port on your router. A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) carries the connection instead: `cloudflared` on the host makes an outgoing connection to Cloudflare, and `cloudflared` on the client reaches it through a hostname on your domain. Hosting stays on **Localhost**, so nothing listens on the network.

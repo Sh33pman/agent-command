@@ -28,6 +28,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/procenv"
 	"github.com/brettmostert/agent-command/internal/report"
+	"github.com/brettmostert/agent-command/internal/service"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/version"
 	"github.com/brettmostert/agent-command/internal/wake"
@@ -37,19 +38,44 @@ import (
 // from help.
 
 func newDaemonCmd() *cobra.Command {
+	var foreground bool
 	cmd := &cobra.Command{
 		Use:   "daemon",
-		Short: "Stop or restart the background service (it starts automatically)",
-		Long: `acmd's background service tracks your sessions. It starts by itself
-when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
+		Short: "Stop or restart the daemon (it starts automatically)",
+		Long: `acmd's daemon tracks your sessions. The service (` + "`acmd service`" + `) runs it from boot or
+login; without the service, it starts by itself when needed. ` + "`acmd daemon`" + ` on its own starts
+the service, or without one runs the daemon in the foreground.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if os.Getenv(service.EnvVar) != "" {
+				startedByService = true
+				// Sessions mustn't inherit it: an acmd daemon run in one isn't the service's.
+				_ = os.Unsetenv(service.EnvVar)
+				// launchd may give its agents no TMPDIR, where the sockets live.
+				useUserTempDir()
+			} else if svc, ok := installedService(); ok && !foreground {
+				// Something wants the daemon: the app, the Linux UI, a hook or a command.
+				// With the service installed, it's the service's to run.
+				err := svc.Start(cmd.Context())
+				if err == nil {
+					fmt.Fprintln(cmd.ErrOrStderr(), "acmd daemon: started the service, which runs the daemon")
+					return nil
+				}
+				// Better a daemon outside the service than none (launchd has no login
+				// session to start it in, over SSH).
+				fmt.Fprintf(cmd.ErrOrStderr(), "acmd daemon: couldn't start the service (%v); running the daemon here\n", err)
+			}
 			p, err := paths.Default()
 			if err != nil {
 				return err
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+			ctx, end := context.WithCancel(ctx)
+			defer end()
+			endDaemon.Lock()
+			endDaemon.fn = end
+			endDaemon.Unlock()
 			if err := logDaemonOutput(ctx, p.DaemonLog()); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "acmd daemon: can't write to %s: %v\n", p.DaemonLog(), err)
 			}
@@ -100,6 +126,7 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			return err
 		},
 	}
+	cmd.Flags().BoolVar(&foreground, "foreground", false, "run the daemon here even when the service is installed (stop the service first)")
 	cmd.AddCommand(newDaemonStopCmd(), newDaemonRestartCmd())
 	return cmd
 }
@@ -107,19 +134,31 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 func newDaemonStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
-		Short: "Stop the background service",
-		Long: `Stop the background service. The app starts it again
-the next time they need it; close them first to keep it stopped.`,
+		Short: "Stop the daemon",
+		Long: `Stop the daemon, through the service when it's installed. Sessions keep
+running. The app, a hook or a command starts it again the next time it's
+needed; close the app first to keep it stopped.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths.Default()
 			if err != nil {
 				return err
 			}
+			was := false
+			if svc, ok := installedService(); ok {
+				was = svc.Running(cmd.Context())
+				if err := svc.Stop(cmd.Context()); err != nil {
+					return err
+				}
+			}
+			// A daemon outside the service too, if one runs.
 			if stopDaemon(cmd.Context(), p) {
-				fmt.Fprintln(cmd.OutOrStdout(), "Stopped the background service.")
+				was = true
+			}
+			if was {
+				fmt.Fprintln(cmd.OutOrStdout(), "Stopped the daemon.")
 			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "The background service wasn't running.")
+				fmt.Fprintln(cmd.OutOrStdout(), "The daemon wasn't running.")
 			}
 			return nil
 		},
@@ -129,29 +168,47 @@ the next time they need it; close them first to keep it stopped.`,
 func newDaemonRestartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restart",
-		Short: "Restart the background service (the app reconnects by itself)",
+		Short: "Restart the daemon (sessions keep running, and the app reconnects by itself)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			p, err := paths.Default()
 			if err != nil {
 				return err
 			}
-			was := stopDaemon(cmd.Context(), p)
-			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
 			defer cancel()
+			if svc, ok := installedService(); ok {
+				was := svc.Running(ctx)
+				// One outside the service would keep the service's from starting.
+				if outsidePid(ctx, p, svc) > 0 {
+					was = true
+					stopDaemon(ctx, p)
+				}
+				conn, err := restartService(ctx, p, svc)
+				if err != nil {
+					return err
+				}
+				_ = conn.Close()
+				fmt.Fprintf(cmd.OutOrStdout(), "%s the daemon through the service (%s).\n", startedVerb(was), version.Get().Version)
+				return nil
+			}
+			was := stopDaemon(cmd.Context(), p)
 			c, err := connect(ctx)
 			if err != nil {
 				return err
 			}
 			c.close()
-			verb := "Restarted"
-			if !was {
-				verb = "Started"
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s the background service (%s).\n", verb, version.Get().Version)
+			fmt.Fprintf(cmd.OutOrStdout(), "%s the daemon (%s).\n", startedVerb(was), version.Get().Version)
 			return nil
 		},
 	}
+}
+
+func startedVerb(was bool) string {
+	if was {
+		return "Restarted"
+	}
+	return "Started"
 }
 
 func newHookCmd() *cobra.Command {

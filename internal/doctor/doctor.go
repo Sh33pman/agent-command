@@ -20,6 +20,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
+	"github.com/brettmostert/agent-command/internal/service"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
@@ -141,6 +142,8 @@ type Env struct {
 	// InitPlan is what `acmd init` would change now (nil when setup can't
 	// be planned).
 	InitPlan func(ctx context.Context) (*setup.Plan, error)
+	// Service is the service that runs the daemon (nil: not checked).
+	Service func(ctx context.Context) service.Status
 }
 
 // Run performs every check.
@@ -150,6 +153,7 @@ func Run(ctx context.Context, e Env) *Report {
 	checkClaude(ctx, r, e, rec, initDone)
 	checkAntigravity(r, e, initDone)
 	checkDaemon(ctx, r, e)
+	checkService(ctx, r, e)
 	checkIdentity(r, e)
 	if initDone {
 		checkPlan(ctx, r, e)
@@ -162,6 +166,7 @@ const (
 	secClaude = "Claude Code"
 	secAgy    = "Antigravity"
 	secDaemon = "Daemon"
+	secSvc    = "Service"
 	secRemote = "Remote sessions"
 	fixInit   = "acmd doctor --fix"
 )
@@ -491,6 +496,45 @@ func checkDaemon(ctx context.Context, r *Report, e Env) {
 		checkRemote(r, e, d.Status.RemoteSessions)
 		checkRemoteHosts(r, d.RemoteHosts)
 	}
+}
+
+// checkService says whether the service that runs the daemon from boot or
+// login is installed and running, and runs this acmd.
+func checkService(ctx context.Context, r *Report, e Env) {
+	if e.Service == nil {
+		return
+	}
+	s := e.Service(ctx)
+	switch {
+	case !s.Supported:
+		r.add(secSvc, Info, "", "%s", firstSentence(s.Note))
+	case !s.Installed:
+		r.add(secSvc, Warn, "acmd service install", "not installed, so the daemon doesn't start at %s", startsAt(s))
+	case s.Binary != "" && !samePath(e, s.Binary, e.AcmdPath):
+		r.add(secSvc, Warn, "acmd service install", "runs %s, not this acmd", setup.Tilde(s.Binary, e.Home))
+	case !s.Running:
+		r.add(secSvc, Warn, "acmd daemon restart", "installed, but not running")
+	case s.Linger != nil && !*s.Linger:
+		r.add(secSvc, Warn, "sudo loginctl enable-linger "+e.Getenv("USER"),
+			"running (pid %d), but it starts at login, not at boot: lingering is off", s.Pid)
+	default:
+		r.add(secSvc, OK, "", "running (pid %d), from %s (%s)", s.Pid, startsAt(s), s.Manager)
+	}
+}
+
+func startsAt(s service.Status) string {
+	if s.Manager == service.Systemd {
+		return "boot"
+	}
+	return "login"
+}
+
+// firstSentence is s up to its first full stop.
+func firstSentence(s string) string {
+	if i := strings.Index(s, ". "); i >= 0 {
+		return s[:i+1]
+	}
+	return s
 }
 
 // checkRemoteHosts warns about Remote hosts that can't be used until someone

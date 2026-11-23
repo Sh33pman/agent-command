@@ -25,6 +25,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/service"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
@@ -47,6 +48,7 @@ type initOptions struct {
 	refreshEnv bool
 	hookBinary string // the path hooks run, when it isn't this binary's yet
 	noWake     bool   // don't offer waking the Mac afterwards (nobody's there to answer)
+	inDaemon   bool   // the init op, which runs in the daemon
 }
 
 // gather collects everything planning needs.
@@ -149,10 +151,11 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 		fmt.Fprintln(out, "acmd init:")
 	}
 	plan.Write(out, g.in.Home)
+	svcPending := writeServicePlan(out, g.in.AcmdPath, g.in.Home)
 	if o.dryRun {
 		return g.init, nil
 	}
-	if o.ask && len(plan.Pending()) > 0 {
+	if o.ask && (len(plan.Pending()) > 0 || svcPending) {
 		fmt.Fprint(out, "\nSet up acmd now? [Y/n] ")
 		line, _ := bufio.NewReader(in).ReadString('\n')
 		if a := strings.ToLower(strings.TrimSpace(line)); a != "" && a != "y" && a != "yes" {
@@ -181,7 +184,10 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	if err := setup.WriteRecord(g.paths.Setup(), rec); err != nil {
 		return false, err
 	}
-	if len(plan.Pending()) == 0 {
+	// Last: the service's daemon reads what init just wrote. The cask's step
+	// (--hook-binary) runs before the app is in place, so it doesn't start it.
+	notes, svcErr := installService(ctx, g.paths, g.in.AcmdPath, serviceOptions{noStart: o.hookBinary != "", inDaemon: o.inDaemon})
+	if len(plan.Pending()) == 0 && !svcPending {
 		fmt.Fprintln(out, "\nAlready set up; nothing changed.")
 	} else {
 		fmt.Fprintln(out, "\nDone.")
@@ -191,6 +197,12 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	}
 	for _, a := range plan.After {
 		fmt.Fprintln(out, a)
+	}
+	for _, n := range notes {
+		fmt.Fprintln(out, n)
+	}
+	if svcErr != nil {
+		fmt.Fprintf(out, "Couldn't start the service (%v). The daemon starts when something needs it; see `acmd service status`.\n", svcErr)
 	}
 	// Homebrew's install has no terminal to ask in (it passes --hook-binary).
 	if o.hookBinary == "" && !o.noWake {
@@ -256,6 +268,11 @@ func runBrewUninstall(cmd *cobra.Command) error {
 		p, err := paths.Default()
 		if err != nil {
 			return err
+		}
+		// The next thing that needs the daemon starts the new one, through the
+		// service when it's installed.
+		if svc, ok := installedService(); ok {
+			_ = svc.Stop(cmd.Context())
 		}
 		stopDaemon(cmd.Context(), p)
 		return nil
@@ -396,6 +413,10 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 		fmt.Fprintln(out, "acmd uninstall:")
 	}
 	plan.Write(out, home)
+	svc, svcInstalled := installedService()
+	if svcInstalled {
+		fmt.Fprintf(out, "  remove    %s\n            the service that runs the daemon\n", setup.Tilde(svc.File(), home))
+	}
 	fmt.Fprintln(out, "  stop      the acmd daemon, and end running sessions (Claude conversations can be resumed)")
 	wakeRule := ruleInstalled()
 	if wakeRule {
@@ -417,6 +438,12 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	// Before ending sessions: without this, their last hooks restart the daemon.
 	if err := os.Remove(p.Setup()); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	}
+	// Before stopping the daemon: the service would start it again.
+	if svcInstalled {
+		if _, err := svc.Uninstall(cmd.Context()); err != nil {
+			fmt.Fprintf(out, "Couldn't remove the service: %v\n", err)
+		}
 	}
 	stopDaemon(cmd.Context(), p)
 	switch ended := endSessions(p); ended {
@@ -559,4 +586,39 @@ func daemonRunning(parent context.Context, p paths.Paths) bool {
 		_ = conn.Close()
 	}
 	return err == nil
+}
+
+// writeServicePlan prints what init does to the service, as the plan prints
+// files, and says whether that changes anything.
+func writeServicePlan(out io.Writer, binary, home string) bool {
+	svc, err := localService()
+	if err != nil {
+		return false
+	}
+	mgr, err := svc.Manager()
+	if err != nil {
+		fmt.Fprintf(out, "  %-9s the service: %s\n", "skip", firstSentence(unsupportedText(err)))
+		return false
+	}
+	action := "create"
+	if old, err := svc.ReadFile(svc.File()); err == nil {
+		action = "modify"
+		if string(old) == string(svc.Definition(binary)) {
+			action = "unchanged"
+		}
+	}
+	when := "from login"
+	if mgr == service.Systemd {
+		when = "from boot (with lingering)"
+	}
+	fmt.Fprintf(out, "  %-9s %s\n            the service, which runs the daemon %s (%s)\n", action, setup.Tilde(svc.File(), home), when, mgr)
+	return action != "unchanged"
+}
+
+// firstSentence is s up to its first full stop.
+func firstSentence(s string) string {
+	if i := strings.Index(s, ". "); i >= 0 {
+		return s[:i+1]
+	}
+	return s
 }

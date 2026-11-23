@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/service"
+	"github.com/brettmostert/agent-command/internal/service/servicetest"
 	"github.com/brettmostert/agent-command/internal/wake"
 )
 
@@ -38,6 +40,10 @@ func TestMain(m *testing.M) {
 		return errors.New("tests don't run anything as root")
 	}
 	ruleInstalled = func() bool { return false }
+	// No service manager, unless a test brings a fake one (withService).
+	localService = func() (service.Env, error) {
+		return servicetest.New("plan9", os.Getenv("HOME")).Env(), nil
+	}
 	code := m.Run()
 	_ = os.RemoveAll(sandbox)
 	os.Exit(code)

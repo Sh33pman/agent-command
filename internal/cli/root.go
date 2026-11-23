@@ -25,7 +25,7 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.AddCommand(newReportCmd(), newVersionCmd(), newPathsCmd(), newDaemonCmd(), newHookCmd(),
+	root.AddCommand(newReportCmd(), newVersionCmd(), newPathsCmd(), newDaemonCmd(), newServiceCmd(), newHookCmd(),
 		newListCmd(), newScreenCmd(), newRenameCmd(), newDescribeCmd(), newFinishCmd(), newArchiveCmd(), newUnarchiveCmd(), newMoveCmd(),
 		newGroupCmd(), newViewModeCmd(), newSortCmd(), newFocusGroupCmd(),
 		newInitCmd(), newUninstallCmd(), newEditorCmd(), newAgentRemoteControlCmd(), newRemoteControlCmd(), newConfigCmd(), newKeysCmd(), newDoctorCmd(),

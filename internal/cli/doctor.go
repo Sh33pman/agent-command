@@ -19,6 +19,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/doctor"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/service"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/version"
 )
@@ -97,8 +98,17 @@ func runFix(cmd *cobra.Command) error {
 		return err
 	}
 	if d.Mismatch != "" || (d.Binary != "" && !isExecutableFile(d.Binary)) {
+		if svc, ok := installedService(); ok {
+			conn, err := restartService(cmd.Context(), p, svc)
+			if err != nil {
+				return err
+			}
+			_ = conn.Close()
+			fmt.Fprintln(cmd.OutOrStdout(), "Restarted the old daemon through the service.")
+			return nil
+		}
 		stopDaemon(cmd.Context(), p)
-		fmt.Fprintln(cmd.OutOrStdout(), "Stopped the old background service.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Stopped the old daemon.")
 	}
 	return nil
 }
@@ -128,6 +138,13 @@ func doctorEnv() (doctor.Env, error) {
 		Output:    versionOutput,
 		HasBundle: hasBundle,
 		Daemon:    func(ctx context.Context) (doctor.DaemonState, error) { return daemonState(ctx, p) },
+		Service: func(ctx context.Context) service.Status {
+			svc, err := localService()
+			if err != nil {
+				return service.Status{Note: err.Error()}
+			}
+			return svc.Status(ctx)
+		},
 		InitPlan: func(ctx context.Context) (*setup.Plan, error) {
 			g, err := gather(ctx, false)
 			if err != nil {
@@ -202,7 +219,7 @@ func healthFiles() []string {
 // has a minimal one). Nobody's there to answer questions.
 func daemonInit(ctx context.Context) (ipc.InitResult, error) {
 	var out bytes.Buffer
-	done, err := runInit(ctx, strings.NewReader(""), &out, initOptions{refreshEnv: true, noWake: true})
+	done, err := runInit(ctx, strings.NewReader(""), &out, initOptions{refreshEnv: true, noWake: true, inDaemon: true})
 	return ipc.InitResult{Output: out.String(), Done: done}, err
 }
 

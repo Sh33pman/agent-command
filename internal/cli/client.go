@@ -78,6 +78,16 @@ func connect(ctx context.Context) (*client, error) {
 	}
 	var mismatch *ipc.ErrVersionMismatch
 	if errors.As(err, &mismatch) {
+		// After an upgrade: the service restarts its daemon, so none runs
+		// outside it.
+		if svc, ok := installedService(); ok {
+			_ = conn.Close()
+			conn, err := restartService(ctx, p, svc)
+			if err != nil {
+				return nil, err
+			}
+			return &client{conn: conn, host: targetHost}, nil
+		}
 		_ = conn.Call(ipc.OpShutdown, nil, nil)
 		_ = conn.Close()
 		waitDaemonGone(ctx, p)

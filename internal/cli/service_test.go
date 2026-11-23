@@ -33,6 +33,7 @@ func withService(t *testing.T, goos string) *servicetest.Fake {
 }
 
 func TestServiceInstallStatusUninstall(t *testing.T) {
+	sessionsHere(t)
 	newSandbox(t)
 	f := withService(t, "linux")
 	out, _, err := execute(t, "", "service", "status")
@@ -101,6 +102,7 @@ func TestServiceInstallExplainsWSLWithoutSystemd(t *testing.T) {
 }
 
 func TestInitInstallsTheService(t *testing.T) {
+	sessionsHere(t)
 	for _, goos := range []string{"linux", "darwin"} {
 		t.Run(goos, func(t *testing.T) {
 			newSandbox(t)
@@ -357,6 +359,7 @@ func TestInitOpHandsOverAfterAnswering(t *testing.T) {
 }
 
 func TestDoctorReportsTheService(t *testing.T) {
+	sessionsHere(t)
 	newSandbox(t)
 	f := withService(t, "linux")
 	out, _, _ := execute(t, "", "doctor")

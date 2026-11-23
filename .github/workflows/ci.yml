@@ -53,6 +53,8 @@ jobs:
           go-version-file: go.mod
       - name: lint the macOS build
         run: make lint CHECK_GOOS=darwin
+      - name: lint the Windows build
+        run: make lint CHECK_GOOS=windows
 
   swift:
     runs-on: macos-26
@@ -162,6 +164,38 @@ jobs:
           path: coverage.out
           retention-days: 3
           if-no-files-found: ignore
+
+  # Windows runs a client-only daemon: it connects to hosts, and runs no
+  # sessions of its own. This builds both architectures, vets, and runs the Go
+  # tests that apply there (the ones that need a pty or Unix signals skip, and
+  # say why). No coverage gate: the Unix jobs gate all the code. Plain go
+  # commands, as the Windows runner has no make.
+  windows:
+    runs-on: windows-latest
+    if: >-
+      !(startsWith(github.head_ref, 'release-please--')
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && github.event.pull_request.user.login == 'brettmostert-release[bot]')
+      && !startsWith(github.event.head_commit.message, 'chore(main): release')
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build (amd64 and arm64)
+        shell: bash
+        run: |
+          GOARCH=amd64 go build ./...
+          GOARCH=arm64 go build ./...
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -shuffle=on ./...
 
   linux:
     runs-on: ubuntu-latest

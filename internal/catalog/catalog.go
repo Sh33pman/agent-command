@@ -72,6 +72,10 @@ type Op struct {
 	// HostOnly: only callers on the host itself, never over the network
 	// (hooks, stopping the daemon, the admin password for waking).
 	HostOnly bool
+	// NeedsSessions: it needs this machine to run sessions, or what goes
+	// with them here (hooks, jobs, Hosting, speech, the editor). A
+	// client-only daemon (Windows) answers not_supported.
+	NeedsSessions bool
 	// RunsCode: it starts a process on the host or types into one, so a
 	// caller such as an MCP client can be kept from it unless allowed.
 	RunsCode bool

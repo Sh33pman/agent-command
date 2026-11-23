@@ -397,7 +397,7 @@ func nameOf(s *core.Session) string {
 
 func isExecutableFile(p string) bool {
 	st, err := os.Stat(p)
-	return err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0
+	return err == nil && paths.IsExecutable(st)
 }
 
 func homeDir() string {

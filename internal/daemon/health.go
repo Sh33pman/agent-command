@@ -186,6 +186,11 @@ func hostingHealth(sessions []*core.Session, remote *ipc.RemoteStatus) *ipc.Heal
 
 // features say what this host and device can do.
 func (d *Daemon) features() *ipc.Features {
+	// A client-only daemon starts nothing here: no harnesses, Hosting, speech
+	// or editor.
+	if d.cfg.ClientOnly {
+		return &ipc.Features{Host: ipc.HostFeatures{OS: runtime.GOOS, HarnessKinds: []string{}}}
+	}
 	var kinds []string
 	for _, h := range d.harnessList(context.Background()) {
 		if !slices.Contains(kinds, h.Kind) && d.installed(h) {
@@ -193,7 +198,7 @@ func (d *Daemon) features() *ipc.Features {
 		}
 	}
 	kinds = append(kinds, core.HarnessTerminal)
-	f := &ipc.Features{Host: ipc.HostFeatures{OS: runtime.GOOS, HarnessKinds: kinds, Wake: d.cfg.Waker != nil, Hosting: d.remote != nil}}
+	f := &ipc.Features{Host: ipc.HostFeatures{OS: runtime.GOOS, HarnessKinds: kinds, Sessions: true, Wake: d.cfg.Waker != nil, Hosting: d.remote != nil}}
 	f.Device.Speech = d.speaker().Supported()
 	f.Device.Editor = d.config().Editor.Preset != ""
 	return f

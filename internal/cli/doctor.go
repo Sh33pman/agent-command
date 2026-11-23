@@ -125,19 +125,21 @@ func doctorEnv() (doctor.Env, error) {
 	exe, _ := executable()
 	pathList := loginPath()
 	return doctor.Env{
-		Home:      home,
-		Paths:     p,
-		Version:   version.Get().Version,
-		AcmdPath:  setup.StableBinary(invokedAs, exe, exec.LookPath),
-		Getenv:    os.Getenv,
-		Read:      os.ReadFile,
-		Stat:      os.Stat,
-		Resolve:   filepath.EvalSymlinks,
-		LoginPath: pathList,
-		LookPath:  func(n string) (string, error) { return setup.LookPathIn(n, pathList) },
-		Output:    versionOutput,
-		HasBundle: hasBundle,
-		Daemon:    func(ctx context.Context) (doctor.DaemonState, error) { return daemonState(ctx, p) },
+		ClientOnly:   clientOnly,
+		OthersCanUse: othersCanUse,
+		Home:         home,
+		Paths:        p,
+		Version:      version.Get().Version,
+		AcmdPath:     setup.StableBinary(invokedAs, exe, exec.LookPath),
+		Getenv:       os.Getenv,
+		Read:         os.ReadFile,
+		Stat:         os.Stat,
+		Resolve:      filepath.EvalSymlinks,
+		LoginPath:    pathList,
+		LookPath:     func(n string) (string, error) { return setup.LookPathIn(n, pathList) },
+		Output:       versionOutput,
+		HasBundle:    hasBundle,
+		Daemon:       func(ctx context.Context) (doctor.DaemonState, error) { return daemonState(ctx, p) },
 		Service: func(ctx context.Context) service.Status {
 			svc, err := localService()
 			if err != nil {

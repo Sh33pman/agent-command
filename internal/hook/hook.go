@@ -17,7 +17,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -263,7 +262,7 @@ func SpawnDaemon(p paths.Paths) error {
 	cmd := exec.Command(exe, "daemon") // #nosec G204 -- our own binary
 	cmd.Env = procenv.Scrub(os.Environ())
 	cmd.Stdout, cmd.Stderr = logf, logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proc.Detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -25,6 +26,9 @@ func TestNameFromPrompt(t *testing.T) {
 }
 
 func TestDefaultName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("names come from Unix folders here; Windows names no sessions of its own")
+	}
 	tests := []struct {
 		title, prompt, cwd string
 		n                  int

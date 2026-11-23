@@ -63,7 +63,7 @@ func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, e
 		return ipc.Snapshot{}, err
 	}
 	var remote *ipc.RemoteStatus
-	if d.remote != nil {
+	if d.remote != nil && !d.cfg.ClientOnly { // a client-only daemon has no Hosting
 		st := d.remote.Status()
 		remote = &st
 	}

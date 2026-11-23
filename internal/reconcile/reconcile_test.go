@@ -3,7 +3,6 @@ package reconcile
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -205,15 +204,6 @@ func TestListerError(t *testing.T) {
 	l.err = errors.New("claude not found")
 	if _, err := r.Once(ctx); err == nil {
 		t.Error("expected error")
-	}
-}
-
-func TestPidAlive(t *testing.T) {
-	if !pidAlive(os.Getpid()) {
-		t.Error("own pid should be alive")
-	}
-	if pidAlive(999999) {
-		t.Error("pid 999999 should not be alive")
 	}
 }
 

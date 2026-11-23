@@ -11,7 +11,7 @@ import (
 
 // Local is the catalog of the daemon's local ops: the unix socket's, and
 // later every transport's (D1).
-var Local = mustNew(withOwnHosts(localOps())...)
+var Local = mustNew(withSessions(withOwnHosts(localOps()))...)
 
 // ownHostOps are this machine's ops on its own Remote hosts.
 var ownHostOps = []string{ipc.OpRemoteHosts, ipc.OpRemoteHostAdd, ipc.OpRemoteHostEdit, ipc.OpRemoteHostRemove,
@@ -21,6 +21,32 @@ var ownHostOps = []string{ipc.OpRemoteHosts, ipc.OpRemoteHostAdd, ipc.OpRemoteHo
 func withOwnHosts(ops []Op) []Op {
 	for i := range ops {
 		ops[i].OwnHosts = slices.Contains(ownHostOps, ops[i].Name)
+	}
+	return ops
+}
+
+// sessionOps need this machine to run sessions, or what goes with them:
+// starting one here, hooks, jobs and the folders they start in, the
+// conversations to resume, harnesses' hooks, Hosting, waking, speech and the
+// editor. A client-only daemon (Windows) answers not_supported for them. Ops
+// on sessions already here (rename, attach, the Inbox) aren't listed: on a
+// client-only daemon the only sessions are a host's.
+var sessionOps = []string{ipc.OpEvent, ipc.OpNew, ipc.OpConversations,
+	ipc.OpJobSave, ipc.OpJobCheck, ipc.OpJobPromptRead, ipc.OpJobPromptWrite, ipc.OpJobDelete, ipc.OpJobPause,
+	ipc.OpJobRun, ipc.OpJobRuns, ipc.OpHarnessSettings, ipc.OpWakeSet,
+	ipc.OpFoldersRecent, ipc.OpFoldersList, ipc.OpFoldersMkdir,
+	ipc.OpHarnessAdd, ipc.OpHarnessUpdate, ipc.OpHarnessRemove,
+	ipc.OpRemoteStatus, ipc.OpRemoteHosting, ipc.OpRemoteReload, ipc.OpRemoteClients, ipc.OpRemoteRequests,
+	ipc.OpRemoteApprove, ipc.OpRemoteDeny, ipc.OpRemoteAuthorize, ipc.OpRemoteRevoke, ipc.OpRemoteDisconnect,
+	ipc.OpRemoteRename, ipc.OpRemoteScope,
+	ipc.OpSpeechSay, ipc.OpSpeechStop, ipc.OpSpeechStatus, ipc.OpSpeechInstall,
+	ipc.OpEditorOpen}
+
+func withSessions(ops []Op) []Op {
+	for i := range ops {
+		if slices.Contains(sessionOps, ops[i].Name) {
+			ops[i].NeedsSessions = true
+		}
 	}
 	return ops
 }

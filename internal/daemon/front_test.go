@@ -30,6 +30,7 @@ func (f *fakeFront) get(string) (term.Front, bool) {
 }
 
 func TestTerminalFallsBackToWhatsInFront(t *testing.T) {
+	sessionsHere(t)
 	old := unknownAfter
 	unknownAfter = 150 * time.Millisecond
 	t.Cleanup(func() { unknownAfter = old })

@@ -167,6 +167,7 @@ func (f folderAgents) Remove(context.Context, string) error              { retur
 // Each Claude harness's history comes from its own folder only, and Claude's
 // background sessions are listed in every folder.
 func TestHarnessFoldersHistoryAndAgents(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	home := t.TempDir()
 	std, work := t.TempDir(), filepath.Join(home, ".claude-work")

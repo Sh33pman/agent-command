@@ -8,12 +8,11 @@ package reconcile
 
 import (
 	"context"
-	"errors"
-	"syscall"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/proc"
 )
 
 // Lister lists Claude sessions (claudecli.CLI.Agents in production).
@@ -314,14 +313,9 @@ func (r *Reconciler) defaults() {
 		r.StartupGrace = 30 * time.Second
 	}
 	if r.Alive == nil {
-		r.Alive = pidAlive
+		r.Alive = proc.Alive
 	}
 	if r.disagreeSince == nil {
 		r.disagreeSince = map[string]time.Time{}
 	}
-}
-
-func pidAlive(pid int) bool {
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
 }

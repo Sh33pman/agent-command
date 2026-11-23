@@ -16,13 +16,13 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/brettmostert/agent-command/internal/daemon"
-
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/harness"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/proc"
 	"github.com/brettmostert/agent-command/internal/procenv"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/term"
@@ -255,7 +255,7 @@ func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
 	c := exec.Command(exe, args...) // #nosec G204 -- our own binary
 	c.Env = procenv.Scrub(os.Environ())
 	c.Stdout, c.Stderr = logf, logf
-	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proc.Detach(c)
 	if err := c.Start(); err != nil {
 		return err
 	}
@@ -323,7 +323,7 @@ func attachHost(parent context.Context, socket, mode string, detach byte) error 
 	if !term.Running(socket) {
 		return errNoHost
 	}
-	ctx, cancel := signal.NotifyContext(parent, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, cancel := signal.NotifyContext(parent, detachSignals...)
 	defer cancel()
 	fd := os.Stdin.Fd()
 	if state, err := xterm.MakeRaw(fd); err == nil {
@@ -357,11 +357,9 @@ func attachHost(parent context.Context, socket, mode string, detach byte) error 
 		return rows, cols
 	}
 	sizes := make(chan [2]int, 1)
-	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
-	defer signal.Stop(winch)
+	resized := watchResize(ctx, size)
 	go func() {
-		for range winch {
+		for range resized {
 			r, c := size()
 			select {
 			case sizes <- [2]int{r, c}:
@@ -372,7 +370,7 @@ func attachHost(parent context.Context, socket, mode string, detach byte) error 
 	// Raw mode hands Ctrl+C/Ctrl+Z to the CLI as input; signals that still
 	// arrive (sent to the process group) are ignored.
 	ignored := make(chan os.Signal, 4)
-	signal.Notify(ignored, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTSTP)
+	signal.Notify(ignored, ignoredWhileAttached...)
 	defer signal.Stop(ignored)
 	go func() {
 		for range ignored {

@@ -1,0 +1,3 @@
+# Text files are LF everywhere, Windows checkouts too: golden files and wire
+# fixtures are compared byte for byte, and scripts run under sh.
+* text=auto eol=lf

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/brettmostert/agent-command/internal/paths"
 )
 
 // EditorPreset is a known editor.
@@ -87,7 +89,7 @@ func LookPathIn(file, pathList string) (string, error) {
 
 func isExecutable(path string) bool {
 	st, err := os.Stat(path)
-	return err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0
+	return err == nil && paths.IsExecutable(st)
 }
 
 // ParseCommand splits a custom editor command shell-style (quotes and

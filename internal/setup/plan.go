@@ -228,7 +228,7 @@ func writeAtomic(path string, data []byte, mode os.FileMode, force bool) error {
 
 // Tilde shortens a path under home to ~/….
 func Tilde(path, home string) string {
-	if home != "" && (path == home || strings.HasPrefix(path, home+"/")) {
+	if home != "" && (path == home || strings.HasPrefix(path, home+"/") || strings.HasPrefix(path, home+string(filepath.Separator))) {
 		return "~" + strings.TrimPrefix(path, home)
 	}
 	return path

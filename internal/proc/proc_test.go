@@ -9,6 +9,9 @@ import (
 )
 
 func TestLookupThisProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Lookup isn't built for Windows: nothing there calls it")
+	}
 	p, err := Lookup(os.Getpid())
 	if err != nil {
 		t.Fatal(err)

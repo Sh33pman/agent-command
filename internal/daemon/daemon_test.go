@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -212,7 +213,8 @@ func TestDaemonSingleInstanceAndShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := st.Mode().Perm(); perm != 0o600 {
+	// On Windows the folder's access list guards the socket (internal/paths).
+	if perm := st.Mode().Perm(); perm != 0o600 && runtime.GOOS != "windows" {
 		t.Errorf("socket permissions %o, want 600", perm)
 	}
 
@@ -285,6 +287,7 @@ func (f *fakeAgents) add(a claudecli.Agent) {
 }
 
 func TestDaemonBackgroundLoops(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	transcript := filepath.Join(p.StateDir, "t.jsonl")
 	must(t, p.Ensure())

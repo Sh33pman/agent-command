@@ -15,6 +15,9 @@ import (
 // Input is everything PlanInit and PlanUninstall need, gathered by the
 // caller (so planning has no side effects and is testable).
 type Input struct {
+	// ClientOnly is a client-only daemon's machine (Windows): it runs no
+	// sessions, so init sets up acmd's settings and nothing for the agents.
+	ClientOnly bool
 	Home       string
 	ConfigFile string // acmd's config.toml
 	EnvFile    string // env.json
@@ -51,6 +54,9 @@ func (in Input) ClaudeDirs() []string {
 // PlanInit plans `acmd init`.
 func PlanInit(in Input) (*Plan, error) {
 	p := &Plan{}
+	if in.ClientOnly {
+		return p, planConfig(p, in)
+	}
 	if err := planClaude(p, in, true); err != nil {
 		return nil, err
 	}

@@ -172,13 +172,17 @@ type Features struct {
 	Device DeviceFeatures `json:"device"`
 }
 
-// HostFeatures: its OS, the agents installed, and whether it can wake for
-// jobs and host Remote sessions.
+// HostFeatures: its OS, the agents installed, whether it runs sessions of its
+// own, and whether it can wake for jobs and host Remote sessions.
 type HostFeatures struct {
-	OS           string   `json:"os"`            // runtime.GOOS: "darwin", "linux"
+	OS           string   `json:"os"`            // runtime.GOOS: "darwin", "linux", "windows"
 	HarnessKinds []string `json:"harness_kinds"` // the kinds an installed harness has, and terminal
-	Wake         bool     `json:"wake"`
-	Hosting      bool     `json:"hosting"`
+	// Sessions: it runs sessions here. A client-only daemon (Windows) doesn't:
+	// it only uses its hosts', and answers not_supported for the ops that
+	// need sessions here (the catalog's needs_sessions).
+	Sessions bool `json:"sessions"`
+	Wake     bool `json:"wake"`
+	Hosting  bool `json:"hosting"`
 }
 
 // DeviceFeatures: what the machine in front of the person can do.

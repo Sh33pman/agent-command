@@ -5,7 +5,7 @@ import Testing
 
 @Test func theSnapshotSaysWhatTheHostCanDoAndWhatsNew() throws {
     let json = #"""
-        {"dismissed": ["wake"], "features": {"host": {"os": "darwin", "harness_kinds": ["claude"], "wake": true, "hosting": true},
+        {"dismissed": ["wake"], "features": {"host": {"os": "darwin", "harness_kinds": ["claude"], "sessions": true, "wake": true, "hosting": true},
          "device": {"speech": true, "editor": false}},
          "update": {"current": "0.64.0", "latest": "0.65.0", "url": "https://example.com/r"},
          "health": [{"id": "remote.hosting_off", "title": "Hosting is off", "detail": "d",
@@ -13,7 +13,7 @@ import Testing
         """#
     let s = try JSONDecoder().decode(Snapshot.self, from: Data(json.utf8))
     #expect(s.dismissed == ["wake"])
-    #expect(s.features == HostFeatures(host: .init(os: "darwin", harnessKinds: ["claude"], wake: true, hosting: true), device: .init(speech: true)))
+    #expect(s.features == HostFeatures(host: .init(os: "darwin", harnessKinds: ["claude"], sessions: true, wake: true, hosting: true), device: .init(speech: true)))
     #expect(s.update?.latest == "0.65.0" && s.update?.releaseURL?.absoluteString == "https://example.com/r")
     #expect(s.health?.first?.fix?.data == ["enabled": .bool(true)] && s.health?.first?.fix?.title == "Turn On Hosting")
     #expect(UpdateState(current: "1").releaseURL == nil)

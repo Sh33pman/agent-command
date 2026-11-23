@@ -1,6 +1,7 @@
 package core
 
 import (
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -33,6 +34,9 @@ func TestHarnessNames(t *testing.T) {
 // Claude's standard folder leaves the environment as it is, so Claude keeps
 // using ~/.claude.json and its usual sign-in.
 func TestHarnessFolderAndEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a harness's folder is a Unix path here; Windows runs no harnesses")
+	}
 	env := []string{"PATH=/bin", "CLAUDE_CONFIG_DIR=/old"}
 	getenv := func(string) string { return "" }
 	work := Harness{Kind: HarnessClaude, ConfigDir: "~/.claude-work"}

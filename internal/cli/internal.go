@@ -97,27 +97,13 @@ the service, or without one runs the daemon in the foreground.`,
 				logger.Printf("config: %v (notifications off)", err)
 			}
 			cfg.ConfigFile = p.Config()
-			cfg.ResolveEditor = resolveEditor
-			// Sessions run Claude or agy, whichever is there: starting a host checks
-			// for the one it runs.
-			cfg.Hosts = execHosts{paths: p}
-			cfg.Installed = installedHarnesses(p)
-			cfg.ClaudeFor = claudeFor(p)
-			cfg.HarnessesChanged = hooksForHarnesses
-			cfg.AgentHelp = harnessHelp(p)
-			cfg.CheckHealth = checkHealth
-			cfg.HealthFiles = healthFiles()
 			cfg.Init = daemonInit
 			cfg.Doctor = daemonDoctor
-			cfg.OpenEditor = func(ctx context.Context, r ipc.EditorOpen) error {
-				return openInEditor(ctx, r.In, r.Path, r.Line, r.Column)
-			}
-			cfg.OSVersion = macOSVersion
-			if claude, env, err := claudeCommand(p); err == nil {
-				cli := claudecli.New(claude, env)
-				cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli
+			if clientOnly {
+				// Windows: it connects to hosts and runs no sessions of its own.
+				cfg.ClientOnly = true
 			} else {
-				logger.Printf("claude not found; reconciliation disabled: %v", err)
+				localSessions(&cfg, p, logger)
 			}
 			err = daemon.Run(ctx, cfg)
 			if errors.Is(err, daemon.ErrAlreadyRunning) {
@@ -378,4 +364,30 @@ func helpText(bin string, env []string) string {
 		return ""
 	}
 	return string(out)
+}
+
+// localSessions wires what a daemon that runs sessions here needs: hosts for
+// its sessions, the agents and their hooks, health checks, the editor, and
+// claude's CLI for reconciling.
+func localSessions(cfg *daemon.Config, p paths.Paths, logger *log.Logger) {
+	cfg.ResolveEditor = resolveEditor
+	// Sessions run Claude or agy, whichever is there: starting a host checks
+	// for the one it runs.
+	cfg.Hosts = execHosts{paths: p}
+	cfg.Installed = installedHarnesses(p)
+	cfg.ClaudeFor = claudeFor(p)
+	cfg.HarnessesChanged = hooksForHarnesses
+	cfg.AgentHelp = harnessHelp(p)
+	cfg.CheckHealth = checkHealth
+	cfg.HealthFiles = healthFiles()
+	cfg.OpenEditor = func(ctx context.Context, r ipc.EditorOpen) error {
+		return openInEditor(ctx, r.In, r.Path, r.Line, r.Column)
+	}
+	cfg.OSVersion = macOSVersion
+	if claude, env, err := claudeCommand(p); err == nil {
+		cli := claudecli.New(claude, env)
+		cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli
+	} else {
+		logger.Printf("claude not found; reconciliation disabled: %v", err)
+	}
 }

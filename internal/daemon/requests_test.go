@@ -33,6 +33,7 @@ func sessionCount(t *testing.T, c *ipc.Conn) int {
 // time, and a retry after the daemon restarts all get the first result.
 // Past the window, or after a failure, it runs again.
 func TestARequestIDRunsOnce(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	var later atomic.Int64 // how far the clock has moved on
 	now := func() time.Time { return time.Now().Add(time.Duration(later.Load())) }

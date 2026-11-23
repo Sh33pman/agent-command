@@ -1,3 +1,5 @@
+//go:build !windows
+
 // Command fakeclaude stands in for `claude` in tests.
 // It keeps its sessions in $FAKECLAUDE_STATE (a JSON file) and emulates:
 //

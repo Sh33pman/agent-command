@@ -32,6 +32,7 @@ func (s *sent) all() string {
 
 // inboxSetup starts a daemon with two hosted sessions, and sends events to them.
 func inboxSetup(t *testing.T) (*ipc.Conn, *sent, *ipc.Session, *ipc.Session, func(*ipc.Session, string, string)) {
+	sessionsHere(t)
 	t.Helper()
 	p := testPaths(t)
 	typed := &sent{}

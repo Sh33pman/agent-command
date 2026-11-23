@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
 	"github.com/brettmostert/agent-command/internal/term"
+	"github.com/brettmostert/agent-command/internal/term/termtest"
 )
 
 func must(t *testing.T, err error) {
@@ -256,10 +258,19 @@ func (r *remoteHost) authorize(fp string) {
 	must(r.t, err)
 }
 
-// terminal runs a shell under a term.Server for session id.
+// terminal runs a shell under a term.Server for session id (on Windows,
+// termtest's stand-in).
 func (r *remoteHost) terminal(id string) string {
 	r.t.Helper()
 	sock := filepath.Join(r.dir, id+".sock")
+	if runtime.GOOS == "windows" {
+		// No pty there (no ConPTY host): a stand-in that shows what's typed.
+		termtest.Echo(r.t, sock)
+		r.b.mu.Lock()
+		r.b.sockets[id] = sock
+		r.b.mu.Unlock()
+		return sock
+	}
 	ready := make(chan struct{})
 	srv := &term.Server{Socket: sock, Shell: []string{"/bin/sh"}, Dir: r.dir, Env: []string{"PS1=$ ", "PATH=/usr/bin:/bin"},
 		Ready: func() { close(ready) }}
@@ -494,5 +505,16 @@ func (b *daemon) Subscribe(ctx context.Context, _ ipc.SubscribeRequest, send fun
 		case <-ctx.Done():
 			return nil
 		}
+	}
+}
+
+// realShell skips a test that types into the host's shell and reads what it
+// works out, its replay or its screen: that needs sh under a pty, which
+// Windows has none of (no ConPTY host). An attach through this machine's
+// socket runs there in the daemon's TestSessionsFromARemoteHost.
+func realShell(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("needs the host's shell under a pty; Windows has none")
 	}
 }

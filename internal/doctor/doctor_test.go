@@ -3,9 +3,11 @@ package doctor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,6 +17,16 @@ import (
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
+
+// sessionsHere skips a test of a machine that runs sessions: its agents,
+// hooks, login shell and Hosting. Windows is client-only, and its doctor is
+// TestClientOnlyLeavesOutTheAgents.
+func sessionsHere(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("checks a machine that runs sessions; Windows is client-only")
+	}
+}
 
 // fake is a temp home set up the way `acmd init` leaves it.
 type fake struct {
@@ -40,9 +52,9 @@ func newFake(t *testing.T) *fake {
 		f.write(filepath.Join(bin, name), "#!/bin/sh\n", 0o755)
 	}
 	p := f.paths()
-	f.write(p.Setup(), `{"version":"0.7.0","at":"2026-10-31T10:00:00Z","acmd_path":"`+f.acmd+`","claude_dir":"`+
-		filepath.Join(home, ".claude")+`"}`, 0o600)
-	f.write(p.Env(), `{"PATH":"`+bin+`"}`, 0o600)
+	f.write(p.Setup(), `{"version":"0.7.0","at":"2026-10-31T10:00:00Z","acmd_path":`+jsonText(f.acmd)+`,"claude_dir":`+
+		jsonText(filepath.Join(home, ".claude"))+`}`, 0o600)
+	f.write(p.Env(), `{"PATH":`+jsonText(bin)+`}`, 0o600)
 	cfg, err := config.Set(config.Template, "editor", "preset", "vscode")
 	must(t, err)
 	cfg, err = config.Set(cfg, "editor", "resolved", filepath.Join(bin, "code"))
@@ -53,6 +65,20 @@ func newFake(t *testing.T) *fake {
 	f.write(filepath.Join(home, ".claude/settings.json"), string(settings), 0o600)
 	must(t, os.Chmod(p.StateDir, 0o700))
 	return f
+}
+
+// othersCanUse is what the CLI gives doctor on this OS.
+func othersCanUse() func(string) (string, string, error) {
+	if runtime.GOOS == "windows" {
+		return paths.OthersCanRead
+	}
+	return nil
+}
+
+// jsonText is s as a JSON string: a Windows path's backslashes escaped.
+func jsonText(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func (f *fake) paths() paths.Paths {
@@ -80,8 +106,10 @@ func (f *fake) Env() Env {
 			return nil, errors.New("exit status 1")
 		},
 		HasBundle: func(string) bool { return false },
-		Daemon:    func(context.Context) (DaemonState, error) { return f.daemon, nil },
-		InitPlan:  func(context.Context) (*setup.Plan, error) { return f.plan, nil },
+		// As acmd doctor has it: access lists on Windows, mode bits elsewhere.
+		OthersCanUse: othersCanUse(),
+		Daemon:       func(context.Context) (DaemonState, error) { return f.daemon, nil },
+		InitPlan:     func(context.Context) (*setup.Plan, error) { return f.plan, nil },
 	}
 }
 
@@ -93,6 +121,7 @@ func (f *fake) run() (*Report, string) {
 }
 
 func TestHealthy(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	r, out := f.run()
 	if r.Count(Warn) != 0 || r.Count(Fail) != 0 {
@@ -114,6 +143,7 @@ func TestHealthy(t *testing.T) {
 }
 
 func TestNotSetUp(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	must(t, os.Remove(f.paths().Setup()))
 	f.daemon = DaemonState{}
@@ -133,6 +163,7 @@ func TestNotSetUp(t *testing.T) {
 }
 
 func TestProblems(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	home, p := f.home, f.paths()
 	must(t, os.Chmod(p.StateDir, 0o755))
@@ -215,6 +246,7 @@ func TestProblems(t *testing.T) {
 }
 
 func TestDaemonAndPlanErrors(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	env := f.Env()
 	env.Daemon = func(context.Context) (DaemonState, error) { return DaemonState{}, errors.New("permission denied") }
@@ -230,6 +262,7 @@ func TestDaemonAndPlanErrors(t *testing.T) {
 }
 
 func TestVersions(t *testing.T) {
+	sessionsHere(t)
 	for _, c := range []struct {
 		a, b string
 		want int
@@ -251,6 +284,7 @@ func must(t *testing.T, err error) {
 }
 
 func TestAntigravity(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	hooks := filepath.Join(f.home, ".gemini/config/hooks.json")
 
@@ -324,14 +358,18 @@ func TestRemoteIdentityRoles(t *testing.T) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}
 	}
-	// Your own key, readable by others.
-	must(t, os.Chmod(own.KeyPath, 0o644))
-	if _, out := f.run(); !strings.Contains(out, "✗ Hosting identity key ~/own/key.pem is readable by others") {
-		t.Errorf("report:\n%s", out)
+	// Your own key, readable by others. Windows has no mode bits: identity's
+	// own tests make a key readable through its access list.
+	if runtime.GOOS != "windows" {
+		must(t, os.Chmod(own.KeyPath, 0o644))
+		if _, out := f.run(); !strings.Contains(out, "✗ Hosting identity key ~/own/key.pem is readable by others") {
+			t.Errorf("report:\n%s", out)
+		}
 	}
 	// Your own cert that's gone.
 	must(t, os.Remove(own.CertPath))
-	if _, out := f.run(); !strings.Contains(out, "✗ Hosting identity unusable:") || !strings.Contains(out, "fix: check cert and key in [remote.host] of ~/config/config.toml") {
+	if _, out := f.run(); !strings.Contains(out, "✗ Hosting identity unusable:") ||
+		!strings.Contains(out, "fix: check cert and key in [remote.host] of "+setup.Tilde(p.Config(), f.home)) {
 		t.Errorf("report:\n%s", out)
 	}
 	// Half a pair.
@@ -357,10 +395,14 @@ func TestRemoteIdentity(t *testing.T) {
 		t.Errorf("report lacks %q:\n%s", want, out)
 	}
 
-	must(t, os.Chmod(id.KeyPath, 0o644))
-	_, out = f.run()
-	if want := "✗ identity key ~/config/identity/key.pem is readable by others\n      fix: chmod 600 ~/config/identity/key.pem"; !strings.Contains(out, want) {
-		t.Errorf("report lacks %q:\n%s", want, out)
+	// Windows has no mode bits: identity's own tests make a key readable
+	// through its access list.
+	if runtime.GOOS != "windows" {
+		must(t, os.Chmod(id.KeyPath, 0o644))
+		_, out = f.run()
+		if want := "✗ identity key ~/config/identity/key.pem is readable by others\n      fix: chmod 600 ~/config/identity/key.pem"; !strings.Contains(out, want) {
+			t.Errorf("report lacks %q:\n%s", want, out)
+		}
 	}
 
 	// A cert from another identity: the pair no longer matches.
@@ -374,5 +416,34 @@ func TestRemoteIdentity(t *testing.T) {
 	if !strings.Contains(out, "✗ identity unusable: ") || !strings.Contains(out, "doesn't belong to the cert") ||
 		!strings.Contains(out, "fix: acmd remote identity --regenerate") {
 		t.Errorf("report lacks the mismatch:\n%s", out)
+	}
+}
+
+func TestClientOnlyLeavesOutTheAgents(t *testing.T) {
+	f := newFake(t)
+	// No agents here: their hooks, missing, aren't a problem.
+	must(t, os.Remove(filepath.Join(f.home, ".claude/settings.json")))
+	e := f.Env()
+	e.ClientOnly = true
+	// Windows: the access lists say who can use acmd's folders.
+	e.OthersCanUse = func(p string) (string, string, error) {
+		if p == f.paths().StateDir {
+			return "Everyone", "run icacls", nil
+		}
+		return "", "", nil
+	}
+	var b bytes.Buffer
+	Run(context.Background(), e).Write(&b)
+	out := b.String()
+	if !strings.Contains(out, setup.Tilde(f.paths().StateDir, f.home)+" is accessible by others (Everyone)\n      fix: run icacls") {
+		t.Errorf("the access list's Everyone isn't reported:\n%s", out)
+	}
+	for _, absent := range []string{"Claude Code\n", "Antigravity\n", "setup is up to date", "login-shell environment", setup.Tilde(f.paths().RuntimeDir, f.home) + " is accessible"} {
+		if strings.Contains(out, absent) {
+			t.Errorf("a client-only report has %q:\n%s", absent, out)
+		}
+	}
+	if !strings.Contains(out, "Daemon\n") {
+		t.Errorf("a client-only report lacks the daemon:\n%s", out)
 	}
 }

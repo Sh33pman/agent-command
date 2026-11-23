@@ -264,6 +264,7 @@
         "claude",
         "terminal"
       ],
+      "sessions": true,
       "wake": true,
       "hosting": false
     },

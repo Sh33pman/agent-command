@@ -21,7 +21,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
@@ -264,7 +263,7 @@ func (h *Host) bindLocked(hc config.RemoteHost) (net.Listener, error) {
 	if err == nil {
 		return ln, nil
 	}
-	if !errors.Is(err, syscall.EADDRINUSE) {
+	if !addrInUse(err) {
 		return nil, fmt.Errorf("can't listen on %s: %w", addr, err)
 	}
 	if !hc.PortFallback {

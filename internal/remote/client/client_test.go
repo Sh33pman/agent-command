@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -217,8 +218,12 @@ func TestTwoHostsAtOnce(t *testing.T) {
 		}
 		// Typed in through the socket that's where a local host's would be.
 		p := attachPane(t, l.o.Socket(api1))
-		p.in <- []byte(fmt.Sprintf("echo on-%s-$((%d+1))\n", r.name, i))
 		want := fmt.Sprintf("on-%s-%d", r.name, i+1)
+		typed := fmt.Sprintf("echo on-%s-$((%d+1))\n", r.name, i)
+		if runtime.GOOS == "windows" {
+			typed = want + "\n" // the stand-in terminal shows what's typed
+		}
+		p.in <- []byte(typed)
 		eventually(t, want, func() bool { return strings.Contains(p.out.String(), want) })
 		panes = append(panes, p)
 	}
@@ -537,6 +542,7 @@ func TestTheHostsTree(t *testing.T) {
 }
 
 func TestReconnectAndReattach(t *testing.T) {
+	realShell(t)
 	l := newLaptop(t)
 	r := newRemoteHost(t, "studio")
 	r.authorize(l.fingerprint())
@@ -583,6 +589,7 @@ func TestReconnectAndReattach(t *testing.T) {
 }
 
 func TestProxySocket(t *testing.T) {
+	realShell(t)
 	l := newLaptop(t, func(o *Options) { o.DialTimeout = time.Second })
 	r := newRemoteHost(t, "studio")
 	r.authorize(l.fingerprint())

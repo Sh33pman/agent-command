@@ -36,6 +36,7 @@ func TestSpeechEngineOldConfig(t *testing.T) {
 }
 
 func TestSpeechStatusShowsOldPythonEngine(t *testing.T) {
+	sessionsHere(t)
 	dir := speechSandbox(t, "")
 	t.Setenv("ACMD_SPEECH_HELPER", "/bin/sh")
 	venv := filepath.Join(dir, "s", "speech", "venv", "bin")
@@ -73,6 +74,7 @@ func TestSpeechStatusShowsOldPythonEngine(t *testing.T) {
 }
 
 func TestSpeechBenchNotSetUp(t *testing.T) {
+	sessionsHere(t)
 	speechSandbox(t, "")
 	t.Setenv("ACMD_SPEECH_HELPER", "/bin/sh")
 	cmd := newSpeechBenchCmd()

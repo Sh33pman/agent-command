@@ -122,13 +122,16 @@ type DaemonState struct {
 
 // Env is everything the checks read.
 type Env struct {
-	Home     string
-	Paths    paths.Paths
-	Version  string // this binary's version
-	AcmdPath string // the stable path of this binary (what init would write)
-	Getenv   func(string) string
-	Read     func(string) ([]byte, error)
-	Stat     func(string) (fs.FileInfo, error)
+	// ClientOnly is a machine whose daemon runs no sessions (Windows): no
+	// agents, so their checks are left out.
+	ClientOnly bool
+	Home       string
+	Paths      paths.Paths
+	Version    string // this binary's version
+	AcmdPath   string // the stable path of this binary (what init would write)
+	Getenv     func(string) string
+	Read       func(string) ([]byte, error)
+	Stat       func(string) (fs.FileInfo, error)
 	// Resolve follows symlinks (filepath.EvalSymlinks).
 	Resolve func(string) (string, error)
 	// LoginPath is the PATH of the saved login-shell environment.
@@ -144,18 +147,24 @@ type Env struct {
 	InitPlan func(ctx context.Context) (*setup.Plan, error)
 	// Service is the service that runs the daemon (nil: not checked).
 	Service func(ctx context.Context) service.Status
+	// OthersCanUse says who besides the user can read a file or open a
+	// folder, and how to fix it (paths.OthersCanRead, for Windows' access
+	// lists). nil reads the mode bits, as on Unix.
+	OthersCanUse func(path string) (who, fix string, err error)
 }
 
 // Run performs every check.
 func Run(ctx context.Context, e Env) *Report {
 	r := &Report{}
 	rec, initDone := checkAcmd(r, e)
-	checkClaude(ctx, r, e, rec, initDone)
-	checkAntigravity(r, e, initDone)
+	if !e.ClientOnly {
+		checkClaude(ctx, r, e, rec, initDone)
+		checkAntigravity(r, e, initDone)
+	}
 	checkDaemon(ctx, r, e)
 	checkService(ctx, r, e)
 	checkIdentity(r, e)
-	if initDone {
+	if initDone && !e.ClientOnly {
 		checkPlan(ctx, r, e)
 	}
 	return r
@@ -203,7 +212,18 @@ func checkAcmd(r *Report, e Env) (setup.Record, bool) {
 		checkEditor(r, e, cfg.Editor) // before setup, init asks for it
 	}
 
+	if e.ClientOnly {
+		// No sessions here, so no login-shell environment for them.
+		checkPrivate(r, e)
+		return rec, ok
+	}
 	switch st, err := e.Stat(e.Paths.Env()); {
+	case e.OthersCanUse != nil && err == nil:
+		if who, fix, _ := e.OthersCanUse(e.Paths.Env()); who != "" {
+			r.add(secAcmd, Warn, fix, "%s is readable by others (%s); it holds your environment", setup.Tilde(e.Paths.Env(), e.Home), who)
+		} else {
+			r.add(secAcmd, OK, "", "login-shell environment saved")
+		}
 	case errors.Is(err, fs.ErrNotExist):
 		if ok {
 			r.add(secAcmd, Warn, "acmd init --refresh-env", "no saved login-shell environment (sessions get a minimal PATH)")
@@ -216,12 +236,23 @@ func checkAcmd(r *Report, e Env) (setup.Record, bool) {
 	default:
 		r.add(secAcmd, OK, "", "login-shell environment saved")
 	}
+	checkPrivate(r, e)
+	return rec, ok
+}
+
+// checkPrivate warns about acmd's folders when others can use them.
+func checkPrivate(r *Report, e Env) {
 	for _, d := range []string{e.Paths.StateDir, e.Paths.RuntimeDir} {
+		if e.OthersCanUse != nil {
+			if who, fix, _ := e.OthersCanUse(d); who != "" {
+				r.add(secAcmd, Warn, fix, "%s is accessible by others (%s)", setup.Tilde(d, e.Home), who)
+			}
+			continue
+		}
 		if st, err := e.Stat(d); err == nil && st.Mode().Perm()&0o077 != 0 {
 			r.add(secAcmd, Warn, "chmod 700 "+setup.Tilde(d, e.Home), "%s is accessible by others (%s)", setup.Tilde(d, e.Home), st.Mode().Perm())
 		}
 	}
-	return rec, ok
 }
 
 func checkEditor(r *Report, e Env, ed config.Editor) {
@@ -286,7 +317,7 @@ func (e Env) installs() []string {
 
 func (e Env) executable(p string) bool {
 	st, err := e.Stat(p)
-	return err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0
+	return err == nil && paths.IsExecutable(st)
 }
 
 func checkClaude(ctx context.Context, r *Report, e Env, rec setup.Record, initDone bool) {
@@ -600,7 +631,13 @@ func checkRole(r *Report, e Env, what string, f roleFiles) {
 	id, err := identity.Load(cert, key)
 	switch {
 	case errors.Is(err, identity.ErrKeyPermissions):
-		r.add(secRemote, Fail, "chmod 600 "+setup.Tilde(key, e.Home), "%s key %s is readable by others", what, setup.Tilde(key, e.Home))
+		keyFix := "chmod 600 " + setup.Tilde(key, e.Home)
+		if e.OthersCanUse != nil {
+			if _, f, _ := e.OthersCanUse(key); f != "" {
+				keyFix = f
+			}
+		}
+		r.add(secRemote, Fail, keyFix, "%s key %s is readable by others", what, setup.Tilde(key, e.Home))
 	case err != nil:
 		r.add(secRemote, Fail, fix, "%s unusable: %v", what, err)
 	default:

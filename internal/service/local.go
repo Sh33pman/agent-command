@@ -7,7 +7,8 @@ import (
 	"os/user"
 	"runtime"
 	"strings"
-	"syscall"
+
+	"github.com/brettmostert/agent-command/internal/proc"
 )
 
 // Local is this machine.
@@ -43,7 +44,7 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 // restarts.
 func detach(script string) error {
 	cmd := exec.Command("/bin/sh", "-c", script) // #nosec G204 -- a restart acmd built
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proc.Detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

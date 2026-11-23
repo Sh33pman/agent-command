@@ -87,6 +87,7 @@ func useFakeMac(t *testing.T, f *fakeMac) {
 }
 
 func TestWakeOnAndOff(t *testing.T) {
+	sessionsHere(t)
 	f := &fakeMac{}
 	useFakeMac(t, f)
 	env(t)
@@ -154,6 +155,7 @@ func TestWakeOnAndOff(t *testing.T) {
 }
 
 func TestWakeOnFailures(t *testing.T) {
+	sessionsHere(t)
 	f := &fakeMac{cancel: true}
 	useFakeMac(t, f)
 	env(t)
@@ -197,6 +199,7 @@ func TestUninstallRemovesTheWakeRule(t *testing.T) {
 }
 
 func TestInitOffersToWakeTheMac(t *testing.T) {
+	sessionsHere(t)
 	f := &fakeMac{}
 	useFakeMac(t, f)
 	env(t)

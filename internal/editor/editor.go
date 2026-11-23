@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/proc"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
@@ -114,7 +114,7 @@ func (o *Opener) Open(ctx context.Context, dir string) error {
 func Start(ctx context.Context, argv, env []string, dir string) error {
 	cmd := exec.Command(argv[0], argv[1:]...) // #nosec G204 -- the user's configured editor, argv without a shell
 	cmd.Dir, cmd.Env = dir, env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proc.Detach(cmd)
 	var stderr strings.Builder
 	cmd.Stderr = &limited{b: &stderr, n: 2000}
 	if err := cmd.Start(); err != nil {

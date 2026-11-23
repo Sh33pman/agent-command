@@ -63,7 +63,7 @@ func sampleSnapshot() Snapshot {
 		},
 		Settings: map[string]any{"speech.enabled": true, "remote.port": 7443},
 		Health:   []Health{{ID: "hooks", Severity: HealthWarning, Title: "Claude's hooks aren't installed", Fix: &HealthFix{Op: OpInit}}},
-		Features: &Features{Host: HostFeatures{OS: "darwin", HarnessKinds: []string{"claude", "terminal"}, Wake: true}, Device: DeviceFeatures{Speech: true}},
+		Features: &Features{Host: HostFeatures{OS: "darwin", HarnessKinds: []string{"claude", "terminal"}, Sessions: true, Wake: true}, Device: DeviceFeatures{Speech: true}},
 		Speech:   &SpeechState{Supported: true, Enabled: true, Installed: true, Voice: "af_bella"},
 	}
 }

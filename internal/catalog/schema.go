@@ -32,18 +32,20 @@ type Document struct {
 // $ref into Document.Defs; they're left out when the op takes or returns
 // nothing.
 type OpDoc struct {
-	Name        string             `json:"name"`
-	Description string             `json:"description"`
-	Scope       Scope              `json:"scope"`
-	Kind        Kind               `json:"kind"`
-	Grant       Grant              `json:"grant"`
-	HostOnly    bool               `json:"host_only,omitempty"`
-	RunsCode    bool               `json:"runs_code,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
-	Retryable   bool               `json:"retryable,omitempty"`
-	Transport   Transport          `json:"transport"`
-	Input       *jsonschema.Schema `json:"input,omitempty"`
-	Output      *jsonschema.Schema `json:"output,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Scope       Scope  `json:"scope"`
+	Kind        Kind   `json:"kind"`
+	Grant       Grant  `json:"grant"`
+	HostOnly    bool   `json:"host_only,omitempty"`
+	// NeedsSessions: a client-only daemon answers not_supported.
+	NeedsSessions bool               `json:"needs_sessions,omitempty"`
+	RunsCode      bool               `json:"runs_code,omitempty"`
+	Stream        bool               `json:"stream,omitempty"`
+	Retryable     bool               `json:"retryable,omitempty"`
+	Transport     Transport          `json:"transport"`
+	Input         *jsonschema.Schema `json:"input,omitempty"`
+	Output        *jsonschema.Schema `json:"output,omitempty"`
 }
 
 // Transport is how protocol 1 sends an op.
@@ -67,7 +69,7 @@ func (c *Catalog) Document(proto Range) (*Document, error) {
 		d := OpDoc{
 			Name: o.Name, Description: o.Description,
 			Scope: o.Scope, Kind: o.Kind, Grant: o.Grant,
-			HostOnly: o.HostOnly, RunsCode: o.RunsCode, Stream: o.Stream, Retryable: o.Retryable,
+			HostOnly: o.HostOnly, NeedsSessions: o.NeedsSessions, RunsCode: o.RunsCode, Stream: o.Stream, Retryable: o.Retryable,
 			Transport: Transport{Op: op, Kind: kind},
 		}
 		var err error

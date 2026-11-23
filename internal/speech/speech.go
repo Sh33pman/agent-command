@@ -24,8 +24,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/brettmostert/agent-command/internal/proc"
 )
 
 // ErrNotInstalled means speech hasn't been set up (acmd speech install).
@@ -256,7 +257,7 @@ func stopPID(file, want string) {
 	if err != nil || pid <= 0 || !strings.Contains(processCommand(pid), want) {
 		return
 	}
-	_ = syscall.Kill(pid, syscall.SIGTERM)
+	_ = proc.Terminate(pid)
 }
 
 // du is the size of the files under p.
@@ -354,7 +355,7 @@ func (e *Engine) Start(ctx context.Context) error {
 	}
 	defer logf.Close()
 	c.Stdout, c.Stderr = logf, logf
-	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proc.Detach(c)
 	if err := c.Start(); err != nil {
 		return err
 	}

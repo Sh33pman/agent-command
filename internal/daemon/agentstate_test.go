@@ -32,6 +32,7 @@ func (f *fakeAgent) get(string) (term.AgentState, bool) {
 // that in: blocked is waiting with its message, working is busy, failed an
 // error, done the end of the turn.
 func TestAntigravityStatusFromItsReports(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh, fa := &fakeHosts{paths: p}, &fakeAgent{}
 	start(t, p, func(c *Config) { c.Hosts = fh; c.FrontEvery = 20 * time.Millisecond; c.HostAgent = fa.get })
@@ -97,6 +98,7 @@ func TestAgentStateEvent(t *testing.T) {
 // agy's done report carries the reply. Its Stop hook has usually ended the turn
 // already, with no text, yet the reply still becomes the Inbox's done item.
 func TestAntigravityReplyReachesTheInbox(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh, fa := &fakeHosts{paths: p}, &fakeAgent{}
 	start(t, p, func(c *Config) { c.Hosts = fh; c.FrontEvery = 20 * time.Millisecond; c.HostAgent = fa.get })
@@ -123,6 +125,7 @@ func TestAntigravityReplyReachesTheInbox(t *testing.T) {
 // shows; picking one types its number, as agy takes it, and agy working again
 // closes the item.
 func TestAntigravityPermissionInTheInbox(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh, fa, typed := &fakeHosts{paths: p}, &fakeAgent{}, &sent{}
 	var mu sync.Mutex
@@ -221,6 +224,7 @@ esc to cancel                                     plan · Gemini 3.8 Flash · hi
 // screen, and answering one types its number. It works before agy's first hook,
 // when the session has no conversation id yet.
 func TestAntigravityPermissionAnsweredFromTheInbox(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	typed := &sent{}
 	fa := &fakeAgent{}

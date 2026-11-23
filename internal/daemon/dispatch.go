@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 
 	"github.com/brettmostert/agent-command/internal/catalog"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -37,6 +38,10 @@ func (d *Daemon) allow(ctx context.Context, name string) error {
 	op, ok := catalog.Local.Lookup(name)
 	if !ok {
 		return &codedError{code: ipc.CodeUnknownOp, err: fmt.Errorf("unknown op %q", name)}
+	}
+	if d.cfg.ClientOnly && op.NeedsSessions {
+		return &codedError{code: ipc.CodeNotSupported, err: fmt.Errorf(
+			"%s isn't supported here: acmd on %s only connects to hosts, and runs no sessions of its own. Use a host: acmd remote add", name, runtime.GOOS)}
 	}
 	return callerOf(ctx).catalog().Allow(op)
 }

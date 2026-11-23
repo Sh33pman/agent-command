@@ -223,6 +223,7 @@ func bgAgent(sid, id string, status *string, pid *int) claudecli.Agent {
 // stays finished when Claude reports it stopped, a view showing it goes
 // back to its list, and resuming it brings it back.
 func TestFinish(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	st := &stops{}
 	pid := 9

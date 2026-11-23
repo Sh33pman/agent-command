@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -38,6 +39,11 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 	if testing.Short() {
 		fmt.Println("skipped: builds and runs the binary")
+		os.Exit(0)
+	}
+	if runtime.GOOS == "windows" {
+		// Its client half runs in internal/daemon and internal/remote/client.
+		fmt.Println("skipped on Windows: every test runs a host, and Windows is client-only")
 		os.Exit(0)
 	}
 	dir, err := os.MkdirTemp("", "acmdbin")

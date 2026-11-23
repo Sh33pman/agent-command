@@ -42,7 +42,7 @@ private func fixture(_ name: String) throws -> Data {
     let job = try #require(snap.jobs?.first)
     #expect(job.name == "nightly" && job.form?.kind == "daily" && job.form?.hour == 2)
     #expect(snap.settings?["speech.enabled"] == .bool(true))
-    #expect(snap.health?.first?.id == "hooks" && snap.features?.host.os == "darwin" && snap.speech?.voice == "af_bella")
+    #expect(snap.health?.first?.id == "hooks" && snap.features?.host.os == "darwin" && snap.features?.host.sessions == true && snap.speech?.voice == "af_bella")
 }
 
 @Test func answersDecodeAsTheDaemonWritesThem() throws {

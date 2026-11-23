@@ -33,6 +33,7 @@ func (l *remoteLog) all() []RemoteChange {
 }
 
 func TestRemoteFlag(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	cfgFile := filepath.Join(t.TempDir(), "config.toml")
 	must(t, os.WriteFile(cfgFile, []byte("[remote]\nnew_sessions_remote = true\n"), 0o600))

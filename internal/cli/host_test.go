@@ -76,6 +76,7 @@ func TestHostEnvKeepsTheHarnessFolder(t *testing.T) {
 // removes its socket and id file when the CLI exits. The "claude" here is a
 // script that prints its argv and CLAUDE* presence, then waits for a line.
 func TestHostServe(t *testing.T) {
+	sessionsHere(t)
 	dir, err := os.MkdirTemp("", "acmdhost")
 	if err != nil {
 		t.Fatal(err)
@@ -183,6 +184,7 @@ func TestAttachLeavesQuietlyWithoutAHost(t *testing.T) {
 }
 
 func TestAttachHost(t *testing.T) {
+	sessionsHere(t)
 	dir, err := os.MkdirTemp("", "acmdatt")
 	if err != nil {
 		t.Fatal(err)
@@ -238,6 +240,7 @@ func TestLoginEnvUsesThisLoginsSSHAgent(t *testing.T) {
 
 // agy is found on the login shell's PATH; without it, starting a session says so.
 func TestHostHarnessAntigravity(t *testing.T) {
+	sessionsHere(t)
 	dir := t.TempDir()
 	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r"), ConfigDir: filepath.Join(dir, "c")}
 	bin := filepath.Join(dir, "bin")
@@ -268,6 +271,7 @@ func TestHostHarnessAntigravity(t *testing.T) {
 // checked against each one's own --help (agy's is on stderr). A Claude
 // harness with its own folder runs with CLAUDE_CONFIG_DIR.
 func TestHarnessCommandAndHelp(t *testing.T) {
+	sessionsHere(t)
 	dir := t.TempDir()
 	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r"), ConfigDir: filepath.Join(dir, "c")}
 	for _, d := range []string{p.StateDir, p.ConfigDir} {

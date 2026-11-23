@@ -21,6 +21,7 @@ func agentsOf(t *testing.T, f *fake) map[string]AgentHooks {
 }
 
 func TestAgentsHealthy(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	got := agentsOf(t, f)
 	if c := got["claude"]; !c.Installed || len(c.Problems) != 0 {
@@ -34,6 +35,7 @@ func TestAgentsHealthy(t *testing.T) {
 
 // An agent that isn't installed is never a problem, whatever its files say.
 func TestAgentsNotInstalled(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	must(t, os.Remove(filepath.Join(f.home, "bin", "claude")))
 	must(t, os.Remove(filepath.Join(f.home, ".claude/settings.json")))
@@ -43,6 +45,7 @@ func TestAgentsNotInstalled(t *testing.T) {
 }
 
 func TestAgentsProblems(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	f.write(filepath.Join(f.home, "bin", "agy"), "#!/bin/sh\n", 0o755)
 
@@ -83,6 +86,7 @@ func healthIDs(h []ipc.Health) string {
 }
 
 func TestHealth(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	ctx := context.Background()
 	if h := Health(ctx, f.Env()); len(h) != 0 {
@@ -123,6 +127,7 @@ func TestHealth(t *testing.T) {
 // A Claude harness with its own folder needs acmd's hooks there too: doctor
 // and the health list check each folder setup.json names.
 func TestHarnessFoldersNeedHooks(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	ctx := context.Background()
 	work := filepath.Join(f.home, ".claude-work")

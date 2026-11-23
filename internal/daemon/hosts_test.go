@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,9 +19,11 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/term"
+	"github.com/brettmostert/agent-command/internal/term/termtest"
 )
 
-// fakeHosts runs each host as an in-process term.Server around `sleep`.
+// fakeHosts runs each host as an in-process term.Server around `sleep`
+// (on Windows, termtest's stand-in).
 type fakeHosts struct {
 	paths paths.Paths
 	fail  error
@@ -34,6 +37,11 @@ func (f *fakeHosts) Start(ctx context.Context, r HostRequest) error {
 	f.mu.Unlock()
 	if f.fail != nil {
 		return f.fail
+	}
+	if runtime.GOOS == "windows" {
+		// No pty there (no ConPTY host): a stand-in terminal.
+		_, err := termtest.Listen(f.paths.HostSocket(r.ID))
+		return err
 	}
 	srv := &term.Server{Socket: f.paths.HostSocket(r.ID), Shell: []string{"/bin/sleep", "30"}, Dir: "/", Env: []string{"PATH=/usr/bin:/bin"}}
 	go func() { _ = srv.Serve(context.WithoutCancel(ctx)) }()
@@ -59,6 +67,7 @@ func waitHost(t *testing.T, p paths.Paths, id string, running bool) {
 }
 
 func TestHostedSessionLifecycle(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
@@ -107,6 +116,7 @@ func TestHostedSessionLifecycle(t *testing.T) {
 }
 
 func TestHostedStartFailureLeavesNoRow(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p, fail: errors.New("boom")} })
 	c := dial(t, p)
@@ -131,6 +141,7 @@ func TestNewUUID(t *testing.T) {
 // A daemon that restarts keeps hosted sessions whose host still runs, and
 // pauses the ones whose host is gone; stale host files are swept.
 func TestHostedSurvivesDaemonRestart(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	r := start(t, p, func(c *Config) { c.Hosts = fh })
@@ -189,6 +200,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 // A session from before hosting (`claude --bg`) becomes a hosted one when
 // it is resumed: a running one is stopped first, a paused one just resumes.
 func TestResumeLegacyBackground(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	st := &stops{}
@@ -223,6 +235,7 @@ func TestResumeLegacyBackground(t *testing.T) {
 }
 
 func TestTerminalSessionLifecycle(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
@@ -255,6 +268,7 @@ func TestTerminalSessionLifecycle(t *testing.T) {
 
 // Unarchiving an agent only lists it again: nothing starts until it's activated.
 func TestUnarchiveDoesNotStartAnAgent(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
@@ -309,6 +323,7 @@ func writeConversation(t *testing.T, dir, id, cwd, title string) {
 }
 
 func TestResumeConversation(t *testing.T) {
+	sessionsHere(t)
 	const (
 		idle = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 		live = "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -385,6 +400,7 @@ func TestResumeConversation(t *testing.T) {
 // agy's conversations are listed with Claude's, newest first, and resumed with
 // agy in their folder.
 func TestResumeAntigravityConversation(t *testing.T) {
+	sessionsHere(t)
 	const (
 		claudeID = "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 		newer    = "84b306a4-9e41-471f-99b0-07f3bf1ab83b"
@@ -460,6 +476,7 @@ func TestLayoutIsKept(t *testing.T) {
 // An agent typed into a terminal shows on that terminal's row, and leaves
 // nothing behind when it exits.
 func TestAgentInTerminalShowsOnItsRow(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
@@ -526,6 +543,7 @@ func TestAgentInTerminalShowsOnItsRow(t *testing.T) {
 
 // A hosted agent also has ACMD_SESSION_ID: it still goes by its Claude id.
 func TestHostedAgentIsNotTreatedAsTerminal(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
@@ -540,6 +558,7 @@ func TestHostedAgentIsNotTreatedAsTerminal(t *testing.T) {
 
 // /clear changes Claude's session id, but not the session it runs in.
 func TestStatusFollowsAHostedSessionThroughClear(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
@@ -587,6 +606,7 @@ func TestStatusFollowsAHostedSessionThroughClear(t *testing.T) {
 // asks a question, and error when a turn fails, and leaves each once Claude moves
 // on (PAN-29). The payloads are the shapes Claude Code sends for each hook.
 func TestHostedSessionShowsWaitingAndError(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
@@ -654,6 +674,7 @@ func TestHostedSessionShowsWaitingAndError(t *testing.T) {
 // Denying a permission interrupts the turn, and no hook says so. The transcript
 // does, so the session stops showing waiting, and its Inbox item closes.
 func TestDenyingAPermissionEndsWaiting(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh; c.TailEvery = 20 * time.Millisecond })
@@ -692,6 +713,7 @@ func TestDenyingAPermissionEndsWaiting(t *testing.T) {
 // An Antigravity session learns its conversation id from agy's first hook, and
 // resumes by it; one that never had a conversation starts afresh.
 func TestHostedAntigravitySession(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })

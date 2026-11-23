@@ -6,11 +6,14 @@ struct HostFeatures: Decodable, Equatable {
         var os = ""
         /// The kinds an installed harness has, and terminal.
         var harnessKinds: [String] = []
+        /// It runs sessions here. A client-only daemon (Windows) only uses
+        /// its hosts', and refuses what needs sessions here.
+        var sessions = false
         var wake = false
         var hosting = false
 
         enum CodingKeys: String, CodingKey {
-            case os, wake, hosting
+            case os, sessions, wake, hosting
             case harnessKinds = "harness_kinds"
         }
     }

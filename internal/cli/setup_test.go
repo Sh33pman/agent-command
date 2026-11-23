@@ -72,6 +72,7 @@ func execute(t *testing.T, stdin string, args ...string) (stdout, stderr string,
 }
 
 func TestInitDryRunChangesNothing(t *testing.T) {
+	sessionsHere(t)
 	s := newSandbox(t)
 	out, _, err := execute(t, "", "init", "--dry-run")
 	if err != nil {
@@ -95,6 +96,7 @@ func TestInitDryRunChangesNothing(t *testing.T) {
 }
 
 func TestInitUninstall(t *testing.T) {
+	sessionsHere(t)
 	s := newSandbox(t)
 	if _, _, err := execute(t, "", "init"); err != nil {
 		t.Fatal(err)
@@ -128,6 +130,35 @@ func TestInitUninstall(t *testing.T) {
 	}
 }
 
+// On a client-only machine (Windows) init sets up acmd's settings, and
+// touches nothing of the agents' or the login shell's.
+func TestInitOnAClientOnlyMachine(t *testing.T) {
+	s := newSandbox(t)
+	was := clientOnly
+	clientOnly = true
+	t.Cleanup(func() { clientOnly = was })
+	captureLoginEnv = func(context.Context, string) (setup.LoginEnv, error) {
+		t.Error("captured the login shell's environment")
+		return nil, nil
+	}
+	out, _, err := execute(t, "", "init")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(s.settings); !bytes.Equal(b, s.userJSON) {
+		t.Errorf("Claude's settings changed: %s", b)
+	}
+	if _, err := os.Stat(s.paths.Config()); err != nil {
+		t.Errorf("config.toml: %v", err)
+	}
+	if _, err := os.Stat(s.paths.Env()); !os.IsNotExist(err) {
+		t.Errorf("env.json: %v, want none", err)
+	}
+	if strings.Contains(out, "hooks") || strings.Contains(out, "claude") {
+		t.Errorf("init talks of the agents:\n%s", out)
+	}
+}
+
 func TestAutoInitHintWithoutTerminal(t *testing.T) {
 	newSandbox(t)
 	_, errOut, _ := execute(t, "", "list")
@@ -137,6 +168,7 @@ func TestAutoInitHintWithoutTerminal(t *testing.T) {
 }
 
 func TestDoctor(t *testing.T) {
+	sessionsHere(t)
 	newSandbox(t)
 	if _, _, err := execute(t, "", "init"); err != nil {
 		t.Fatal(err)
@@ -158,6 +190,7 @@ func must(t *testing.T, err error) {
 }
 
 func TestDoctorFixReplacesStaleHooks(t *testing.T) {
+	sessionsHere(t)
 	s := newSandbox(t)
 	// doctor checks that the hooks' binary exists, so it can't be the real app's.
 	binary := filepath.Join(s.bin, "acmd")

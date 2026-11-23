@@ -246,7 +246,7 @@ func TestRemoteAddEditRemove(t *testing.T) {
 	}
 	mustRun(t, "remote", "add", "lab", "lab:7433", "--cert", "rel/host.pem")
 	wd, _ := os.Getwd()
-	if !f.calledWith(ipc.OpRemoteHostAdd, `"cert":"`+filepath.Join(wd, "rel/host.pem")+`"`) {
+	if !f.calledWith(ipc.OpRemoteHostAdd, `"cert":`+jsonText(t, filepath.Join(wd, "rel/host.pem"))) {
 		t.Errorf("the cert path isn't absolute: %v", f.called())
 	}
 
@@ -267,7 +267,7 @@ func TestRemoteAddEditRemove(t *testing.T) {
 		t.Errorf("edit:\n%s\n%v", out, f.called())
 	}
 	mustRun(t, "remote", "edit", "mini", "--cert", "h.pem")
-	if !f.calledWith(ipc.OpRemoteHostEdit, `"cert":"`+filepath.Join(wd, "h.pem")+`"`) {
+	if !f.calledWith(ipc.OpRemoteHostEdit, `"cert":`+jsonText(t, filepath.Join(wd, "h.pem"))) {
 		t.Errorf("edit --cert: %v", f.called())
 	}
 
@@ -755,4 +755,14 @@ func TestHostFlagRunsOpsOnTheHost(t *testing.T) {
 	if out := mustRun(t, "screen", "1"); out != "on the host\n" {
 		t.Errorf("ACMD_HOST: %q", out)
 	}
+}
+
+// jsonText is s as a JSON string: a Windows path's backslashes escaped.
+func jsonText(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,6 +20,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/proc"
 	"github.com/brettmostert/agent-command/internal/service"
 	"github.com/brettmostert/agent-command/internal/setup"
 	"github.com/brettmostert/agent-command/internal/term"
@@ -74,6 +74,15 @@ func gather(ctx context.Context, captureEnv bool) (*gathered, error) {
 		return nil, err
 	}
 
+	exe, _ := executable()
+	if clientOnly {
+		// No agents run here, so nothing needs their hooks or a login shell's
+		// environment.
+		g.in = setup.Input{ClientOnly: true, Home: home, ConfigFile: p.Config(), EnvFile: p.Env(),
+			AcmdPath: setup.StableBinary(invokedAs, exe, exec.LookPath), Read: os.ReadFile}
+		return g, nil
+	}
+
 	var loginEnv setup.LoginEnv
 	if b, err := os.ReadFile(p.Env()); err == nil && !captureEnv {
 		if json.Unmarshal(b, &loginEnv) != nil {
@@ -92,7 +101,6 @@ func gather(ctx context.Context, captureEnv bool) (*gathered, error) {
 		g.path = os.Getenv("PATH")
 	}
 
-	exe, _ := executable()
 	g.in = setup.Input{
 		Home:        home,
 		ConfigFile:  p.Config(),
@@ -386,7 +394,7 @@ func stopDaemon(ctx context.Context, p paths.Paths) bool {
 	_ = conn.Close()
 	waitDaemonGone(ctx, p)
 	if daemon.Running(p) && pid > 0 {
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		_ = proc.Terminate(pid)
 		waitDaemonGone(ctx, p)
 	}
 	return true

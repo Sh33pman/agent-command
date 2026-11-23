@@ -18,8 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
@@ -39,6 +37,12 @@ var ErrAlreadyRunning = errors.New("daemon already running")
 
 // Config configures a daemon.
 type Config struct {
+	// ClientOnly runs no sessions here (Windows): the daemon keeps known
+	// hosts, connects to them and passes on their sessions, events and
+	// notices. The ops that need sessions here answer not_supported
+	// (catalog.Op.NeedsSessions), Hosting never listens, and no jobs run.
+	ClientOnly bool
+
 	Paths   paths.Paths
 	Version string
 	Log     *log.Logger
@@ -276,8 +280,10 @@ func Run(ctx context.Context, cfg Config) error {
 		cfg.Log.Printf("drain spool: %v", err)
 	}
 	cfg.Log.Printf("listening on %s (version %s, pid %d)", sock, cfg.Version, os.Getpid())
-	go d.background(ctx)
-	go d.scheduler(ctx)
+	if !cfg.ClientOnly {
+		go d.background(ctx)
+		go d.scheduler(ctx)
+	}
 	go d.keepForgetting(ctx)
 	go d.followEvents(ctx)
 
@@ -848,25 +854,6 @@ func (d *Daemon) drainSpool(ctx context.Context) error {
 	}
 	d.cfg.Log.Printf("drained spool: %d events applied, %d skipped", n, bad)
 	return os.Remove(draining)
-}
-
-// lock takes an exclusive, non-blocking flock on path.
-func lock(path string) (func(), error) {
-	f, err := os.OpenFile(filepath.Clean(path), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		_ = f.Close()
-		if errors.Is(err, unix.EWOULDBLOCK) {
-			return nil, ErrAlreadyRunning
-		}
-		return nil, err
-	}
-	return func() {
-		_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
-		_ = f.Close()
-	}, nil
 }
 
 // lockWaiting takes the lock, waiting a moment if another daemon holds it.

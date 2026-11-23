@@ -41,6 +41,7 @@ func TestRemoteHostsThatNeedYou(t *testing.T) {
 }
 
 func TestRemoteSessionsWithHostingOff(t *testing.T) {
+	sessionsHere(t)
 	f := newFake(t)
 	f.daemon.Status.RemoteSessions = 2
 	r, out := f.run()

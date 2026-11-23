@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +38,9 @@ func TestOpenMigratesAndReopens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := st.Mode().Perm(); perm != 0o600 {
+	// Windows has no mode bits: the folder's access list keeps the db private
+	// there (internal/paths).
+	if perm := st.Mode().Perm(); perm != 0o600 && runtime.GOOS != "windows" {
 		t.Errorf("db permissions = %o, want 600", perm)
 	}
 	g, err := s.Group(ctx, DefaultGroupID)

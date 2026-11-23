@@ -19,6 +19,7 @@ import (
 // TestHostAPI runs the host API against a real daemon: clients see and use
 // only Remote sessions, and what they start is Remote.
 func TestHostAPI(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	base := filepath.Dir(p.StateDir)
 	p.ConfigDir = filepath.Join(base, "c")

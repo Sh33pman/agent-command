@@ -100,6 +100,7 @@
       "scope": "read",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "conversations"
       },
@@ -130,6 +131,7 @@
       "kind": "change",
       "grant": "host",
       "host_only": true,
+      "needs_sessions": true,
       "runs_code": true,
       "transport": {
         "op": "editor.open"
@@ -145,6 +147,7 @@
       "kind": "change",
       "grant": "host",
       "host_only": true,
+      "needs_sessions": true,
       "transport": {
         "op": "event"
       },
@@ -158,6 +161,7 @@
       "scope": "read",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "folders.list"
       },
@@ -174,6 +178,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "folders.mkdir"
       },
@@ -190,6 +195,7 @@
       "scope": "read",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "folders.recent"
       },
@@ -319,6 +325,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "runs_code": true,
       "transport": {
         "op": "harness.add"
@@ -336,6 +343,7 @@
       "scope": "admin",
       "kind": "destructive",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "harness.remove"
       },
@@ -349,6 +357,7 @@
       "scope": "read",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "harness.settings"
       },
@@ -368,6 +377,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "runs_code": true,
       "transport": {
         "op": "harness.update"
@@ -524,6 +534,7 @@
       "scope": "read",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "job.check"
       },
@@ -540,6 +551,7 @@
       "scope": "act",
       "kind": "destructive",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "job.delete"
       },
@@ -553,6 +565,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "job.pause"
       },
@@ -566,6 +579,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "job.prompt.read"
       },
@@ -582,6 +596,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "job.prompt.write"
       },
@@ -598,6 +613,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "runs_code": true,
       "retryable": true,
       "transport": {
@@ -616,6 +632,7 @@
       "scope": "read",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "job.runs"
       },
@@ -632,6 +649,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "runs_code": true,
       "retryable": true,
       "transport": {
@@ -708,6 +726,7 @@
       "scope": "act",
       "kind": "change",
       "grant": "entities",
+      "needs_sessions": true,
       "runs_code": true,
       "retryable": true,
       "transport": {
@@ -752,6 +771,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.approve"
       },
@@ -768,6 +788,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.authorize"
       },
@@ -831,6 +852,7 @@
       "scope": "admin",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.clients"
       },
@@ -880,6 +902,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.deny"
       },
@@ -893,6 +916,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.disconnect"
       },
@@ -973,6 +997,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.hosting"
       },
@@ -1111,6 +1136,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.reload"
       },
@@ -1124,6 +1150,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.rename"
       },
@@ -1140,6 +1167,7 @@
       "scope": "admin",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.requests"
       },
@@ -1156,6 +1184,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.revoke"
       },
@@ -1172,6 +1201,7 @@
       "scope": "admin",
       "kind": "change",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.scope"
       },
@@ -1188,6 +1218,7 @@
       "scope": "read",
       "kind": "read",
       "grant": "host",
+      "needs_sessions": true,
       "transport": {
         "op": "remote.status"
       },
@@ -1509,6 +1540,7 @@
       "kind": "change",
       "grant": "host",
       "host_only": true,
+      "needs_sessions": true,
       "transport": {
         "op": "speech.install"
       },
@@ -1523,6 +1555,7 @@
       "kind": "change",
       "grant": "host",
       "host_only": true,
+      "needs_sessions": true,
       "transport": {
         "op": "speech.say"
       },
@@ -1537,6 +1570,7 @@
       "kind": "read",
       "grant": "host",
       "host_only": true,
+      "needs_sessions": true,
       "transport": {
         "op": "speech.status"
       },
@@ -1551,6 +1585,7 @@
       "kind": "change",
       "grant": "host",
       "host_only": true,
+      "needs_sessions": true,
       "transport": {
         "op": "speech.stop"
       }
@@ -1662,6 +1697,7 @@
       "kind": "change",
       "grant": "host",
       "host_only": true,
+      "needs_sessions": true,
       "transport": {
         "op": "wake.set"
       },
@@ -2801,6 +2837,9 @@
           },
           "type": "array"
         },
+        "sessions": {
+          "type": "boolean"
+        },
         "wake": {
           "type": "boolean"
         },
@@ -2812,6 +2851,7 @@
       "required": [
         "os",
         "harness_kinds",
+        "sessions",
         "wake",
         "hosting"
       ]

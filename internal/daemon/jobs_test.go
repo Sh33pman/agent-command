@@ -68,6 +68,7 @@ func (s *typedKeys) to(id string) []string {
 // jobDaemon is a daemon that isn't listening, for driving the scheduler by hand
 // on a test's clock. Hosts are fake.
 func jobDaemon(t *testing.T) (*Daemon, *fakeHosts, *clock, *typedKeys) {
+	sessionsHere(t)
 	t.Helper()
 	p := testPaths(t)
 	if err := p.Ensure(); err != nil {
@@ -473,6 +474,7 @@ func TestOneOffJob(t *testing.T) {
 
 // The app and the CLI use the jobs through the daemon's socket.
 func TestJobOps(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh; c.ScheduleEvery = time.Hour })
@@ -734,6 +736,7 @@ func TestHasFlag(t *testing.T) {
 // The schedule form goes through job.check: the daemon maps it to and from
 // cron, so the app has none of that logic.
 func TestJobCheckTakesTheForm(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p}; c.ScheduleEvery = time.Hour; c.Location = time.UTC })
 	c := dial(t, p)
@@ -780,6 +783,7 @@ func TestJobCheckTakesTheForm(t *testing.T) {
 // Prompt files: a saved job's own, by id, and a draft's Markdown or text
 // file. Nothing else.
 func TestPromptFileOps(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p}; c.ScheduleEvery = time.Hour })
 	c := dial(t, p)
@@ -848,6 +852,7 @@ func TestPromptFileOps(t *testing.T) {
 
 // This machine's folders, served as the Remote API serves a host's.
 func TestLocalFolderOps(t *testing.T) {
+	sessionsHere(t)
 	p := testPaths(t)
 	home := t.TempDir()
 	must(t, os.MkdirAll(filepath.Join(home, "proj", "sub"), 0o750))

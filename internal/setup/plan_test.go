@@ -449,3 +449,19 @@ func TestHooksGoInEachHarnessFolder(t *testing.T) {
 		t.Errorf("uninstall cleans all 3: %v", actions(un))
 	}
 }
+
+// A client-only machine (Windows) runs no agents: init sets up acmd's
+// settings, and touches nothing of the agents' or the login shell's.
+func TestPlanInitClientOnlyIsTheSettingsAlone(t *testing.T) {
+	in, _ := fakeHome(t)
+	in.ClientOnly = true
+	in.ClaudePath = ""
+	plan, err := PlanInit(in)
+	must(t, err)
+	if len(plan.Changes) != 1 || plan.Changes[0].Path != in.ConfigFile {
+		t.Fatalf("changes = %+v, want config.toml alone", plan.Changes)
+	}
+	if len(plan.Notes) != 0 {
+		t.Errorf("notes = %v: claude isn't needed here", plan.Notes)
+	}
+}

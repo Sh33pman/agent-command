@@ -145,6 +145,22 @@ func TestLocalPolicy(t *testing.T) {
 		}
 	}
 
+	// A client-only daemon (Windows) refuses what needs sessions here, and
+	// keeps what using a host's sessions needs.
+	for _, name := range []string{ipc.OpNew, ipc.OpEvent, ipc.OpJobSave, ipc.OpJobRun, ipc.OpWakeSet, ipc.OpRemoteHosting,
+		ipc.OpRemoteApprove, ipc.OpSpeechSay, ipc.OpEditorOpen, ipc.OpHarnessAdd, ipc.OpFoldersList} {
+		if !get(name).NeedsSessions {
+			t.Errorf("%q doesn't say it needs sessions here", name)
+		}
+	}
+	for _, name := range []string{ipc.OpHello, ipc.OpSnapshot, ipc.OpSubscribe, ipc.OpRemoteHosts, ipc.OpRemoteHostAdd,
+		ipc.OpRemoteBrowse, ipc.OpRemoteNew, ipc.OpRemoteCall, ipc.OpRemoteIdentity, ipc.OpSessionAttach,
+		ipc.OpInbox, ipc.OpInboxAnswer, ipc.OpResume, ipc.OpConfigGet, ipc.OpConfigSet, ipc.OpClients, ipc.OpInit, ipc.OpShutdown} {
+		if get(name).NeedsSessions {
+			t.Errorf("%q needs sessions here, but a client-only daemon needs it", name)
+		}
+	}
+
 	// Ops that start agents or type into sessions say so.
 	for _, name := range []string{ipc.OpNew, ipc.OpResume, ipc.OpInboxAnswer, ipc.OpJobSave, ipc.OpJobRun, ipc.OpRemoteNew} {
 		if !get(name).RunsCode {

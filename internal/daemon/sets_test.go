@@ -11,6 +11,7 @@ import (
 
 // setsDaemon starts a daemon that can start terminals, and dials it.
 func setsDaemon(t *testing.T) *ipc.Conn {
+	sessionsHere(t)
 	t.Helper()
 	p := testPaths(t)
 	fh := &fakeHosts{paths: p}

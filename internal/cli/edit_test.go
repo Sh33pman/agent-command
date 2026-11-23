@@ -11,6 +11,7 @@ import (
 )
 
 func TestEditOpensAFileAtALine(t *testing.T) {
+	sessionsHere(t)
 	dir := filepath.Dir(daemonEnv(t).ConfigDir)
 	proj := filepath.Join(dir, "proj")
 	must(t, os.MkdirAll(filepath.Join(proj, "src"), 0o755))
@@ -67,6 +68,7 @@ func TestEditOpensAFileAtALine(t *testing.T) {
 
 // Choosing an editor finds its launcher on the login shell's PATH.
 func TestResolveEditor(t *testing.T) {
+	sessionsHere(t)
 	bin := t.TempDir()
 	for _, name := range []string{"zed", "nvim"} {
 		must(t, os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o755)) // #nosec G306 -- an executable for the test

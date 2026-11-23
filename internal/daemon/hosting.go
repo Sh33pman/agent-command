@@ -16,7 +16,7 @@ import (
 
 func (d *Daemon) startRemote() {
 	d.remote = host.New(host.Options{
-		Settings:    func() config.Remote { return d.config().Remote },
+		Settings:    d.hostingSettings,
 		SetSettings: func(m map[string]any) error { _, err := d.setConfig(ipc.ConfigSet{Values: m}); return err },
 		Data:        hostData{d},
 		IdentityDir: d.cfg.Paths.RemoteIdentityDir(),
@@ -31,6 +31,16 @@ func (d *Daemon) startRemote() {
 	// Connect), so turning Remote off doesn't drop a client attached.
 	hostapi.Register(d.remote, hostBackend{d}, hostapi.Options{Home: d.cfg.Home})
 	d.remote.Reload() // it logs what's wrong
+}
+
+// hostingSettings are the Remote settings Hosting follows. A client-only
+// daemon never listens, whatever config.toml says.
+func (d *Daemon) hostingSettings() config.Remote {
+	r := d.config().Remote
+	if d.cfg.ClientOnly {
+		r.Host.Enabled = false
+	}
+	return r
 }
 
 func isRemoteOp(op string) bool {

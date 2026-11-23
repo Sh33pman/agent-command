@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -53,10 +54,10 @@ func TestEnsureGeneratesOnce(t *testing.T) {
 	if id.CertPath != cert || id.KeyPath != key {
 		t.Errorf("paths %s %s, want %s %s", id.CertPath, id.KeyPath, cert, key)
 	}
-	for path, want := range map[string]os.FileMode{dir: 0o700, key: 0o600, cert: 0o644} {
-		if got := perm(t, path); got != want {
-			t.Errorf("%s is %o, want %o", path, got, want)
-		}
+	private(t, dir, 0o700)
+	private(t, key, 0o600)
+	if got := perm(t, cert); got != 0o644 && runtime.GOOS != "windows" {
+		t.Errorf("%s is %o, want 644", cert, got)
 	}
 	if id.CommonName != "studio-mac" || id.Leaf.Subject.CommonName != "studio-mac" {
 		t.Errorf("common name %q, want studio-mac", id.CommonName)
@@ -111,9 +112,7 @@ func TestEnsureUsesAnEmptyFolderAndTightensIt(t *testing.T) {
 	must(t, os.Chmod(dir, 0o755))
 	_, err := Ensure(dir)
 	must(t, err)
-	if got := perm(t, dir); got != 0o700 {
-		t.Errorf("folder is %o, want 700", got)
-	}
+	private(t, dir, 0o700)
 }
 
 func TestEnsureRefusesAnIncompleteIdentity(t *testing.T) {
@@ -192,9 +191,7 @@ func TestRegenerate(t *testing.T) {
 		t.Error("the new identity isn't the one on disk")
 	}
 	_, key := Files(dir)
-	if got := perm(t, key); got != 0o600 {
-		t.Errorf("key is %o", got)
-	}
+	private(t, key, 0o600)
 	entries, err := os.ReadDir(filepath.Dir(dir))
 	must(t, err)
 	if len(entries) != 1 {
@@ -356,12 +353,12 @@ func TestLoadRejections(t *testing.T) {
 			_, key := pair(t, edKey(t), "pkcs8")
 			missing := filepath.Join(t.TempDir(), "nope.pem")
 			return missing, key, missing
-		}, "no such file"},
+		}, notFound},
 		{"missing key", func(t *testing.T) (string, string, string) {
 			cert, _ := pair(t, edKey(t), "pkcs8")
 			missing := filepath.Join(t.TempDir(), "nope.pem")
 			return cert, missing, missing
-		}, "no such file"},
+		}, notFound},
 		{"cert isn't PEM", func(t *testing.T) (string, string, string) {
 			cert, key := pair(t, edKey(t), "pkcs8")
 			writeFileT(t, cert, "hello", 0o644)
@@ -382,12 +379,12 @@ func TestLoadRejections(t *testing.T) {
 		}, "only P-256"},
 		{"key readable by others", func(t *testing.T) (string, string, string) {
 			cert, key := pair(t, edKey(t), "pkcs8")
-			must(t, os.Chmod(key, 0o644))
+			readableBy(t, key, "others")
 			return cert, key, key
 		}, "permissions too open"},
 		{"key readable by the group", func(t *testing.T) (string, string, string) {
 			cert, key := pair(t, edKey(t), "pkcs8")
-			must(t, os.Chmod(key, 0o640))
+			readableBy(t, key, "group")
 			return cert, key, key
 		}, "chmod 600"},
 		{"key isn't PEM", func(t *testing.T) (string, string, string) {
@@ -438,7 +435,7 @@ func TestLoadRejections(t *testing.T) {
 
 func TestLoadErrorsCanBeTold(t *testing.T) {
 	cert, key := pair(t, edKey(t), "pkcs8")
-	must(t, os.Chmod(key, 0o604))
+	readableBy(t, key, "others")
 	if _, err := Load(cert, key); !errors.Is(err, ErrKeyPermissions) {
 		t.Errorf("err = %v, want ErrKeyPermissions", err)
 	}

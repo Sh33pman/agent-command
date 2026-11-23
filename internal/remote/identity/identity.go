@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/brettmostert/agent-command/internal/paths"
 )
 
 // The files of a generated identity, in its folder.
@@ -127,8 +129,8 @@ func Regenerate(dir string) (*Identity, error) {
 
 func loadDir(dir string) (*Identity, error) {
 	// Tighten a folder made by hand.
-	if st, err := os.Stat(dir); err == nil && st.Mode().Perm() != 0o700 {
-		if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a folder needs its execute bit; 0700 is owner-only
+	if _, err := os.Stat(dir); err == nil {
+		if err := paths.MakePrivate(dir); err != nil {
 			return nil, err
 		}
 	}
@@ -237,12 +239,12 @@ func Load(certPath, keyPath string) (*Identity, error) {
 		return nil, fmt.Errorf("%s: %w", certPath, err)
 	}
 
-	st, err := os.Stat(keyPath)
+	who, fix, err := paths.OthersCanRead(keyPath)
 	if err != nil {
 		return nil, err
 	}
-	if st.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("%s: %w (%s): run chmod 600 %s", keyPath, ErrKeyPermissions, st.Mode().Perm(), keyPath)
+	if who != "" {
+		return nil, fmt.Errorf("%s: %w (%s): %s", keyPath, ErrKeyPermissions, who, fix)
 	}
 	keyPEM, err := os.ReadFile(keyPath) //nolint:gosec // G304: a key file from the config
 	if err != nil {

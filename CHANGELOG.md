@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.1](https://github.com/brettmostert/agent-command/compare/v0.91.0...v0.91.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* the app reads features from an older daemon, so its sessions show ([#181](https://github.com/brettmostert/agent-command/issues/181)) ([41d75e6](https://github.com/brettmostert/agent-command/commit/41d75e6ae274faf18e8ef8227df7b0b253ae9f77))
+
 ## [0.91.0](https://github.com/brettmostert/agent-command/compare/v0.90.0...v0.91.0) (2026-11-23)
 
 

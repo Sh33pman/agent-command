@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.84.2](https://github.com/brettmostert/agent-command/compare/v0.84.1...v0.84.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* harnesses: add from Settings, set the default there, and run in the harness's folder ([#164](https://github.com/brettmostert/agent-command/issues/164)) ([1f0c6eb](https://github.com/brettmostert/agent-command/commit/1f0c6eb7c837fce3b9ed882ff4ebb50ff7636a83))
+
 ## [0.84.1](https://github.com/brettmostert/agent-command/compare/v0.84.0...v0.84.1) (2026-11-23)
 
 

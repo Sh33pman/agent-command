@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -355,39 +354,6 @@ func openArgs(acmd string, newInstance bool) []string {
 		args = append(args, "--args", "--new-instance")
 	}
 	return args
-}
-
-// fallbackNotify shows a notification: notify-send on Linux when installed,
-// terminal-notifier or osascript on macOS.
-func fallbackNotify(no ipc.Notice) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if runtime.GOOS != "darwin" {
-		if ns, err := setup.LookPathIn("notify-send", loginPath()); err == nil {
-			_ = exec.CommandContext(ctx, ns, "--", no.Title, no.Body).Run() // #nosec G204 -- notify-send on the login PATH; argv only
-		}
-		return
-	}
-	if tn, err := setup.LookPathIn("terminal-notifier", loginPath()); err == nil {
-		args := []string{"-title", no.Title, "-message", no.Body, "-group", no.SessionID}
-		if no.Sound != "" {
-			args = append(args, "-sound", no.Sound)
-		}
-		_ = exec.CommandContext(ctx, tn, args...).Run() // #nosec G204 -- terminal-notifier on the login PATH; argv only
-		return
-	}
-	script := `on run argv
-	if item 3 of argv is "" then
-		display notification (item 2 of argv) with title (item 1 of argv)
-	else
-		display notification (item 2 of argv) with title (item 1 of argv) sound name (item 3 of argv)
-	end if
-end run`
-	sound := no.Sound
-	if sound == "default" {
-		sound = "Glass"
-	}
-	_ = exec.CommandContext(ctx, "osascript", "-e", script, no.Title, no.Body, sound).Run() // #nosec G204 -- fixed script; argv only
 }
 
 func nameOf(s *core.Session) string {

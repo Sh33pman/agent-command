@@ -48,6 +48,8 @@ Every command that reads or changes state takes `--json`, which prints the answe
 
 It follows changes as they happen, shows each notice, and rings the bell for the ones sent to this terminal.
 
+When no app or terminal client shows a notice, the OS does, where there's a desktop: terminal-notifier or a notification on macOS, `notify-send` on a Linux desktop, and a toast on Windows (it names Windows PowerShell as its app, because acmd registers none of its own). A machine with no desktop shows none: the notice still reaches your terminal clients, or the machine you're using.
+
 From any terminal, on macOS, Linux and Windows:
 
 - **`acmd attach <#|id|name>`** attaches this terminal to a session, one here or a host's as `acmd list` shows it. Ctrl+] detaches. With `--host`, it picks among that host's own sessions.

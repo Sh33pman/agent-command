@@ -200,6 +200,8 @@ jobs:
       # Scheduler, with the hidden launcher.
       - name: the logon task, for real
         run: go test ./internal/service -run TestRealLogonTask -count=1 -v
+      - name: a toast, for real
+        run: go test ./internal/cli -run TestToastRunsInPowerShell -count=1 -v
 
   linux:
     runs-on: ubuntu-latest

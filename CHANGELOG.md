@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.89.0](https://github.com/brettmostert/agent-command/compare/v0.88.0...v0.89.0) (2026-11-23)
+
+
+### Features
+
+* start the daemon at logon on Windows, and install with Scoop ([#174](https://github.com/brettmostert/agent-command/issues/174)) ([fcb7627](https://github.com/brettmostert/agent-command/commit/fcb762730b4a3bd9dc99fc12a10c9c6c692d9be7))
+
 ## [0.88.0](https://github.com/brettmostert/agent-command/compare/v0.87.0...v0.88.0) (2026-11-23)
 
 

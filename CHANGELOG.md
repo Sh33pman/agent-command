@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.86.0](https://github.com/brettmostert/agent-command/compare/v0.85.0...v0.86.0) (2026-11-23)
+
+
+### Features
+
+* an acmd brew formula for Linux, WSL2 and macOS, and a guide for a headless host ([#168](https://github.com/brettmostert/agent-command/issues/168)) ([f505ccf](https://github.com/brettmostert/agent-command/commit/f505ccff4bc0d973295cafd5c49cbaa511e80057))
+
 ## [0.85.0](https://github.com/brettmostert/agent-command/compare/v0.84.2...v0.85.0) (2026-11-23)
 
 

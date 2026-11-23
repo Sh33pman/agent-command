@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.84.1](https://github.com/brettmostert/agent-command/compare/v0.84.0...v0.84.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* a host always ends with this machine's latest presence ([#160](https://github.com/brettmostert/agent-command/issues/160)) ([709a7f0](https://github.com/brettmostert/agent-command/commit/709a7f0fb717a8a65d291fab384f1a4b8ad5397e))
+
 ## [0.84.0](https://github.com/brettmostert/agent-command/compare/v0.83.0...v0.84.0) (2026-11-23)
 
 

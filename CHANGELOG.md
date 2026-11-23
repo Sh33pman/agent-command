@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.91.0](https://github.com/brettmostert/agent-command/compare/v0.90.0...v0.91.0) (2026-11-23)
+
+
+### Features
+
+* a terminal UI, and a bare acmd opens a UI ([#178](https://github.com/brettmostert/agent-command/issues/178)) ([337145a](https://github.com/brettmostert/agent-command/commit/337145a9ee2877dc0ecff82580b03375d87173e2))
+* show OS notifications on Windows, and only where Linux has a desktop ([#179](https://github.com/brettmostert/agent-command/issues/179)) ([2251be7](https://github.com/brettmostert/agent-command/commit/2251be768ab94583b6627a9d8b5a3446a0f2ba3f))
+
 ## [0.90.0](https://github.com/brettmostert/agent-command/compare/v0.89.0...v0.90.0) (2026-11-23)
 
 

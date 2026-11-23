@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.87.0](https://github.com/brettmostert/agent-command/compare/v0.86.0...v0.87.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* the cask installs the acmd formula, and the app uses brew's acmd ([#170](https://github.com/brettmostert/agent-command/issues/170))
+
+### Features
+
+* the cask installs the acmd formula, and the app uses brew's acmd ([#170](https://github.com/brettmostert/agent-command/issues/170)) ([0984c19](https://github.com/brettmostert/agent-command/commit/0984c190ab9614aa44417be6982090f73f5dc8a7))
+
 ## [0.86.0](https://github.com/brettmostert/agent-command/compare/v0.85.0...v0.86.0) (2026-11-23)
 
 

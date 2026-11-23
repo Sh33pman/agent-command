@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.91.2](https://github.com/brettmostert/agent-command/compare/v0.91.1...v0.91.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* the service's daemon restarts on a new build of acmd by itself ([#183](https://github.com/brettmostert/agent-command/issues/183)) ([37f6596](https://github.com/brettmostert/agent-command/commit/37f65964bd63f9736c7f6e1141892a1581114bf2))
+* warn when acmd is older than the app using it ([#184](https://github.com/brettmostert/agent-command/issues/184)) ([7b03fad](https://github.com/brettmostert/agent-command/commit/7b03fad7cd057274a08e64abcf2cd1e0fb3cb666))
+
 ## [0.91.1](https://github.com/brettmostert/agent-command/compare/v0.91.0...v0.91.1) (2026-11-23)
 
 

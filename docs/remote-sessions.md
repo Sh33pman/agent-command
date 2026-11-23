@@ -153,7 +153,7 @@ A machine with no screen, or one you only reach from another, can be a host: a L
    acmd remote requests approve <id> --name laptop
    ```
 
-The host's sessions then show on the client, and you start new ones there with `acmd new --on server`, or ⇧⌘N in the app. The daemon keeps running across reboots, so Hosting and scheduled jobs do too. Upgrade with `brew upgrade acmd`: sessions keep running, and the next acmd command restarts the daemon as the new version.
+The host's sessions then show on the client, and you start new ones there with `acmd new --on server`, or ⇧⌘N in the app. The daemon keeps running across reboots, so Hosting and scheduled jobs do too. Upgrade with `brew upgrade acmd`: sessions keep running, and within a minute the daemon restarts on the new version by itself.
 
 ## Windows
 

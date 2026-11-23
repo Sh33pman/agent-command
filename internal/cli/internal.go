@@ -105,6 +105,9 @@ the service, or without one runs the daemon in the foreground.`,
 			} else {
 				localSessions(&cfg, p, logger)
 			}
+			if startedByService {
+				followUpgrades(ctx, end, logger)
+			}
 			err = daemon.Run(ctx, cfg)
 			if errors.Is(err, daemon.ErrAlreadyRunning) {
 				return nil // another daemon won the race; fine
@@ -390,4 +393,31 @@ func localSessions(cfg *daemon.Config, p paths.Paths, logger *log.Logger) {
 	} else {
 		logger.Printf("claude not found; reconciliation disabled: %v", err)
 	}
+}
+
+// followUpgrades makes the service's daemon make way for a new build of the
+// binary the service runs: it ends this daemon (end), and the service starts
+// the new one. Windows' logon task has no restart rule, so there the task is
+// run again as this one goes.
+func followUpgrades(ctx context.Context, end func(), logger *log.Logger) {
+	svc, err := localService()
+	if err != nil {
+		return
+	}
+	bin := svc.Status(ctx).Binary
+	if bin == "" {
+		return
+	}
+	w, err := newBinaryWatch(bin, version.Get().Version)
+	if err != nil {
+		logger.Printf("upgrades: can't watch %s: %v", bin, err)
+		return
+	}
+	go w.follow(ctx, upgradeEvery, func(v string) {
+		logger.Printf("upgrades: %s is acmd %s now: stopping, so the service starts it", bin, v)
+		if err := svc.StartAfterExit(); err != nil {
+			logger.Printf("upgrades: %v", err)
+		}
+		end()
+	})
 }

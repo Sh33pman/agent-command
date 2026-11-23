@@ -468,6 +468,18 @@ func (e Env) Restart(ctx context.Context) error {
 	return e.launchctl(ctx, "kickstart", "-k", e.target())
 }
 
+// StartAfterExit makes sure the service starts its daemon again once this
+// one exits. launchd (KeepAlive) and systemd (Restart=always) do that
+// themselves; Windows' logon task has no restart rule, so it's run again, a
+// moment from now, from outside this process.
+func (e Env) StartAfterExit() error {
+	mgr, err := e.Manager()
+	if err != nil || mgr != TaskScheduler {
+		return err
+	}
+	return e.Detach(fmt.Sprintf(`timeout /T 2 /NOBREAK >NUL & schtasks /Run /TN "%s"`, TaskName))
+}
+
 // Running says whether the service's daemon is running.
 func (e Env) Running(ctx context.Context) bool {
 	return e.Pid(ctx) > 0

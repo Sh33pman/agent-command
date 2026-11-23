@@ -53,7 +53,8 @@ class Acmd < Formula
       from login on macOS. It's safe to run again. WSL2 needs systemd turned on
       for the service ([boot] systemd=true in /etc/wsl.conf).
 
-      Upgrades need nothing more: the next acmd command restarts the daemon.
+      Upgrades need nothing more: within a minute the daemon restarts on the
+      new version by itself, and sessions keep running.
 
       Before `brew uninstall acmd`, run `acmd uninstall`: it ends sessions,
       removes the service and the hooks.

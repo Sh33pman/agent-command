@@ -187,3 +187,24 @@ func TestTaskWithoutLocalAppData(t *testing.T) {
 		t.Error("status names Task Scheduler")
 	}
 }
+
+// A daemon making way for a new build: launchd and systemd start it again
+// themselves; Windows' task is run again from outside it.
+func TestStartAfterExit(t *testing.T) {
+	for _, goos := range []string{"darwin", "linux"} {
+		f := servicetest.New(goos, t.TempDir())
+		if err := f.Env().StartAfterExit(); err != nil || len(f.Detached()) != 0 {
+			t.Errorf("%s: %v, detached %q", goos, err, f.Detached())
+		}
+	}
+	f := servicetest.New("windows", t.TempDir())
+	must(t, f.Env().StartAfterExit())
+	if d := f.Detached(); len(d) != 1 || !strings.HasPrefix(d[0], "timeout /T 2 ") || !strings.HasSuffix(d[0], `schtasks /Run /TN "`+service.TaskName+`"`) {
+		t.Errorf("windows: detached %q", d)
+	}
+	plain := servicetest.New("linux", t.TempDir())
+	plain.NoSystemd = true
+	if err := plain.Env().StartAfterExit(); err == nil {
+		t.Error("no service manager, and no error")
+	}
+}

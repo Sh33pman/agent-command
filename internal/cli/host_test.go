@@ -49,9 +49,26 @@ func TestHostArgv(t *testing.T) {
 }
 
 func TestHostEnvStripsClaudeAndTerminal(t *testing.T) {
-	env := hostEnv([]string{"PATH=/bin", "CLAUDECODE=1", "CLAUDE_CONFIG_DIR=/x", "TERM=dumb", "KITTY_WINDOW_ID=3", "HOME=/h"})
+	base := []string{"PATH=/bin", "CLAUDECODE=1", "CLAUDE_CONFIG_DIR=/x", "TERM=dumb", "KITTY_WINDOW_ID=3", "HOME=/h"}
+	env := hostEnv(base, hostOptions{Harness: core.HarnessClaude})
 	if got, want := strings.Join(env, " "), "PATH=/bin HOME=/h TERM=xterm-256color"; got != want {
 		t.Errorf("env = %q, want %q", got, want)
+	}
+}
+
+// A Claude harness with its own folder runs with that CLAUDE_CONFIG_DIR, not
+// an inherited one.
+func TestHostEnvKeepsTheHarnessFolder(t *testing.T) {
+	base := []string{"PATH=/bin", "CLAUDE_CONFIG_DIR=/inherited"}
+	env := hostEnv(base, hostOptions{Harness: core.HarnessClaude, ConfigDir: "/work/.claude"})
+	if got, want := strings.Join(env, " "), "PATH=/bin TERM=xterm-256color CLAUDE_CONFIG_DIR=/work/.claude"; got != want {
+		t.Errorf("env = %q, want %q", got, want)
+	}
+	// Antigravity has no folder.
+	if env := hostEnv(base, hostOptions{Harness: core.HarnessAntigravity, ConfigDir: "/work/.claude"}); slices.ContainsFunc(env, func(kv string) bool {
+		return strings.HasPrefix(kv, "CLAUDE_CONFIG_DIR=")
+	}) {
+		t.Errorf("antigravity env = %v", env)
 	}
 }
 
@@ -69,18 +86,19 @@ func TestHostServe(t *testing.T) {
 		t.Setenv(k, v)
 	}
 	t.Setenv("CLAUDECODE", "1") // as if run from inside a Claude session
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "inherited"))
 	for _, d := range []string{p.ConfigDir, p.RuntimeDir} {
 		must(t, os.MkdirAll(d, 0o700))
 	}
 	script := filepath.Join(dir, "claude")
-	must(t, os.WriteFile(script, []byte("#!/bin/sh\necho \"ARGS:$*\"\necho \"CLAUDECODE:${CLAUDECODE:-unset}\"\nread line\necho \"GOT:$line\"\n"), 0o700))
+	must(t, os.WriteFile(script, []byte("#!/bin/sh\necho \"ARGS:$*\"\necho \"CLAUDECODE:${CLAUDECODE:-unset}\"\necho \"CONFIG:${CLAUDE_CONFIG_DIR:-unset}\"\nread line\necho \"GOT:$line\"\n"), 0o700))
 	// The old remote_control is still read by the host, as a session starts.
 	must(t, os.WriteFile(p.Config(), []byte("remote_control = true\n"), 0o600))
 
 	id := "01HZZZZZZZZZZZZZZZZZZZZZZZ"
 	served := make(chan error, 1)
 	go func() {
-		_, err := acmd(t, "host", "serve", "--session", id, "--dir", dir, "--command", script, "--name", "auth", "--prompt", "hi", "--", "--model", "opus")
+		_, err := acmd(t, "host", "serve", "--session", id, "--dir", dir, "--command", script, "--config-dir", filepath.Join(dir, "work"), "--name", "auth", "--prompt", "hi", "--", "--model", "opus")
 		served <- err
 	}()
 	sock := p.HostSocket(id)
@@ -96,7 +114,8 @@ func TestHostServe(t *testing.T) {
 	defer cancel()
 	attached := make(chan error, 1)
 	go func() { attached <- term.Attach(ctx, sock, in, size, 24, 80, out) }()
-	waitUntil(t, "argv printed", func() bool { return strings.Contains(out.String(), "CLAUDECODE:unset") })
+	// The harness's folder, not the inherited one.
+	waitUntil(t, "CLAUDE_CONFIG_DIR printed", func() bool { return strings.Contains(out.String(), "CONFIG:"+filepath.Join(dir, "work")) })
 	if got := out.String(); !strings.Contains(got, "ARGS:--remote-control --name auth --model opus -- hi") {
 		t.Errorf("argv not as expected:\n%s", got)
 	}

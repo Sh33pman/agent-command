@@ -539,7 +539,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     /// ⌘N: a session with the default harness. With none chosen yet, it asks which,
-    /// with "make it the default" ticked.
+    /// offering to make it the default.
     @objc private func newDefaultSession() {
         if let harness = DefaultHarness.current {
             newSession(harness: harness)
@@ -561,8 +561,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // ⌘N's first question is only about this Mac.
         let hosts = firstTime ? [] : store.remoteHosts.map(\.name)
         showPopup(HarnessPickerView(
-            title: firstTime ? "What should ⌘N start?" : "New session",
-            makeDefault: firstTime,
+            title: "New session",
+            offersDefault: DefaultHarness.current == nil,
             picker: NewSessionPicker(hosts: hosts, host: host, client: store.remoteClient),
             close: { [weak self] in self?.closePopup() },
             choose: { [weak self] harness, makeDefault, host in

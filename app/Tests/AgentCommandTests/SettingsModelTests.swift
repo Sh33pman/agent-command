@@ -55,12 +55,12 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     let v = m.values
     #expect(fake.ops == ["config.get"])
     #expect(m.loaded && m.acmd.path == "/tmp/x/config.toml" && m.acmd.voices == ["af_heart", "am_adam"] && m.acmd.problem == nil)
-    #expect(v.defaultHarness == "HW" && v.agentRemoteControl)
+    #expect(v.editorPreset == "zed" && v.agentRemoteControl)
     #expect(!v.onError && v.doneMin == "1m0s" && v.sound.isEmpty && v.speed == 1.25 && v.editorTarget == "git_root")
 
     fake.replies["config.get"] = configState(["notify.cooldown": "5s"], path: "p", problem: ["line": 3, "message": "expected a value"])
     m.load()
-    #expect(m.values.cooldown == "5s" && m.values.defaultHarness.isEmpty && m.values.onWaiting, "what's missing is the default")
+    #expect(m.values.cooldown == "5s" && m.values.editorPreset.isEmpty && m.values.onWaiting, "what's missing is the default")
     #expect(m.acmd.problem?.text == "config.toml, line 3: expected a value")
 
     fake.failures["config.get"] = "daemon not reachable"
@@ -78,7 +78,7 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     m.set("default_harness", "HW")
     #expect(fake.last["values"] as? [String: String] == ["default_harness": "HW"])
     #expect(fake.ops == ["config.set", "config.set", "config.set"], "one call each, and the reply is the settings")
-    #expect(m.busy == nil && m.error == nil && m.values.defaultHarness == "HW")
+    #expect(m.busy == nil && m.error == nil && m.values.editorPreset == "zed")
     #expect(HostSettings.shared.values["default_harness"] == .string("HW"), "this Mac's settings follow")
 
     // Several at once: one call, all or none.
@@ -126,7 +126,7 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     m.load()
     m.host = nil
     fake.release()
-    #expect(m.target == nil && m.values.defaultHarness == "HW")
+    #expect(m.target == nil && m.values.editorPreset == "zed")
 }
 
 @MainActor @Test func aNewVoiceIsDownloadedOnceSaved() {

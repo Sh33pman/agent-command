@@ -29,6 +29,7 @@ enum HarnessName {
 /// Settings → Harnesses: what sessions and jobs run in. Each is Claude or
 /// Antigravity with its own name and settings; a Claude harness has its own
 /// folder (CLAUDE_CONFIG_DIR), so two can be signed in to different accounts.
+/// It's also where the default, what ⌘N starts, is set.
 struct HarnessSettings: View {
     var list = HarnessList.shared
     @State private var selectedID: String?
@@ -37,11 +38,13 @@ struct HarnessSettings: View {
     @State private var problem: String?
 
     private var selected: Harness? { list.harnesses.first { $0.harnessID == selectedID } ?? list.harnesses.first }
+    /// The default as set: none until it's chosen, here or in the new-session picker.
+    private var chosenDefault: Harness? { DefaultHarness.current }
 
     var body: some View {
         Section {
             ForEach(list.harnesses) { h in
-                HarnessRow(harness: h, isDefault: h.harnessID == list.defaultID, isSelected: h == selected)
+                HarnessRow(harness: h, isDefault: h == chosenDefault, isSelected: h == selected)
                     .contentShape(Rectangle())
                     .onTapGesture { selectedID = h.harnessID }
             }
@@ -54,32 +57,42 @@ struct HarnessSettings: View {
                 Button { removing = selected } label: { Image(systemName: "minus") }
                     .buttonStyle(.borderless).disabled(selected == nil).help("Remove the selected harness")
                 Spacer()
+                Button("No Default") { setDefault(nil) }
+                    .disabled(chosenDefault == nil)
+                    .help("⌘N asks which harness, and offers to make it the default.")
+                Button("Make Default") { setDefault(selected) }
+                    .disabled(selected == nil || selected == chosenDefault)
+                    .help("⌘N starts the selected harness without asking.")
             }
             if let problem { Text(problem).foregroundStyle(.red).font(.caption) }
         } header: {
             Text("Harnesses")
         } footer: {
-            Text("What sessions and scheduled jobs run in. Each harness is Claude or Antigravity, with its own name and settings. Each Claude harness has its own folder, so each can be signed in to a different account.")
+            Text("What sessions and scheduled jobs run in. Each harness is Claude or Antigravity, with its own name and settings. Each Claude harness has its own folder, so each can be signed in to a different account. The default is what ⌘N and acmd new start; with none, ⌘N asks.")
+        }
+        .sheet(item: Binding(get: { adding.map(KindToAdd.init) }, set: { adding = $0?.kind })) { k in
+            AddHarnessSheet(kind: k.kind, others: list.harnesses) { added in
+                adding = nil
+                if let added { selectedID = added.harnessID }
+            }
+        }
+        .confirmationDialog(removing.map { "Remove \($0.name)?" } ?? "", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            presenting: removing) { h in
+            Button("Remove", role: .destructive) { remove(h) }
+        } message: { h in
+            Text(h.isClaude && !h.folder.isEmpty
+                 ? "Its sessions keep running. Its folder, \((h.folder as NSString).abbreviatingWithTildeInPath), stays, with its sign-in."
+                 : "Its sessions keep running.")
         }
         if let h = selected {
             HarnessForm(harness: h, others: list.harnesses.filter { $0 != h })
                 .id(h.id)
         }
-        Group {}
-            .sheet(item: Binding(get: { adding.map(KindToAdd.init) }, set: { adding = $0?.kind })) { k in
-                AddHarnessSheet(kind: k.kind, others: list.harnesses) { added in
-                    adding = nil
-                    if let added { selectedID = added.harnessID }
-                }
-            }
-            .confirmationDialog(removing.map { "Remove \($0.name)?" } ?? "", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                                presenting: removing) { h in
-                Button("Remove", role: .destructive) { remove(h) }
-            } message: { h in
-                Text(h.isClaude && !h.folder.isEmpty
-                     ? "Its sessions keep running. Its folder, \((h.folder as NSString).abbreviatingWithTildeInPath), stays, with its sign-in."
-                     : "Its sessions keep running.")
-            }
+    }
+
+    private func setDefault(_ h: Harness?) {
+        problem = nil
+        HostSettings.shared.set(DefaultHarness.change(h)) { why in problem = "The default couldn't be saved: \(why)" }
     }
 
     private func remove(_ h: Harness) {

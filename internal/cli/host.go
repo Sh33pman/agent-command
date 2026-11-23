@@ -67,9 +67,10 @@ func hostArgv(h harness.Harness, o hostOptions) []string {
 }
 
 // hostEnv is the environment of a hosted CLI: the captured login-shell
-// environment without CLAUDE* variables, and a terminal type
-// of its own.
-func hostEnv(base []string) []string {
+// environment without CLAUDE* variables, a terminal type of its own, and
+// for a Claude harness with its own folder, its CLAUDE_CONFIG_DIR (set after
+// the scrub, which would remove it).
+func hostEnv(base []string, o hostOptions) []string {
 	var out []string
 	for _, kv := range procenv.Scrub(base) {
 		switch name, _, _ := splitEnv(kv); name {
@@ -78,7 +79,12 @@ func hostEnv(base []string) []string {
 		}
 		out = append(out, kv)
 	}
-	return append(out, "TERM=xterm-256color")
+	out = append(out, "TERM=xterm-256color")
+	if o.Harness == "" || o.Harness == core.HarnessClaude {
+		home, _ := os.UserHomeDir()
+		out = core.Harness{Kind: core.HarnessClaude, ConfigDir: o.ConfigDir}.Env(out, home)
+	}
+	return out
 }
 
 // hostHarness resolves what a host runs and the environment to run it in:
@@ -172,7 +178,7 @@ func newHostServeCmd() *cobra.Command {
 				return err
 			}
 			defer os.Remove(p.HostIDFile(o.ID))
-			env = append(hostEnv(env), "ACMD_SESSION_ID="+o.ID)
+			env = append(hostEnv(env, o), "ACMD_SESSION_ID="+o.ID)
 			srv := &term.Server{Socket: p.HostSocket(o.ID), Shell: hostArgv(h, o), Dir: o.Dir, Env: env}
 			err = srv.Serve(ctx)
 			// A terminal whose shell exited by itself is over. One ended by a

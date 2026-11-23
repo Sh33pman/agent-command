@@ -6,7 +6,6 @@ import Observation
 struct AcmdSettings: Equatable {
     struct Values: Decodable, Equatable {
         var agentRemoteControl = false
-        var defaultHarness = ""
         var notify = true
         var onWaiting = true
         var onError = true
@@ -30,7 +29,7 @@ struct AcmdSettings: Equatable {
         var clientCert = ""
 
         enum CodingKeys: String, CodingKey {
-            case agentRemoteControl = "agent_remote_control", defaultHarness = "default_harness"
+            case agentRemoteControl = "agent_remote_control"
             case notify = "notify.enabled", onWaiting = "notify.on_waiting", onError = "notify.on_error"
             case onDone = "notify.on_done", onPaused = "notify.on_paused", doneMin = "notify.done_min_duration"
             case cooldown = "notify.cooldown", sound = "notify.sound", voice = "speech.voice", speed = "speech.speed"
@@ -47,7 +46,6 @@ struct AcmdSettings: Equatable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             let d = Values()
             agentRemoteControl = try c.decodeIfPresent(Bool.self, forKey: .agentRemoteControl) ?? d.agentRemoteControl
-            defaultHarness = try c.decodeIfPresent(String.self, forKey: .defaultHarness) ?? d.defaultHarness
             notify = try c.decodeIfPresent(Bool.self, forKey: .notify) ?? d.notify
             onWaiting = try c.decodeIfPresent(Bool.self, forKey: .onWaiting) ?? d.onWaiting
             onError = try c.decodeIfPresent(Bool.self, forKey: .onError) ?? d.onError

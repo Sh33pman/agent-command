@@ -113,7 +113,8 @@ import Testing
     fake.replies["harnesses"] = ["harnesses": [["id": "HW", "name": "Work", "kind": "claude", "installed": true]]]
     var added: Harness?
     list.add(HarnessList.Save(kind: "claude", name: "Work", config_dir: "~/.claude-work")) { added = try? $0.get() }
-    #expect(added?.harnessID == "HW" && fake.ops == ["harness.add", "harnesses"] && list.harnesses.map(\.name) == ["Work"])
+    #expect(added?.harnessID == "HW" && fake.ops == ["harness.add", "harnesses"] && list.harnesses.map(\.name) == ["Work"],
+            "adding doesn't change the default: no config.set")
     #expect(fake.asked[0].input["config_dir"] as? String == "~/.claude-work" && fake.asked[0].input["command"] == nil)
     fake.failures["harness.update"] = "another harness is already called \"Claude\""
     var why: String?

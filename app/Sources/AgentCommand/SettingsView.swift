@@ -178,16 +178,6 @@ private struct GeneralSettings: View {
             }
         }
         Section {
-            Picker(selection: Binding(get: { model.values.defaultHarness }, set: { model.set("default_harness", $0) })) {
-                Text("Ask which").tag("")
-                ForEach(DefaultHarness.choices) { Text($0.title).tag($0.harnessID) }
-            } label: {
-                Text("⌘N starts")
-                Text("The harness a new session runs in, in the app and with acmd new. Ask which: ⌘N asks first, and acmd new takes the first installed. ⇧⌘N always asks.")
-            }
-            .disabled(model.busy == "default_harness")
-        }
-        Section {
             AcmdToggle(
                 title: "Agent Remote Control for new sessions",
                 note: "Use Claude sessions from claude.ai and the Claude app, and Antigravity sessions from Antigravity's Remote Control. Applies to sessions started or resumed after the change. Remote sessions, between Agent Commands, are under Remote.",

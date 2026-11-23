@@ -101,19 +101,19 @@ func TestPlainCommandOpensTheApp(t *testing.T) {
 }
 
 func TestOpenArgs(t *testing.T) {
-	app := "/Applications/Agent Command.app"
 	for _, c := range []struct {
-		exe  string
+		acmd string
 		new  bool
 		want string
 	}{
-		{app + "/Contents/MacOS/agent-command", false, app},
-		{app + "/Contents/MacOS/agent-command", true, "-n|" + app + "|--args|--new-instance"},
-		{"/usr/local/bin/agent-command", false, "-b|" + bundleID},
-		{"", true, "-n|-b|" + bundleID + "|--args|--new-instance"},
+		{"/opt/homebrew/bin/acmd", false, "-b|" + bundleID},
+		{"/opt/homebrew/bin/acmd", true, "-n|-b|" + bundleID + "|--args|--new-instance"},
+		// A dev build: the app runs it too.
+		{"/src/dist/acmd", false, "-b|" + bundleID + "|--env|ACMD_BIN=/src/dist/acmd"},
+		{"", false, "-b|" + bundleID},
 	} {
-		if got := strings.Join(openArgs(c.exe, c.new), "|"); got != c.want {
-			t.Errorf("openArgs(%q, %v) = %q, want %q", c.exe, c.new, got, c.want)
+		if got := strings.Join(openArgs(c.acmd, c.new), "|"); got != c.want {
+			t.Errorf("openArgs(%q, %v) = %q, want %q", c.acmd, c.new, got, c.want)
 		}
 	}
 }

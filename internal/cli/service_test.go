@@ -131,17 +131,6 @@ func TestInitInstallsTheService(t *testing.T) {
 	}
 }
 
-func TestInitHookBinaryOnlyEnablesTheService(t *testing.T) {
-	newSandbox(t)
-	f := withService(t, "darwin")
-	if _, _, err := execute(t, "", "init", "--hook-binary", "/Applications/Agent Command.app/Contents/MacOS/agent-command"); err != nil {
-		t.Fatal(err)
-	}
-	if !f.Env().Installed() || f.Running() || f.Loaded {
-		t.Errorf("installed %v, running %v, loaded %v", f.Env().Installed(), f.Running(), f.Loaded)
-	}
-}
-
 func TestInitSaysWhenLingeringNeedsSudo(t *testing.T) {
 	newSandbox(t)
 	f := withService(t, "linux")
@@ -149,21 +138,6 @@ func TestInitSaysWhenLingeringNeedsSudo(t *testing.T) {
 	out, _, err := execute(t, "", "init")
 	if err != nil || !strings.Contains(out, "sudo loginctl enable-linger tester") {
 		t.Errorf("%v\n%s", err, out)
-	}
-}
-
-func TestBrewUpgradeStopsTheService(t *testing.T) {
-	s := newSandbox(t)
-	f := withService(t, "darwin")
-	if _, _, err := execute(t, "", "init"); err != nil {
-		t.Fatal(err)
-	}
-	if ended, _ := brewUninstall(t, s, "ruby brew.rb upgrade --cask x", ""); len(ended) != 0 {
-		t.Errorf("ended %v", ended)
-	}
-	// Stopped, not removed: the next thing that needs the daemon starts it.
-	if f.Running() || !f.Env().Installed() {
-		t.Errorf("running %v, installed %v", f.Running(), f.Env().Installed())
 	}
 }
 

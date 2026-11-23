@@ -331,31 +331,23 @@ var openApp = func(w io.Writer, newInstance bool) error {
 		fmt.Fprintln(w, "Agent Command GUI is not available on this platform yet. Run 'acmd --help' for CLI subcommands.")
 		return nil
 	}
-	return exec.Command("/usr/bin/open", openArgs(executablePath(), newInstance)...).Run() // #nosec G204 -- fixed program; argv only
+	return exec.Command("/usr/bin/open", openArgs(thisBinary(), newInstance)...).Run() // #nosec G204 -- fixed program; argv only
 }
 
-func executablePath() string {
-	exe, err := executable()
-	if err != nil {
-		return ""
-	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		return resolved
-	}
-	return exe
-}
+// brewAcmd is where Homebrew's acmd formula links acmd, which the app runs
+// unless told otherwise.
+const brewAcmd = "/opt/homebrew/bin/acmd"
 
-// openArgs are the arguments for `open`: the app this binary is part of, else
-// the installed one.
-func openArgs(exe string, newInstance bool) []string {
+// openArgs are the arguments for `open`: the installed app, told to run this
+// acmd (ACMD_BIN) when it isn't Homebrew's, such as a dev build.
+func openArgs(acmd string, newInstance bool) []string {
 	var args []string
 	if newInstance {
 		args = append(args, "-n")
 	}
-	if i := strings.Index(exe, ".app/Contents/MacOS/"); i >= 0 {
-		args = append(args, exe[:i+len(".app")])
-	} else {
-		args = append(args, "-b", bundleID)
+	args = append(args, "-b", bundleID)
+	if acmd != "" && acmd != brewAcmd {
+		args = append(args, "--env", "ACMD_BIN="+acmd)
 	}
 	if newInstance {
 		args = append(args, "--args", "--new-instance")

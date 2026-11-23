@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -24,6 +25,8 @@ func TestUnitContents(t *testing.T) {
 		// Session hosts must outlive a restart.
 		"KillMode=process\n",
 		"Restart=always\n",
+		// With acmd uninstalled, it doesn't start.
+		"ConditionFileIsExecutable=" + bin + "\n",
 		"WantedBy=default.target\n",
 	} {
 		if !strings.Contains(unit, want) {
@@ -51,7 +54,8 @@ func TestPlistContents(t *testing.T) {
 		"<string>" + app + "</string>\n\t\t<string>daemon</string>",
 		"<key>ACMD_SERVICE</key>\n\t\t<string>1</string>",
 		"<key>RunAtLoad</key>\n\t<true/>",
-		"<key>KeepAlive</key>\n\t<true/>",
+		// Kept alive while acmd is there, and not once it's uninstalled.
+		"<key>KeepAlive</key>\n\t<dict>\n\t\t<key>PathState</key>\n\t\t<dict>\n\t\t\t<key>" + app + "</key>\n\t\t\t<true/>",
 		// Session hosts must outlive a restart.
 		"<key>AbandonProcessGroup</key>\n\t<true/>",
 	} {
@@ -261,5 +265,21 @@ func TestLocal(t *testing.T) {
 	e, err := service.Local()
 	if err != nil || e.Home == "" || e.Run == nil {
 		t.Fatalf("Local: %+v %v", e, err)
+	}
+}
+
+// launchd must be able to read the plist, paths with odd characters included.
+func TestPlistIsValid(t *testing.T) {
+	plutil, err := exec.LookPath("plutil")
+	if err != nil {
+		t.Skip("no plutil")
+	}
+	f := servicetest.New("darwin", t.TempDir())
+	path := filepath.Join(t.TempDir(), "agent.plist")
+	if err := os.WriteFile(path, f.Env().Definition(`/Apps/A & B <x>/acmd`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(plutil, "-lint", path).CombinedOutput(); err != nil {
+		t.Errorf("plutil: %v\n%s", err, out)
 	}
 }

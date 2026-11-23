@@ -184,94 +184,6 @@ func TestDoctorFixReplacesStaleHooks(t *testing.T) {
 	}
 }
 
-func TestBrewCommand(t *testing.T) {
-	for args, want := range map[string]string{
-		"501 /opt/homebrew/Library/Homebrew/vendor/ruby --disable=gems /opt/homebrew/Library/Homebrew/brew.rb uninstall --cask x": "uninstall",
-		"501 ruby /opt/homebrew/Library/Homebrew/brew.rb upgrade --cask x":                                                        "upgrade",
-		"501 ruby /opt/homebrew/Library/Homebrew/brew.rb reinstall --cask x":                                                      "reinstall",
-		"501 /bin/zsh": "",
-		"":             "",
-	} {
-		if got := brewCommand(args); got != want {
-			t.Errorf("brewCommand(%q) = %q, want %q", args, got, want)
-		}
-	}
-}
-
-// brewUninstall runs the cask's uninstall as a given Homebrew command, and
-// reports which hosts it ended and what it asked.
-func brewUninstall(t *testing.T, s *sandbox, args, answer string) (ended []string, asked bool) {
-	t.Helper()
-	if err := os.MkdirAll(s.paths.RuntimeDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(s.paths.HostSocket("01ABCDEFGHIJKLMNOPQRSTUVWX"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	origArgs, origAsk, origKill := brewArgs, askTerminal, killHost
-	t.Cleanup(func() { brewArgs, askTerminal, killHost = origArgs, origAsk, origKill })
-	brewArgs = func() string { return args }
-	askTerminal = func(string) (string, bool) {
-		asked = true
-		return answer, true
-	}
-	killHost = func(socket string) error {
-		ended = append(ended, socket)
-		return nil
-	}
-	if _, _, err := execute(t, "", "uninstall", "--brew"); err != nil {
-		t.Fatal(err)
-	}
-	return ended, asked
-}
-
-func TestBrewUpgradeKeepsSessionsAndHooks(t *testing.T) {
-	for _, command := range []string{"upgrade", "reinstall", ""} {
-		s := newSandbox(t)
-		if _, _, err := execute(t, "", "init"); err != nil {
-			t.Fatal(err)
-		}
-		args := ""
-		if command != "" {
-			args = "ruby brew.rb " + command + " --cask x"
-		}
-		ended, asked := brewUninstall(t, s, args, "n")
-		if len(ended) != 0 || asked {
-			t.Errorf("%q: ended %v, asked %v", command, ended, asked)
-		}
-		if b, _ := os.ReadFile(s.settings); !strings.Contains(string(b), "managed by acmd") {
-			t.Errorf("%q removed the hooks", command)
-		}
-	}
-}
-
-func TestBrewUninstallEndsSessionsAndAsks(t *testing.T) {
-	for _, c := range []struct {
-		args, answer    string
-		wantAsk, keptDB bool
-	}{
-		{"ruby brew.rb uninstall --cask x", "\n", true, true},
-		{"ruby brew.rb uninstall --cask x", "n\n", true, false},
-		{"ruby brew.rb rm --cask x", "y\n", true, true},
-		{"ruby brew.rb uninstall --zap --cask x", "n\n", false, true},
-	} {
-		s := newSandbox(t)
-		if _, _, err := execute(t, "", "init"); err != nil {
-			t.Fatal(err)
-		}
-		ended, asked := brewUninstall(t, s, c.args, c.answer)
-		if len(ended) != 1 || asked != c.wantAsk {
-			t.Errorf("%q: ended %v, asked %v", c.args, ended, asked)
-		}
-		if b, _ := os.ReadFile(s.settings); strings.Contains(string(b), "managed by acmd") {
-			t.Errorf("%q left the hooks", c.args)
-		}
-		if _, err := os.Stat(s.paths.Config()); (err == nil) != c.keptDB {
-			t.Errorf("%q answer %q: config kept = %v", c.args, c.answer, err == nil)
-		}
-	}
-}
-
 func TestUninstallRemovesRuntimeFiles(t *testing.T) {
 	for name, other := range map[string]bool{"only acmd's files": false, "someone else's file too": true} {
 		s := newSandbox(t)
@@ -306,38 +218,6 @@ func TestUninstallRemovesRuntimeFiles(t *testing.T) {
 				t.Errorf("%s: the folder is still there, with %v", name, left)
 			}
 		}
-	}
-}
-
-func TestBrewUpgradeLeavesRuntimeFiles(t *testing.T) {
-	s := newSandbox(t)
-	if _, _, err := execute(t, "", "init"); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.paths.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(s.paths.Lock(), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	brewUninstall(t, s, "ruby brew.rb upgrade --cask x", "n")
-	if _, err := os.Stat(s.paths.Lock()); err != nil {
-		t.Errorf("an upgrade removed the lock: %v", err)
-	}
-}
-
-func TestInitHookBinary(t *testing.T) {
-	s := newSandbox(t)
-	final := "/Applications/Agent Command.app/Contents/MacOS/agent-command"
-	invoked := testArgv0
-	testArgv0 = "/opt/homebrew/Caskroom/agent-command/1/Agent Command.app/Contents/MacOS/agent-command"
-	t.Cleanup(func() { testArgv0 = invoked })
-	if _, _, err := execute(t, "", "init", "--hook-binary", final); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(s.settings)
-	if !setup.HasHooks(b, final) || strings.Contains(string(b), "Caskroom") {
-		t.Errorf("settings: %s", b)
 	}
 }
 

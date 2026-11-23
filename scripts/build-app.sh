@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Builds "Agent Command.app" and a zip of it in dist/. Run scripts/build-ghostty.sh
-# first. With --install, also copies the app to /Applications.
+# Builds "Agent Command.app" and a zip of it in dist/, and next to them acmd
+# (dist/agent-command) and its speech engine (dist/acmd-speech, dist/mlx.metallib),
+# which the acmd formula ships: the app runs Homebrew's acmd. Run
+# scripts/build-ghostty.sh first. With --install, also copies the app to /Applications.
 # It's signed with the identity in ACMD_SIGN_IDENTITY: the long-lived self-signed
 # certificate for a release (scripts/create-signing-cert.sh), ad hoc otherwise.
 # ACMD_SIGN_KEYCHAIN names the keychain holding it: a self-signed certificate isn't
@@ -25,13 +27,9 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/AgentCommand" "$app/Contents/MacOS/Agent Command"
 (cd "$root" && CGO_ENABLED=1 go build -trimpath -tags libghostty \
 	-ldflags "-X $module/internal/version.Version=$version -X $module/internal/version.Commit=$sha -X $module/internal/version.Date=$date" \
-	-o "$app/Contents/MacOS/agent-command" ./cmd/agent-command)
-# Built outside the app: make can't take a path with a space.
+	-o "$dist/agent-command" ./cmd/agent-command)
+# Next to it: mlx.metallib, where MLX looks.
 make -C "$root" speech-helper SPEECH_OUT="$dist/acmd-speech"
-cp "$dist/acmd-speech" "$app/Contents/MacOS/acmd-speech"
-# MLX looks next to the helper, but only code can be signed in MacOS.
-cp "$dist/mlx.metallib" "$app/Contents/Resources/mlx.metallib"
-ln -s ../Resources/mlx.metallib "$app/Contents/MacOS/mlx.metallib"
 cp -R "$root/app/Sources/AgentCommand/Resources/Fonts" "$app/Contents/Resources/Fonts"
 cp "$root/packaging/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 mkdir -p "$app/Contents/Resources/ghostty"
@@ -61,7 +59,7 @@ sign=(codesign --force --sign "$identity")
 if [[ -n "${ACMD_SIGN_KEYCHAIN:-}" ]]; then
 	sign+=(--keychain "$ACMD_SIGN_KEYCHAIN")
 fi
-"${sign[@]}" "$app/Contents/MacOS/agent-command" "$app/Contents/MacOS/acmd-speech"
+"${sign[@]}" "$dist/agent-command" "$dist/acmd-speech"
 "${sign[@]}" "$app"
 (cd "$dist" && rm -f AgentCommand.zip && ditto -c -k --keepParent "Agent Command.app" AgentCommand.zip)
 echo "build-app: built $app"
@@ -70,5 +68,5 @@ if [[ "${1:-}" == "--install" ]]; then
 	rm -rf "/Applications/Agent Command.app"
 	cp -R "$app" /Applications/
 	echo "build-app: installed /Applications/Agent Command.app"
-	echo "build-app: open the app, which offers to add its hooks on first launch"
+	echo "build-app: it runs Homebrew's acmd, or ACMD_BIN: open it with this build's acmd, dist/agent-command"
 fi

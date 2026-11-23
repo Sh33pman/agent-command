@@ -568,14 +568,26 @@ enum DaemonPaths {
         return NSString(string: "~/.local/state/agent-command").expandingTildeInPath
     }
 
-    /// The binary inside the app, which always matches it.
-    static var acmd: String {
-        if let bin = ProcessInfo.processInfo.environment["ACMD_BIN"] { return bin }
-        if let bundled = Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("agent-command").path,
-           FileManager.default.isExecutableFile(atPath: bundled) {
-            return bundled
+    /// Where Homebrew's acmd formula links acmd. The cask installs the formula.
+    static let brewAcmd = "/opt/homebrew/bin/acmd"
+
+    /// The acmd the app runs: Homebrew's, or ACMD_BIN (a dev build, or the acmd
+    /// that opened the app).
+    static var acmd: String { acmd(ProcessInfo.processInfo.environment) }
+
+    static func acmd(_ env: [String: String]) -> String {
+        if let bin = env["ACMD_BIN"], !bin.isEmpty { return bin }
+        return brewAcmd
+    }
+
+    /// What to say when acmd isn't there to run, nil when it is.
+    static func acmdMissing(_ path: String = acmd,
+                            executable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> String? {
+        if executable(path) { return nil }
+        if path == brewAcmd {
+            return "acmd isn't installed. Install it with: brew install brettmostert/tap/acmd"
         }
-        return "acmd"
+        return "acmd isn't at \(path) (ACMD_BIN). Install it with: brew install brettmostert/tap/acmd"
     }
 }
 

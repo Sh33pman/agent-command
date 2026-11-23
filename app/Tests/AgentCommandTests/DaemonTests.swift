@@ -158,3 +158,17 @@ extension UsesSharedSpeech {
     let long = ["TMPDIR": "/" + String(repeating: "d", count: 120), "ACMD_STATE_DIR": "/x/state"]
     #expect(DaemonPaths.socket(long) == "/x/state/run/daemon.sock", "a long TMPDIR falls back to the user's own folder, not /tmp")
 }
+
+@Test func findsHomebrewsAcmd() {
+    #expect(DaemonPaths.acmd([:]) == "/opt/homebrew/bin/acmd")
+    #expect(DaemonPaths.acmd(["ACMD_BIN": ""]) == "/opt/homebrew/bin/acmd")
+    #expect(DaemonPaths.acmd(["ACMD_BIN": "/src/dist/acmd"]) == "/src/dist/acmd", "a dev build, or the acmd that opened the app")
+}
+
+@Test func saysHowToInstallAMissingAcmd() {
+    #expect(DaemonPaths.acmdMissing("/opt/homebrew/bin/acmd", executable: { _ in true }) == nil)
+    let missing = DaemonPaths.acmdMissing("/opt/homebrew/bin/acmd", executable: { _ in false })
+    #expect(missing == "acmd isn't installed. Install it with: brew install brettmostert/tap/acmd")
+    let dev = DaemonPaths.acmdMissing("/src/dist/acmd", executable: { _ in false }) ?? ""
+    #expect(dev.contains("/src/dist/acmd") && dev.contains("ACMD_BIN") && dev.contains("brew install brettmostert/tap/acmd"))
+}

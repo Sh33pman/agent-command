@@ -131,10 +131,13 @@ func (e Env) Definition(binary string) []byte {
 // unit is the systemd user unit. KillMode=process stops only the daemon:
 // session hosts run in their own sessions and must outlive it. The daemon
 // writes daemon.log itself, so the journal gets only what it says before that.
+// With acmd gone (`brew uninstall` has no hook to remove the unit), it doesn't
+// start.
 func unit(binary string) []byte {
 	return []byte(`[Unit]
 Description=Agent Command daemon
 Documentation=https://github.com/brettmostert/homebrew-tap
+ConditionFileIsExecutable=` + systemdQuote(binary) + `
 
 [Service]
 Type=simple
@@ -158,7 +161,9 @@ func systemdQuote(s string) string {
 }
 
 // plist is the launchd agent. AbandonProcessGroup keeps launchd from ending
-// session hosts with the daemon. The daemon writes daemon.log itself.
+// session hosts with the daemon. The daemon writes daemon.log itself. It's
+// kept alive only while acmd is there: `brew uninstall` has no hook to remove
+// the agent, and launchd would otherwise retry a missing binary forever.
 func plist(binary string) []byte {
 	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -179,7 +184,13 @@ func plist(binary string) []byte {
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
-	<true/>
+	<dict>
+		<key>PathState</key>
+		<dict>
+			<key>` + xmlEscape(binary) + `</key>
+			<true/>
+		</dict>
+	</dict>
 	<key>AbandonProcessGroup</key>
 	<true/>
 	<key>ProcessType</key>

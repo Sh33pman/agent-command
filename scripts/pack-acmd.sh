@@ -5,13 +5,13 @@
 # libexec/ (acmd-speech, with mlx.metallib next to it, where MLX looks).
 #   pack-acmd.sh <version> <dist>         Linux: builds acmd with libghostty-vt
 #                                         (run scripts/build-ghostty.sh first)
-#   pack-acmd.sh <version> <dist> <app>   macOS: packs the signed binaries of the
-#                                         app scripts/build-app.sh built
+#   pack-acmd.sh <version> <dist> <from>  macOS: packs the signed acmd and speech
+#                                         engine scripts/build-app.sh built in <from>
 # Either way it checks that acmd names the version and keeps the exact screen.
 set -euo pipefail
 
 [[ $# -eq 2 || $# -eq 3 ]] || { sed -n '6,10p' "$0" >&2; exit 2; }
-version=$1 dist=$2 app=${3:-}
+version=$1 dist=$2 from=${3:-}
 root="$(cd "$(dirname "$0")/.." && pwd)"
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 case "$(uname -m)" in
@@ -27,7 +27,7 @@ stage="$top/acmd-$version"
 mkdir -p "$stage/bin"
 case "$os" in
 linux)
-	[[ -z "$app" ]] || { echo "pack-acmd: the app is macOS only" >&2; exit 2; }
+	[[ -z "$from" ]] || { echo "pack-acmd: on Linux, it builds acmd itself" >&2; exit 2; }
 	if [[ ! -f "$root/build/ghostty/vt/include/ghostty/vt.h" ]]; then
 		echo "pack-acmd: libghostty-vt isn't built: run scripts/build-ghostty.sh first" >&2
 		exit 1
@@ -41,12 +41,12 @@ linux)
 	fi
 	;;
 darwin)
-	[[ -n "$app" ]] || { echo "pack-acmd: on macOS, name the app scripts/build-app.sh built" >&2; exit 2; }
+	[[ -n "$from" ]] || { echo "pack-acmd: on macOS, name the folder scripts/build-app.sh built in" >&2; exit 2; }
 	mkdir -p "$stage/libexec"
-	cp "$app/Contents/MacOS/agent-command" "$stage/bin/acmd"
-	cp "$app/Contents/MacOS/acmd-speech" "$stage/libexec/acmd-speech"
-	cp "$app/Contents/Resources/mlx.metallib" "$stage/libexec/mlx.metallib"
-	# Copied, so still signed as the app's are.
+	cp "$from/agent-command" "$stage/bin/acmd"
+	cp "$from/acmd-speech" "$stage/libexec/acmd-speech"
+	cp "$from/mlx.metallib" "$stage/libexec/mlx.metallib"
+	# Copied, so still signed as build-app.sh signed them.
 	codesign --verify --strict "$stage/bin/acmd" "$stage/libexec/acmd-speech"
 	;;
 *)

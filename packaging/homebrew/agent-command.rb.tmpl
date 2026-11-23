@@ -8,55 +8,46 @@ cask "agent-command" do
   homepage "https://github.com/brettmostert/homebrew-tap"
 
   depends_on arch: :arm64
+  # The app runs Homebrew's acmd: its daemon, hooks and speech engine.
+  depends_on formula: "brettmostert/tap/acmd"
   depends_on macos: :tahoe
 
   app "Agent Command.app"
-  # Runs before Homebrew moves the app, so it clears the quarantine flag on the
-  # staged copy and names the final path for the hooks. Without that flag cleared,
-  # macOS kills the binary and removes the app. A failure here mustn't fail the
-  # install: the app offers its hooks on launch.
+  # Runs before Homebrew moves the app, and clears the quarantine flag on the
+  # staged copy: without that, macOS kills the app and removes it.
   installer script: {
     executable: "/bin/sh",
-    args:       [
-      "-c",
-      '/usr/bin/xattr -dr com.apple.quarantine "$0" && ' \
-      '"$0/Contents/MacOS/agent-command" init --hook-binary "$1" || true',
-      "#{staged_path}/Agent Command.app",
-      "#{appdir}/Agent Command.app/Contents/MacOS/agent-command",
-    ],
+    args:       ["-c", '/usr/bin/xattr -dr com.apple.quarantine "$0"', "#{staged_path}/Agent Command.app"],
   }
-  binary "#{appdir}/Agent Command.app/Contents/MacOS/agent-command"
-  binary "#{appdir}/Agent Command.app/Contents/MacOS/agent-command", target: "acmd"
 
-  # Upgrades run this too. It only ends sessions for a real uninstall.
-  uninstall quit:   "com.brettmostert.agent-command",
-            script: {
-              executable:   "/bin/sh",
-              args:         [
-                "-c",
-                '[ ! -x "$0" ] || "$0" uninstall --brew',
-                "#{appdir}/Agent Command.app/Contents/MacOS/agent-command",
-              ],
-              must_succeed: false,
-            }
+  # acmd init: the hooks and the service, with acmd's path. A failure here
+  # mustn't fail the install: the app offers setup on launch.
+  postflight_steps do
+    run "bin/acmd", args: ["init"], base: :homebrew_prefix, must_succeed: false
+  end
+
+  # Upgrades run this too. acmd keeps running: it's the formula's.
+  uninstall quit: "com.brettmostert.agent-command"
 
   # Only zap removes the wake rule: uninstall runs on upgrades too, and
-  # `acmd uninstall` removes it itself.
+  # `acmd uninstall` removes it itself. acmd's sessions and settings are the
+  # formula's: `acmd uninstall --keep-data=false` deletes them.
   zap delete: "/etc/sudoers.d/agent-command",
       trash:  [
-        "~/.config/agent-command",
-        "~/.local/state/agent-command",
+        "~/Library/Caches/com.brettmostert.agent-command",
+        "~/Library/Preferences/com.brettmostert.agent-command.plist",
+        "~/Library/Saved Application State/com.brettmostert.agent-command.savedState",
       ]
 
   caveats <<~EOS
     Agent Command isn't notarized, so this install cleared macOS's quarantine flag
-    for it and added its Claude Code hooks. Run acmd to open it.
+    for it. It runs acmd from the acmd formula, which it installed, and set up its
+    Claude Code hooks and service. Run acmd to open it.
 
     To let scheduled jobs wake the Mac shortly before they run, run
     acmd schedule wake on (it asks for your password once).
 
-    Uninstalling ends running sessions, stops its background service and removes
-    the hooks. Upgrades leave sessions running. Claude conversations can still be
-    resumed after an uninstall.
+    Uninstalling the app leaves acmd and its sessions running. To remove acmd too,
+    run acmd uninstall, then brew uninstall acmd.
   EOS
 end

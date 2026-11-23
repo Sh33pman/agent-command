@@ -25,6 +25,10 @@ class Acmd < Formula
     end
   end
 
+  # Upgrading from the app's cask from before it used this formula: the old
+  # cask linked these to the acmd inside the app.
+  link_overwrite "bin/acmd", "bin/agent-command"
+
   def install
     bin.install "bin/acmd", "bin/agent-command"
     # The speech engine, which acmd finds in ../libexec. MLX looks for its
@@ -53,9 +57,6 @@ class Acmd < Formula
 
       Before `brew uninstall acmd`, run `acmd uninstall`: it ends sessions,
       removes the service and the hooks.
-
-      On a Mac, the Agent Command app (the agent-command cask) brings its own
-      acmd for now: install one or the other, not both.
     EOS
   end
 

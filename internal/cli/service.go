@@ -53,9 +53,6 @@ func thisBinary() string {
 }
 
 type serviceOptions struct {
-	// noStart only writes and enables the service (the cask's installer
-	// step, before the app is in place).
-	noStart bool
 	// inDaemon is true for the init op, which runs in the daemon.
 	inDaemon bool
 }
@@ -68,7 +65,7 @@ func installService(ctx context.Context, p paths.Paths, binary string, o service
 	if err != nil {
 		return nil, err
 	}
-	ch, err := svc.Install(ctx, binary, service.InstallOptions{NoStart: o.noStart, Self: o.inDaemon && startedByService})
+	ch, err := svc.Install(ctx, binary, service.InstallOptions{Self: o.inDaemon && startedByService})
 	if errors.Is(err, service.ErrUnsupported) {
 		return []string{unsupportedText(err)}, nil
 	}
@@ -76,9 +73,6 @@ func installService(ctx context.Context, p paths.Paths, binary string, o service
 		return ch.Notes, err
 	}
 	notes := ch.Notes
-	if o.noStart {
-		return notes, nil
-	}
 	switch {
 	case o.inDaemon && !startedByService:
 		// This daemon answers the op, then makes way for the service's, which

@@ -76,28 +76,32 @@ brew install brettmostert/tap/acmd
 acmd init
 ```
 
-`acmd init` adds the Claude Code hooks and installs the service, which runs acmd's daemon from boot on Linux and WSL2 and from login on macOS (see below). The install tries it too, but Homebrew's sandbox may stop it, so run it once yourself: it's safe to rerun. WSL2 is Linux here, and needs systemd turned on for the service. A headless Mac needs automatic login (System Settings → Users & Groups), since a launchd agent starts at login. To use the machine from another, see [A headless host](docs/remote-sessions.md#a-headless-host). On a Mac, install either the app or the formula: the app brings its own acmd for now. Upgrade with `brew upgrade acmd`: the next acmd command restarts the daemon. Before `brew uninstall acmd`, run `acmd uninstall`.
+`acmd init` adds the Claude Code hooks and installs the service, which runs acmd's daemon from boot on Linux and WSL2 and from login on macOS (see below). The install tries it too, but Homebrew's sandbox may stop it, so run it once yourself: it's safe to rerun. WSL2 is Linux here, and needs systemd turned on for the service. A headless Mac needs automatic login (System Settings → Users & Groups), since a launchd agent starts at login. To use the machine from another, see [A headless host](docs/remote-sessions.md#a-headless-host). Upgrade with `brew upgrade acmd`: the next acmd command restarts the daemon. Before `brew uninstall acmd`, run `acmd uninstall`.
 
-The install adds the app's Claude Code hooks, removing any old ones first. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it. Upgrade with `brew upgrade --cask agent-command`. The daemon looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
+The app runs Homebrew's acmd: the cask installs the acmd formula, and runs `acmd init`, which adds the Claude Code hooks (removing any old ones first) and the service. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it. Upgrade with `brew upgrade`: the app and acmd upgrade separately, and work together one version apart. The daemon looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
 
 `acmd init` also installs the service, which runs acmd's daemon as you: a launchd agent on macOS (`~/Library/LaunchAgents/com.brettmostert.agent-command.daemon.plist`), which starts it at login, and a systemd user unit on Linux and WSL2 (`~/.config/systemd/user/agent-command.service`), which starts it at boot with lingering on. Sessions keep running when it restarts. `acmd service status` says whether it's installed and running, `acmd service install` puts it back, and `acmd service uninstall` removes it; without it, the daemon starts when something needs it. WSL2 needs systemd turned on (`[boot] systemd=true` in `/etc/wsl.conf`, then `wsl --shutdown`). `acmd daemon restart` and `acmd daemon stop` go through the service.
 
 `acmd doctor` checks the setup, and `acmd doctor --fix` re-adds the hooks and replaces a stale daemon. `acmd doctor --json` prints the daemon's health list: the same warnings the app shows, each with its fix.
 
-`brew uninstall --cask agent-command` ends running sessions, stops the daemon and removes its service, removes the hooks and asks whether to keep your sessions and settings. `brew uninstall --zap --cask agent-command` always deletes them. Upgrades leave sessions running. After an uninstall, Claude conversations can still be resumed, and with your data kept, terminals come back as new shells in the same folders.
+`brew uninstall --cask agent-command` removes the app only: acmd and its sessions keep running. `--zap` also removes the app's preferences and the wake rule. To remove acmd too, run `acmd uninstall` first, which ends running sessions, stops the daemon, removes its service and the hooks, and asks whether to keep your sessions and settings (`--keep-data=false` deletes them), then `brew uninstall acmd`. Homebrew has no way for a formula to do that itself. Upgrades leave sessions running. After an uninstall, Claude conversations can still be resumed, and with your data kept, terminals come back as new shells in the same folders.
 
 <details>
 <summary>Manual download</summary>
 
-Download `AgentCommand.zip` from the releases in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap/releases), then:
+Download `AgentCommand.zip`, `acmd-<version>-darwin-arm64.tar.gz` and `checksums.txt` from the releases in [brettmostert/homebrew-tap](https://github.com/brettmostert/homebrew-tap/releases), then:
 
 ```sh
-shasum -a 256 -c checksums.txt
+shasum -a 256 -c --ignore-missing checksums.txt
 unzip AgentCommand.zip
 mv "Agent Command.app" /Applications/
 xattr -dr com.apple.quarantine "/Applications/Agent Command.app"
-"/Applications/Agent Command.app/Contents/MacOS/agent-command" init
+tar -xzf acmd-*-darwin-arm64.tar.gz
+# Put acmd-<version>/bin and libexec side by side somewhere on your PATH, then:
+acmd init
 ```
+
+The app runs `/opt/homebrew/bin/acmd`, or the acmd that opens it (`acmd`).
 </details>
 
 ## Development

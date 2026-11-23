@@ -9,17 +9,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
-	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/sys/unix"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/daemon"
@@ -46,9 +42,8 @@ type initOptions struct {
 	dryRun     bool
 	ask        bool // show the plan and ask before applying (automatic first run)
 	refreshEnv bool
-	hookBinary string // the path hooks run, when it isn't this binary's yet
-	noWake     bool   // don't offer waking the Mac afterwards (nobody's there to answer)
-	inDaemon   bool   // the init op, which runs in the daemon
+	noWake     bool // don't offer waking the Mac afterwards (nobody's there to answer)
+	inDaemon   bool // the init op, which runs in the daemon
 }
 
 // gather collects everything planning needs.
@@ -138,9 +133,6 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	if err != nil {
 		return false, err
 	}
-	if o.hookBinary != "" {
-		g.in.AcmdPath = o.hookBinary
-	}
 	plan, err := setup.PlanInit(g.in)
 	if err != nil {
 		return false, err
@@ -184,9 +176,8 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	if err := setup.WriteRecord(g.paths.Setup(), rec); err != nil {
 		return false, err
 	}
-	// Last: the service's daemon reads what init just wrote. The cask's step
-	// (--hook-binary) runs before the app is in place, so it doesn't start it.
-	notes, svcErr := installService(ctx, g.paths, g.in.AcmdPath, serviceOptions{noStart: o.hookBinary != "", inDaemon: o.inDaemon})
+	// Last: the service's daemon reads what init just wrote.
+	notes, svcErr := installService(ctx, g.paths, g.in.AcmdPath, serviceOptions{inDaemon: o.inDaemon})
 	if len(plan.Pending()) == 0 && !svcPending {
 		fmt.Fprintln(out, "\nAlready set up; nothing changed.")
 	} else {
@@ -204,8 +195,7 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	if svcErr != nil {
 		fmt.Fprintf(out, "Couldn't start the service (%v). The daemon starts when something needs it; see `acmd service status`.\n", svcErr)
 	}
-	// Homebrew's install has no terminal to ask in (it passes --hook-binary).
-	if o.hookBinary == "" && !o.noWake {
+	if !o.noWake {
 		if err := offerWake(ctx, in, out); err != nil {
 			return true, err
 		}
@@ -228,67 +218,29 @@ func newInitCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "show the changes without making them")
 	cmd.Flags().BoolVar(&o.refreshEnv, "refresh-env", false, "capture the login-shell environment again")
-	cmd.Flags().StringVar(&o.hookBinary, "hook-binary", "", "the path hooks run (the cask's, before it moves the app)")
-	_ = cmd.Flags().MarkHidden("hook-binary")
 	return cmd
 }
 
 func newUninstallCmd() *cobra.Command {
-	var dryRun, yes, keepData, fromBrew bool
+	var dryRun, yes, keepData bool
 	cmd := &cobra.Command{
 		Use:   "uninstall",
 		Short: "End running sessions, stop the daemon and remove acmd's hooks",
-		Long: "Ends running sessions, stops the daemon and removes acmd's hook entries, after backing the file up.\n" +
-			"`brew uninstall --cask agent-command` does this for you. Claude conversations can still be resumed.",
+		Long: "Ends running sessions, stops the daemon, removes its service and acmd's hook entries, after backing the\n" +
+			"file up. Run it before `brew uninstall acmd`. Claude conversations can still be resumed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if fromBrew {
-				return runBrewUninstall(cmd)
-			}
 			return runUninstall(cmd, dryRun, yes, keepData)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show the changes without making them")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	cmd.Flags().BoolVar(&keepData, "keep-data", true, "keep sessions, groups, settings and logs (--keep-data=false deletes them)")
-	cmd.Flags().BoolVar(&fromBrew, "brew", false, "run for the cask, which also runs this during upgrades")
-	_ = cmd.Flags().MarkHidden("brew")
 	return cmd
 }
 
-// runBrewUninstall is what the cask runs. Homebrew runs it for upgrades and
-// reinstalls too: those only replace the daemon, and leave sessions running. It
-// ends sessions only when it's sure this is a real uninstall.
-func runBrewUninstall(cmd *cobra.Command) error {
-	useUserTempDir()
-	args := brewArgs()
-	switch brewCommand(args) {
-	case "uninstall", "remove", "rm":
-	default:
-		p, err := paths.Default()
-		if err != nil {
-			return err
-		}
-		// The next thing that needs the daemon starts the new one, through the
-		// service when it's installed.
-		if svc, ok := installedService(); ok {
-			_ = svc.Stop(cmd.Context())
-		}
-		stopDaemon(cmd.Context(), p)
-		return nil
-	}
-	keep := true
-	// --zap deletes the data anyway, so there's nothing to ask.
-	if !strings.Contains(args, " --zap") {
-		answer, _ := askTerminal("Keep your Agent Command sessions and settings? [Y/n] ")
-		keep = !strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "n")
-	}
-	return runUninstall(cmd, false, true, keep)
-}
-
-// useUserTempDir restores this user's own temp folder, which Homebrew replaces in
-// TMPDIR. The daemon's and hosts' sockets live there, so without this it finds
-// neither of them.
+// useUserTempDir sets TMPDIR to this user's own temp folder, where the daemon's
+// and hosts' sockets live, for a daemon whose launcher gave it another or none.
 func useUserTempDir() {
 	if runtime.GOOS != "darwin" {
 		return
@@ -297,71 +249,6 @@ func useUserTempDir() {
 	if dir := strings.TrimSpace(string(out)); err == nil && dir != "" {
 		_ = os.Setenv("TMPDIR", dir)
 	}
-}
-
-// brewCommandPattern finds Homebrew's subcommand in a process's arguments.
-var brewCommandPattern = regexp.MustCompile(`brew\.rb\s+(\S+)`)
-
-// brewCommand is the Homebrew subcommand in a process's arguments ("" = none).
-func brewCommand(args string) string {
-	if m := brewCommandPattern.FindStringSubmatch(args); m != nil {
-		return m[1]
-	}
-	return ""
-}
-
-// brewArgs is the arguments of the Homebrew process that started this one, found
-// by walking up from it. Homebrew doesn't pass its command on any other way.
-var brewArgs = func() string {
-	pid := os.Getppid()
-	for range 6 {
-		out, err := exec.Command("ps", "-o", "ppid=,args=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- fixed program; a pid
-		if err != nil {
-			return ""
-		}
-		line := strings.TrimSpace(string(out))
-		if brewCommand(line) != "" {
-			return line
-		}
-		ppid, _, _ := strings.Cut(line, " ")
-		if pid, err = strconv.Atoi(ppid); err != nil || pid <= 1 {
-			return ""
-		}
-	}
-	return ""
-}
-
-// askTerminal asks on the terminal directly, as Homebrew gives scripts no stdin.
-// ok is false without a terminal.
-var askTerminal = func(question string) (answer string, ok bool) {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		return "", false
-	}
-	defer tty.Close()
-	defer takeForeground(tty)()
-	if _, err := fmt.Fprint(tty, question); err != nil {
-		return "", false
-	}
-	line, _ := bufio.NewReader(tty).ReadString('\n')
-	return line, true
-}
-
-// takeForeground makes this process group the terminal's foreground group, and
-// returns what restores it. Homebrew runs scripts in a background group, where
-// reading the terminal gets a process stopped by the OS.
-func takeForeground(tty *os.File) (restore func()) {
-	// Changing the foreground group from the background raises this.
-	signal.Ignore(syscall.SIGTTOU)
-	fd := int(tty.Fd()) // #nosec G115 -- a file descriptor
-	previous, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
-	if err != nil {
-		return func() {}
-	}
-	if err := unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, unix.Getpgrp()); err != nil {
-		return func() {}
-	}
-	return func() { _ = unix.IoctlSetPointerInt(fd, unix.TIOCSPGRP, previous) }
 }
 
 // endSessions ends the running hosts and reports how many. The daemon must have

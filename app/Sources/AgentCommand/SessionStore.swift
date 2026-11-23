@@ -463,11 +463,13 @@ final class SessionStore {
                     if changed, state.hasSnapshot { publish(try state.snapshot()) }
                 }
             } catch {
-                if !startedDaemon {
+                // Without acmd there's no daemon to start: say how to install it.
+                let missing = DaemonPaths.acmdMissing()
+                if !startedDaemon, missing == nil {
                     startedDaemon = true
                     Self.startDaemon()
                 }
-                DispatchQueue.main.async { self.problem = error.localizedDescription }
+                DispatchQueue.main.async { self.problem = missing ?? error.localizedDescription }
                 Thread.sleep(forTimeInterval: 1)
             }
         }

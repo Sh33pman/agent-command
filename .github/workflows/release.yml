@@ -3,8 +3,8 @@
 #      creates the GitHub Release as a draft.
 #   2. In the same workflow (tags created by tokens don't trigger workflows):
 #      gate, build and build-linux run side by side on the tag. gate runs every
-#      check, with no secrets. build builds and signs the app from source, packs
-#      acmd for the formula from it, and attests both. build-linux builds acmd
+#      check, with no secrets. build builds and signs the app and acmd for
+#      macOS from source, packs acmd for the formula, and attests both. build-linux builds acmd
 #      for Linux from source, tests it, and attests it.
 #   3. publish, once all pass: the tap release, the cask, the formula, a check
 #      of what Homebrew downloads, and last, publishing the draft. "Released"
@@ -122,12 +122,15 @@ jobs:
         run: |
           codesign --verify --strict "dist/Agent Command.app"
           codesign -dvv "dist/Agent Command.app" 2>&1 | grep -F "Authority=Agent Command Self-Signed"
-          "dist/Agent Command.app/Contents/MacOS/agent-command" version | grep -F "$VERSION"
-          "dist/Agent Command.app/Contents/MacOS/acmd-speech" --version
+          # acmd is the formula's: none is left in the app.
+          test ! -e "dist/Agent Command.app/Contents/MacOS/agent-command"
+          codesign --verify --strict dist/agent-command dist/acmd-speech
+          dist/agent-command version | grep -F "$VERSION"
+          dist/acmd-speech --version
 
-      # The formula's archive: the signed binaries the app has, as they are.
+      # The formula's archive: the signed acmd and speech engine, as they are.
       - name: pack acmd for the formula
-        run: scripts/pack-acmd.sh "$VERSION" dist "dist/Agent Command.app"
+        run: scripts/pack-acmd.sh "$VERSION" dist dist
 
       - name: checksums
         run: cd dist && shasum -a 256 AgentCommand.zip "acmd-$VERSION-darwin-arm64.tar.gz" > checksums-app.txt

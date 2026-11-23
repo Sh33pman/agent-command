@@ -32,7 +32,7 @@ const forgetEvery = 6 * time.Hour
 // desktopKinds are clients on a computer, which show a notice when the one
 // you're using can't.
 // A paired machine is one too: its daemon shows it on its UI you're using.
-var desktopKinds = []string{ipc.KindMac, ipc.KindLinux, ipc.KindWindows, ipc.KindTUI, ipc.KindMachine}
+var desktopKinds = []string{ipc.KindMac, ipc.KindLinux, ipc.KindWindows, ipc.KindTerminal, ipc.KindMachine}
 
 type registered struct {
 	store.Client

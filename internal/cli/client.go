@@ -27,6 +27,9 @@ type client struct {
 	// host is the Remote host the command runs against (--host), "" for this
 	// machine.
 	host string
+	// terminal is this machine's terminal client id, when it connected as
+	// one (connectTerminal).
+	terminal string
 }
 
 // targetHost is --host, or ACMD_HOST: the Remote host commands run against.
@@ -67,11 +70,16 @@ func (c *client) call(op string, in, out any) error {
 var spawnDaemon = hook.SpawnDaemon
 
 func connect(ctx context.Context) (*client, error) {
+	return connectAs(ctx, ipc.HelloFrom(version.Get().Version))
+}
+
+// connectAs is connect with the hello me: a terminal client names itself in
+// it (terminalHello).
+func connectAs(ctx context.Context, me ipc.Hello) (*client, error) {
 	p, err := paths.Default()
 	if err != nil {
 		return nil, err
 	}
-	me := ipc.HelloFrom(version.Get().Version)
 	conn, err := ipc.Dial(ctx, p.Socket(), me)
 	if err == nil {
 		return &client{conn: conn, host: targetHost}, nil

@@ -567,7 +567,7 @@ type Hello struct {
 type ClientHello struct {
 	// ID is the client's own, kept by it across runs.
 	ID     string `json:"id"`
-	Kind   string `json:"kind"`             // a Kind*: mac, linux, windows, tui, android, cli
+	Kind   string `json:"kind"`             // a Kind*: mac, linux, windows, terminal, android, cli
 	Device string `json:"device,omitempty"` // the machine's name, for people
 	// Caps are what it can do: Cap* values.
 	Caps []string `json:"caps,omitempty"`
@@ -577,12 +577,12 @@ type ClientHello struct {
 
 // Client kinds. More may come: a client shows one it doesn't know as it is.
 const (
-	KindMac     = "mac"
-	KindLinux   = "linux"
-	KindWindows = "windows"
-	KindTUI     = "tui"
-	KindAndroid = "android"
-	KindCLI     = "cli"
+	KindMac      = "mac"
+	KindLinux    = "linux"
+	KindWindows  = "windows"
+	KindTerminal = "terminal" // acmd attach, acmd watch and the terminal UI
+	KindAndroid  = "android"
+	KindCLI      = "cli"
 	// KindMachine is a paired machine, as its host sees it: its daemon stands
 	// for its UIs, and passes a notice on to the one you're using there.
 	KindMachine = "machine"

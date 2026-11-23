@@ -176,7 +176,7 @@ On Windows, acmd only connects to hosts. It runs no sessions of its own, and Hos
 
 3. On the host, approve the request (step 3 of the [quick start](#3-on-the-host-approve-the-request)).
 
-4. Use the host's sessions: `acmd list` shows them, `acmd events` follows them, and `acmd remote attach` attaches this terminal to one. Ctrl+] detaches.
+4. Use the host's sessions: `acmd list` shows them, `acmd attach <#|name>` attaches this terminal to one (Ctrl+] detaches), `acmd inbox` answers what's waiting, and `acmd watch` shows notices as they come.
 
 What Windows can't do, and why:
 

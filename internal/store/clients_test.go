@@ -14,13 +14,13 @@ func TestClients(t *testing.T) {
 	must(t, s.SaveClient(ctx, Client{ID: "mac", Kind: "mac", Device: "studio", Caps: []string{"notify", "sound"}, OnHost: true}))
 	must(t, s.SetPresence(ctx, "mac", "active", "s1", true))
 	clock = clock.Add(time.Hour)
-	must(t, s.SaveClient(ctx, Client{ID: "tui", Kind: "tui"}))
+	must(t, s.SaveClient(ctx, Client{ID: "terminal", Kind: "terminal"}))
 	// Saving again keeps its presence and when it was active.
 	must(t, s.SaveClient(ctx, Client{ID: "mac", Kind: "mac", Device: "studio 2", Caps: []string{"notify"}}))
-	must(t, s.SetPresence(ctx, "tui", "idle", "", false))
+	must(t, s.SetPresence(ctx, "terminal", "idle", "", false))
 	got, err := s.Clients(ctx)
 	must(t, err)
-	if len(got) != 2 || got[0].ID != "mac" && got[0].ID != "tui" {
+	if len(got) != 2 || got[0].ID != "mac" && got[0].ID != "terminal" {
 		t.Fatalf("clients = %+v", got)
 	}
 	byID := map[string]Client{}
@@ -32,19 +32,19 @@ func TestClients(t *testing.T) {
 		mac.LastActive.IsZero() || !mac.FirstSeen.Before(mac.LastSeen) {
 		t.Errorf("mac = %+v", mac)
 	}
-	if tui := byID["tui"]; tui.Presence != "idle" || !tui.LastActive.IsZero() || len(tui.Caps) != 0 {
-		t.Errorf("tui = %+v", tui)
+	if term := byID["terminal"]; term.Presence != "idle" || !term.LastActive.IsZero() || len(term.Caps) != 0 {
+		t.Errorf("terminal = %+v", term)
 	}
 	if err := s.SetPresence(ctx, "nope", "active", "", true); !errors.Is(err, ErrNotFound) {
 		t.Errorf("presence for no one: %v", err)
 	}
 	clock = clock.Add(48 * time.Hour)
-	must(t, s.TouchClient(ctx, "tui"))
+	must(t, s.TouchClient(ctx, "terminal"))
 	ids, err := s.ForgetClients(ctx, clock.Add(-24*time.Hour))
 	if err != nil || !slices.Equal(ids, []string{"mac"}) {
 		t.Errorf("forgot %v %v", ids, err)
 	}
-	if got, _ := s.Clients(ctx); len(got) != 1 || got[0].ID != "tui" {
+	if got, _ := s.Clients(ctx); len(got) != 1 || got[0].ID != "terminal" {
 		t.Errorf("left = %+v", got)
 	}
 }

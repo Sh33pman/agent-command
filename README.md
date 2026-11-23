@@ -39,6 +39,14 @@ Pair another Agent Command with this one, and it shows this Mac's sessions, grou
 
 Every command that reads or changes state takes `--json`, which prints the answer of the daemon op it runs, in the daemon's wire types (`internal/ipc`), and nothing else. A command that runs several ops prints one answer per line. `acmd events` follows the daemon as it changes: a snapshot, then each session, group, inbox item, job or setting added, updated or removed, one JSON event per line (`--types` to pick, `--since` to resume). Errors go to stderr as `{"error": {"code": "…", "message": "…"}}`. Name sessions by id in scripts: the numbers `acmd list` shows follow the list's order, which changes.
 
+From any terminal, on macOS, Linux and Windows:
+
+- **`acmd attach <#|id|name>`** attaches this terminal to a session, one here or a host's as `acmd list` shows it. Ctrl+] detaches. With `--host`, it picks among that host's own sessions.
+- **`acmd inbox`** lists what's waiting: permission prompts, questions and finished turns, here and on your hosts. `acmd inbox answer <item> <option>` answers one, by an option's number or text, or with a reply to a finished turn. `acmd inbox dismiss <item>` clears one.
+- **`acmd watch`** prints each notice as it comes, one line each, and rings the bell (`--json`: one event per line).
+
+While attach and watch run, they count as this machine's terminal client, so `notify.route = "one"` sends notices to the terminal you're using.
+
 `--host <name>` (or `ACMD_HOST`) runs the command on a known Remote host instead of this Mac: `acmd --host studio list --json`. A paired machine can do on the host what you can, except admin ops (purge, init, Hosting and pairing, settings that run code) and what belongs to the host's own machine (speech, waking, hooks).
 
 | Exit code | Meaning |

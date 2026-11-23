@@ -50,7 +50,7 @@ func TestHelloOfReadsTheClient(t *testing.T) {
 	if helloOf([]byte(`nope`)) != nil || helloOf([]byte(`{"proto":1}`)) != nil {
 		t.Error("a hello without a client")
 	}
-	if h := helloOf([]byte(`{"proto":1,"client":{"id":"x","kind":"tui"}}`)); h == nil || h.ID != "x" || h.Kind != ipc.KindTUI {
+	if h := helloOf([]byte(`{"proto":1,"client":{"id":"x","kind":"terminal"}}`)); h == nil || h.ID != "x" || h.Kind != ipc.KindTerminal {
 		t.Errorf("hello = %+v", h)
 	}
 }
@@ -62,7 +62,7 @@ func TestProfilesShapeRouting(t *testing.T) {
 	ctx := context.Background()
 	must(t, d.loadClients(ctx))
 	mac, _ := connect(t, d, "mac-1", ipc.KindMac, ipc.CapNotify)
-	connect(t, d, "tui-1", ipc.KindTUI, ipc.CapNotify)
+	connect(t, d, "terminal-1", ipc.KindTerminal, ipc.CapNotify)
 	use(t, d, mac, ipc.PresenceActive)
 	macCtx := context.WithValue(ctx, callerKey{}, mac)
 	p, err := d.setProfile(macCtx, ipc.ClientProfile{Notify: []string{"waiting", "error"}, PopupOpens: ipc.PopupNeedsYou})
@@ -73,7 +73,7 @@ func TestProfilesShapeRouting(t *testing.T) {
 	if got := d.route(config.RouteOne, "waiting"); !slices.Equal(got, []string{"mac-1"}) {
 		t.Errorf("waiting: %v", got)
 	}
-	if got := d.route(config.RouteOne, "done"); !slices.Equal(got, []string{"tui-1"}) {
+	if got := d.route(config.RouteOne, "done"); !slices.Equal(got, []string{"terminal-1"}) {
 		t.Errorf("done goes to the one that wants it: %v", got)
 	}
 	if got := d.route(config.RouteAll, "withdraw"); len(got) != 2 {

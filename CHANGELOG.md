@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.85.0](https://github.com/brettmostert/agent-command/compare/v0.84.2...v0.85.0) (2026-11-23)
+
+
+### Features
+
+* acmd service runs the daemon as a per-user service, on by default ([#166](https://github.com/brettmostert/agent-command/issues/166)) ([33b1dc1](https://github.com/brettmostert/agent-command/commit/33b1dc19c8038103a6a84a533fd924f5a4bb84ad))
+
 ## [0.84.2](https://github.com/brettmostert/agent-command/compare/v0.84.1...v0.84.2) (2026-11-23)
 
 

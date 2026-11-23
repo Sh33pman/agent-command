@@ -602,6 +602,9 @@ final class DaemonConnection {
     /// uses the highest it shares with the daemon (design 8.2).
     static let protoMin = 2
     static let proto = 2
+    /// The app's own version, in its hello: the daemon warns when acmd is
+    /// older (they upgrade separately). A dev build has none, and says "app".
+    static let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "app"
     private let fd: Int32
     /// The daemon's hello: the version agreed, and its ops.
     private(set) var daemon = DaemonHello()
@@ -642,7 +645,7 @@ final class DaemonConnection {
         // A daemon with no version in common refuses the hello, saying which
         // to update (proto_unsupported).
         daemon = try call("hello", Hello(proto: Self.proto, proto_min: Self.protoMin, proto_max: Self.proto,
-                                         version: "app", client: ClientIdentity.hello()))
+                                         version: Self.appVersion, client: ClientIdentity.hello()))
         guard (Self.protoMin...Self.proto).contains(daemon.proto) else {
             throw DaemonError(message: "acmd's daemon chose protocol \(daemon.proto), which the app doesn't speak: update the app",
                               code: "proto_unsupported")

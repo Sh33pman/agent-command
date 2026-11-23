@@ -83,6 +83,9 @@ const (
 	HealthHooks        = "hooks."
 	HealthWake         = "wake"
 	HealthHostingOff   = "remote.hosting_off"
+	// HealthAcmdOlder: acmd is older than the app using it (they upgrade
+	// separately), so the app may not show everything.
+	HealthAcmdOlder = "acmd.older_than_app"
 )
 
 // Severities, from the most serious: HealthError, HealthWarning, HealthInfo.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +40,9 @@ type registered struct {
 	conns   int       // open connections
 	gone    time.Time // when the last one closed
 	profile ipc.ClientProfile
+	// version is the client's own, from its hello ("app" or "" when it
+	// didn't say one).
+	version string
 }
 
 type registry struct {
@@ -393,6 +397,49 @@ func helloOf(data json.RawMessage) *ipc.ClientHello {
 		return nil
 	}
 	return h.Client
+}
+
+// helloVersion is the version a hello names: the client's own.
+func helloVersion(data json.RawMessage) string {
+	var h ipc.Hello
+	if json.Unmarshal(data, &h) != nil {
+		return ""
+	}
+	return h.Version
+}
+
+// clientVersion records the version a registered client named in its hello.
+func (d *Daemon) clientVersion(h *ipc.ClientHello, version string) {
+	if h == nil || h.ID == "" || d.reg == nil {
+		return
+	}
+	d.reg.mu.Lock()
+	if r := d.reg.clients[h.ID]; r != nil {
+		r.version = version
+	}
+	d.reg.mu.Unlock()
+}
+
+// newerApp is the version of a connected app (macOS or Linux) newer than
+// this daemon, "" when none is. The app and acmd upgrade separately, so the
+// app can run ahead of acmd.
+func (d *Daemon) newerApp() string {
+	mine := parseVersion(d.cfg.Version)
+	if mine == nil || d.reg == nil {
+		return ""
+	}
+	d.reg.mu.Lock()
+	defer d.reg.mu.Unlock()
+	newest, newestV := "", mine
+	for _, r := range d.reg.clients {
+		if (r.Kind != ipc.KindMac && r.Kind != ipc.KindLinux) || !d.connectedLocked(r) {
+			continue
+		}
+		if v := parseVersion(r.version); v != nil && less(newestV, v) {
+			newest, newestV = strings.TrimPrefix(r.version, "v"), v
+		}
+	}
+	return newest
 }
 
 // wants says whether a client shows notices of kind.

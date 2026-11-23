@@ -360,7 +360,9 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 			return
 		}
 		if req.Op == ipc.OpHello && who.clientID == "" {
-			defer d.hello(ctx, helloOf(req.Data), who)()
+			h := helloOf(req.Data)
+			defer d.hello(ctx, h, who)()
+			d.clientVersion(h, helloVersion(req.Data))
 		}
 		if req.Op == ipc.OpSubscribe {
 			d.serveEvents(ctx, c, r, req)

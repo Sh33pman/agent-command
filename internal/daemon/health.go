@@ -112,7 +112,22 @@ func (d *Daemon) health(sessions []*core.Session, jobs []*core.Job, wake *ipc.Wa
 	if r := hostingHealth(sessions, remote); r != nil {
 		out = append(out, *r)
 	}
+	if a := d.acmdOlderHealth(); a != nil {
+		out = append(out, *a)
+	}
 	return out
+}
+
+// acmdOlderHealth warns when acmd is older than an app that uses it: the cask
+// upgrades the app, and acmd only with it when both are upgraded.
+func (d *Daemon) acmdOlderHealth() *ipc.Health {
+	app := d.newerApp()
+	if app == "" {
+		return nil
+	}
+	return &ipc.Health{ID: ipc.HealthAcmdOlder, Severity: ipc.HealthWarning, Title: "acmd is older than the app",
+		Detail: fmt.Sprintf("acmd %s is older than the app (%s), so the app may not show everything. They upgrade separately.", d.cfg.Version, app),
+		Fix:    &ipc.HealthFix{Step: "Run brew upgrade in a terminal: it upgrades acmd too, and the daemon restarts on it."}}
 }
 
 // wakeHealth warns when scheduled jobs can't wake the Mac. nil wake: this

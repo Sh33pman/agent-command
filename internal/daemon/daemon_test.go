@@ -63,7 +63,10 @@ func start(t *testing.T, p paths.Paths, opts ...func(*Config)) *running {
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		if c, err := ipc.Dial(context.Background(), p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: testVersion}); err == nil {
+		// A daemon of another version (cfg.Version) answers too.
+		c, err := ipc.Dial(context.Background(), p.Socket(), ipc.Hello{Proto: ipc.Proto, Version: testVersion})
+		var mismatch *ipc.ErrVersionMismatch
+		if err == nil || errors.As(err, &mismatch) {
 			c.Close()
 			break
 		}

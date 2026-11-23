@@ -22,7 +22,7 @@ type JobSpec struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	GroupID     string `json:"group_id,omitempty"`
-	Harness     string `json:"harness,omitempty"` // "" = claude
+	HarnessID   string `json:"harness_id,omitempty"` // the harness it runs in; "" is the default harness
 	// Schedule is as it was typed: cron, or words. The daemon keeps it in its
 	// canonical form (the words when there are any, else the cron).
 	Schedule string `json:"schedule"`

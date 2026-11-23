@@ -46,7 +46,7 @@ private func client(_ fake: FakeCalls) -> RemoteHostsClient { RemoteHostsClient(
 
 private let session: [String: Any] = [
     "id": "L9", "name": "api", "cwd": "/w/api", "status": "busy", "kind": "hosted", "unseen": false,
-    "harness": "claude", "claude_session_id": "", "host": "studio", "remote_id": "s1",
+    "harness_kind": "claude", "claude_session_id": "", "host": "studio", "remote_id": "s1",
 ]
 
 private func connected(_ names: String...) -> [RemoteHost] { names.map { RemoteHost(name: $0, state: .connected) } }
@@ -70,8 +70,8 @@ private func connected(_ names: String...) -> [RemoteHost] { names.map { RemoteH
     #expect(fake.ops.last == "remote.hosts.retry" && fake.last as? [String: String] == ["host": "studio"])
     c.browse("studio") { note($0) }
     #expect(fake.ops.last == "remote.browse" && fake.last as? [String: String] == ["host": "studio"])
-    c.newSession(host: "studio", dir: "~/src", harness: "claude") { note($0) }
-    #expect(fake.ops.last == "remote.new" && fake.last as? [String: String] == ["host": "studio", "dir": "~/src", "harness": "claude"])
+    c.newSession(host: "studio", dir: "~/src", harness: ("HW", "claude")) { note($0) }
+    #expect(fake.ops.last == "remote.new" && fake.last as? [String: String] == ["host": "studio", "dir": "~/src", "harness_id": "HW", "harness_kind": "claude"])
     c.newSession(host: "studio", dir: "/w", harness: nil) { note($0) }
     #expect(fake.last as? [String: String] == ["host": "studio", "dir": "/w"], "no harness is the host's default")
     c.recentFolders(host: "studio") { note($0) }
@@ -255,16 +255,17 @@ struct NewSessionPickerTests {
 
     @Test func aHostsHarnessesComeFromIt() {
         let fake = FakeCalls()
-        fake.replies["remote.harnesses"] = ["harnesses": [["name": "terminal"], ["name": "claude"]], "default": "claude"]
+        fake.replies["remote.harnesses"] = ["harnesses": [["id": "HC", "name": "Claude", "kind": "claude", "installed": true]], "default": "HC", "terminal": true]
         let p = NewSessionPicker(hosts: ["studio"], host: "studio", client: client(fake))
         #expect(fake.ops == ["remote.harnesses"] && fake.last as? [String: String] == ["host": "studio"])
         #expect(p.host == "studio" && !p.canMakeDefault && !p.loading)
-        #expect(p.choice.harnesses == [.terminal, .claude] && p.choice.chosen == .claude, "its default comes first")
+        let claude = Harness(id: "HC", kind: "claude")
+        #expect(p.choice.harnesses == [claude, .terminal] && p.choice.chosen == claude, "its default is chosen")
         p.move(-1)
         #expect(p.choice.chosen == .terminal)
-        p.select(.claude)
-        #expect(p.choice.chosen == .claude)
-        #expect(p.setSearch("1") == .terminal)
+        p.select(claude)
+        #expect(p.choice.chosen == claude)
+        #expect(p.setSearch("2") == .terminal)
     }
 
     @Test func aHostThatCantSayIsAnInlineError() {
@@ -273,7 +274,7 @@ struct NewSessionPickerTests {
         let p = NewSessionPicker(hosts: ["studio"], host: "studio", client: client(fake))
         #expect(p.error == "studio is unreachable" && p.choice.harnesses.isEmpty)
         fake.failures = [:]
-        fake.replies["remote.harnesses"] = ["harnesses": [["name": "codex"]]]
+        fake.replies["remote.harnesses"] = ["harnesses": [["id": "X", "name": "Codex", "kind": "codex", "installed": false]]]
         p.setHost("studio")
         #expect(p.error == "studio has nothing this app can start.")
         p.setHost(nil)
@@ -287,7 +288,7 @@ struct NewSessionPickerTests {
         let p = NewSessionPicker(hosts: ["studio", "laptop"], client: client(fake))
         #expect(p.handle(KeyCombo("tab")!) && p.host == "studio" && p.loading)
         #expect(p.handle(KeyCombo("right")!) && p.host == "laptop")
-        fake.replies["remote.harnesses"] = ["harnesses": [["name": "claude"]]]
+        fake.replies["remote.harnesses"] = ["harnesses": [["id": "HC", "name": "Claude", "kind": "claude", "installed": true]]]
         fake.release(0) // studio's answer, too late
         #expect(p.loading && p.choice.harnesses.isEmpty)
         #expect(p.handle(KeyCombo("tab")!) && p.host == nil, "round to this Mac")

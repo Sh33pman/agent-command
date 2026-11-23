@@ -41,9 +41,9 @@ func TestDoctorAndTheEditorAreOps(t *testing.T) {
 	if r, ok := out.(ipc.DoctorReport); err != nil || !ok || len(r.Checks) != 1 || r.Checks[0].Status != ipc.DoctorOK {
 		t.Errorf("doctor = %+v %v", out, err)
 	}
-	s := &core.Session{Name: "api", Cwd: "/w/api", Status: core.StatusDone, Harness: core.HarnessTerminal, Kind: core.KindHosted}
+	s := &core.Session{Name: "api", Cwd: "/w/api", Status: core.StatusDone, HarnessKind: core.HarnessTerminal, Kind: core.KindHosted}
 	must(t, d.store.CreateSession(ctx, s))
-	empty := &core.Session{Name: "new", Status: core.StatusDone, Harness: core.HarnessTerminal, Kind: core.KindHosted}
+	empty := &core.Session{Name: "new", Status: core.StatusDone, HarnessKind: core.HarnessTerminal, Kind: core.KindHosted}
 	must(t, d.store.CreateSession(ctx, empty))
 	_, err = call(ipc.OpEditorOpen, ipc.EditorOpen{ID: s.ID})
 	must(t, err)

@@ -5,10 +5,6 @@ import Observation
 /// with config.toml if anything is.
 struct AcmdSettings: Equatable {
     struct Values: Decodable, Equatable {
-        var claudeCommand = "claude"
-        var claudeArgs: [String] = []
-        var agyCommand = "agy"
-        var agyArgs: [String] = []
         var agentRemoteControl = false
         var defaultHarness = ""
         var notify = true
@@ -34,8 +30,7 @@ struct AcmdSettings: Equatable {
         var clientCert = ""
 
         enum CodingKeys: String, CodingKey {
-            case claudeCommand = "claude_command", claudeArgs = "claude_args", agentRemoteControl = "agent_remote_control"
-            case agyCommand = "agy_command", agyArgs = "agy_args", defaultHarness = "default_harness"
+            case agentRemoteControl = "agent_remote_control", defaultHarness = "default_harness"
             case notify = "notify.enabled", onWaiting = "notify.on_waiting", onError = "notify.on_error"
             case onDone = "notify.on_done", onPaused = "notify.on_paused", doneMin = "notify.done_min_duration"
             case cooldown = "notify.cooldown", sound = "notify.sound", voice = "speech.voice", speed = "speech.speed"
@@ -51,10 +46,6 @@ struct AcmdSettings: Equatable {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             let d = Values()
-            claudeCommand = try c.decodeIfPresent(String.self, forKey: .claudeCommand) ?? d.claudeCommand
-            claudeArgs = try c.decodeIfPresent([String].self, forKey: .claudeArgs) ?? d.claudeArgs
-            agyCommand = try c.decodeIfPresent(String.self, forKey: .agyCommand) ?? d.agyCommand
-            agyArgs = try c.decodeIfPresent([String].self, forKey: .agyArgs) ?? d.agyArgs
             agentRemoteControl = try c.decodeIfPresent(Bool.self, forKey: .agentRemoteControl) ?? d.agentRemoteControl
             defaultHarness = try c.decodeIfPresent(String.self, forKey: .defaultHarness) ?? d.defaultHarness
             notify = try c.decodeIfPresent(Bool.self, forKey: .notify) ?? d.notify
@@ -196,7 +187,7 @@ enum ShellWords {
     }
 
     /// The sections that show a host's settings when one is chosen. The rest are this Mac's.
-    static let hostSections: Set<SettingsSection> = [.claude, .antigravity, .notifications]
+    static let hostSections: Set<SettingsSection> = [.notifications]
 
     /// Whose settings the page on show changes: nil is this Mac.
     var target: String? { Self.hostSections.contains(section) ? host : nil }
@@ -287,11 +278,6 @@ enum ShellWords {
 
     func set(_ key: String, _ on: Bool) {
         set([key: .bool(on)])
-    }
-
-    /// Sets an agent's extra arguments (claude_args, agy_args) from shell words.
-    func setArgs(_ text: String, key: String = "claude_args") {
-        set([key: .list(ShellWords.split(text))])
     }
 
     func setVoice(_ voice: String) {

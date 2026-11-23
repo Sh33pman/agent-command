@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/brettmostert/agent-command/internal/config"
 )
 
 func TestAddAntigravityHooks(t *testing.T) {
@@ -164,10 +162,6 @@ func TestInitUninstallAntigravity(t *testing.T) {
 	}
 	if again, _ := PlanInit(in); len(again.Pending()) != 0 {
 		t.Errorf("second init: %v", actions(again))
-	}
-	// agy_command is pinned to the agy found, as claude_command is.
-	if cfg, err := config.Load(in.ConfigFile); err != nil || cfg.AgyCommand != in.AgyPath {
-		t.Errorf("agy_command = %q, %v", cfg.AgyCommand, err)
 	}
 
 	// agy removed since: init leaves its file alone, uninstall still cleans it.

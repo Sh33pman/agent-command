@@ -173,7 +173,7 @@ extension RemoteTime {
 struct RemoteSession: Decodable, Equatable, Identifiable {
     var id = ""
     var name = ""
-    var harness = ""
+    var harnessKind = ""
     var dir = ""
     var status = ""
     var statusDetail = ""
@@ -187,7 +187,8 @@ struct RemoteSession: Decodable, Equatable, Identifiable {
     var localID = ""
 
     enum CodingKeys: String, CodingKey {
-        case id, name, harness, cwd, status, unseen
+        case id, name, cwd, status, unseen
+        case harnessKind = "harness_kind"
         case statusDetail = "status_detail", lastActivity = "last_event_at", created = "created_at"
     }
 
@@ -200,7 +201,7 @@ struct RemoteSession: Decodable, Equatable, Identifiable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = c.value(.id, "")
         name = c.value(.name, "")
-        harness = c.value(.harness, "")
+        harnessKind = c.value(.harnessKind, "")
         dir = c.value(.cwd, "")
         status = c.value(.status, "")
         statusDetail = c.value(.statusDetail, "")
@@ -211,7 +212,7 @@ struct RemoteSession: Decodable, Equatable, Identifiable {
     }
 
     var displayName: String { name.isEmpty ? (dir as NSString).lastPathComponent : name }
-    var harnessTitle: String { Harness(session: harness)?.title ?? (harness.isEmpty ? "Agent" : harness) }
+    var harnessTitle: String { Harness.title(of: harnessKind.isEmpty ? "claude" : harnessKind) }
     /// "waiting · permission: Write".
     var statusLine: String { statusDetail.isEmpty ? status : "\(status) · \(statusDetail)" }
 }
@@ -280,46 +281,33 @@ struct RemoteFolderList: Decodable, Equatable {
     }
 }
 
-/// What a host can run (api.Harnesses): its default is "" when its owner
-/// hasn't chosen one.
+/// What a host can run (api.Harnesses): its harnesses, its default, and
+/// whether a new session can be a terminal.
 struct RemoteHarnesses: Decodable, Equatable {
-    struct Entry: Decodable, Equatable {
-        var name = ""
-        var title = ""
-
-        enum CodingKeys: String, CodingKey { case name, title }
-
-        init(name: String, title: String) { (self.name, self.title) = (name, title) }
-
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            name = c.value(.name, "")
-            title = c.value(.title, "")
-        }
-    }
-
-    var harnesses: [Entry] = []
-    var defaultName = ""
+    var harnesses: [Harness] = []
+    var defaultID = ""
+    var terminal = false
 
     enum CodingKeys: String, CodingKey {
-        case harnesses
-        case defaultName = "default"
+        case harnesses, terminal
+        case defaultID = "default"
     }
 
-    init(_ names: [String], default name: String = "") {
-        harnesses = names.map { Entry(name: $0, title: $0) }
-        defaultName = name
+    init(_ harnesses: [Harness], default id: String = "", terminal: Bool = true) {
+        (self.harnesses, defaultID, self.terminal) = (harnesses, id, terminal)
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         harnesses = c.value(.harnesses, [])
-        defaultName = c.value(.defaultName, "")
+        defaultID = c.value(.defaultID, "")
+        terminal = c.value(.terminal, false)
     }
 
-    /// The ones the app knows, in the host's order.
-    var known: [Harness] { harnesses.compactMap { Harness(rawValue: $0.name) } }
-    var defaultHarness: Harness? { Harness(rawValue: defaultName).flatMap { known.contains($0) ? $0 : nil } }
+    /// What a new session there can run in: its installed harnesses, in its
+    /// order, then a terminal.
+    var known: [Harness] { harnesses.filter(\.installed) + (terminal ? [.terminal] : []) }
+    var defaultHarness: Harness? { known.first { $0.harnessID == defaultID && !defaultID.isEmpty } }
 }
 
 // MARK: Sessions in the sidebar

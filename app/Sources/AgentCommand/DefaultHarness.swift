@@ -1,9 +1,10 @@
 import Foundation
 
-/// What a plain new session (⌘N) starts: the daemon's `default_harness` setting,
-/// which `acmd new` reads too. Unset, ⌘N asks first.
+/// What a plain new session (⌘N) runs in: the daemon's `default_harness`
+/// setting, a harness's id, which `acmd new` reads too. Unset, ⌘N asks first
+/// (`acmd new` takes the first installed harness).
 enum DefaultHarness {
-    /// What can be the default: the agents. A terminal has its own shortcut.
+    /// What can be the default: the harnesses. A terminal has its own shortcut.
     static var choices: [Harness] { Harness.agents }
 
     static let key = "default_harness"
@@ -12,7 +13,7 @@ enum DefaultHarness {
 
     /// The harness the setting names; empty or unknown is unset.
     static func value(_ setting: String) -> Harness? {
-        Harness(rawValue: setting).flatMap { choices.contains($0) ? $0 : nil }
+        Harness(id: setting).flatMap { choices.contains($0) ? $0 : nil }
     }
 
     /// The ⌘N menu item's title.
@@ -21,5 +22,5 @@ enum DefaultHarness {
     }
 
     /// The change that sets it (nil unsets it, so ⌘N asks again).
-    static func change(_ harness: Harness?) -> [String: SettingValue] { [key: .string(harness?.rawValue ?? "")] }
+    static func change(_ harness: Harness?) -> [String: SettingValue] { [key: .string(harness?.harnessID ?? "")] }
 }

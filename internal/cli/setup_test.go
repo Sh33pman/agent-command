@@ -110,8 +110,8 @@ func TestInitUninstall(t *testing.T) {
 	if st, _ := os.Stat(s.paths.Env()); st == nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("env.json mode: %v", st)
 	}
-	cfg, _ := os.ReadFile(s.paths.Config())
-	if !strings.Contains(string(cfg), filepath.Join(s.bin, "claude")) {
+	// The programs are the harnesses': config.toml doesn't pin claude.
+	if cfg, _ := os.ReadFile(s.paths.Config()); strings.Contains(string(cfg), "claude_command") {
 		t.Errorf("config: %s", cfg)
 	}
 	if out, _, err := execute(t, "", "init"); err != nil || !strings.Contains(out, "Already set up") {

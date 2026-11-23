@@ -38,21 +38,10 @@ func (b hostBackend) State(ctx context.Context) (hostapi.State, error) {
 
 func (b hostBackend) Changes() (uint64, <-chan struct{}) { return b.d.changes.current() }
 
-// NewSession starts a session as `acmd new` does, with this host's own
-// claude_args or agy_args before the client's.
+// NewSession starts a session as `acmd new` does: its harness's own
+// arguments come before the client's.
 func (b hostBackend) NewSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
 	d := b.d
-	{
-		c := d.config()
-		var own []string
-		switch req.Harness {
-		case "", core.HarnessClaude:
-			own = c.ClaudeArgs
-		case core.HarnessAntigravity:
-			own = c.AgyArgs
-		}
-		req.Args = append(slices.Clone(own), req.Args...)
-	}
 	s, err := d.newSession(ctx, req)
 	if err == nil {
 		d.changes.bump()
@@ -82,16 +71,8 @@ func (b hostBackend) mutate(ctx context.Context, m ipc.Mutation) error {
 
 func (b hostBackend) HostSocket(id string) string { return b.d.cfg.Paths.HostSocket(id) }
 
-// Harnesses are what Config.Harnesses says is installed (every harness when
-// it's nil), and default_harness.
-func (b hostBackend) Harnesses() ([]string, string) {
-	d := b.d
-	installed := []string{core.HarnessClaude, core.HarnessAntigravity, core.HarnessTerminal}
-	if d.cfg.Harnesses != nil {
-		installed = d.cfg.Harnesses()
-	}
-	return installed, d.config().DefaultHarness
-}
+// Harnesses are the host's harnesses, and its default.
+func (b hostBackend) Harnesses() ipc.Harnesses { return b.d.harnesses(context.Background()) }
 
 // Config is the host's settings, for its clients.
 func (b hostBackend) Config() ipc.ConfigState { return b.d.configState() }

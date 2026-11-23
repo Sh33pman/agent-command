@@ -11,15 +11,15 @@ func TestAgent(t *testing.T) {
 		s    Session
 		want string
 	}{
-		{Session{Harness: HarnessClaude}, AgentClaude},
+		{Session{HarnessKind: HarnessClaude}, AgentClaude},
 		{Session{}, AgentClaude}, // older sessions have no harness
-		{Session{Harness: HarnessAntigravity}, AgentAntigravity},
-		{Session{Harness: HarnessTerminal, Status: StatusRunning}, AgentNone},
-		{Session{Harness: HarnessTerminal, Status: StatusBusy, ClaudeSessionID: "c1"}, AgentClaude},
-		{Session{Harness: HarnessTerminal, Status: StatusUnknown, StatusDetail: "claude"}, AgentClaude},
-		{Session{Harness: HarnessTerminal, Status: StatusUnknown, StatusDetail: "agy"}, AgentAntigravity},
-		{Session{Harness: HarnessTerminal, Status: StatusUnknown, StatusDetail: "codex"}, AgentOther},
-		{Session{Harness: HarnessTerminal, Status: StatusUnknown}, AgentNone},
+		{Session{HarnessKind: HarnessAntigravity}, AgentAntigravity},
+		{Session{HarnessKind: HarnessTerminal, Status: StatusRunning}, AgentNone},
+		{Session{HarnessKind: HarnessTerminal, Status: StatusBusy, ClaudeSessionID: "c1"}, AgentClaude},
+		{Session{HarnessKind: HarnessTerminal, Status: StatusUnknown, StatusDetail: "claude"}, AgentClaude},
+		{Session{HarnessKind: HarnessTerminal, Status: StatusUnknown, StatusDetail: "agy"}, AgentAntigravity},
+		{Session{HarnessKind: HarnessTerminal, Status: StatusUnknown, StatusDetail: "codex"}, AgentOther},
+		{Session{HarnessKind: HarnessTerminal, Status: StatusUnknown}, AgentNone},
 	}
 	for _, c := range cases {
 		if got := c.s.Agent(); got != c.want {
@@ -38,7 +38,7 @@ func TestDisplayName(t *testing.T) {
 func caps(s Session) string { return strings.Join(s.Capabilities(), ",") }
 
 func TestCapabilities(t *testing.T) {
-	running := Session{Harness: HarnessClaude, Status: StatusBusy, Cwd: "/w", ClaudeSessionID: "c1"}
+	running := Session{HarnessKind: HarnessClaude, Status: StatusBusy, Cwd: "/w", ClaudeSessionID: "c1"}
 	if got := caps(running); got != "attach,archive,continue_in_job,open_in_editor,set_remote" {
 		t.Errorf("running = %s", got)
 	}
@@ -52,24 +52,24 @@ func TestCapabilities(t *testing.T) {
 	if got := caps(archived); got != "unarchive,purge,open_in_editor" {
 		t.Errorf("archived = %s", got)
 	}
-	if got := caps(Session{Harness: HarnessTerminal, Status: StatusArchived}); got != "purge" {
+	if got := caps(Session{HarnessKind: HarnessTerminal, Status: StatusArchived}); got != "purge" {
 		t.Errorf("an archived terminal = %s", got)
 	}
-	if !slices.Contains((&Session{Harness: HarnessClaude, Status: StatusStarting}).Capabilities(), CanContinueInJob) {
+	if !slices.Contains((&Session{HarnessKind: HarnessClaude, Status: StatusStarting}).Capabilities(), CanContinueInJob) {
 		t.Error("a Claude session before its first hook")
 	}
-	if slices.Contains((&Session{Harness: HarnessTerminal, Status: StatusUnknown, StatusDetail: "claude"}).Capabilities(), CanContinueInJob) {
+	if slices.Contains((&Session{HarnessKind: HarnessTerminal, Status: StatusUnknown, StatusDetail: "claude"}).Capabilities(), CanContinueInJob) {
 		t.Error("Claude typed in a terminal, with no conversation yet")
 	}
-	terminal := Session{Harness: HarnessTerminal, Status: StatusRunning, Cwd: "/w"}
+	terminal := Session{HarnessKind: HarnessTerminal, Status: StatusRunning, Cwd: "/w"}
 	if slices.Contains(terminal.Capabilities(), CanContinueInJob) {
 		t.Error("a terminal with no agent continues a job")
 	}
-	agy := Session{Harness: HarnessAntigravity, Status: StatusDone, Cwd: "/w"}
+	agy := Session{HarnessKind: HarnessAntigravity, Status: StatusDone, Cwd: "/w"}
 	if slices.Contains(agy.Capabilities(), CanContinueInJob) {
 		t.Error("an agy session with no conversation yet")
 	}
-	onHost := Session{Harness: HarnessClaude, Status: StatusPaused, Host: "studio", Cwd: "/w", ClaudeSessionID: "c1"}
+	onHost := Session{HarnessKind: HarnessClaude, Status: StatusPaused, Host: "studio", Cwd: "/w", ClaudeSessionID: "c1"}
 	if got := caps(onHost); got != "attach,archive" {
 		t.Errorf("a host's = %s", got)
 	}

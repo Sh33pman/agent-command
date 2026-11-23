@@ -49,10 +49,10 @@ import (
 // Version is the host API's version, in wire.Info's API. It's bumped on any
 // change a client of the previous version couldn't follow; adding an op or a
 // field isn't one.
-const Version = 1
+const Version = 2 // 2: harnesses (harness_kind, harness_id, harnesses.list)
 
 // MinVersion is the oldest host API this side still speaks.
-const MinVersion = 1
+const MinVersion = 2
 
 // The ops.
 const (
@@ -103,10 +103,11 @@ const (
 
 // Session is a Remote session, as a client sees it.
 type Session struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Harness string `json:"harness"` // "claude", "antigravity" or "terminal"
-	Dir     string `json:"dir"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	HarnessKind string `json:"harness_kind"`         // "claude", "antigravity" or "terminal"
+	HarnessID   string `json:"harness_id,omitempty"` // the host's harness it runs in
+	Dir         string `json:"dir"`
 	// Status is the agent's state: core.Status ("busy", "waiting", "done",
 	// "paused", …), and StatusDetail says more, when there's more to say.
 	Status       string `json:"status"`
@@ -139,11 +140,15 @@ type AttachRequest struct {
 
 // NewSession starts a session on the host. It's always Remote.
 type NewSession struct {
-	Dir     string   `json:"dir"`               // "~" and relative paths are from the host's home
-	Harness string   `json:"harness,omitempty"` // "" = the host's default
-	Name    string   `json:"name,omitempty"`
-	Prompt  string   `json:"prompt,omitempty"`
-	Args    []string `json:"args,omitempty"` // after the host's own claude_args or agy_args
+	Dir string `json:"dir"` // "~" and relative paths are from the host's home
+	// HarnessID is one of the host's harnesses (harnesses.list). With none,
+	// HarnessKind "terminal" is a terminal, and anything else the host's
+	// default harness of that kind (or its default, for none).
+	HarnessID   string   `json:"harness_id,omitempty"`
+	HarnessKind string   `json:"harness_kind,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Prompt      string   `json:"prompt,omitempty"`
+	Args        []string `json:"args,omitempty"` // after the host's own claude_args or agy_args
 }
 
 // Rename names a session.
@@ -190,17 +195,22 @@ type FolderList struct {
 	Files []Folder `json:"files,omitempty"`
 }
 
-// Harness is something the host can run in a session.
+// Harness is one of the host's harnesses: what its sessions run in.
 type Harness struct {
-	Name  string `json:"name"`  // "claude", "antigravity" or "terminal"
-	Title string `json:"title"` // what to call it: "Claude Code"
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`  // "claude" or "antigravity"
+	Title     string `json:"title"` // the kind's name: "Claude", "Antigravity"
+	Installed bool   `json:"installed"`
 }
 
-// Harnesses are what's installed on the host, and its default ("" when the
-// host's user hasn't chosen one: clients should ask).
+// Harnesses are the host's harnesses, in its order, and the one a plain new
+// session runs in ("" when none is installed). Terminal says a new session
+// can be a terminal instead.
 type Harnesses struct {
 	Harnesses []Harness `json:"harnesses"`
 	Default   string    `json:"default,omitempty"`
+	Terminal  bool      `json:"terminal"`
 }
 
 // Event types.

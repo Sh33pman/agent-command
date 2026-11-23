@@ -4,7 +4,7 @@ import Testing
 @testable import AgentCommand
 
 private func session(_ id: String, _ name: String = "", status: String = "busy") -> [String: Any] {
-    ["id": id, "name": name.isEmpty ? id : name, "cwd": "/w", "status": status, "kind": "hosted", "harness": "terminal"]
+    ["id": id, "name": name.isEmpty ? id : name, "cwd": "/w", "status": status, "kind": "hosted", "harness_kind": "terminal"]
 }
 
 /// The app keeps the daemon's state from its stream: a snapshot, then each

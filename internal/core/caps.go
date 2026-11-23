@@ -33,7 +33,7 @@ const (
 // Agent is what runs in s now: its harness's agent, or in a terminal, the
 // agent typed in it.
 func (s *Session) Agent() string {
-	switch s.Harness {
+	switch s.HarnessKind {
 	case HarnessAntigravity:
 		return AgentAntigravity
 	case HarnessTerminal:
@@ -82,12 +82,12 @@ func (s *Session) Capabilities() []string {
 	add(!archived && !s.HostGone, CanAttach)
 	add(!archived && !s.HostGone, CanArchive)
 	// A terminal has no conversation to come back to.
-	add(local && archived && s.Harness != HarnessTerminal, CanUnarchive)
+	add(local && archived && s.HarnessKind != HarnessTerminal, CanUnarchive)
 	add(local && archived, CanPurge)
 	// A Claude session, or a terminal Claude was typed in once its hooks gave
 	// the conversation; Antigravity's once its first hook has given its id.
 	conversation := s.ClaudeSessionID != ""
-	continues := (agent == AgentClaude && (s.Harness != HarnessTerminal || conversation)) ||
+	continues := (agent == AgentClaude && (s.HarnessKind != HarnessTerminal || conversation)) ||
 		(agent == AgentAntigravity && conversation)
 	add(local && !archived && continues, CanContinueInJob)
 	add(local && s.Cwd != "", CanOpenInEditor)

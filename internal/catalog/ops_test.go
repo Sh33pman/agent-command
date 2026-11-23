@@ -154,7 +154,7 @@ func TestLocalPolicy(t *testing.T) {
 
 	// Jobs run agents on the host: never through a share.
 	for _, o := range Local.Ops() {
-		if (strings.HasPrefix(o.Name, "job.") || o.Name == ipc.OpAgentSettings) && o.Grant != GrantHost {
+		if (strings.HasPrefix(o.Name, "job.") || strings.HasPrefix(o.Name, "harness")) && o.Grant != GrantHost {
 			t.Errorf("%q has grant %s, want host", o.Name, o.Grant)
 		}
 	}

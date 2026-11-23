@@ -56,6 +56,7 @@ const (
 	EntityJob        = "job"
 	EntityNotice     = "notice"
 	EntityRemoteHost = "remote_host"
+	EntityHarness    = "harness"
 
 	EntityView      = "view"
 	EntitySettings  = "settings"
@@ -69,7 +70,7 @@ const (
 )
 
 // EntityTypes are every entity type, in the snapshot's order.
-var EntityTypes = []string{EntitySession, EntityGroup, EntitySet, EntityInbox, EntityJob, EntityNotice, EntityRemoteHost,
+var EntityTypes = []string{EntitySession, EntityGroup, EntitySet, EntityInbox, EntityJob, EntityNotice, EntityRemoteHost, EntityHarness,
 	EntityView, EntitySettings, EntityHealth, EntityDismissed, EntityFeatures, EntityUpdate, EntitySpeech, EntityRemote, EntityWake}
 
 // Subscribe turns the connection into an event stream: read it with

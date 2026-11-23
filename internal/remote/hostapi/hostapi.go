@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/core"
+	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/wire"
@@ -41,8 +42,8 @@ type Backend interface {
 	End(ctx context.Context, id string, finish bool) error
 	// HostSocket is where a session's terminal listens.
 	HostSocket(id string) string
-	// Harnesses are what's installed, and the default ("" when not chosen).
-	Harnesses() (installed []string, def string)
+	// Harnesses are the harnesses, whether each is installed, and the default.
+	Harnesses() ipc.Harnesses
 	// Config is the settings, and SetConfig changes them (config.set).
 	Config() ipc.ConfigState
 	SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error)
@@ -161,7 +162,7 @@ func (v view) allInbox() []api.InboxItem {
 }
 
 func summary(s *core.Session, inbox []api.InboxItem) api.Session {
-	out := api.Session{ID: s.ID, Name: s.Name, Harness: cmp.Or(s.Harness, core.HarnessClaude), Dir: s.Cwd,
+	out := api.Session{ID: s.ID, Name: s.Name, HarnessKind: cmp.Or(s.HarnessKind, core.HarnessClaude), HarnessID: s.HarnessID, Dir: s.Cwd,
 		Status: string(s.Status), StatusDetail: s.StatusDetail, Unseen: s.Unseen, Inbox: len(inbox),
 		LastActivity: lastActive(s), Created: s.CreatedAt}
 	for _, it := range inbox {
@@ -273,12 +274,12 @@ func (a *API) newSession(ctx context.Context, c *wire.Call) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	h, err := a.harness(n.Harness)
+	id, kind, err := a.harness(n.HarnessID, n.HarnessKind)
 	if err != nil {
 		return nil, err
 	}
 	remote := true
-	s, err := a.b.NewSession(ctx, ipc.NewRequest{Cwd: dir, Harness: h, Name: strings.TrimSpace(n.Name), Prompt: n.Prompt,
+	s, err := a.b.NewSession(ctx, ipc.NewRequest{Cwd: dir, HarnessID: id, HarnessKind: kind, Name: strings.TrimSpace(n.Name), Prompt: n.Prompt,
 		Args: n.Args, Remote: &remote})
 	if err != nil {
 		return nil, err
@@ -286,40 +287,52 @@ func (a *API) newSession(ctx context.Context, c *wire.Call) (any, error) {
 	return summary(s, nil), nil
 }
 
-// harness is the harness a new session runs: name, or the host's default,
-// as long as it's installed here.
-func (a *API) harness(name string) (string, error) {
-	installed, def := a.b.Harnesses()
-	name = cmp.Or(strings.TrimSpace(name), def, core.HarnessClaude)
-	if harnessTitle(name) == "" {
-		return "", wire.Errorf(wire.CodeBadRequest, "unknown harness %q", name)
+// harness is what a new session runs: the harness id names, which must be
+// installed here; with none, a terminal for kind "terminal", else the first
+// installed harness of kind, or the default harness for no kind.
+func (a *API) harness(id, kind string) (string, string, error) {
+	hs := a.b.Harnesses()
+	id, kind = strings.TrimSpace(id), strings.TrimSpace(kind)
+	switch {
+	case id != "":
+		for _, h := range hs.Harnesses {
+			if h.ID == id {
+				if !h.Installed {
+					return "", "", wire.Errorf(wire.CodeNotFound, "%s (%s) isn't installed on this host", h.Name, core.AgentApp(h.Kind))
+				}
+				return h.ID, h.Kind, nil
+			}
+		}
+		return "", "", wire.Errorf(wire.CodeNotFound, "this host has no harness %q", id)
+	case kind == core.HarnessTerminal:
+		if !hs.Terminal {
+			return "", "", wire.Errorf(errcode.NotSupported, "this host can't start terminals")
+		}
+		return "", kind, nil
+	case kind != "":
+		if !core.IsHarnessKind(kind) {
+			return "", "", wire.Errorf(wire.CodeBadRequest, "unknown harness kind %q", kind)
+		}
+		for _, h := range hs.Harnesses {
+			if h.Kind == kind && h.Installed {
+				return h.ID, h.Kind, nil
+			}
+		}
+		return "", "", wire.Errorf(wire.CodeNotFound, "%s isn't installed on this host", core.AgentApp(kind))
 	}
-	if !slices.Contains(installed, name) {
-		return "", wire.Errorf(wire.CodeNotFound, "%s isn't installed on this host", harnessTitle(name))
+	for _, h := range hs.Harnesses {
+		if h.ID == hs.Default {
+			return h.ID, h.Kind, nil
+		}
 	}
-	return name, nil
-}
-
-func harnessTitle(name string) string {
-	switch name {
-	case core.HarnessClaude, core.HarnessAntigravity:
-		return core.AgentApp(name)
-	case core.HarnessTerminal:
-		return "Terminal"
-	}
-	return ""
+	return "", "", wire.Errorf(wire.CodeNotFound, "no harness is installed on this host")
 }
 
 func (a *API) harnesses(context.Context, *wire.Call) (any, error) {
-	installed, def := a.b.Harnesses()
-	out := api.Harnesses{Harnesses: []api.Harness{}}
-	for _, name := range installed {
-		if t := harnessTitle(name); t != "" {
-			out.Harnesses = append(out.Harnesses, api.Harness{Name: name, Title: t})
-		}
-	}
-	if slices.Contains(installed, def) {
-		out.Default = def
+	hs := a.b.Harnesses()
+	out := api.Harnesses{Harnesses: []api.Harness{}, Default: hs.Default, Terminal: hs.Terminal}
+	for _, h := range hs.Harnesses {
+		out.Harnesses = append(out.Harnesses, api.Harness{ID: h.ID, Name: h.Name, Kind: h.Kind, Title: h.Title, Installed: h.Installed})
 	}
 	return out, nil
 }

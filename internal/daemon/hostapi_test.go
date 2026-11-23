@@ -31,11 +31,10 @@ func TestHostAPI(t *testing.T) {
 	must(t, writeSetting(p.Config(), "remote.host", "port", port))
 	must(t, writeSetting(p.Config(), "remote.host", "enabled", true))
 	must(t, writeSetting(p.Config(), "", "claude_args", []string{"--own"}))
-	must(t, writeSetting(p.Config(), "", "default_harness", "terminal"))
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) {
 		c.ConfigFile, c.Hosts, c.Home = p.Config(), fh, home
-		c.Harnesses = func() []string { return []string{core.HarnessClaude, core.HarnessTerminal} }
+		c.Installed = func(h core.Harness) bool { return h.Kind == core.HarnessClaude }
 	})
 	c := dial(t, p)
 	local := newSess(t, c, ipc.NewRequest{Cwd: "/w/local", Name: "local"})
@@ -66,16 +65,16 @@ func TestHostAPI(t *testing.T) {
 		t.Fatalf("snapshot = %+v", ev)
 	}
 
-	// A session started by the client is Remote, with this host's own args
-	// first, in the host's default harness.
+	// A session started by the client is Remote, in the host's Claude
+	// harness, with its own args (claude_args, moved into it) first.
 	var s api.Session
-	must(t, conn.Call(ctx, api.OpSessionNew, api.NewSession{Dir: "~/proj", Harness: core.HarnessClaude, Args: []string{"--theirs"}}, &s))
-	if s.Dir != filepath.Join(home, "proj") || s.Harness != core.HarnessClaude {
+	must(t, conn.Call(ctx, api.OpSessionNew, api.NewSession{Dir: "~/proj", HarnessKind: core.HarnessClaude, Args: []string{"--theirs"}}, &s))
+	if s.Dir != filepath.Join(home, "proj") || s.HarnessKind != core.HarnessClaude {
 		t.Errorf("new = %+v", s)
 	}
 	reqs := fh.requests()
-	if r := reqs[len(reqs)-1]; !slices.Equal(r.Args, []string{"--own", "--theirs"}) {
-		t.Errorf("args = %v", r.Args)
+	if r := reqs[len(reqs)-1]; r.Harness == nil || !slices.Equal(r.Harness.Args, []string{"--own"}) || !slices.Equal(r.Args, []string{"--theirs"}) {
+		t.Errorf("request = %+v", r)
 	}
 	snap := snapshot(t, c)
 	if i := slices.IndexFunc(snap.Sessions, func(x *ipc.Session) bool { return x.ID == s.ID }); i < 0 || !snap.Sessions[i].Remote {
@@ -86,9 +85,9 @@ func TestHostAPI(t *testing.T) {
 		t.Errorf("added = %+v", ev)
 	}
 	var term api.Session
-	must(t, conn.Call(ctx, api.OpSessionNew, api.NewSession{Dir: "proj"}, &term))
-	if term.Harness != core.HarnessTerminal {
-		t.Errorf("default harness: %+v", term)
+	must(t, conn.Call(ctx, api.OpSessionNew, api.NewSession{Dir: "proj", HarnessKind: core.HarnessTerminal}, &term))
+	if term.HarnessKind != core.HarnessTerminal || term.HarnessID != "" {
+		t.Errorf("a terminal: %+v", term)
 	}
 
 	var l api.SessionList
@@ -128,7 +127,8 @@ func TestHostAPI(t *testing.T) {
 	}
 	var harnesses api.Harnesses
 	must(t, conn.Call(ctx, api.OpHarnessesList, nil, &harnesses))
-	if len(harnesses.Harnesses) != 2 || harnesses.Default != core.HarnessTerminal {
+	if len(harnesses.Harnesses) != 2 || harnesses.Default != harnesses.Harnesses[0].ID || !harnesses.Harnesses[0].Installed ||
+		harnesses.Harnesses[1].Installed || !harnesses.Terminal || s.HarnessID != harnesses.Default {
 		t.Errorf("harnesses = %+v", harnesses)
 	}
 	must(t, conn.Call(ctx, api.OpSessionEnd, api.End{ID: s.ID}, nil))
@@ -157,18 +157,5 @@ func TestHostAPI(t *testing.T) {
 	must(t, conn.Call(ctx, api.OpSessionsList, nil, &l))
 	if len(l.Sessions) != 1 || l.Sessions[0].ID != term.ID || l.Sessions[0].Status != string(core.StatusFinished) {
 		t.Errorf("after finish: %+v", l)
-	}
-}
-
-func TestHostBackendDefaults(t *testing.T) {
-	d := &Daemon{}
-	installed, def := hostBackend{d}.Harnesses()
-	if len(installed) != 3 || def != "" {
-		t.Errorf("harnesses = %v, %q", installed, def)
-	}
-	d.cfg.ConfigFile = filepath.Join(t.TempDir(), "config.toml")
-	must(t, os.WriteFile(d.cfg.ConfigFile, []byte("[broken"), 0o600))
-	if _, def := (hostBackend{d}).Harnesses(); def != "" {
-		t.Errorf("default from a broken config = %q", def)
 	}
 }

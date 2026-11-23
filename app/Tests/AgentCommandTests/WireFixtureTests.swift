@@ -29,6 +29,10 @@ private func fixture(_ name: String) throws -> Data {
     let build = sessions[3]
     #expect(build.isOnHost && build.hostName == "studio" && build.remoteID == "r9" && build.jobID == "j1")
     #expect(snap.sets?.first?.id == "set1" && snap.sets?.first?.parent == "g1")
+    // Harnesses, and each session's.
+    let harnesses = try #require(snap.harnesses)
+    #expect(harnesses.map(\.name) == ["Claude", "Work", "Antigravity"] && harnesses[1].configDir == "~/.claude-work" && !harnesses[2].installed)
+    #expect(api.harnessID == "h-work" && api.harnessKind == "claude" && sessions[2].harnessKind == "terminal")
 
     let groups = try #require(snap.groups)
     #expect(groups[0] == SessionGroup(id: "g1", name: "Backend", color: "blue", order: 10))
@@ -50,7 +54,7 @@ private func fixture(_ name: String) throws -> Data {
     #expect(error?["ok"] as? Bool == false && error?["code"] as? String == "not_supported")
     // The daemon's hello: the version agreed, its range and its ops.
     let hello = try JSONDecoder().decode(DaemonHello.self, from: fixture("hello.json"))
-    #expect(hello.proto == 1 && hello.protoMin == 1 && hello.protoMax == 2 && hello.ops.contains("snapshot"))
+    #expect(hello.proto == 2 && hello.protoMin == 2 && hello.protoMax == 3 && hello.ops.contains("snapshot"))
     #expect((DaemonConnection.protoMin...DaemonConnection.proto).contains(hello.proto), "the app speaks the version agreed")
     let old = try JSONDecoder().decode(DaemonHello.self, from: Data(#"{"proto": 1, "version": "0.70.0"}"#.utf8))
     #expect(old.protoMin == 1 && old.protoMax == 1 && old.ops.isEmpty, "a daemon from before ranges speaks its one version")

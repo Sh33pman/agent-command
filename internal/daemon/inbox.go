@@ -143,7 +143,7 @@ func answerKeys(it *core.InboxItem, s *core.Session, a ipc.InboxAnswer) ([][]byt
 	// sign-in and folder trust prompts, which it reports anyway: its host running
 	// is enough. A session on a host says through its status.
 	if s.Stopped() || (s.ClaudeSessionID == "" && !s.IsAntigravity() && !s.OnHost()) {
-		return nil, fmt.Errorf("no %s is running in this session", core.AgentName(s.Harness))
+		return nil, fmt.Errorf("no %s is running in this session", core.AgentName(s.HarnessKind))
 	}
 	switch it.Kind {
 	case core.InboxQuestion, core.InboxPermission:

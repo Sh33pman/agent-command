@@ -25,12 +25,12 @@ func sampleSnapshot() Snapshot {
 	sessions := []*core.Session{
 		{ID: "s1", Name: "api", Description: "fix the login bug", GroupID: "g1", NameSource: core.NameAuto, Cwd: "/w/api",
 			ClaudeSessionID: "c-1", Status: core.StatusWaiting, StatusDetail: "Allow Bash?", Unseen: true, Kind: core.KindHosted,
-			Harness: core.HarnessClaude, Pid: 4242, Remote: true, CreatedAt: at, LastEventAt: at.Add(time.Minute), StatusSince: at.Add(time.Minute)},
-		{ID: "s2", Name: "docs", GroupID: "g1", Cwd: "/w/docs", Status: core.StatusBusy, Kind: core.KindHosted, Harness: core.HarnessClaude,
+			HarnessKind: core.HarnessClaude, HarnessID: "h-work", Pid: 4242, Remote: true, CreatedAt: at, LastEventAt: at.Add(time.Minute), StatusSince: at.Add(time.Minute)},
+		{ID: "s2", Name: "docs", GroupID: "g1", Cwd: "/w/docs", Status: core.StatusBusy, Kind: core.KindHosted, HarnessKind: core.HarnessClaude, HarnessID: "h-gone",
 			SetID: "set1", SetOrder: 2, CreatedAt: at},
-		{ID: "s3", Name: "shell", GroupID: "default", Cwd: "/w", Status: core.StatusDone, Kind: core.KindHosted, Harness: core.HarnessTerminal,
+		{ID: "s3", Name: "shell", GroupID: "default", Cwd: "/w", Status: core.StatusDone, Kind: core.KindHosted, HarnessKind: core.HarnessTerminal,
 			External: &core.PaneLoc{Terminal: "kitty", KittySocket: "unix:/tmp/kitty", KittyWindow: 7}, CreatedAt: at, ArchivedAt: at.Add(time.Hour)},
-		{ID: "s4", Name: "build", GroupID: "default", Cwd: "/r/build", Status: core.StatusDone, Kind: core.KindHosted, Harness: core.HarnessClaude,
+		{ID: "s4", Name: "build", GroupID: "default", Cwd: "/r/build", Status: core.StatusDone, Kind: core.KindHosted, HarnessKind: core.HarnessClaude,
 			Host: "studio", RemoteID: "r9", JobID: "j1", CreatedAt: at},
 	}
 	groups := []*core.Group{
@@ -45,7 +45,7 @@ func sampleSnapshot() Snapshot {
 	// session that names only its parent. Every client draws s5 in g1.
 	folder := json.RawMessage(`{"type":"folder","id":"f1","parent":"g1","name":"api","path":"/w/api"}`)
 	inFolder := &Session{Type: EntitySession, ID: "s5", Name: "lint", Parent: "f1", Cwd: "/w/api", Status: core.StatusDone,
-		Kind: core.KindHosted, Harness: core.HarnessTerminal, CreatedAt: at}
+		Kind: core.KindHosted, HarnessKind: core.HarnessTerminal, CreatedAt: at}
 	return Snapshot{
 		Sessions:  append(SessionsOf(sessions), inFolder),
 		Groups:    GroupsOf(groups),
@@ -54,10 +54,16 @@ func sampleSnapshot() Snapshot {
 		ViewState: ViewStateOf(core.ViewState{Mode: "groups", Sort: "activity", Desc: true, Collapsed: []string{"g1"}}),
 		Inbox: []core.InboxItem{{ID: 1, SessionID: "s1", Kind: "permission", Text: "Allow Bash: make test?", Options: []string{"Yes", "No"},
 			At: at.Add(time.Minute), State: "open"}},
-		Jobs:     []*core.Job{job},
+		Jobs: []*core.Job{job},
+		Harnesses: []Harness{
+			{Type: EntityHarness, ID: "h-claude", Name: "Claude", Kind: core.HarnessClaude, Title: "Claude", Icon: "claude", Order: 1, Installed: true, Folder: "/Users/me/.claude"},
+			{Type: EntityHarness, ID: "h-work", Name: "Work", Kind: core.HarnessClaude, Title: "Claude", Icon: "claude", Order: 2, Installed: true,
+				Args: []string{"--model", "opus"}, ConfigDir: "~/.claude-work", Folder: "/Users/me/.claude-work"},
+			{Type: EntityHarness, ID: "h-agy", Name: "Antigravity", Kind: core.HarnessAntigravity, Title: "Antigravity", Icon: "antigravity", Order: 3},
+		},
 		Settings: map[string]any{"speech.enabled": true, "remote.port": 7443},
 		Health:   []Health{{ID: "hooks", Severity: HealthWarning, Title: "Claude's hooks aren't installed", Fix: &HealthFix{Op: OpInit}}},
-		Features: &Features{Host: HostFeatures{OS: "darwin", Agents: []string{"claude", "terminal"}, Wake: true}, Device: DeviceFeatures{Speech: true}},
+		Features: &Features{Host: HostFeatures{OS: "darwin", HarnessKinds: []string{"claude", "terminal"}, Wake: true}, Device: DeviceFeatures{Speech: true}},
 		Speech:   &SpeechState{Supported: true, Enabled: true, Installed: true, Voice: "af_bella"},
 	}
 }
@@ -74,7 +80,7 @@ func fixtures() map[string]any {
 		"screen.json": Screen{ID: "s1", Text: "$ make test\nok", Lines: 2, Total: 40},
 		"error.json":  Response{Error: "build runs on studio, which can't send its screen yet", Code: CodeNotSupported},
 		// The daemon's hello: the version agreed, its range, and its ops.
-		"hello.json": Hello{Proto: 1, ProtoMin: 1, ProtoMax: 2, Version: "0.82.0", Pid: 42,
+		"hello.json": Hello{Proto: 2, ProtoMin: 2, ProtoMax: 3, Version: "0.82.0", Pid: 42,
 			Ops: []string{OpHello, OpSnapshot, OpSubscribe, OpMutate}},
 	}
 }

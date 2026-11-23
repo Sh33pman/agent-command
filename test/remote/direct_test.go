@@ -61,7 +61,7 @@ func TestDirectConnect(t *testing.T) {
 	dir := filepath.Join(host.home, "api")
 	var b ipc.Session
 	remote := false
-	host.call(ipc.OpNew, ipc.NewRequest{Cwd: dir, Harness: core.HarnessTerminal, Name: "tests", SetWith: a.ID, Remote: &remote}, &b)
+	host.call(ipc.OpNew, ipc.NewRequest{Cwd: dir, HarnessKind: core.HarnessTerminal, Name: "tests", SetWith: a.ID, Remote: &remote}, &b)
 	host.call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutMove, Targets: ipc.Here(a.ID, b.ID), GroupID: g.ID}, nil)
 
 	c := dialHost(t, host)

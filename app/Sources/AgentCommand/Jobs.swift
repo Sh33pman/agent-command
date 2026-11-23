@@ -10,7 +10,8 @@ struct Job: Codable, Identifiable, Equatable {
     var name = ""
     var description = ""
     var groupID = ""
-    var harness = ""
+    /// The harness it runs in ("" is the default harness).
+    var harnessID = ""
     /// As the daemon keeps it: the words when there are any, else the cron.
     var schedule = ""
     var prompt = ""
@@ -37,7 +38,8 @@ struct Job: Codable, Identifiable, Equatable {
     var form: ScheduleForm?
 
     enum CodingKeys: String, CodingKey {
-        case id, version, name, description, harness, schedule, prompt, cwd, settings, cron, once, words, summary, paused, wake, form
+        case harnessID = "harness_id"
+        case id, version, name, description, schedule, prompt, cwd, settings, cron, once, words, summary, paused, wake, form
         case groupID = "group_id", promptFile = "prompt_file", place = "where", sessionID = "session_id"
         case runMissed = "run_missed", createdAt = "created_at", nextRun = "next_run", lastRun = "last_run"
     }
@@ -52,7 +54,7 @@ struct Job: Codable, Identifiable, Equatable {
         name = try text(.name)
         description = try text(.description)
         groupID = try text(.groupID)
-        harness = try text(.harness)
+        harnessID = try text(.harnessID)
         schedule = try text(.schedule)
         prompt = try text(.prompt)
         promptFile = try text(.promptFile)
@@ -81,7 +83,7 @@ struct Job: Codable, Identifiable, Equatable {
         try c.encode(name, forKey: .name)
         try c.encode(description, forKey: .description)
         try c.encode(groupID, forKey: .groupID)
-        try c.encode(harness, forKey: .harness)
+        try c.encode(harnessID, forKey: .harnessID)
         try c.encode(schedule, forKey: .schedule)
         try c.encode(prompt, forKey: .prompt)
         try c.encode(promptFile, forKey: .promptFile)
@@ -96,8 +98,12 @@ struct Job: Codable, Identifiable, Equatable {
 
     var next: Date? { JobTime.parse(nextRun) }
 
-    /// The agent it runs: Antigravity, or else Claude ("" is Claude's).
-    var harnessKind: Harness { harness == Harness.antigravity.rawValue ? .antigravity : .claude }
+    /// The harness it runs in: its own, the default for none, or its kind's
+    /// placeholder when it's gone.
+    var harness: Harness {
+        if harnessID.isEmpty { return HarnessList.shared.defaultHarness ?? .claude }
+        return Harness.resolve(id: harnessID, kind: "claude")
+    }
 
     /// How it stands, for the list.
     var state: JobState {
@@ -268,7 +274,7 @@ enum JobPlace: String, CaseIterable, Identifiable {
     /// What it means for a job of this agent's.
     func help(_ harness: Harness) -> String {
         switch self {
-        case .folder where harness == .claude: "Each run is a new session in the folder, with its CLAUDE.md, settings and skills."
+        case .folder where harness.isClaude: "Each run is a new session in the folder, with its CLAUDE.md, settings and skills."
         case .folder: "Each run is a new \(harness.title) session in the folder."
         case .worktree: "Each run gets its own worktree of the repo, so it can't touch your own work there."
         case .session: "Each run continues the session's conversation, so it remembers the runs before."
@@ -305,8 +311,8 @@ struct JobDraft: Equatable {
     var name = ""
     var description = ""
     var groupID = ""
-    /// The agent it runs. Set it with setHarness, which drops what was the other agent's.
-    var harness = Harness.claude
+    /// The harness it runs in. Set it with setHarness, which drops what was another kind's.
+    var harness = HarnessList.shared.defaultHarness ?? Harness.claude
     /// The schedule as the controls set it. The daemon turns it into cron.
     var builder = ScheduleBuilder()
     var promptSource = PromptSource.text
@@ -330,7 +336,7 @@ struct JobDraft: Equatable {
         name = job.name
         description = job.description
         groupID = job.groupID
-        harness = job.harnessKind
+        harness = job.harness
         builder = job.form.map { ScheduleBuilder(form: $0) } ?? .custom(job.cron.isEmpty ? job.schedule : job.cron)
         builder.pinned = builder.kind == .custom
         promptSource = job.promptFile.isEmpty ? .text : .file
@@ -352,7 +358,7 @@ struct JobDraft: Equatable {
         if name != other.name { out.append("name") }
         if description != other.description { out.append("description") }
         if groupID != other.groupID { out.append("group") }
-        if harness != other.harness { out.append("agent") }
+        if harness != other.harness { out.append("harness") }
         if builder.form() != other.builder.form() || builder.cron != other.builder.cron { out.append("schedule") }
         if prompt != other.prompt || promptFile != other.promptFile || promptSource != other.promptSource { out.append("prompt") }
         if place != other.place || cwd != other.cwd || sessionID != other.sessionID { out.append("where it runs") }
@@ -361,12 +367,14 @@ struct JobDraft: Equatable {
         return out
     }
 
-    /// Changes the agent. The settings and the session were the other agent's, so they go.
-    mutating func setHarness(_ agent: Harness) {
-        guard agent != harness else { return }
-        harness = agent
-        settings = [:]
-        sessionID = ""
+    /// Changes the harness. Another kind's settings and session don't fit, so they go.
+    mutating func setHarness(_ other: Harness) {
+        guard other != harness else { return }
+        if other.kind != harness.kind {
+            settings = [:]
+            sessionID = ""
+        }
+        harness = other
     }
 
     /// Cron typed into the cron field: Custom until the daemon reads it, when the
@@ -390,8 +398,7 @@ struct JobDraft: Equatable {
         j.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         j.description = description.trimmingCharacters(in: .whitespacesAndNewlines)
         j.groupID = groupID
-        // Claude's as before: no harness.
-        j.harness = harness == .claude ? "" : harness.rawValue
+        j.harnessID = harness.harnessID
         j.schedule = builder.kind == .custom ? builder.cron : ""
         j.form = builder.form()
         j.prompt = promptSource == .text ? prompt : ""

@@ -17,8 +17,11 @@ import (
 
 // HostRequest says what a session host runs.
 type HostRequest struct {
-	ID            string // the acmd session
-	Harness       string // "" = claude
+	ID string // the acmd session
+	// Kind is the session's harness kind, and Harness its harness (nil for a
+	// terminal): the program, its arguments and, for Claude, its folder.
+	Kind          string
+	Harness       *core.Harness
 	Dir           string
 	Name, Prompt  string
 	Args          []string
@@ -47,9 +50,17 @@ func newUUID() string {
 // hostSession records a new hosted session and starts its host. Claude's
 // session id is chosen here, so its hooks find the row from the first one.
 func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
+	h, err := d.newHarness(ctx, req.HarnessID, req.HarnessKind)
+	if err != nil {
+		return nil, err
+	}
+	kind, harnessID := core.HarnessTerminal, ""
+	if h != nil {
+		kind, harnessID = h.Kind, h.ID
+	}
 	remote := d.newSessionsRemote(req.Remote)
 	d.mu.Lock()
-	s := &core.Session{Kind: core.KindHosted, Cwd: req.Cwd, Harness: req.Harness, CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto,
+	s := &core.Session{Kind: core.KindHosted, Cwd: req.Cwd, HarnessKind: kind, HarnessID: harnessID, CreatedAt: d.cfg.Now().UTC(), NameSource: core.NameAuto,
 		Remote: remote, JobID: req.JobID}
 	switch {
 	case req.Resume != "":
@@ -67,12 +78,12 @@ func (d *Daemon) hostSession(ctx context.Context, req ipc.NewRequest) (*core.Ses
 	if req.Description != "" {
 		s.Description = req.Description
 	}
-	err := d.store.CreateSession(ctx, s)
+	err = d.store.CreateSession(ctx, s)
 	d.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
-	host := HostRequest{ID: s.ID, Harness: req.Harness, Dir: req.Cwd, Name: req.Name, Prompt: req.Prompt, Args: req.Args, ClaudeSession: s.ClaudeSessionID}
+	host := HostRequest{ID: s.ID, Kind: kind, Harness: h, Dir: req.Cwd, Name: req.Name, Prompt: req.Prompt, Args: req.Args, ClaudeSession: s.ClaudeSessionID}
 	if req.Resume != "" {
 		host.ClaudeSession, host.Resume = "", req.Resume
 	}
@@ -121,7 +132,11 @@ func (d *Daemon) resumeHosted(ctx context.Context, s *core.Session, prompt strin
 		return nil, fmt.Errorf("this session runs on %s: resume it there", s.Host)
 	}
 	if !term.Running(d.cfg.Paths.HostSocket(s.ID)) {
-		r := HostRequest{ID: s.ID, Harness: s.Harness, Dir: s.Cwd, Resume: s.ClaudeSessionID, Prompt: prompt, Args: args}
+		h, err := d.harnessForSession(ctx, s)
+		if err != nil {
+			return nil, err
+		}
+		r := HostRequest{ID: s.ID, Kind: cmpKind(s.HarnessKind), Harness: h, Dir: s.Cwd, Resume: s.ClaudeSessionID, Prompt: prompt, Args: args}
 		if err := d.startHost(ctx, r); err != nil {
 			return nil, err
 		}

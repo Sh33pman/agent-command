@@ -43,7 +43,7 @@ func TestManyIdsGetAResultEach(t *testing.T) {
 	ctx := context.Background()
 	var ids []string
 	for _, n := range []string{"a", "b", "c"} {
-		s := &core.Session{Name: n, Cwd: "/w/" + n, Status: core.StatusDone, Harness: core.HarnessTerminal, Kind: core.KindHosted}
+		s := &core.Session{Name: n, Cwd: "/w/" + n, Status: core.StatusDone, HarnessKind: core.HarnessTerminal, Kind: core.KindHosted}
 		must(t, st.CreateSession(ctx, s))
 		ids = append(ids, s.ID)
 	}
@@ -132,9 +132,9 @@ func TestSessionScreen(t *testing.T) {
 	st, err := store.Open(context.Background(), p.DB())
 	must(t, err)
 	ctx := context.Background()
-	local := &core.Session{Name: "api", Cwd: "/w", Status: core.StatusDone, Harness: core.HarnessTerminal, Kind: core.KindHosted}
-	ended := &core.Session{Name: "old", Cwd: "/w", Status: core.StatusDone, Harness: core.HarnessTerminal, Kind: core.KindHosted}
-	far := &core.Session{Name: "far", Cwd: "/r", Status: core.StatusDone, Harness: core.HarnessClaude, Kind: core.KindHosted, Host: "studio", RemoteID: "r1"}
+	local := &core.Session{Name: "api", Cwd: "/w", Status: core.StatusDone, HarnessKind: core.HarnessTerminal, Kind: core.KindHosted}
+	ended := &core.Session{Name: "old", Cwd: "/w", Status: core.StatusDone, HarnessKind: core.HarnessTerminal, Kind: core.KindHosted}
+	far := &core.Session{Name: "far", Cwd: "/r", Status: core.StatusDone, HarnessKind: core.HarnessClaude, Kind: core.KindHosted, Host: "studio", RemoteID: "r1"}
 	for _, s := range []*core.Session{local, ended, far} {
 		must(t, st.CreateSession(ctx, s))
 	}

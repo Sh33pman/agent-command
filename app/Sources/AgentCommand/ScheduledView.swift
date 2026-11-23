@@ -192,7 +192,7 @@ private struct JobDetail: View {
                         }
                     }
                     if !job.settings.isEmpty {
-                        section("\(job.harnessKind.productName) settings") {
+                        section("\(job.harness.productName) settings") {
                             ForEach(job.settings.keys.sorted(), id: \.self) { key in
                                 HStack(alignment: .top) {
                                     Text(label(key)).foregroundStyle(theme.dim).frame(width: 150, alignment: .leading)
@@ -247,7 +247,7 @@ private struct JobDetail: View {
 
     private var facts: some View {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
-            fact("Agent", job.harnessKind.title)
+            fact("Agent", job.harness.title)
             fact("When", job.scheduleLine)
             fact("Next run", job.paused ? "Paused" : (job.next.map { JobTime.describe($0) } ?? "None"))
             fact("Where", job.placeLine(sessionName: model.sessionName))
@@ -300,7 +300,7 @@ private struct JobDetail: View {
     }
 
     private func label(_ key: String) -> String {
-        model.settings(for: job.harnessKind).first { $0.key == key }?.label ?? key
+        model.settings(for: job.harness).first { $0.key == key }?.label ?? key
     }
 }
 

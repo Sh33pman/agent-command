@@ -53,7 +53,7 @@ func TestDeviceAndCodeSettings(t *testing.T) {
 			code = append(code, s.Key)
 		}
 	}
-	if got := strings.Join(code, " "); got != "claude_command claude_args agy_command agy_args editor.command" {
+	if got := strings.Join(code, " "); got != "editor.command" {
 		t.Fatalf("settings that run code: %s", got)
 	}
 }
@@ -73,13 +73,13 @@ func TestCheckTakesJSONAndTypedText(t *testing.T) {
 		{"remote.host.port", json.Number("9000"), 9000},
 		{"speech.speed", 1.5, 1.5},
 		{"speech.speed", "0.75", 0.75},
-		{"claude_args", []any{"--model", "opus"}, []string{"--model", "opus"}},
-		{"claude_args", `["a b", "c"]`, []string{"a b", "c"}},
-		{"claude_args", "--x  --y", []string{"--x", "--y"}},
-		{"claude_args", "", []string{}},
-		{"claude_args", []string{"z"}, []string{"z"}},
+		{"editor.command", []any{"nvim", "{dir}"}, []string{"nvim", "{dir}"}},
+		{"editor.command", `["a b", "c"]`, []string{"a b", "c"}},
+		{"editor.command", "--x  --y", []string{"--x", "--y"}},
+		{"editor.command", "", []string{}},
+		{"editor.command", []string{"z"}, []string{"z"}},
 		{"default_harness", "", ""},
-		{"claude_command", "  /bin/claude ", "/bin/claude"},
+		{"default_harness", " 01HARNESS ", "01HARNESS"},
 		{"speech.voice", "af_bella:0.5,am_adam:0.5", "af_bella:0.5,am_adam:0.5"},
 		{"remote_control", "true", true}, // its old name
 	}
@@ -106,13 +106,10 @@ func TestCheckRefusesWhatIsWrong(t *testing.T) {
 		{"remote.host.port", "x", "whole number"},
 		{"remote.host.port", true, "whole number"},
 		{"speech.speed", 3.0, "from 0.5 to 2"},
-		{"default_harness", "terminal", `one of "claude", "antigravity", ""`},
-		{"default_harness", 1.0, "one of"},
-		{"claude_command", " ", "can't be empty"},
-		{"claude_command", 3.0, "is text"},
-		{"claude_args", []any{"a", 1.0}, "list of text"},
-		{"claude_args", "[nope", "claude_args"},
-		{"claude_args", true, "is a list"},
+		{"default_harness", 1.0, "is text"},
+		{"editor.command", []any{"a", 1.0}, "list of text"},
+		{"editor.command", "[nope", "editor.command"},
+		{"editor.command", true, "is a list"},
 		{"speech.voice", "bf_emma", "American English"},
 	}
 	for _, c := range cases {
@@ -131,11 +128,11 @@ func TestSectionAndName(t *testing.T) {
 	if s.Section() != "remote.host" || s.Name() != "port" {
 		t.Fatal(s.Section(), s.Name())
 	}
-	s = mustFind(t, "claude_args")
-	if s.Section() != "" || s.Name() != "claude_args" {
+	s = mustFind(t, "default_harness")
+	if s.Section() != "" || s.Name() != "default_harness" {
 		t.Fatal(s.Section(), s.Name())
 	}
-	if v := s.Value(Config{ClaudeArgs: []string{"x"}}); !reflect.DeepEqual(v, []string{"x"}) {
+	if v := s.Value(Config{DefaultHarness: "x"}); !reflect.DeepEqual(v, "x") {
 		t.Fatal(v)
 	}
 }

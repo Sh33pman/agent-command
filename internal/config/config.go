@@ -20,20 +20,14 @@ import (
 // Config holds the settings acmd reads; unknown keys are ignored (the file may
 // carry settings of later versions, or of earlier ones: see Retired).
 type Config struct {
-	ClaudeCommand string   `toml:"claude_command"`
-	ClaudeArgs    []string `toml:"claude_args"`
-	// AgyCommand and AgyArgs are Antigravity's CLI (agy) and the extra
-	// arguments for its new sessions, as claude_command and claude_args are Claude's.
-	AgyCommand string   `toml:"agy_command"`
-	AgyArgs    []string `toml:"agy_args"`
 	// AgentRemoteControl starts agent sessions with --remote-control, so they
 	// can be used remotely: Claude's from claude.ai and the Claude app,
 	// Antigravity's from its Remote Control browser view. Off by default. It was
 	// remote_control, which is still read when agent_remote_control is missing.
 	AgentRemoteControl bool `toml:"agent_remote_control"`
-	// DefaultHarness is what a plain new session runs (⌘N, `acmd new` without
-	// --harness): "claude" or "antigravity". "" isn't chosen yet: the app asks,
-	// and `acmd new` starts Claude.
+	// DefaultHarness is the harness a plain new session runs in (⌘N, `acmd
+	// new` without --harness), by id. "" (or one that's gone) is the first
+	// installed harness.
 	DefaultHarness string  `toml:"default_harness"`
 	Editor         Editor  `toml:"editor"`
 	Notify         Notify  `toml:"notify"`
@@ -154,8 +148,6 @@ type Editor struct {
 // Default is the configuration used for missing keys.
 func Default() Config {
 	return Config{
-		ClaudeCommand: "claude",
-		AgyCommand:    "agy",
 		Notify: Notify{Enabled: true, OnWaiting: true, OnError: true, OnDone: true,
 			DoneMinDuration: "10s", Cooldown: "20s", Sound: "default", Route: RouteOne},
 		Clients: Clients{ForgetAfter: "720h"},
@@ -205,21 +197,15 @@ func Load(path string) (Config, error) {
 const Template = `# agent-command (acmd) configuration. See: acmd help. The app's Settings
 # (⌘,) and ` + "`acmd config set`" + ` change it too.
 
-# Absolute path of the claude binary (resolved by ` + "`acmd init`" + `).
-claude_command = "claude"
-# Extra arguments for new sessions (passed to ` + "`claude`" + `).
-claude_args = []
-# Absolute path of Antigravity's CLI, agy (resolved by ` + "`acmd init`" + `).
-agy_command = "agy"
-# Extra arguments for new Antigravity sessions (passed to ` + "`agy`" + `).
-agy_args = []
 # Agent Remote Control: start agent sessions with --remote-control, so you can
 # use them remotely: Claude's from claude.ai and the Claude app, Antigravity's
 # from its Remote Control in a browser. Applies to sessions started or resumed
 # after a change. (It was remote_control.)
 agent_remote_control = false
-# What a new session runs (⌘N, and acmd new without --harness): claude or
-# antigravity. "" asks in the app the first time, and acmd new starts Claude.
+# The harness a new session runs in (⌘N, and acmd new without --harness), by
+# its id: acmd harness list shows them. "" is the first one installed.
+# Harnesses themselves (their programs, arguments and Claude folders) are
+# kept by acmd: change them in the app, or with acmd harness.
 default_harness = ""
 
 [editor]
@@ -440,7 +426,23 @@ var retiredKeyRe = regexp.MustCompile(`^\s*(` + strings.Join(Retired.Keys, "|") 
 // keys out of it, and keeps the rest as it is. A text without them comes back unchanged. The result is checked
 // to parse.
 func Retire(text string) (string, error) {
-	text = Migrate(text)
+	return retire(Migrate(text), retiredKeyRe, Retired.Sections, false)
+}
+
+// HarnessKeys are the top-level keys harnesses replaced. Only the daemon
+// takes them out (RetireHarnessKeys), once it has moved them into the
+// harnesses (ReadOldHarnesses): acmd init leaves them.
+var HarnessKeys = []string{"claude_command", "claude_args", "agy_command", "agy_args"}
+
+var harnessKeyRe = regexp.MustCompile(`^\s*(` + strings.Join(HarnessKeys, "|") + `)\s*=`)
+
+// RetireHarnessKeys takes HarnessKeys out of text, with the comment lines
+// right above each.
+func RetireHarnessKeys(text string) (string, error) {
+	return retire(text, harnessKeyRe, nil, true)
+}
+
+func retire(text string, keyRe *regexp.Regexp, sections []string, comments bool) (string, error) {
 	lines := strings.SplitAfter(text, "\n")
 	if lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
@@ -452,14 +454,17 @@ func Retire(text string) (string, error) {
 		m := sectionRe.FindStringSubmatch(strings.TrimRight(l, "\r\n"))
 		if m != nil || strings.HasPrefix(strings.TrimSpace(l), "[[") {
 			topLevel = false
-			inRetired = m != nil && slices.Contains(Retired.Sections, m[1])
+			inRetired = m != nil && slices.Contains(sections, m[1])
 		}
 		switch {
 		case inRetired:
 			removed = true
-		case topLevel && retiredKeyRe.MatchString(l):
+		case topLevel && keyRe.MatchString(l):
 			removed = true
 			i += valueExtent(lines[i:]) - 1
+			for comments && len(out) > 0 && strings.HasPrefix(strings.TrimSpace(out[len(out)-1]), "#") {
+				out = out[:len(out)-1]
+			}
 		default:
 			out = append(out, l)
 		}
@@ -522,4 +527,47 @@ func Migrate(text string) string {
 	}
 	lines[old] = oldAgentRemoteControlRe.ReplaceAllString(lines[old], "${1}"+agentRemoteControlKey+"${2}")
 	return strings.Join(lines, "")
+}
+
+// OldHarnesses are the harness settings config.toml had before harnesses:
+// what the daemon moves into the Claude and Antigravity harnesses, once.
+type OldHarnesses struct {
+	ClaudeCommand string   `toml:"claude_command"`
+	ClaudeArgs    []string `toml:"claude_args"`
+	AgyCommand    string   `toml:"agy_command"`
+	AgyArgs       []string `toml:"agy_args"`
+	// DefaultHarness is default_harness when it still names a kind
+	// ("claude" or "antigravity") rather than a harness.
+	DefaultHarness string `toml:"default_harness"`
+}
+
+// ReadOldHarnesses reads them from config.toml's text; ok is false when
+// there's nothing to move.
+func ReadOldHarnesses(text string) (old OldHarnesses, ok bool) {
+	var raw struct {
+		ClaudeCommand  *string   `toml:"claude_command"`
+		ClaudeArgs     *[]string `toml:"claude_args"`
+		AgyCommand     *string   `toml:"agy_command"`
+		AgyArgs        *[]string `toml:"agy_args"`
+		DefaultHarness string    `toml:"default_harness"`
+	}
+	if _, err := toml.Decode(text, &raw); err != nil {
+		return old, false
+	}
+	if raw.ClaudeCommand != nil {
+		old.ClaudeCommand, ok = *raw.ClaudeCommand, true
+	}
+	if raw.ClaudeArgs != nil {
+		old.ClaudeArgs, ok = *raw.ClaudeArgs, true
+	}
+	if raw.AgyCommand != nil {
+		old.AgyCommand, ok = *raw.AgyCommand, true
+	}
+	if raw.AgyArgs != nil {
+		old.AgyArgs, ok = *raw.AgyArgs, true
+	}
+	if raw.DefaultHarness == HarnessClaude || raw.DefaultHarness == HarnessAntigravity {
+		old.DefaultHarness, ok = raw.DefaultHarness, true
+	}
+	return old, ok
 }

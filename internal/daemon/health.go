@@ -186,11 +186,14 @@ func hostingHealth(sessions []*core.Session, remote *ipc.RemoteStatus) *ipc.Heal
 
 // features say what this host and device can do.
 func (d *Daemon) features() *ipc.Features {
-	agents := []string{core.HarnessClaude, core.HarnessAntigravity, core.HarnessTerminal}
-	if d.cfg.Harnesses != nil {
-		agents = d.cfg.Harnesses()
+	var kinds []string
+	for _, h := range d.harnessList(context.Background()) {
+		if !slices.Contains(kinds, h.Kind) && d.installed(h) {
+			kinds = append(kinds, h.Kind)
+		}
 	}
-	f := &ipc.Features{Host: ipc.HostFeatures{OS: runtime.GOOS, Agents: agents, Wake: d.cfg.Waker != nil, Hosting: d.remote != nil}}
+	kinds = append(kinds, core.HarnessTerminal)
+	f := &ipc.Features{Host: ipc.HostFeatures{OS: runtime.GOOS, HarnessKinds: kinds, Wake: d.cfg.Waker != nil, Hosting: d.remote != nil}}
 	f.Device.Speech = d.speaker().Supported()
 	f.Device.Editor = d.config().Editor.Preset != ""
 	return f
@@ -275,7 +278,7 @@ func (d *Daemon) handleHealth(ctx context.Context, req ipc.Request) (any, error)
 		if d.cfg.Init == nil {
 			return nil, errors.New("this daemon can't set acmd up: run acmd init on the host")
 		}
-		res, err := d.cfg.Init(ctx)
+		res, err := d.cfg.Init(context.WithValue(ctx, harnessesKey{}, d.harnessList(ctx)))
 		if d.cfg.CheckHealth != nil {
 			d.checkHealth(ctx) // so the warnings it fixed go
 		}

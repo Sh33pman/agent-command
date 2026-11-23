@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
@@ -52,13 +53,13 @@ func TestConfigOps(t *testing.T) {
 	}
 	// Many at once, as the app sends them and as they're typed.
 	must(t, c.Call(ipc.OpConfigSet, ipc.ConfigSet{Values: map[string]any{
-		"notify.cooldown": "1m", "agent_remote_control": "on", "claude_args": []string{"--model", "opus"}}}, &st))
+		"notify.cooldown": "1m", "agent_remote_control": "on", "default_harness": "01H"}}, &st))
 	if st.Values["notify.cooldown"] != "1m0s" || st.Values["agent_remote_control"] != true {
 		t.Errorf("after set = %+v", st.Values)
 	}
 	cfg, err := config.Load(p.Config())
 	must(t, err)
-	if cfg.Notify.Cooldown != "1m0s" || !cfg.AgentRemoteControl || strings.Join(cfg.ClaudeArgs, " ") != "--model opus" {
+	if cfg.Notify.Cooldown != "1m0s" || !cfg.AgentRemoteControl || cfg.DefaultHarness != "01H" {
 		t.Errorf("config.toml = %+v", cfg)
 	}
 	// The snapshot has the settings in effect.
@@ -340,16 +341,22 @@ func TestHarnessesOp(t *testing.T) {
 	p := settingsPaths(t)
 	must(t, writeSetting(p.Config(), "", "default_harness", "antigravity"))
 	start(t, p, withConfig(p, func(c *Config) {
-		c.Harnesses = func() []string { return []string{"claude", "antigravity", "terminal", "copilot"} }
+		c.Installed = func(core.Harness) bool { return true }
 	}))
 	c := dial(t, p)
 	var h ipc.Harnesses
 	must(t, c.Call(ipc.OpHarnesses, nil, &h))
 	var names []string
 	for _, e := range h.Harnesses {
-		names = append(names, e.Name+":"+e.Icon)
+		names = append(names, e.Name+":"+e.Kind+":"+e.Icon)
 	}
-	if strings.Join(names, ",") != "claude:claude,antigravity:antigravity,terminal:terminal" || h.Default != "antigravity" || !h.Harnesses[0].Agent || h.Harnesses[2].Agent {
+	// default_harness named a kind: it's moved to that harness's id.
+	if strings.Join(names, ",") != "Claude:claude:claude,Antigravity:antigravity:antigravity" || h.Default != h.Harnesses[1].ID || !h.Terminal {
 		t.Errorf("harnesses = %+v", h)
+	}
+	var cs ipc.ConfigState
+	must(t, c.Call(ipc.OpConfigGet, nil, &cs))
+	if cs.Values["default_harness"] != h.Harnesses[1].ID {
+		t.Errorf("default_harness = %v", cs.Values["default_harness"])
 	}
 }

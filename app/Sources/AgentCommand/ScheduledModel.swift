@@ -28,9 +28,9 @@ final class ScheduledModel {
     /// What just happened, for a moment.
     private(set) var notice: String?
     private(set) var runs: [JobRun] = []
-    /// Each agent's settings for scheduled runs, as the daemon lists them.
-    private(set) var agentSettings: [Harness: [AgentSetting]] = [:]
-    @ObservationIgnored private var asked: Set<Harness> = []
+    /// Each kind's settings for scheduled runs, as the daemon lists them.
+    private(set) var agentSettings: [String: [AgentSetting]] = [:]
+    @ObservationIgnored private var asked: Set<String> = []
     /// Asking whether to delete the selected job.
     var confirmingDelete = false
     /// Asking whether to throw away the form's changes.
@@ -69,12 +69,12 @@ final class ScheduledModel {
     var canSave: Bool { draft != nil && !saving }
 
     /// The agent the form or the selected job is for.
-    var harness: Harness { draft?.harness ?? selected?.harnessKind ?? .claude }
+    var harness: Harness { draft?.harness ?? selected?.harness ?? .claude }
 
     /// The settings the form shows: those of the draft's agent (or the selected job's).
     var settings: [AgentSetting] { settings(for: harness) }
 
-    func settings(for agent: Harness) -> [AgentSetting] { agentSettings[agent] ?? [] }
+    func settings(for harness: Harness) -> [AgentSetting] { agentSettings[harness.kind] ?? [] }
 
     /// The sessions a job of the form's agent can continue.
     var continuableSessions: [Session] { continuableSessions(for: harness) }
@@ -82,7 +82,7 @@ final class ScheduledModel {
     /// The sessions a job of an agent's can continue: the daemon says which can,
     /// and the agent in them is the job's.
     func continuableSessions(for agent: Harness) -> [Session] {
-        store.sessions.filter { $0.can(.continueInJob) && $0.runningAgent?.rawValue == agent.rawValue }
+        store.sessions.filter { $0.can(.continueInJob) && $0.runningAgent?.kind == agent.kind }
     }
 
     func sessionName(_ id: String) -> String? {
@@ -96,7 +96,7 @@ final class ScheduledModel {
     // MARK: Lifecycle
 
     func start(editing job: Job? = nil) {
-        loadSettings(.claude)
+        loadSettings(HarnessList.shared.defaultHarness ?? .claude)
         if let job {
             select(job.id)
             edit()
@@ -115,12 +115,12 @@ final class ScheduledModel {
         monitor = nil
     }
 
-    /// Asks the daemon for an agent's settings, once.
-    private func loadSettings(_ agent: Harness) {
-        guard !asked.contains(agent) else { return }
-        asked.insert(agent)
-        store.loadAgentSettings(harness: agent == .claude ? "" : agent.rawValue) { [weak self] in
-            self?.agentSettings[agent] = $0
+    /// Asks the daemon for a harness kind's settings, once.
+    private func loadSettings(_ harness: Harness) {
+        guard !asked.contains(harness.kind) else { return }
+        asked.insert(harness.kind)
+        store.loadAgentSettings(harness: harness) { [weak self] in
+            self?.agentSettings[harness.kind] = $0
         }
     }
 
@@ -133,7 +133,7 @@ final class ScheduledModel {
         error = nil
         runs = []
         guard let id else { return }
-        if let job = selected { loadSettings(job.harnessKind) }
+        if let job = selected { loadSettings(job.harness) }
         store.loadJobRuns(id) { [weak self] runs in
             guard let self, self.selectedID == id else { return }
             self.runs = runs

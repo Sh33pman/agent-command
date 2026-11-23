@@ -28,9 +28,11 @@ struct Snapshot: Decodable {
     /// Entities of types with no list of their own, which the app may not
     /// know (design 7.2): kept for their children's sake.
     var others: [EntityRef]? = nil
+    /// This Mac's harnesses, in list order.
+    var harnesses: [Harness]? = nil
 
     enum CodingKeys: String, CodingKey {
-        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health, dismissed, features, update, speech, others
+        case sessions, notices, inbox, jobs, groups, wake, remote, sets, settings, health, dismissed, features, update, speech, others, harnesses
         case remoteHosts = "remote_hosts"
     }
 
@@ -370,7 +372,9 @@ struct Session: Decodable, Identifiable, Equatable {
     let status: String
     let kind: String
     let unseen: Bool
-    let harness: String
+    /// claude, antigravity or terminal, and the harness it runs in ("" for a terminal).
+    let harnessKind: String
+    let harnessID: String
     let claudeSessionID: String
     /// What it's doing or waiting on, such as "Bash" or "permission: Write".
     var statusDetail: String?
@@ -406,7 +410,8 @@ struct Session: Decodable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey {
         case agent, capabilities
         case display = "display_name"
-        case id, name, cwd, status, kind, unseen, harness, description, remote, host, parent, order, attention
+        case id, name, cwd, status, kind, unseen, description, remote, host, parent, order, attention
+        case harnessKind = "harness_kind", harnessID = "harness_id"
         case claudeSessionID = "claude_session_id", statusDetail = "status_detail", remoteID = "remote_id"
         case hostGone = "host_gone", jobID = "job_id", groupID = "group_id", lastEventAt = "last_event_at"
     }
@@ -420,7 +425,8 @@ struct Session: Decodable, Identifiable, Equatable {
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
         kind = try c.decodeIfPresent(String.self, forKey: .kind) ?? ""
         unseen = try c.decodeIfPresent(Bool.self, forKey: .unseen) ?? false
-        harness = try c.decodeIfPresent(String.self, forKey: .harness) ?? ""
+        harnessKind = try c.decodeIfPresent(String.self, forKey: .harnessKind) ?? ""
+        harnessID = try c.decodeIfPresent(String.self, forKey: .harnessID) ?? ""
         claudeSessionID = try c.decodeIfPresent(String.self, forKey: .claudeSessionID) ?? ""
         statusDetail = try c.decodeIfPresent(String.self, forKey: .statusDetail)
         description = try c.decodeIfPresent(String.self, forKey: .description)
@@ -476,11 +482,12 @@ struct Session: Decodable, Identifiable, Equatable {
         return lines.joined(separator: "\n")
     }
 
-    var isTerminal: Bool { harness == "terminal" }
-    /// What it was started with: one the daemon listed, or a generic one.
-    var harnessKind: Harness { Harness(session: harness) ?? Harness.agent(harness) }
-    /// "Claude", "Antigravity" or "Terminal", or what the daemon calls another.
-    var harnessTitle: String { harnessKind.title }
+    var isTerminal: Bool { harnessKind == "terminal" }
+    /// The harness it runs in, or its kind when that was removed; a terminal.
+    /// A host's session runs in one of the host's harnesses: it shows its kind.
+    var harness: Harness { isOnHost ? Harness(kind: harnessKind.isEmpty ? "claude" : harnessKind) : Harness.resolve(id: harnessID, kind: harnessKind) }
+    /// Its harness's name ("Claude", "Work"), or "Terminal".
+    var harnessTitle: String { harness.title }
     var isArchived: Bool { status == "archived" }
 
     var displayName: String {
@@ -500,8 +507,9 @@ enum SessionCapability: String {
 /// An earlier agent conversation that can be resumed (internal/ipc.Conversation).
 struct Conversation: Decodable, Identifiable, Hashable {
     let id: String
-    /// "antigravity" for Antigravity's; "" or "claude" for Claude's.
-    var harness: String? = nil
+    /// The harness whose history it's in, and its kind.
+    var harness_id: String? = nil
+    var harness_kind: String? = nil
     let cwd: String
     let title: String?
     let branch: String?
@@ -510,8 +518,8 @@ struct Conversation: Decodable, Identifiable, Hashable {
     let session_id: String?
 
     var displayTitle: String { title ?? "Untitled" }
-    /// The agent it's from. Older daemons send no harness: those are Claude's.
-    var harnessKind: Harness { harness == Harness.antigravity.rawValue ? .antigravity : .claude }
+    /// The harness it's from.
+    var harness: Harness { Harness.resolve(id: harness_id ?? "", kind: harness_kind ?? "claude") }
     var isRunning: Bool { running == true }
 
     /// The time, as far as RFC 3339 can be parsed.
@@ -525,7 +533,7 @@ struct Conversation: Decodable, Identifiable, Hashable {
     func matches(_ search: String) -> Bool {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return true }
-        return [displayTitle, cwd, branch ?? "", id, harnessKind.title].contains { $0.lowercased().contains(query) }
+        return [displayTitle, cwd, branch ?? "", id, harness.title].contains { $0.lowercased().contains(query) }
     }
 }
 
@@ -580,8 +588,8 @@ enum DaemonPaths {
 final class DaemonConnection {
     /// The protocol versions the app speaks (internal/ipc.ProtoMin, Proto): it
     /// uses the highest it shares with the daemon (design 8.2).
-    static let protoMin = 1
-    static let proto = 1
+    static let protoMin = 2
+    static let proto = 2
     private let fd: Int32
     /// The daemon's hello: the version agreed, and its ops.
     private(set) var daemon = DaemonHello()

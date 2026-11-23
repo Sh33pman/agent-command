@@ -1,7 +1,7 @@
 {
-  "proto": 1,
-  "proto_min": 1,
-  "proto_max": 2,
+  "proto": 2,
+  "proto_min": 2,
+  "proto_max": 3,
   "version": "0.82.0",
   "pid": 42,
   "ops": [

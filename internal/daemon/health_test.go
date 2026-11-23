@@ -161,7 +161,7 @@ func TestHealthInTheSnapshot(t *testing.T) {
 
 	// Features.
 	f := snapFor("").Features
-	if f == nil || f.Host.OS == "" || len(f.Host.Agents) == 0 || f.Host.Wake || !f.Host.Hosting || f.Device.Speech || f.Device.Editor {
+	if f == nil || f.Host.OS == "" || len(f.Host.HarnessKinds) == 0 || f.Host.Wake || !f.Host.Hosting || f.Device.Speech || f.Device.Editor {
 		t.Errorf("features = %+v", f)
 	}
 	if err := c.Call(ipc.OpSnapshot, "nope", nil); err == nil {

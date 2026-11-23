@@ -20,6 +20,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/remote/identity"
 	"github.com/brettmostert/agent-command/internal/version"
 )
@@ -143,10 +144,10 @@ func errContains(t *testing.T, err error, want string) {
 
 // sampleSessions are a host's sessions, as browse lists them.
 var sampleSessions = []*core.Session{
-	{ID: "r1", Name: "auth", Harness: "claude", Cwd: "/w/api", Status: core.StatusBusy, Unseen: true, Host: "studio", Kind: core.KindHosted},
-	{ID: "r2", Name: "docs", Harness: "terminal", Cwd: "/w/docs", Status: core.StatusWaiting, Host: "studio", Kind: core.KindHosted},
-	{ID: "r3", Name: "docs-site", Harness: "claude", Cwd: "/w/site", Status: core.StatusDone, Host: "studio", Kind: core.KindHosted},
-	{ID: "r4", Harness: "claude", Cwd: "/w/x", Status: core.StatusDone, Host: "studio", Kind: core.KindHosted},
+	{ID: "r1", Name: "auth", HarnessKind: "claude", Cwd: "/w/api", Status: core.StatusBusy, Unseen: true, Host: "studio", Kind: core.KindHosted},
+	{ID: "r2", Name: "docs", HarnessKind: "terminal", Cwd: "/w/docs", Status: core.StatusWaiting, Host: "studio", Kind: core.KindHosted},
+	{ID: "r3", Name: "docs-site", HarnessKind: "claude", Cwd: "/w/site", Status: core.StatusDone, Host: "studio", Kind: core.KindHosted},
+	{ID: "r4", HarnessKind: "claude", Cwd: "/w/x", Status: core.StatusDone, Host: "studio", Kind: core.KindHosted},
 }
 
 var sampleBrowse = ipc.RemoteBrowse{Host: "studio", Sessions: ipc.SessionsOf(sampleSessions)}
@@ -494,7 +495,7 @@ func TestNewOn(t *testing.T) {
 
 	out := mustRun(t, "new", "--on", "studio", "--dir", "~/api", "--harness", "terminal", "--name", "api", "--prompt", "hi")
 	if !strings.Contains(out, `Started "api" on studio in /home/me/api`) ||
-		!f.calledWith(ipc.OpRemoteNew, `"host":"studio"`, `"dir":"~/api"`, `"harness":"terminal"`, `"name":"api"`, `"prompt":"hi"`) {
+		!f.calledWith(ipc.OpRemoteNew, `"host":"studio"`, `"dir":"~/api"`, `"harness_kind":"terminal"`, `"name":"api"`, `"prompt":"hi"`) {
 		t.Errorf("new --on:\n%s\n%v", out, f.called())
 	}
 	mustRun(t, "new", "--on", "studio", "--group", "work", "--", "fix", "it")
@@ -519,8 +520,14 @@ func TestNewOn(t *testing.T) {
 	errContains(t, err, "--dir is the folder on a Remote host")
 	_, err = acmd(t, "new", "--on", "studio", "--prompt", "a", "--", "b")
 	errContains(t, err, "not both")
+	// A harness by name is the host's: its list says which.
+	f.reply(ipc.OpRemoteHarnesses, api.Harnesses{Harnesses: []api.Harness{{ID: "hw", Name: "Work", Kind: core.HarnessClaude}}})
+	mustRun(t, "new", "--on", "studio", "--harness", "work")
+	if !f.calledWith(ipc.OpRemoteNew, `"harness_id":"hw"`, `"harness_kind":"claude"`) {
+		t.Errorf("new --on --harness work: %v", f.called())
+	}
 	_, err = acmd(t, "new", "--on", "studio", "--harness", "copilot")
-	errContains(t, err, "claude, antigravity or terminal")
+	errContains(t, err, `there's no harness "copilot"`)
 	f.fail(ipc.OpSnapshot, "no snapshot")
 	_, err = acmd(t, "new", "--on", "studio", "--group", "x")
 	errContains(t, err, "no snapshot")

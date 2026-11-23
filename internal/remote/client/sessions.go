@@ -43,7 +43,7 @@ func (c *Client) Browse(ctx context.Context, host string) (ipc.RemoteBrowse, err
 // the host has them), and returns it: it shows here as the host's tree
 // follows.
 func (c *Client) NewSession(ctx context.Context, r ipc.RemoteNewRequest) (*ipc.Session, error) {
-	req := ipc.NewRequest{Cwd: r.Dir, Harness: r.Harness, Name: r.Name, Prompt: r.Prompt, Args: r.Args, GroupID: r.GroupID,
+	req := ipc.NewRequest{Cwd: r.Dir, HarnessID: r.HarnessID, HarnessKind: r.HarnessKind, Name: r.Name, Prompt: r.Prompt, Args: r.Args, GroupID: r.GroupID,
 		SetWith: r.SetWith}
 	data, err := json.Marshal(req)
 	if err != nil {

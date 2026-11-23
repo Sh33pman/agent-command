@@ -45,7 +45,7 @@ func TestTheHostsTreeShowsHere(t *testing.T) {
 
 	var browse ipc.RemoteBrowse
 	laptop.call(ipc.OpRemoteBrowse, ipc.RemoteHostRef{Host: "studio"}, &browse)
-	if len(browse.Sessions) != 2 || browse.Sessions[0].Harness != core.HarnessTerminal || browse.Sessions[0].Host != "studio" {
+	if len(browse.Sessions) != 2 || browse.Sessions[0].HarnessKind != core.HarnessTerminal || browse.Sessions[0].Host != "studio" {
 		t.Fatalf("browse = %+v", browse)
 	}
 	laptop.hostSession("studio", shared.ID)
@@ -163,12 +163,12 @@ func TestCreateOnHost(t *testing.T) {
 	}
 
 	var local ipc.Session
-	laptop.call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~/proj", Harness: core.HarnessTerminal, Name: "made"}, &local)
+	laptop.call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~/proj", HarnessKind: core.HarnessTerminal, Name: "made"}, &local)
 	if local.Host != "studio" || local.RemoteID == "" || local.Name != "made" {
 		t.Fatalf("new = %+v", local)
 	}
 	on := host.session(local.RemoteID)
-	if on == nil || on.Harness != core.HarnessTerminal || on.Name != "made" {
+	if on == nil || on.HarnessKind != core.HarnessTerminal || on.Name != "made" {
 		t.Fatalf("on the host: %+v", on)
 	}
 	if resolved, _ := filepath.EvalSymlinks(want); on.Cwd != want && on.Cwd != resolved {
@@ -323,7 +323,7 @@ func TestARetriedNewSessionStartsOneOnTheHost(t *testing.T) {
 	laptop.pair("studio", host)
 
 	before := len(host.snapshot().Sessions)
-	req := ipc.RemoteNewRequest{Host: "studio", Dir: t.TempDir(), Harness: core.HarnessTerminal}
+	req := ipc.RemoteNewRequest{Host: "studio", Dir: t.TempDir(), HarnessKind: core.HarnessTerminal}
 	var ids []string
 	for range 2 {
 		c, err := laptop.dial()

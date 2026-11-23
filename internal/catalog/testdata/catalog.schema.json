@@ -2,29 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "acmd daemon ops",
   "proto": {
-    "min": 1,
-    "max": 1
+    "min": 2,
+    "max": 2
   },
   "ops": [
-    {
-      "name": "agent.settings",
-      "description": "Lists an agent's settings for jobs.",
-      "scope": "read",
-      "kind": "read",
-      "grant": "host",
-      "transport": {
-        "op": "agent.settings"
-      },
-      "input": {
-        "$ref": "#/$defs/ipc.JobRef"
-      },
-      "output": {
-        "items": {
-          "$ref": "#/$defs/harness.Setting"
-        },
-        "type": "array"
-      }
-    },
     {
       "name": "client.presence",
       "description": "Says how the calling client is used now (active, idle, background) and the session it shows. The client must name itself in its hello.",
@@ -333,8 +314,74 @@
       }
     },
     {
+      "name": "harness.add",
+      "description": "Adds a harness: a kind, a name (letters and single spaces, unique ignoring case), and its settings.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "harness.add"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.HarnessSave"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Harness"
+      }
+    },
+    {
+      "name": "harness.remove",
+      "description": "Removes a harness, leaving its folder. Refused while a scheduled job uses it.",
+      "scope": "admin",
+      "kind": "destructive",
+      "grant": "host",
+      "transport": {
+        "op": "harness.remove"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.HarnessRef"
+      }
+    },
+    {
+      "name": "harness.settings",
+      "description": "Lists a harness's settings for jobs.",
+      "scope": "read",
+      "kind": "read",
+      "grant": "host",
+      "transport": {
+        "op": "harness.settings"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.HarnessRef"
+      },
+      "output": {
+        "items": {
+          "$ref": "#/$defs/harness.Setting"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "name": "harness.update",
+      "description": "Renames a harness or changes its settings; its sessions and jobs stay with it.",
+      "scope": "admin",
+      "kind": "change",
+      "grant": "host",
+      "runs_code": true,
+      "transport": {
+        "op": "harness.update"
+      },
+      "input": {
+        "$ref": "#/$defs/ipc.HarnessSave"
+      },
+      "output": {
+        "$ref": "#/$defs/ipc.Harness"
+      }
+    },
+    {
       "name": "harnesses",
-      "description": "Lists what new sessions can run here, each with an icon key, and the default.",
+      "description": "Lists the harnesses, each with its kind, an icon key and whether it's installed, and the default.",
       "scope": "read",
       "kind": "read",
       "grant": "host",
@@ -1774,17 +1821,29 @@
     },
     "api.Harness": {
       "properties": {
+        "id": {
+          "type": "string"
+        },
         "name": {
+          "type": "string"
+        },
+        "kind": {
           "type": "string"
         },
         "title": {
           "type": "string"
+        },
+        "installed": {
+          "type": "boolean"
         }
       },
       "type": "object",
       "required": [
+        "id",
         "name",
-        "title"
+        "kind",
+        "title",
+        "installed"
       ]
     },
     "api.Harnesses": {
@@ -1797,11 +1856,15 @@
         },
         "default": {
           "type": "string"
+        },
+        "terminal": {
+          "type": "boolean"
         }
       },
       "type": "object",
       "required": [
-        "harnesses"
+        "harnesses",
+        "terminal"
       ]
     },
     "config.Problem": {
@@ -1937,7 +2000,7 @@
         "group_id": {
           "type": "string"
         },
-        "harness": {
+        "harness_id": {
           "type": "string"
         },
         "schedule": {
@@ -2274,7 +2337,10 @@
         "id": {
           "type": "string"
         },
-        "harness": {
+        "harness_id": {
+          "type": "string"
+        },
+        "harness_kind": {
           "type": "string"
         },
         "cwd": {
@@ -2300,6 +2366,7 @@
       "type": "object",
       "required": [
         "id",
+        "harness_kind",
         "cwd",
         "updated_at"
       ]
@@ -2479,7 +2546,19 @@
     },
     "ipc.Harness": {
       "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
         "name": {
+          "type": "string"
+        },
+        "kind": {
           "type": "string"
         },
         "title": {
@@ -2488,17 +2567,79 @@
         "icon": {
           "type": "string"
         },
-        "agent": {
+        "order": {
+          "type": "integer"
+        },
+        "installed": {
           "type": "boolean"
+        },
+        "command": {
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "config_dir": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
         }
       },
       "type": "object",
       "required": [
+        "type",
+        "id",
         "name",
+        "kind",
         "title",
         "icon",
-        "agent"
+        "order",
+        "installed"
       ]
+    },
+    "ipc.HarnessRef": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
+    "ipc.HarnessSave": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "config_dir": {
+          "type": "string"
+        }
+      },
+      "type": "object"
     },
     "ipc.Harnesses": {
       "properties": {
@@ -2510,11 +2651,15 @@
         },
         "default": {
           "type": "string"
+        },
+        "terminal": {
+          "type": "boolean"
         }
       },
       "type": "object",
       "required": [
-        "harnesses"
+        "harnesses",
+        "terminal"
       ]
     },
     "ipc.Health": {
@@ -2650,7 +2795,7 @@
         "os": {
           "type": "string"
         },
-        "agents": {
+        "harness_kinds": {
           "items": {
             "type": "string"
           },
@@ -2666,7 +2811,7 @@
       "type": "object",
       "required": [
         "os",
-        "agents",
+        "harness_kinds",
         "wake",
         "hosting"
       ]
@@ -2802,7 +2947,7 @@
         "group_id": {
           "type": "string"
         },
-        "harness": {
+        "harness_id": {
           "type": "string"
         },
         "schedule": {
@@ -2897,9 +3042,6 @@
         },
         "paused": {
           "type": "boolean"
-        },
-        "harness": {
-          "type": "string"
         }
       },
       "type": "object"
@@ -3038,7 +3180,10 @@
         "cwd": {
           "type": "string"
         },
-        "harness": {
+        "harness_id": {
+          "type": "string"
+        },
+        "harness_kind": {
           "type": "string"
         },
         "resume": {
@@ -3524,7 +3669,10 @@
         "dir": {
           "type": "string"
         },
-        "harness": {
+        "harness_id": {
+          "type": "string"
+        },
+        "harness_kind": {
           "type": "string"
         },
         "name": {
@@ -3863,7 +4011,10 @@
         "kind": {
           "type": "string"
         },
-        "harness": {
+        "harness_kind": {
+          "type": "string"
+        },
+        "harness_id": {
           "type": "string"
         },
         "bg_id": {
@@ -3932,7 +4083,7 @@
         "cwd",
         "status",
         "kind",
-        "harness",
+        "harness_kind",
         "created_at",
         "last_event_at",
         "status_since",
@@ -4015,6 +4166,12 @@
         "remote_hosts": {
           "items": {
             "$ref": "#/$defs/ipc.RemoteHost"
+          },
+          "type": "array"
+        },
+        "harnesses": {
+          "items": {
+            "$ref": "#/$defs/ipc.Harness"
           },
           "type": "array"
         },

@@ -36,7 +36,7 @@ func TestAntigravityStatusFromItsReports(t *testing.T) {
 	fh, fa := &fakeHosts{paths: p}, &fakeAgent{}
 	start(t, p, func(c *Config) { c.Hosts = fh; c.FrontEvery = 20 * time.Millisecond; c.HostAgent = fa.get })
 	c := dial(t, p)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessAntigravity})
 	get := func() *ipc.Session { return sessionByID(t, c, s.ID) }
 
 	fa.report("working", "", "")
@@ -101,7 +101,7 @@ func TestAntigravityReplyReachesTheInbox(t *testing.T) {
 	fh, fa := &fakeHosts{paths: p}, &fakeAgent{}
 	start(t, p, func(c *Config) { c.Hosts = fh; c.FrontEvery = 20 * time.Millisecond; c.HostAgent = fa.get })
 	c := dial(t, p)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessAntigravity})
 	in := ipc.HookContext{HostSession: s.ID}
 	t0 := time.Now()
 	must(t, c.Call(ipc.OpEvent, hookEvent("antigravity:PreInvocation", `{"conversationId":"c1","lastUserInput":"say ping"}`, t0, in), nil))
@@ -137,7 +137,7 @@ func TestAntigravityPermissionInTheInbox(t *testing.T) {
 		}
 	})
 	c := dial(t, p)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessAntigravity})
 	in := ipc.HookContext{HostSession: s.ID}
 	mu.Lock()
 	screen = agyPermissionScreen
@@ -232,7 +232,7 @@ func TestAntigravityPermissionAnsweredFromTheInbox(t *testing.T) {
 		c.HostScreen = func(string) (string, bool) { return agyPermissionScreen, true }
 	})
 	c := dial(t, p)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessAntigravity})
 
 	fa.report("blocked", "permission", "Approve Bash: ls -la notes2.txt")
 	var item core.InboxItem

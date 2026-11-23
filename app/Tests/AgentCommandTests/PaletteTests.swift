@@ -16,10 +16,10 @@ private func entry(_ entries: [PaletteEntry], _ section: String, _ title: String
         "Claude session", "Antigravity session", "Terminal", "New session…", "Resume a session…", "Group…",
     ])
     #expect(entry(entries, "New", "Group…")?.action == .newGroup([]))
-    #expect(entry(entries, "New", "Claude session")?.action == .newSession(harness: "claude"))
+    #expect(entry(entries, "New", "Claude session")?.action == .newSession(harness: "kind:claude"))
     #expect(entry(entries, "New", "Claude session")?.shortcut == "⌘N")
-    #expect(entry(entries, "New", "Antigravity session")?.action == .newSession(harness: "antigravity"))
-    #expect(entry(entries, "New", "Terminal")?.action == .newSession(harness: "terminal"))
+    #expect(entry(entries, "New", "Antigravity session")?.action == .newSession(harness: "kind:antigravity"))
+    #expect(entry(entries, "New", "Terminal")?.action == .newSession(harness: "kind:terminal"))
     #expect(entry(entries, "New", "New session…")?.action == .chooseHarness)
     #expect(entry(entries, "New", "New session…")?.shortcut == "⇧⌘N")
     #expect(titles(entries, in: "Panes") == [

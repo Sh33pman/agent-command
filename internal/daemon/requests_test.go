@@ -39,7 +39,7 @@ func TestARequestIDRunsOnce(t *testing.T) {
 	fh := &fakeHosts{paths: p}
 	r := start(t, p, func(c *Config) { c.Now = now; c.Hosts = fh })
 	c := dial(t, p)
-	newReq := ipc.NewRequest{Cwd: t.TempDir(), Harness: core.HarnessTerminal, Name: "api"}
+	newReq := ipc.NewRequest{Cwd: t.TempDir(), HarnessKind: core.HarnessTerminal, Name: "api"}
 
 	var first, again ipc.Session
 	must(t, c.CallOnce(ipc.OpNew, "r1", newReq, &first))
@@ -79,7 +79,7 @@ func TestARequestIDRunsOnce(t *testing.T) {
 	}
 
 	// A failure isn't kept: trying again tries again.
-	if err := c.CallOnce(ipc.OpNew, "r3", ipc.NewRequest{Harness: core.HarnessTerminal}, nil); codeOf(err) != errcode.BadRequest {
+	if err := c.CallOnce(ipc.OpNew, "r3", ipc.NewRequest{HarnessKind: core.HarnessTerminal}, nil); codeOf(err) != errcode.BadRequest {
 		t.Fatalf("no folder: %v", err)
 	}
 	var third ipc.Session
@@ -167,7 +167,7 @@ func TestEveryErrorHasACode(t *testing.T) {
 	}
 	// One with no code of its own is internal, never none: this daemon has
 	// no terminals to start one in.
-	err := c.Call(ipc.OpNew, ipc.NewRequest{Cwd: t.TempDir(), Harness: core.HarnessTerminal}, nil)
+	err := c.Call(ipc.OpNew, ipc.NewRequest{Cwd: t.TempDir(), HarnessKind: core.HarnessTerminal}, nil)
 	if got := codeOf(err); got != errcode.Internal {
 		t.Errorf("new with no terminals: code %q (%v)", got, err)
 	}

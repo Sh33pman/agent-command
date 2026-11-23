@@ -380,28 +380,30 @@ extension UsesSharedSpeech {
         @Test func theFormShowsItsAgentsSettings() async throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
-            daemon.reply("agent.settings", [["key": "model", "label": "Model", "kind": "text"]])
+            daemon.reply("harness.settings", [["key": "model", "label": "Model", "kind": "text"]])
             var gravityJob = job("G", "gravity")
-            gravityJob.harness = "antigravity"
+            gravityJob.harnessID = "HG"
             gravityJob.settings = ["mode": ["plan"]]
             let board = try Board(jobs: [job("A", "alpha"), gravityJob])
             let model = board.model
             try await until { !model.settings(for: .claude).isEmpty }
-            #expect(daemon.received("agent.settings").map { $0["harness"] as? String } == [""], "Claude's, as before")
+            #expect(daemon.received("harness.settings").map { $0["kind"] as? String } == ["claude"], "the default's kind")
             #expect(model.settings.map(\.label) == ["Model"] && model.settings(for: .antigravity).isEmpty)
 
-            daemon.reply("agent.settings", [["key": "mode", "label": "Mode", "kind": "choice", "choices": ["plan", "fast"]]])
-            model.select("G")
+            daemon.reply("harness.settings", [["key": "mode", "label": "Mode", "kind": "choice", "choices": ["plan", "fast"]]])
+            model.newJob()
+            model.draft?.setHarness(.antigravity)
             try await until { !model.settings(for: .antigravity).isEmpty }
-            #expect(daemon.received("agent.settings").last?["harness"] as? String == "antigravity")
-            #expect(model.harness == .antigravity && model.settings.map(\.key) == ["mode"], "the selected job's agent")
+            #expect(daemon.received("harness.settings").last?["kind"] as? String == "antigravity")
+            #expect(model.harness.isAntigravity && model.settings.map(\.key) == ["mode"], "the form's harness's kind")
+            model.cancel(force: true)
 
             model.select("A")
             model.newJob()
             #expect(model.settings.map(\.key) == ["model"])
             model.draft?.setHarness(.antigravity)
             #expect(model.settings.map(\.key) == ["mode"], "the form's agent")
-            #expect(daemon.received("agent.settings").count == 2, "each agent's are asked for once")
+            #expect(daemon.received("harness.settings").count == 2, "each kind's are asked for once")
         }
     }
 }

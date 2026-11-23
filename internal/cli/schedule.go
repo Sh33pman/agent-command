@@ -27,8 +27,8 @@ func newScheduleCmd() *cobra.Command {
 		Use:     "schedule",
 		Aliases: []string{"jobs"},
 		Short:   "Manage scheduled jobs: prompts Claude or Antigravity runs on a cron schedule",
-		Long: `Manage scheduled jobs: prompts Claude (or Antigravity, with --harness
-antigravity) runs on a cron schedule, or once.
+		Long: `Manage scheduled jobs: prompts a harness runs on a cron schedule, or once. A job
+runs in the default harness unless --harness names another (acmd harness list).
 
 A schedule is cron: five fields, minute hour day-of-month month day-of-week,
 in this Mac's time zone. "0 9 * * 1-5" is weekdays at 09:00. Use --once for a
@@ -114,7 +114,7 @@ func (f *jobFlags) bind(cmd *cobra.Command) {
 	fl.StringVar(&f.folder, "folder", "", "run in a new session in this folder (default: the current folder)")
 	fl.StringVar(&f.worktree, "worktree", "", "run in a new git worktree of this folder's repo")
 	fl.StringVar(&f.session, "session", "", "continue this session's conversation (number, id or name)")
-	fl.StringVar(&f.harness, "harness", "", "the agent that runs it: claude (default) or antigravity; --session takes its session's")
+	fl.StringVar(&f.harness, "harness", "", "the harness that runs it, by name, or a kind for its default (default: the default harness); --session takes its session's")
 	fl.StringArrayVar(&f.set, "set", nil, "an agent setting, key=value (repeat for lists); see `acmd schedule settings`")
 	fl.StringArrayVar(&f.unset, "unset", nil, "clear an agent setting, by key")
 	fl.BoolVar(&f.runMissed, "run-missed", false, "run a run the Mac slept through when it wakes")
@@ -161,7 +161,11 @@ func (f *jobFlags) apply(cmd *cobra.Command, snap snapshot, j *core.Job) error {
 		j.Description = f.description
 	}
 	if changed("harness") {
-		j.Harness = f.harness
+		id, err := jobHarness(snap.Harnesses, snap.Settings, f.harness)
+		if err != nil {
+			return err
+		}
+		j.HarnessID = id
 	}
 	if changed("run-missed") {
 		j.RunMissed = f.runMissed
@@ -446,18 +450,29 @@ func newScheduleExplainCmd() *cobra.Command {
 }
 
 func newScheduleSettingsCmd() *cobra.Command {
-	var agent string
+	var sel string
 	cmd := &cobra.Command{
-		Use:   "settings [--harness antigravity]",
-		Short: "List the agent settings a job can --set",
+		Use:   "settings [--harness <name|kind>]",
+		Short: "List the settings a job can --set, for its harness's kind",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			settings := harness.SettingsFor(agent)
-			if settings == nil {
-				return fmt.Errorf("--harness is claude or antigravity, not %q", agent)
+			kind := strings.ToLower(sel)
+			if kind == core.HarnessTerminal {
+				return errors.New("a terminal runs no jobs: --harness is a harness's name, or claude or antigravity")
 			}
+			if !core.IsHarnessKind(kind) {
+				err := withClient(cmd.Context(), func(_ *client, snap snapshot) error {
+					h, err := resolveHarness(snap.Harnesses, sel)
+					kind = h.Kind
+					return err
+				})
+				if err != nil {
+					return err
+				}
+			}
+			settings := harness.SettingsFor(kind)
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			fmt.Fprintf(tw, "KEY\t%s FLAG\tVALUES\n", strings.ToUpper(core.AgentName(agent)))
+			fmt.Fprintf(tw, "KEY\t%s FLAG\tVALUES\n", strings.ToUpper(core.KindTitle(kind)))
 			for _, s := range settings {
 				values := s.Help
 				if s.Kind == harness.KindChoice {
@@ -468,7 +483,7 @@ func newScheduleSettingsCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&agent, "harness", core.HarnessClaude, "whose settings: claude or antigravity")
+	cmd.Flags().StringVar(&sel, "harness", core.HarnessClaude, "a harness by name, or a kind (claude, antigravity)")
 	return cmd
 }
 
@@ -587,7 +602,7 @@ func showJob(out io.Writer, j *core.Job, snap snapshot, runs []core.JobRun) {
 	row("Schedule", jobSchedule(j))
 	row("Next run", whenText(j.NextRun))
 	row("State", jobState(j))
-	row("Agent", core.AgentApp(j.Harness))
+	row("Harness", harnessName(snap.Harnesses, j.HarnessID))
 	switch j.Where {
 	case core.WhereFolder:
 		row("Runs in", "a new session in "+j.Cwd)
@@ -652,4 +667,49 @@ func jobRuns(c *client, id string) ([]core.JobRun, error) {
 		}
 		req.Cursor = page.NextCursor
 	}
+}
+
+// jobHarness is the harness --harness names for a job: by name or id, or a
+// kind for that kind's first harness (the default when it's that kind). A
+// terminal can't run a job.
+func jobHarness(hs []ipc.Harness, settings map[string]any, sel string) (string, error) {
+	id, kind, err := pickHarness(harnessChoices(hs), sel)
+	switch {
+	case err != nil:
+		return "", err
+	case id != "" || kind == "":
+		return id, nil
+	case kind == core.HarnessTerminal:
+		return "", errors.New("a terminal can't run a job: --harness names a harness")
+	}
+	def, _ := settings["default_harness"].(string)
+	first := ""
+	for _, h := range hs {
+		if h.Kind != kind {
+			continue
+		}
+		if h.ID == def {
+			return h.ID, nil
+		}
+		if first == "" {
+			first = h.ID
+		}
+	}
+	if first == "" {
+		return "", fmt.Errorf("there's no %s harness", core.KindTitle(kind))
+	}
+	return first, nil
+}
+
+// harnessName is how a job or session names its harness.
+func harnessName(hs []ipc.Harness, id string) string {
+	if id == "" {
+		return "the default harness"
+	}
+	for _, h := range hs {
+		if h.ID == id {
+			return h.Name + " (" + h.Title + ")"
+		}
+	}
+	return "(removed harness)"
 }

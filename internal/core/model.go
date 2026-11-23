@@ -126,9 +126,12 @@ type Session struct {
 	StatusDetail    string
 	Unseen          bool
 	Kind            Kind
-	Harness         string // HarnessClaude, HarnessTerminal or HarnessAntigravity
-	BgID            string
-	Pid             int
+	HarnessKind     string // HarnessClaude, HarnessTerminal or HarnessAntigravity
+	// HarnessID is the harness it runs in ("" for a terminal, and for a
+	// session its hooks found before it's matched to one).
+	HarnessID string
+	BgID      string
+	Pid       int
 	// Remote: clients of this acmd's Hosting may see and use it (Remote sessions).
 	Remote bool
 	// Host is the Remote host a session added from one runs on ("" for a
@@ -252,11 +255,11 @@ func (s *Session) Managed() bool { return s.Kind == KindBackground || s.Kind == 
 
 // IsTerminal reports whether s is a terminal session. It may have an agent
 // running in it, typed by the user, whose status it then shows.
-func (s *Session) IsTerminal() bool { return s.Harness == HarnessTerminal }
+func (s *Session) IsTerminal() bool { return s.HarnessKind == HarnessTerminal }
 
 // IsAntigravity reports whether s runs Antigravity's CLI. It can't be told its
 // conversation id up front, and Claude's listing never shows it.
-func (s *Session) IsAntigravity() bool { return s.Harness == HarnessAntigravity }
+func (s *Session) IsAntigravity() bool { return s.HarnessKind == HarnessAntigravity }
 
 // TakeAgentEvent reports whether a terminal should apply an event from an
 // agent running in it, and adopts that agent if it has none. The last agent to

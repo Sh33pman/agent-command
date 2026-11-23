@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,8 +75,10 @@ when needed; ` + "`acmd daemon`" + ` on its own runs it in the foreground.`,
 			// Sessions run Claude or agy, whichever is there: starting a host checks
 			// for the one it runs.
 			cfg.Hosts = execHosts{paths: p}
-			cfg.Harnesses = installedHarnesses(p)
-			cfg.AgentHelp = agentHelp(p)
+			cfg.Installed = installedHarnesses(p)
+			cfg.ClaudeFor = claudeFor(p)
+			cfg.HarnessesChanged = hooksForHarnesses
+			cfg.AgentHelp = harnessHelp(p)
 			cfg.CheckHealth = checkHealth
 			cfg.HealthFiles = healthFiles()
 			cfg.Init = daemonInit
@@ -198,51 +199,67 @@ func loginEnv(p paths.Paths) []string {
 }
 
 // claudeCommand is the claude binary and environment for processes acmd
-// starts: config's claude_command (pinned to an absolute path by `acmd
-// init`) and the saved login-shell environment, falling back to PATH and
-// this process's environment. CLAUDE* variables are always stripped (M0 C5).
+// starts on Claude's standard folder: claude on the saved login shell's PATH,
+// then on acmd's own. CLAUDE* variables are always stripped (M0 C5).
 func claudeCommand(p paths.Paths) (string, []string, error) {
-	cfg, err := config.Load(p.Config())
-	if err != nil {
-		return "", nil, err
-	}
-	env := loginEnv(p)
-	claude, err := findCommand(cfg.ClaudeCommand, env)
-	return claude, env, err
-}
-
-// installedHarnesses says which harnesses this machine can run, for Hosting's
-// clients: an agent when its CLI is found, and always a terminal.
-func installedHarnesses(p paths.Paths) func() []string {
-	return func() []string {
-		var out []string
-		if _, _, err := claudeCommand(p); err == nil {
-			out = append(out, core.HarnessClaude)
-		}
-		if _, _, err := agyCommand(p); err == nil {
-			out = append(out, core.HarnessAntigravity)
-		}
-		return append(out, core.HarnessTerminal)
-	}
+	return harnessCommand(p, core.Harness{Kind: core.HarnessClaude})
 }
 
 // errNoAgy is what starting an Antigravity session says when agy can't be found.
 var errNoAgy = errors.New("Antigravity's CLI (agy) isn't installed") //nolint:staticcheck // ST1005: starts with a name
 
-// agyCommand finds agy the way claudeCommand finds claude: config's
-// agy_command (pinned by `acmd init`), else on the login shell's PATH, then on
-// acmd's own.
-func agyCommand(p paths.Paths) (string, []string, error) {
-	cfg, err := config.Load(p.Config())
-	if err != nil {
-		return "", nil, err
-	}
+// harnessCommand is the program a harness runs, and the environment to run
+// it in: its command (or its kind's, claude or agy) found on the saved login
+// shell's PATH, then on acmd's own, and for a Claude harness with its own
+// folder, CLAUDE_CONFIG_DIR.
+func harnessCommand(p paths.Paths, h core.Harness) (string, []string, error) {
 	env := loginEnv(p)
-	agy, err := findCommand(cmp.Or(strings.TrimSpace(cfg.AgyCommand), "agy"), env)
+	bin, err := findCommand(h.RunCommand(), env)
 	if err != nil {
-		return "", nil, errNoAgy
+		if h.Kind == core.HarnessAntigravity {
+			return "", nil, errNoAgy
+		}
+		return "", nil, fmt.Errorf("%s not found: %w", h.RunCommand(), err)
 	}
-	return agy, env, nil
+	home, _ := os.UserHomeDir()
+	return bin, h.Env(env, home), nil
+}
+
+// installedHarnesses says whether a harness's program is found, for clients
+// to show which can start sessions. It's asked for every snapshot, so an
+// answer is kept for half a minute.
+func installedHarnesses(p paths.Paths) func(core.Harness) bool {
+	var mu sync.Mutex
+	type found struct {
+		ok bool
+		at time.Time
+	}
+	cache := map[string]found{}
+	return func(h core.Harness) bool {
+		key := h.Kind + "\x00" + h.RunCommand()
+		mu.Lock()
+		defer mu.Unlock()
+		if f, ok := cache[key]; ok && time.Since(f.at) < 30*time.Second {
+			return f.ok
+		}
+		_, _, err := harnessCommand(p, h)
+		cache[key] = found{err == nil, time.Now()}
+		return err == nil
+	}
+}
+
+// claudeFor is Claude's CLI for a harness's own folder, for its background
+// sessions.
+func claudeFor(p paths.Paths) func(core.Harness) daemon.ClaudeCLI {
+	return func(h core.Harness) daemon.ClaudeCLI {
+		bin, env, err := harnessCommand(p, h)
+		if err != nil {
+			bin = h.RunCommand() // running it says it's missing
+			home, _ := os.UserHomeDir()
+			env = h.Env(loginEnv(p), home)
+		}
+		return claudecli.New(bin, env)
+	}
 }
 
 // findCommand is name's absolute path: name itself if it is one, else found on
@@ -263,34 +280,31 @@ func findCommand(name string, env []string) (string, error) {
 	return exec.LookPath(name)
 }
 
-// agentHelp returns an agent's --help by harness, read once and kept for an
-// hour, so job settings can be checked against the installed version. "" when
-// it can't run. The agent is found each time it is read, so one installed
-// after the daemon started counts.
-func agentHelp(p paths.Paths) func(harness string) string {
+// harnessHelp returns a harness's program's --help, read once and kept for
+// an hour, so job settings can be checked against the installed version. ""
+// when it can't run. The program is found each time it's read, so one
+// installed after the daemon started counts.
+func harnessHelp(p paths.Paths) func(core.Harness) string {
 	var mu sync.Mutex
 	type read struct {
 		text string
 		at   time.Time
 	}
 	cache := map[string]read{}
-	return func(h string) string {
+	return func(h core.Harness) string {
+		key := h.Kind + "\x00" + h.RunCommand()
 		mu.Lock()
 		defer mu.Unlock()
-		if r := cache[h]; r.text != "" && time.Since(r.at) < time.Hour {
+		if r := cache[key]; r.text != "" && time.Since(r.at) < time.Hour {
 			return r.text
 		}
-		find := claudeCommand
-		if h == core.HarnessAntigravity {
-			find = agyCommand
-		}
-		bin, env, err := find(p)
+		bin, env, err := harnessCommand(p, h)
 		if err != nil {
 			return ""
 		}
 		text := helpText(bin, env)
 		if text != "" {
-			cache[h] = read{text, time.Now()}
+			cache[key] = read{text, time.Now()}
 		}
 		return text
 	}

@@ -101,7 +101,7 @@ private struct TypedIDRow: View {
     var body: some View {
         HStack(spacing: 8) {
             HarnessMark(harness: harness, isSelected: isSelected)
-            Text("As \(harness == .antigravity ? "an" : "a") \(harness.title) session")
+            Text("As \(harness.isAntigravity ? "an" : "a") \(harness.title) session")
                 .fontWeight(isSelected ? .bold : .regular)
                 .foregroundStyle(isSelected ? theme.bg : theme.fg)
             Spacer(minLength: 12)
@@ -122,8 +122,8 @@ private struct ConversationRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                HarnessMark(harness: conversation.harnessKind, isSelected: isSelected)
-                    .help(conversation.harnessKind.title)
+                HarnessMark(harness: conversation.harness, isSelected: isSelected)
+                    .help(conversation.harness.title)
                 Text(conversation.displayTitle)
                     .fontWeight(isSelected ? .bold : .regular)
                     .foregroundStyle(isSelected ? theme.bg : theme.fg)

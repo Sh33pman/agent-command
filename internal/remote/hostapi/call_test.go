@@ -108,15 +108,14 @@ func TestCallSettingsAreTheHosts(t *testing.T) {
 func TestCallStartsSessionsInTheHostsFolders(t *testing.T) {
 	f := newFixture(t)
 	must(t, os.Mkdir(filepath.Join(f.home, "api"), 0o750))
-	f.b.installed, f.b.def = []string{"claude", "terminal"}, "terminal"
 	must(t, f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~/api", Name: "x"}), nil))
 	var got ipc.NewRequest
 	must(t, json.Unmarshal(f.b.calls[0].Data, &got))
-	if got.Cwd != filepath.Join(f.home, "api") || got.Harness != "terminal" || got.Name != "x" {
+	if got.Cwd != filepath.Join(f.home, "api") || got.HarnessID != "hc" || got.HarnessKind != "claude" || got.Name != "x" {
 		t.Errorf("new = %+v", got)
 	}
 	wantCode(t, "no folder", f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~/nope"}), nil), wire.CodeNotFound)
-	wantCode(t, "not installed", f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~", Harness: "antigravity"}), nil),
+	wantCode(t, "not installed", f.call(api.OpCall, callReq(t, ipc.OpNew, ipc.NewRequest{Cwd: "~", HarnessKind: "antigravity"}), nil),
 		wire.CodeNotFound)
 	wantCode(t, "bad new", f.call(api.OpCall, api.CallRequest{Op: ipc.OpNew, Data: json.RawMessage(`[]`)}, nil), wire.CodeBadRequest)
 }

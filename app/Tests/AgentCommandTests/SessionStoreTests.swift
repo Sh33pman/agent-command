@@ -19,7 +19,7 @@ extension UsesSharedSpeech {
         }
 
         private func hosted(_ id: String, status: String = "done") -> [String: Any] {
-            ["id": id, "name": id, "cwd": "/tmp", "status": status, "kind": "hosted", "unseen": false, "harness": "claude", "claude_session_id": "c"]
+            ["id": id, "name": id, "cwd": "/tmp", "status": status, "kind": "hosted", "unseen": false, "harness_kind": "claude", "claude_session_id": "c"]
         }
 
         private func item(_ id: Int) -> [String: Any] {
@@ -291,21 +291,21 @@ extension UsesSharedSpeech {
             try await until { daemon.received("mutate").count == 2 }
             #expect(daemon.received("mutate").allSatisfy { targetIDs($0) == ["a"] })
 
-            s.newSession(harness: "terminal", in: "/work")
+            s.newSession(harness: .terminal, in: "/work")
             try await until { s.selectedID == "n" }
             let new = try #require(daemon.received("new").first)
-            #expect(new["cwd"] as? String == "/work" && new["harness"] as? String == "terminal")
+            #expect(new["cwd"] as? String == "/work" && new["harness_kind"] as? String == "terminal" && new["harness_id"] as? String == "")
 
             daemon.reply("new", hosted("r"))
             s.resumeConversation("conv-1", harness: .antigravity)
             try await until { s.selectedID == "r" }
             let request = try #require(daemon.received("new").last)
-            #expect(request["resume"] as? String == "conv-1" && request["harness"] as? String == "antigravity")
+            #expect(request["resume"] as? String == "conv-1" && request["harness_kind"] as? String == "antigravity")
             #expect(request["cwd"] as? String == "", "the folder comes from the conversation")
             daemon.reply("new", hosted("q"))
             s.resumeConversation("sess-2")
             try await until { s.selectedID == "q" }
-            #expect(daemon.received("new").last?["harness"] as? String == "claude", "Claude's by default")
+            #expect(daemon.received("new").last?["harness_kind"] as? String == "claude", "Claude's by default")
         }
 
         @Test func aNewSessionCanBePlacedInstead() async throws {
@@ -315,7 +315,7 @@ extension UsesSharedSpeech {
             let s = try store(["a"])
             s.reflect(selected: "a", visible: [], closed: [])
             var placed: String?
-            s.newSession(harness: "claude", in: "/work") { placed = $0.id }
+            s.newSession(harness: .claude, in: "/work") { placed = $0.id }
             try await until { placed != nil }
             #expect(placed == "n" && s.selectedID == "a", "whoever places it decides what's selected")
         }
@@ -339,7 +339,7 @@ extension UsesSharedSpeech {
             s.onListChanged = { listed = $0 }
             s.publish(try snapshot(["sessions": [
                 hosted("b"), hosted("a"), hosted("z", status: "archived"),
-                ["id": "x", "name": "x", "cwd": "/", "status": "busy", "kind": "external", "unseen": false, "harness": "claude", "claude_session_id": "c"],
+                ["id": "x", "name": "x", "cwd": "/", "status": "busy", "kind": "external", "unseen": false, "harness_kind": "claude", "claude_session_id": "c"],
             ]]))
             try await until { listed != nil }
             #expect(s.sessions.map(\.id) == ["a", "b"])

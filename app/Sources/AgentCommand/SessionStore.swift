@@ -500,6 +500,7 @@ final class SessionStore {
             let hosts = snapshot.remoteHosts ?? []
             if hosts != self.remoteHosts { self.remoteHosts = hosts }
             if let settings = snapshot.settings, settings != HostSettings.shared.values { HostSettings.shared.values = settings }
+            if let harnesses = snapshot.harnesses { HarnessList.shared.set(harnesses) }
             let health = snapshot.health ?? []
             if health != self.health { self.health = health }
             let dismissed = Set(snapshot.dismissed ?? [])
@@ -679,21 +680,23 @@ final class SessionStore {
         try? process.run()
     }
 
-    /// Starts a new session in a folder. harness is "claude", "antigravity" or "terminal". It's
+    /// Starts a new session in a folder, in a harness or a terminal. It's
     /// selected, unless placed puts it somewhere itself.
     /// remote makes it a Remote session or not; nil, as from ⌘N, is the config's
     /// `new_sessions_remote`.
     /// setWith puts it in a set with that session, for a split.
-    func newSession(harness: String, in folder: String, remote: Bool? = nil, setWith: String? = nil,
+    func newSession(harness: Harness, in folder: String, remote: Bool? = nil, setWith: String? = nil,
                     placed: ((Session) -> Void)? = nil) {
         struct New: Encodable {
             let cwd: String
-            let harness: String
+            let harness_id: String
+            let harness_kind: String
             let remote: Bool?
             let set_with: String?
         }
+        let (id, kind) = harness.request
         run(failure: "Couldn't start the session") { conn in
-            let session: Session = try conn.call("new", New(cwd: folder, harness: harness, remote: remote, set_with: setWith))
+            let session: Session = try conn.call("new", New(cwd: folder, harness_id: id, harness_kind: kind, remote: remote, set_with: setWith))
             return session
         } done: { session in
             self.adopt(session)
@@ -730,7 +733,7 @@ final class SessionStore {
     /// then puts it in the panes instead of selecting it: a split.
     func newRemoteSession(host: String, dir: String, harness: Harness?, setWith: String? = nil,
                           placed: ((Session) -> Void)? = nil, done: @escaping (String?) -> Void = { _ in }) {
-        remoteClient.newSession(host: host, dir: dir, harness: harness?.rawValue, setWith: setWith) { [weak self] result in
+        remoteClient.newSession(host: host, dir: dir, harness: harness?.request, setWith: setWith) { [weak self] result in
             switch result {
             case .success(let session):
                 if let placed {
@@ -807,11 +810,13 @@ final class SessionStore {
     func resumeConversation(_ id: String, harness: Harness = .claude) {
         struct New: Encodable {
             let cwd: String
-            let harness: String
+            let harness_id: String
+            let harness_kind: String
             let resume: String
         }
+        let (harnessID, kind) = harness.request
         run(failure: "Couldn't resume the session") { conn in
-            let session: Session = try conn.call("new", New(cwd: "", harness: harness.rawValue, resume: id))
+            let session: Session = try conn.call("new", New(cwd: "", harness_id: harnessID, harness_kind: kind, resume: id))
             return session
         } done: { session in
             if !self.sessions.contains(session) { self.sessions.append(session) }
@@ -864,7 +869,6 @@ final class SessionStore {
     private struct JobRef: Encodable {
         var id = ""
         var paused = false
-        var harness = ""
     }
 
     /// Checks a job without saving it: its schedule read back, its next runs and
@@ -934,10 +938,11 @@ final class SessionStore {
         } done: { done($0) }
     }
 
-    /// The settings an agent takes for scheduled runs.
-    func loadAgentSettings(harness: String = "", done: @escaping ([AgentSetting]) -> Void) {
-        run(failure: "Couldn't read the agent's settings") { conn -> [AgentSetting] in
-            try conn.call("agent.settings", JobRef(harness: harness))
+    /// The settings a harness takes for scheduled runs (its kind's).
+    func loadAgentSettings(harness: Harness, done: @escaping ([AgentSetting]) -> Void) {
+        struct Ref: Encodable { let id: String; let kind: String }
+        run(failure: "Couldn't read the harness's settings") { conn -> [AgentSetting] in
+            try conn.call("harness.settings", Ref(id: harness.harnessID, kind: harness.kind))
         } done: { done($0) }
     }
 

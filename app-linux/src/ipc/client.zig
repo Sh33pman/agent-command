@@ -3,8 +3,8 @@ const glib = @import("glib");
 
 /// The protocol versions this UI speaks (internal/ipc.ProtoMin, Proto): it
 /// uses the highest it shares with the daemon (design 8.2).
-pub const proto_min: i32 = 1;
-pub const proto_version: i32 = 1;
+pub const proto_min: i32 = 2;
+pub const proto_version: i32 = 2;
 pub const max_sun_path: usize = 104;
 pub const max_line: usize = 2 << 20; // 2 MiB, matching internal/ipc/ipc.go MaxLine
 
@@ -117,13 +117,26 @@ pub const Session = struct {
     status_detail: []const u8 = "",
     unseen: bool = false,
     kind: []const u8 = "",
-    harness: []const u8 = "",
+    /// claude, antigravity or terminal, and the harness it runs in ("" for a terminal).
+    harness_kind: []const u8 = "",
+    harness_id: []const u8 = "",
     pid: i32 = 0,
     host: []const u8 = "",
     created_at: []const u8 = "",
     last_event_at: []const u8 = "",
     archived_at: []const u8 = "",
     display_name: []const u8 = "",
+};
+
+/// Mirrors Go `ipc.Harness`: what sessions run in, a kind (claude,
+/// antigravity) with its own name. This UI only shows them.
+pub const Harness = struct {
+    id: []const u8,
+    host: []const u8 = "",
+    name: []const u8 = "",
+    kind: []const u8 = "",
+    title: []const u8 = "",
+    installed: bool = false,
 };
 
 /// Mirrors Go `ipc.Group`.
@@ -158,7 +171,21 @@ pub const Snapshot = struct {
     /// Entities of types with no list of their own, which this UI may not
     /// know (design 7.2): kept for their children's sake.
     others: ?[]const EntityRef = null,
+    harnesses: ?[]const Harness = null,
     view_state: ViewState = .{},
+
+    /// What a session runs in, as a name: its harness's, its kind's when that
+    /// was removed (or it's a host's), or "Terminal".
+    pub fn harnessName(self: Snapshot, s: Session) []const u8 {
+        if (s.host.len == 0 and s.harness_id.len > 0) {
+            for (self.harnesses orelse &.{}) |h| {
+                if (std.mem.eql(u8, h.id, s.harness_id)) return h.name;
+            }
+        }
+        if (std.mem.eql(u8, s.harness_kind, "terminal")) return "Terminal";
+        if (std.mem.eql(u8, s.harness_kind, "antigravity")) return "Antigravity";
+        return "Claude";
+    }
 
     /// The group a session shows in (design 7.2): the one it names, else its
     /// nearest ancestor that's a group, following parents through sets and
@@ -761,13 +788,13 @@ test "encodeRequest and decodeResponse match internal/ipc/ipc.go schemas" {
     const allocator = std.testing.allocator;
 
     const hello_req = try encodeRequest(allocator, "hello", Hello{
-        .proto = 1,
+        .proto = 2,
         .version = "0.51.0",
         .pid = 42,
     });
     defer allocator.free(hello_req);
     try std.testing.expectEqualStrings(
-        "{\"op\":\"hello\",\"data\":{\"proto\":1,\"proto_min\":1,\"proto_max\":1,\"version\":\"0.51.0\",\"pid\":42}}\n",
+        "{\"op\":\"hello\",\"data\":{\"proto\":2,\"proto_min\":2,\"proto_max\":2,\"version\":\"0.51.0\",\"pid\":42}}\n",
         hello_req,
     );
 
@@ -783,7 +810,7 @@ test "encodeRequest and decodeResponse match internal/ipc/ipc.go schemas" {
     );
 
     const go_snapshot_resp =
-        \\{"ok":true,"data":{"sessions":[{"id":"s1","name":"api","description":"fix bug","group_id":"g1","status":"waiting","unseen":true,"kind":"hosted","harness":"claude","pid":123}],"groups":[{"id":"g1","type":"group","name":"Default","color":"#4EA7FC","is_default":true}],"view_state":{"mode":"groups","sort":"activity","desc":true}}}
+        \\{"ok":true,"data":{"sessions":[{"id":"s1","name":"api","description":"fix bug","group_id":"g1","status":"waiting","unseen":true,"kind":"hosted","harness_kind":"claude","pid":123}],"groups":[{"id":"g1","type":"group","name":"Default","color":"#4EA7FC","is_default":true}],"view_state":{"mode":"groups","sort":"activity","desc":true}}}
     ;
 
     var snap = try decodeResponse(Snapshot, allocator, go_snapshot_resp);
@@ -832,6 +859,12 @@ test "decodes the daemon's snapshot fixture" {
     try std.testing.expectEqualStrings("studio", sessions[3].host);
     try std.testing.expectEqualStrings("2026-11-20T09:00:00Z", sessions[0].created_at);
     try std.testing.expectEqualStrings("", sessions[0].archived_at);
+    // Each session's harness: its name; a removed one's kind; a terminal.
+    try std.testing.expectEqual(@as(usize, 3), snap.value.harnesses.?.len);
+    try std.testing.expectEqualStrings("Work", snap.value.harnessName(sessions[0]));
+    try std.testing.expectEqualStrings("Claude", snap.value.harnessName(sessions[1]));
+    try std.testing.expectEqualStrings("Terminal", snap.value.harnessName(sessions[2]));
+    try std.testing.expect(!snap.value.harnesses.?[2].installed);
 
     const groups = snap.value.groups.?;
     try std.testing.expectEqualStrings("Backend", groups[0].name);
@@ -849,8 +882,8 @@ test "decodes the daemon's hello fixture" {
     defer allocator.free(data);
     var hello = try std.json.parseFromSlice(Hello, allocator, data, .{ .ignore_unknown_fields = true });
     defer hello.deinit();
-    try std.testing.expectEqual(@as(i32, 1), hello.value.proto);
-    try std.testing.expectEqual(@as(i32, 2), hello.value.proto_max);
+    try std.testing.expectEqual(@as(i32, 2), hello.value.proto);
+    try std.testing.expectEqual(@as(i32, 3), hello.value.proto_max);
     try std.testing.expect(hello.value.proto >= proto_min and hello.value.proto <= proto_version);
     try std.testing.expectEqualStrings("snapshot", hello.value.ops.?[1]);
 }

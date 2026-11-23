@@ -33,8 +33,7 @@ type backend struct {
 	inbox     []core.InboxItem
 	notices   []ipc.Notice
 	sockets   map[string]string
-	installed []string
-	def       string
+	harnesses ipc.Harnesses
 	created   []ipc.NewRequest
 	stateErr  error
 	file      *config.File
@@ -48,7 +47,7 @@ type backend struct {
 }
 
 func newBackend() *backend {
-	return &backend{sockets: map[string]string{}, installed: []string{core.HarnessClaude, core.HarnessTerminal}, ch: make(chan struct{})}
+	return &backend{sockets: map[string]string{}, harnesses: testHarnesses(), ch: make(chan struct{})}
 }
 
 func (b *backend) State(context.Context) (State, error) {
@@ -102,7 +101,7 @@ func (b *backend) NewSession(_ context.Context, req ipc.NewRequest) (*core.Sessi
 	if req.Name == "fail" {
 		return nil, errors.New("boom")
 	}
-	s := &core.Session{ID: "new1", Name: req.Name, Cwd: req.Cwd, Harness: req.Harness, Status: core.StatusStarting,
+	s := &core.Session{ID: "new1", Name: req.Name, Cwd: req.Cwd, HarnessKind: req.HarnessKind, Status: core.StatusStarting,
 		Remote: req.Remote != nil && *req.Remote, CreatedAt: time.Now()}
 	b.change(func() {
 		b.created = append(b.created, req)
@@ -157,10 +156,21 @@ func (b *backend) Call(ctx context.Context, op string, data json.RawMessage) (js
 	return b.replies[op], nil
 }
 
-func (b *backend) Harnesses() ([]string, string) {
+func (b *backend) Harnesses() ipc.Harnesses {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return slices.Clone(b.installed), b.def
+	h := b.harnesses
+	h.Harnesses = slices.Clone(h.Harnesses)
+	return h
+}
+
+// testHarnesses are a host's: Claude, its default, installed, and
+// Antigravity, not installed.
+func testHarnesses() ipc.Harnesses {
+	return ipc.Harnesses{Default: "hc", Terminal: true, Harnesses: []ipc.Harness{
+		{ID: "hc", Name: "Claude", Kind: core.HarnessClaude, Title: "Claude", Installed: true},
+		{ID: "ha", Name: "Antigravity", Kind: core.HarnessAntigravity, Title: "Antigravity"},
+	}}
 }
 
 // fixture is a host with the API, and a client connected to it.
@@ -257,7 +267,7 @@ var t0 = time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)
 
 // three sessions: one Remote, one archived Remote, one local.
 func (f *fixture) seed() {
-	f.b.add(core.Session{ID: "r1", Name: "api", Cwd: "/w/api", Harness: core.HarnessClaude, Status: core.StatusWaiting, StatusDetail: "permission",
+	f.b.add(core.Session{ID: "r1", Name: "api", Cwd: "/w/api", HarnessKind: core.HarnessClaude, Status: core.StatusWaiting, StatusDetail: "permission",
 		Remote: true, CreatedAt: t0, LastEventAt: t0.Add(time.Hour)})
 	f.b.add(core.Session{ID: "r2", Name: "old", Cwd: "/w/old", Status: core.StatusArchived, Remote: true, CreatedAt: t0})
 	f.b.add(core.Session{ID: "l1", Name: "local", Cwd: "/w/local", Status: core.StatusBusy, CreatedAt: t0, LastEventAt: t0.Add(2 * time.Hour)})
@@ -279,12 +289,12 @@ func TestListShowsOnlyRemoteSessions(t *testing.T) {
 		t.Fatalf("list = %+v", l)
 	}
 	s := l.Sessions[1]
-	want := api.Session{ID: "r1", Name: "api", Harness: "claude", Dir: "/w/api", Status: "waiting", StatusDetail: "permission",
+	want := api.Session{ID: "r1", Name: "api", HarnessKind: "claude", Dir: "/w/api", Status: "waiting", StatusDetail: "permission",
 		NeedsYou: 1, Inbox: 1, LastActivity: t0.Add(time.Hour), Created: t0}
 	if s != want {
 		t.Errorf("r1 = %+v, want %+v", s, want)
 	}
-	if l.Sessions[0].Harness != "claude" || !l.Sessions[0].LastActivity.Equal(t0.Add(3*time.Hour)) {
+	if l.Sessions[0].HarnessKind != "claude" || !l.Sessions[0].LastActivity.Equal(t0.Add(3*time.Hour)) {
 		t.Errorf("r3 = %+v", l.Sessions[0])
 	}
 
@@ -346,22 +356,25 @@ func TestNewSession(t *testing.T) {
 	var s api.Session
 	must(t, f.call(api.OpSessionNew, api.NewSession{Dir: "~/src/app", Name: " app ", Prompt: "hi", Args: []string{"--x"}}, &s))
 	app := filepath.Join(f.home, "src", "app")
-	if s.ID != "new1" || s.Dir != app || s.Harness != core.HarnessClaude || s.Name != "app" {
+	if s.ID != "new1" || s.Dir != app || s.HarnessKind != core.HarnessClaude || s.Name != "app" {
 		t.Errorf("new = %+v", s)
 	}
 	r := f.b.created[0]
-	if r.Remote == nil || !*r.Remote || r.Cwd != app || r.Harness != core.HarnessClaude || r.Prompt != "hi" || !slices.Equal(r.Args, []string{"--x"}) {
+	if r.Remote == nil || !*r.Remote || r.Cwd != app || r.HarnessKind != core.HarnessClaude || r.HarnessID != "hc" || r.Prompt != "hi" || !slices.Equal(r.Args, []string{"--x"}) {
 		t.Errorf("request = %+v", r)
 	}
 	if !f.b.session("new1").Remote {
 		t.Error("the new session isn't Remote")
 	}
 
-	// The host's default harness, when it's installed.
-	f.b.def = core.HarnessTerminal
-	must(t, f.call(api.OpSessionNew, api.NewSession{Dir: "src"}, &s))
-	if r := f.b.created[1]; r.Harness != core.HarnessTerminal || r.Cwd != filepath.Join(f.home, "src") {
-		t.Errorf("default harness: %+v", r)
+	// A terminal, by its kind; a harness by its id.
+	must(t, f.call(api.OpSessionNew, api.NewSession{Dir: "src", HarnessKind: core.HarnessTerminal}, &s))
+	if r := f.b.created[1]; r.HarnessKind != core.HarnessTerminal || r.HarnessID != "" || r.Cwd != filepath.Join(f.home, "src") {
+		t.Errorf("terminal: %+v", r)
+	}
+	must(t, f.call(api.OpSessionNew, api.NewSession{Dir: "src", HarnessID: "hc"}, &s))
+	if r := f.b.created[2]; r.HarnessID != "hc" || r.HarnessKind != core.HarnessClaude {
+		t.Errorf("by id: %+v", r)
 	}
 
 	for _, tc := range []struct {
@@ -371,8 +384,10 @@ func TestNewSession(t *testing.T) {
 	}{
 		{"no such folder", api.NewSession{Dir: "/nonexistent/x"}, wire.CodeNotFound},
 		{"a file", api.NewSession{Dir: "~/file"}, api.CodeNotFolder},
-		{"an unknown harness", api.NewSession{Dir: "~", Harness: "vim"}, wire.CodeBadRequest},
-		{"a harness that isn't installed", api.NewSession{Dir: "~", Harness: core.HarnessAntigravity}, wire.CodeNotFound},
+		{"an unknown harness", api.NewSession{Dir: "~", HarnessKind: "vim"}, wire.CodeBadRequest},
+		{"a kind with none installed", api.NewSession{Dir: "~", HarnessKind: core.HarnessAntigravity}, wire.CodeNotFound},
+		{"a harness that isn't installed", api.NewSession{Dir: "~", HarnessID: "ha"}, wire.CodeNotFound},
+		{"no such harness", api.NewSession{Dir: "~", HarnessID: "nope"}, wire.CodeNotFound},
 		{"the daemon fails", api.NewSession{Dir: "~", Name: "fail"}, wire.CodeInternal},
 	} {
 		wantCode(t, tc.what, f.call(api.OpSessionNew, tc.n, nil), tc.code)
@@ -383,15 +398,9 @@ func TestNewSession(t *testing.T) {
 func TestHarnesses(t *testing.T) {
 	f := newFixture(t)
 	var h api.Harnesses
-	f.b.def = core.HarnessAntigravity // chosen, but not installed
 	must(t, f.call(api.OpHarnessesList, nil, &h))
-	if len(h.Harnesses) != 2 || h.Harnesses[0] != (api.Harness{Name: "claude", Title: "Claude Code"}) ||
-		h.Harnesses[1] != (api.Harness{Name: "terminal", Title: "Terminal"}) || h.Default != "" {
-		t.Errorf("harnesses = %+v", h)
-	}
-	f.b.installed = []string{core.HarnessAntigravity, "other"}
-	must(t, f.call(api.OpHarnessesList, nil, &h))
-	if len(h.Harnesses) != 1 || h.Harnesses[0].Title != "Antigravity CLI" || h.Default != core.HarnessAntigravity {
+	if len(h.Harnesses) != 2 || h.Harnesses[0] != (api.Harness{ID: "hc", Name: "Claude", Kind: core.HarnessClaude, Title: "Claude", Installed: true}) ||
+		h.Harnesses[1].Installed || h.Default != "hc" || !h.Terminal {
 		t.Errorf("harnesses = %+v", h)
 	}
 }
@@ -1000,7 +1009,7 @@ func TestSettings(t *testing.T) {
 		t.Error("a client sees the voice")
 	}
 	// A change, as the client types it.
-	must(t, f.call(api.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"notify.cooldown": "1m", "claude_args": []string{"--x"}}}, &st))
+	must(t, f.call(api.OpConfigSet, ipc.ConfigSet{Values: map[string]any{"notify.cooldown": "1m", "default_harness": "hc"}}, &st))
 	if st.Values["notify.cooldown"] != "1m0s" || f.b.file.Config().Notify.Cooldown != "1m0s" {
 		t.Errorf("after set = %+v", st.Values["notify.cooldown"])
 	}

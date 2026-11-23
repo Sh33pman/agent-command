@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,13 +16,16 @@ import (
 // caller (so planning has no side effects and is testable).
 type Input struct {
 	Home       string
-	ConfigFile string   // acmd's config.toml
-	EnvFile    string   // env.json
-	AcmdPath   string   // stable path written into hooks and keybinds
-	ClaudeDir  string   // directory holding Claude's settings.json
-	ClaudePath string   // resolved claude binary; "" = not found
-	LoginEnv   LoginEnv // nil = leave env.json as is
-	Read       func(string) ([]byte, error)
+	ConfigFile string // acmd's config.toml
+	EnvFile    string // env.json
+	AcmdPath   string // stable path written into hooks and keybinds
+	ClaudeDir  string // Claude's standard folder, holding its settings.json
+	// HarnessDirs are the Claude harnesses' own folders (CLAUDE_CONFIG_DIR):
+	// acmd's hooks go in each, as in ClaudeDir.
+	HarnessDirs []string
+	ClaudePath  string   // resolved claude binary; "" = not found
+	LoginEnv    LoginEnv // nil = leave env.json as is
+	Read        func(string) ([]byte, error)
 
 	// AntigravityDir holds agy's hooks.json (AntigravityConfigDir); "" = leave it alone.
 	AntigravityDir string
@@ -31,6 +35,18 @@ type Input struct {
 
 // ClaudeSettingsFile is the user settings file hooks go into.
 func (in Input) ClaudeSettingsFile() string { return filepath.Join(in.ClaudeDir, "settings.json") }
+
+// ClaudeDirs are every folder acmd's hooks go in: ClaudeDir, then each
+// harness's own, once each.
+func (in Input) ClaudeDirs() []string {
+	var out []string
+	for _, d := range append([]string{in.ClaudeDir}, in.HarnessDirs...) {
+		if d != "" && !slices.Contains(out, filepath.Clean(d)) {
+			out = append(out, filepath.Clean(d))
+		}
+	}
+	return out
+}
 
 // PlanInit plans `acmd init`.
 func PlanInit(in Input) (*Plan, error) {
@@ -64,6 +80,18 @@ func PlanInit(in Input) (*Plan, error) {
 	return p, nil
 }
 
+// PlanHooks plans putting acmd's hooks in each of HarnessDirs, and nothing
+// else: for a Claude harness added after acmd init.
+func PlanHooks(in Input) (*Plan, error) {
+	p := &Plan{}
+	for _, dir := range in.HarnessDirs {
+		if err := planClaudeDir(p, in, filepath.Join(dir, "settings.json"), true); err != nil {
+			return nil, err
+		}
+	}
+	return p, nil
+}
+
 // PlanUninstall plans `acmd uninstall`: acmd's hook entries go (Claude's and
 // Antigravity's), and nothing else is touched.
 func PlanUninstall(in Input) (*Plan, error) {
@@ -78,7 +106,15 @@ func PlanUninstall(in Input) (*Plan, error) {
 }
 
 func planClaude(p *Plan, in Input, add bool) error {
-	path := in.ClaudeSettingsFile()
+	for _, dir := range in.ClaudeDirs() {
+		if err := planClaudeDir(p, in, filepath.Join(dir, "settings.json"), add); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func planClaudeDir(p *Plan, in Input, path string, add bool) error {
 	old, exists, err := readOptional(in.Read, path)
 	if err != nil {
 		return err
@@ -184,21 +220,6 @@ func planConfig(p *Plan, in Input) error {
 		return err
 	}
 	settings := map[string]any{}
-	set := func(key string, v any) {
-		if err == nil {
-			settings[key] = v
-			text, err = config.Set(text, "", key, v)
-		}
-	}
-	if in.ClaudePath != "" {
-		set("claude_command", in.ClaudePath)
-	}
-	if in.AgyPath != "" {
-		set("agy_command", in.AgyPath)
-	}
-	if err != nil {
-		return err
-	}
 	c := Change{Path: in.ConfigFile, Exists: exists, Old: old, New: []byte(text), Mode: 0o644, Settings: settings}
 	if exists {
 		c.Summary = "update acmd's settings"
@@ -228,11 +249,13 @@ func changedLines(a, b string) []string {
 
 // Record is setup.json: proof that init ran, and where it wrote.
 type Record struct {
-	Version    string    `json:"version"`
-	At         time.Time `json:"at"`
-	AcmdPath   string    `json:"acmd_path"`
-	ClaudeDir  string    `json:"claude_dir"`
-	ConfigFile string    `json:"config_file"`
+	Version   string    `json:"version"`
+	At        time.Time `json:"at"`
+	AcmdPath  string    `json:"acmd_path"`
+	ClaudeDir string    `json:"claude_dir"`
+	// ClaudeDirs are the Claude harnesses' own folders it put hooks in too.
+	ClaudeDirs []string `json:"claude_dirs,omitempty"`
+	ConfigFile string   `json:"config_file"`
 }
 
 // ReadRecord reads setup.json; ok is false if init hasn't run.

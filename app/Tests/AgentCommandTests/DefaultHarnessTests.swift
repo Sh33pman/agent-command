@@ -5,17 +5,15 @@ import Testing
 struct DefaultHarnessTests {
     @Test func readsTheSetting() {
         #expect(DefaultHarness.value("") == nil, "unset: ⌘N asks")
-        #expect(DefaultHarness.value("antigravity") == .antigravity)
-        #expect(DefaultHarness.value("claude") == .claude)
-        #expect(DefaultHarness.value("terminal") == nil, "not an agent")
-        #expect(DefaultHarness.value("copilot") == nil)
+        #expect(DefaultHarness.value("antigravity") == nil, "a kind isn't a harness: it's by id")
+        #expect(DefaultHarness.value("terminal") == nil && DefaultHarness.value("nope") == nil)
     }
 
     @Test func menuTitlesAndChanges() {
         #expect(DefaultHarness.menuTitle(.claude) == "New Claude Session")
         #expect(DefaultHarness.menuTitle(.antigravity) == "New Antigravity Session")
         #expect(DefaultHarness.menuTitle(nil) == "New Session (Pick a Default)…")
-        #expect(DefaultHarness.change(.antigravity) == ["default_harness": .string("antigravity")])
+        #expect(DefaultHarness.change(Harness(id: "HA", kind: "antigravity")) == ["default_harness": .string("HA")], "by id")
         #expect(DefaultHarness.change(nil) == ["default_harness": .string("")])
     }
 

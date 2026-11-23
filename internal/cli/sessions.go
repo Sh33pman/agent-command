@@ -351,7 +351,7 @@ func newFinishCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				q := fmt.Sprintf("Finish %s? %s stops; the conversation is kept and showing it resumes it.", nameOf(s), core.AgentName(s.Harness))
+				q := fmt.Sprintf("Finish %s? %s stops; the conversation is kept and showing it resumes it.", nameOf(s), core.AgentName(s.HarnessKind))
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}

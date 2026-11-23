@@ -370,7 +370,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return
         }
         let folder = from?.cwd ?? lastFolder?.path ?? NSHomeDirectory()
-        store.newSession(harness: harness.rawValue, in: folder, setWith: from?.id, placed: placed)
+        store.newSession(harness: harness, in: folder, setWith: from?.id, placed: placed)
     }
 
     /// A split with the agent ⌘N starts.
@@ -627,7 +627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         lastFolder = url
-        store.newSession(harness: harness.rawValue, in: url.path, remote: asksRemote ? remoteBox.state == .on : nil)
+        store.newSession(harness: harness, in: url.path, remote: asksRemote ? remoteBox.state == .on : nil)
     }
 
     /// A popup to pick an earlier Claude or Antigravity conversation, or enter its id.
@@ -1144,7 +1144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         case .copy(let text): Self.copyToPasteboard(text)
         case .select(let id): store.selectedID = id
         case .nextAttention: showNextAttention()
-        case .newSession(let name): if let harness = Harness(rawValue: name) { newSession(harness: harness) }
+        case .newSession(let id): if let harness = Harness.allCases.first(where: { $0.id == id }) { newSession(harness: harness) }
         case .chooseHarness: chooseHarness()
         case .resume: resumeSession()
         case .newGroup(let sessions): showNewGroup(sessions)

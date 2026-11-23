@@ -96,36 +96,14 @@ func orEmpty(list []string) []string {
 	return list
 }
 
-func notEmpty(key string) func(any) (any, error) {
-	return func(v any) (any, error) {
-		s := strings.TrimSpace(v.(string))
-		if s == "" {
-			return nil, fmt.Errorf("%s can't be empty", key)
-		}
-		return s, nil
-	}
-}
-
 // Specs are every setting, in the order a form shows them.
 var Specs = []Spec{
-	{Key: "claude_command", Type: TypeString, Default: "claude", Where: WhereHost, RunsCode: true,
-		Description: "The claude binary that agent sessions run. acmd init finds it.",
-		get:         func(c Config) any { return c.ClaudeCommand }, check: notEmpty("claude_command")},
-	{Key: "claude_args", Type: TypeList, Default: []string{}, Where: WhereHost, RunsCode: true,
-		Description: "Extra arguments for new Claude sessions.",
-		get:         func(c Config) any { return orEmpty(c.ClaudeArgs) }},
-	{Key: "agy_command", Type: TypeString, Default: "agy", Where: WhereHost, RunsCode: true,
-		Description: "Antigravity's CLI, agy, that its sessions run. acmd init finds it.",
-		get:         func(c Config) any { return c.AgyCommand }, check: notEmpty("agy_command")},
-	{Key: "agy_args", Type: TypeList, Default: []string{}, Where: WhereHost, RunsCode: true,
-		Description: "Extra arguments for new Antigravity sessions.",
-		get:         func(c Config) any { return orEmpty(c.AgyArgs) }},
 	{Key: "agent_remote_control", Type: TypeBool, Default: false, Where: WhereHost,
 		Description: "Start agent sessions with --remote-control, so they can be used from claude.ai, the Claude app or Antigravity's browser view. Applies to sessions started or resumed after a change.",
 		get:         func(c Config) any { return c.AgentRemoteControl }},
-	{Key: "default_harness", Type: TypeChoice, Default: "", Choices: []string{HarnessClaude, HarnessAntigravity, ""}, Where: WhereHost,
-		Description: "What a plain new session runs. Empty asks in the app the first time, and acmd new starts Claude.",
-		get:         func(c Config) any { return c.DefaultHarness }},
+	{Key: "default_harness", Type: TypeString, Default: "", Where: WhereHost,
+		Description: "The harness a plain new session runs in, by id (acmd harness list). Empty is the first one installed.",
+		get:         func(c Config) any { return c.DefaultHarness }, check: func(v any) (any, error) { return strings.TrimSpace(v.(string)), nil }},
 
 	{Key: "notify.enabled", Type: TypeBool, Default: true, Where: WhereHost,
 		Description: "Notifications, for sessions that need you, fail, finish or stop.",

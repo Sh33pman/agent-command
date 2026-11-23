@@ -95,16 +95,23 @@ type Config struct {
 	// Location the time zone their schedules are in (the Mac's).
 	ScheduleEvery time.Duration
 	Location      *time.Location
-	// AgentHelp is an agent's --help, by harness ("claude" or "antigravity"), to
-	// check a job's settings against the installed version ("" or nil: don't check).
-	AgentHelp func(harness string) string
+	// AgentHelp is a harness's program's --help, to check a job's settings
+	// against the installed version ("" or nil: don't check).
+	AgentHelp func(core.Harness) string
 	// Waker sets the Mac's wakes for jobs (wake.Mac); nil: jobs don't wake it.
 	Waker wake.Waker
 	// OnRemoteChanged, when set, is subscribed to Daemon.OnRemoteChanged from the start.
 	OnRemoteChanged func(RemoteChange)
-	// Harnesses are the harnesses installed here ("claude", "antigravity",
-	// "terminal"), which Hosting's clients may start sessions with. nil: all.
-	Harnesses func() []string
+	// Installed says whether a harness's program is found here, so it can
+	// start sessions. nil: every one is.
+	Installed func(core.Harness) bool
+	// HarnessesChanged is told the harnesses after one is added, changed or
+	// removed: acmd puts its hooks in each Claude harness's folder. nil: nothing.
+	HarnessesChanged func(ctx context.Context, harnesses []core.Harness)
+	// ClaudeFor is Claude's CLI for a harness with its own folder, for its
+	// background sessions; nil, or a harness on Claude's standard folder, uses
+	// Agents, Stopper and Remover.
+	ClaudeFor func(core.Harness) ClaudeCLI
 	// Home is where the host API's folders start (default: $HOME).
 	Home string
 
@@ -240,6 +247,7 @@ func Run(ctx context.Context, cfg Config) error {
 	d := &Daemon{cfg: cfg, store: st, ln: ln, stop: make(chan struct{}), bg: newBackground(), events: newEventStream()}
 	sweepHosts(cfg.Paths)
 	_ = os.Remove(cfg.Paths.OldPopupLock())
+	d.moveHarnessSettings(ctx)
 	if cfg.Notify != nil {
 		d.notify = newNotifier(*cfg.Notify)
 	}
@@ -381,7 +389,8 @@ func (d *Daemon) serve(ctx context.Context, c net.Conn) {
 func changesState(op string) bool {
 	switch op {
 	case ipc.OpEvent, ipc.OpMutate, ipc.OpNew, ipc.OpResume, ipc.OpInboxAnswer,
-		ipc.OpJobSave, ipc.OpJobDelete, ipc.OpJobPause, ipc.OpJobRun:
+		ipc.OpJobSave, ipc.OpJobDelete, ipc.OpJobPause, ipc.OpJobRun,
+		ipc.OpHarnessAdd, ipc.OpHarnessUpdate, ipc.OpHarnessRemove:
 		return true
 	}
 	return false
@@ -434,7 +443,17 @@ func (d *Daemon) run(ctx context.Context, req ipc.Request) (any, error) {
 		}
 		return nil, d.ApplyHook(ctx, ev)
 	case ipc.OpHarnesses:
-		return d.harnesses(), nil
+		return d.harnesses(ctx), nil
+	case ipc.OpHarnessAdd, ipc.OpHarnessUpdate:
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.saveHarness(ctx, req.Data, req.Op == ipc.OpHarnessAdd)
+	case ipc.OpHarnessRemove:
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return d.removeHarness(ctx, req.Data)
+	case ipc.OpHarnessSettings:
+		return d.harnessSettings(ctx, req.Data)
 	case ipc.OpClients, ipc.OpClientPresence, ipc.OpNoticeGet, ipc.OpClientProfile, ipc.OpClientProfileSet, ipc.OpKeysSet, ipc.OpKeys:
 		return d.handleClients(ctx, req)
 	case ipc.OpSessionScreen:
@@ -644,7 +663,7 @@ func (d *Daemon) hostedSessionOf(ctx context.Context, hc ipc.HookContext) *core.
 func (d *Daemon) background(ctx context.Context) {
 	var rec *reconcile.Reconciler
 	if d.cfg.Agents != nil {
-		rec = &reconcile.Reconciler{Store: d.store, Agents: d.cfg.Agents, Now: d.cfg.Now,
+		rec = &reconcile.Reconciler{Store: d.store, Agents: claudeAgents{d}, Now: d.cfg.Now,
 			HostAlive: func(s *core.Session) bool { return term.Running(d.cfg.Paths.HostSocket(s.ID)) }}
 	}
 	tail := reconcile.NewTailer()

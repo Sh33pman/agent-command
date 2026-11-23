@@ -4,9 +4,15 @@ import Foundation
 struct HostFeatures: Decodable, Equatable {
     struct Host: Decodable, Equatable {
         var os = ""
-        var agents: [String] = []
+        /// The kinds an installed harness has, and terminal.
+        var harnessKinds: [String] = []
         var wake = false
         var hosting = false
+
+        enum CodingKeys: String, CodingKey {
+            case os, wake, hosting
+            case harnessKinds = "harness_kinds"
+        }
     }
 
     struct Device: Decodable, Equatable {

@@ -79,7 +79,7 @@ func newConfigCmd() *cobra.Command {
 		Short: "Change settings, keeping the rest of config.toml as it is",
 		Long: "Changes one or more settings at once: all of them, or none if one is wrong. A list is\n" +
 			"a JSON array or words separated by spaces.",
-		Example: "  acmd config set notify.cooldown 1m\n  acmd config set -- claude_args \"--model opus\"\n" +
+		Example: "  acmd config set notify.cooldown 1m\n  acmd config set -- editor.command \"nvim {dir}\"\n" +
 			"  acmd config set notify.sound \"\"   # silent\n  acmd config set remote.host.listen all remote.host.port 7500",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) == 0 || len(args)%2 != 0 {

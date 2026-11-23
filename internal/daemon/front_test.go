@@ -37,7 +37,7 @@ func TestTerminalFallsBackToWhatsInFront(t *testing.T) {
 	fh, ff := &fakeHosts{paths: p}, &fakeFront{}
 	start(t, p, func(c *Config) { c.Hosts = fh; c.FrontEvery = 20 * time.Millisecond; c.HostFront = ff.get })
 	c := dial(t, p)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessTerminal})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessTerminal})
 	status := func() core.Status { return sessionByID(t, c, s.ID).Status }
 
 	// An editor in front is still just the terminal.

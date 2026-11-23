@@ -23,9 +23,11 @@ import (
 // oldest (design 8.2, D6): a client and its daemon use the highest version
 // both speak, and decide what to show from the daemon's ops, never from the
 // version. Proto is bumped only on incompatible protocol changes.
+// 2: harnesses (a session's harness_kind and harness_id; a new session's
+// harness_id). Beta: nothing older is kept.
 const (
-	Proto    = 1
-	ProtoMin = 1
+	Proto    = 2
+	ProtoMin = 2
 )
 
 // Ops.
@@ -61,7 +63,6 @@ const (
 	OpJobPause      = "job.pause"      // JobRef.ID, Paused
 	OpJobRun        = "job.run"        // runs it now (JobRef.ID) → core.JobRun
 	OpJobRuns       = "job.runs"       // its runs, newest first (JobRunsRequest) → JobRunPage
-	OpAgentSettings = "agent.settings" // an agent's settings for jobs (JobRef.Harness) → []harness.Setting
 	OpWakeSet       = "wake.set"       // wakes the Mac for every job or not (WakeRef), checking the sudoers rule again → WakeState
 	// Remote sessions: Hosting, this machine's listener for other acmds.
 	OpRemoteStatus     = "remote.status"              // → RemoteStatus
@@ -191,9 +192,8 @@ type RemoteDisconnected struct {
 
 // JobRef names a job, and what to do with it.
 type JobRef struct {
-	ID      string `json:"id,omitempty"`
-	Paused  bool   `json:"paused,omitempty"`
-	Harness string `json:"harness,omitempty"`
+	ID     string `json:"id,omitempty"`
+	Paused bool   `json:"paused,omitempty"`
 }
 
 // WakeRef turns waking the Mac for every job on or off.
@@ -253,6 +253,8 @@ type Snapshot struct {
 	// with their connections' state. Sessions added from them are in
 	// Sessions, with Host set.
 	RemoteHosts []RemoteHost `json:"remote_hosts,omitempty"`
+	// Harnesses are this machine's harnesses, in list order.
+	Harnesses []Harness `json:"harnesses,omitempty"`
 	// Settings are the settings in effect, by key (ConfigState.Values).
 	// config.get says what each one is.
 	Settings map[string]any `json:"settings,omitempty"`
@@ -433,9 +435,13 @@ type WatchResponse struct {
 type NewRequest struct {
 	GroupID string `json:"group_id,omitempty"`
 	Cwd     string `json:"cwd"`
-	Harness string `json:"harness,omitempty"` // "" = claude
-	// Resume continues this conversation, by its id or an id prefix: Claude's,
-	// or agy's with Harness "antigravity". Its folder comes from the
+	// HarnessID is the harness it runs in; with none, HarnessKind
+	// "terminal" is a terminal, and another kind (or none) its default
+	// harness (Harnesses.Default for none).
+	HarnessID   string `json:"harness_id,omitempty"`
+	HarnessKind string `json:"harness_kind,omitempty"`
+	// Resume continues this conversation, by its id or an id prefix, in its
+	// harness (Conversation.HarnessID). Its folder comes from the
 	// conversation, so Cwd can be empty.
 	Resume      string   `json:"resume,omitempty"`
 	Name        string   `json:"name,omitempty"`
@@ -467,13 +473,14 @@ type Layout struct {
 // resumed.
 type Conversation struct {
 	ID string `json:"id"`
-	// Harness is whose it is: "claude" or "antigravity" ("" from an older
-	// daemon: Claude). NewRequest takes it with the id to resume it.
-	Harness   string    `json:"harness,omitempty"`
-	Cwd       string    `json:"cwd"`
-	Title     string    `json:"title,omitempty"`
-	Branch    string    `json:"branch,omitempty"`
-	UpdatedAt time.Time `json:"updated_at,omitzero"`
+	// HarnessID is the harness whose history it's in, and HarnessKind its
+	// kind. NewRequest takes them with the id to resume it.
+	HarnessID   string    `json:"harness_id,omitempty"`
+	HarnessKind string    `json:"harness_kind"`
+	Cwd         string    `json:"cwd"`
+	Title       string    `json:"title,omitempty"`
+	Branch      string    `json:"branch,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at,omitzero"`
 	// Running: Claude reports it as live, possibly in another terminal (agy
 	// reports none).
 	Running bool `json:"running,omitempty"`

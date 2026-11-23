@@ -76,7 +76,7 @@ func TestParseAntigravityHookErrors(t *testing.T) {
 
 // An agy session goes through the same states as a Claude one, without waiting.
 func TestAntigravityLifecycle(t *testing.T) {
-	s := &Session{ID: "s1", Harness: HarnessAntigravity, Kind: KindHosted, NameSource: NameAuto}
+	s := &Session{ID: "s1", HarnessKind: HarnessAntigravity, Kind: KindHosted, NameSource: NameAuto}
 	if !s.IsAntigravity() || s.IsTerminal() {
 		t.Fatal("harness checks")
 	}

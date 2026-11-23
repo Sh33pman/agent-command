@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +69,6 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 	plan.Write(&out, in.Home)
 	text := out.String()
 	for _, s := range []string{"~/.claude/settings.json", "register acmd's hooks for 15 events; your 2 other hook entries are kept",
-		`claude_command = "/Users/me/.local/bin/claude"`,
 		"2 variables (values not shown)"} {
 		if !strings.Contains(text, s) {
 			t.Errorf("plan output lacks %q:\n%s", s, text)
@@ -98,10 +98,9 @@ func TestInitUninstallRoundTrip(t *testing.T) {
 	if !HasHooks(settings, in.AcmdPath) {
 		t.Error("hooks not registered")
 	}
-	cfg, err := config.Load(in.ConfigFile)
-	must(t, err)
-	if cfg.ClaudeCommand != in.ClaudePath {
-		t.Errorf("claude_command = %q", cfg.ClaudeCommand)
+	// The programs are the harnesses' now: config.toml doesn't pin them.
+	if b, _ := os.ReadFile(in.ConfigFile); strings.Contains(string(b), "claude_command") {
+		t.Errorf("claude_command written:\n%s", b)
 	}
 
 	// Again: nothing to do.
@@ -172,14 +171,12 @@ func TestInitFreshHome(t *testing.T) {
 	if bdir != "" {
 		t.Errorf("nothing to back up, got %s", bdir)
 	}
-	cfg, err := config.Load(in.ConfigFile)
-	must(t, err)
-	if cfg.AgyCommand != "/opt/agy/bin/agy" || cfg.ClaudeCommand != "claude" {
-		t.Errorf("config: %+v", cfg)
+	if _, err := config.Load(in.ConfigFile); err != nil {
+		t.Errorf("config: %v", err)
 	}
-	// A running daemon makes the same change: what it is, by key.
+	// The programs are the harnesses': init sets no setting.
 	for _, c := range plan.Changes {
-		if filepath.Base(c.Path) == "config.toml" && (len(c.Settings) != 1 || c.Settings["agy_command"] != "/opt/agy/bin/agy") {
+		if filepath.Base(c.Path) == "config.toml" && len(c.Settings) != 0 {
 			t.Errorf("settings = %+v", c.Settings)
 		}
 	}
@@ -275,10 +272,10 @@ func TestRecord(t *testing.T) {
 	if _, ok, err := ReadRecord(p); ok || err != nil {
 		t.Fatalf("missing record: %v %v", ok, err)
 	}
-	r := Record{Version: "0.7.0", At: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC), AcmdPath: "/a", ClaudeDir: "/c", ConfigFile: "/f"}
+	r := Record{Version: "0.7.0", At: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC), AcmdPath: "/a", ClaudeDir: "/c", ClaudeDirs: []string{"/w"}, ConfigFile: "/f"}
 	must(t, WriteRecord(p, r))
 	got, ok, err := ReadRecord(p)
-	if err != nil || !ok || got != r {
+	if err != nil || !ok || !reflect.DeepEqual(got, r) {
 		t.Errorf("round trip: %+v %v %v", got, ok, err)
 	}
 	must(t, os.WriteFile(p, []byte("{"), 0o600))
@@ -438,5 +435,40 @@ func TestInitAndSaveMigrateAgentRemoteControl(t *testing.T) {
 	config.OpenFile(file)
 	if b, _ := os.ReadFile(file); string(b) != want {
 		t.Errorf("open:\n%s\nwant:\n%s", b, want)
+	}
+}
+
+// Each Claude harness with its own folder has its own settings.json: init
+// puts acmd's hooks in every one, uninstall takes them out of every one, and
+// PlanHooks does one added later.
+func TestHooksGoInEachHarnessFolder(t *testing.T) {
+	home := t.TempDir()
+	work, personal := filepath.Join(home, ".claude-work"), filepath.Join(home, ".claude-personal")
+	in := Input{Home: home, ConfigFile: filepath.Join(home, "cfg/config.toml"), AcmdPath: "/opt/homebrew/bin/acmd",
+		ClaudeDir: filepath.Join(home, ".claude"), HarnessDirs: []string{work, work, filepath.Join(home, ".claude")}, Read: os.ReadFile}
+	if dirs := in.ClaudeDirs(); len(dirs) != 2 {
+		t.Errorf("each folder once: %v", dirs)
+	}
+	plan, err := PlanInit(in)
+	must(t, err)
+	_, err = plan.Apply(filepath.Join(home, "backups"), home, time.Now())
+	must(t, err)
+	for _, dir := range []string{in.ClaudeDir, work} {
+		if b, _ := os.ReadFile(filepath.Join(dir, "settings.json")); !HasHooks(b, in.AcmdPath) {
+			t.Errorf("no hooks in %s", dir)
+		}
+	}
+	later, err := PlanHooks(Input{Home: home, AcmdPath: in.AcmdPath, HarnessDirs: []string{personal, work}, Read: os.ReadFile})
+	must(t, err)
+	if p := later.Pending(); len(p) != 1 || filepath.Dir(p[0].Path) != personal {
+		t.Errorf("only the new folder: %v", actions(later))
+	}
+	_, err = later.Apply(filepath.Join(home, "backups"), home, time.Now())
+	must(t, err)
+	in.HarnessDirs = []string{work, personal}
+	un, err := PlanUninstall(in)
+	must(t, err)
+	if n := len(un.Pending()); n != 3 {
+		t.Errorf("uninstall cleans all 3: %v", actions(un))
 	}
 }

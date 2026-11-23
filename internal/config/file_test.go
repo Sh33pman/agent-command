@@ -41,15 +41,15 @@ func TestSetKeepsCommentsAndTheRest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	writeFile(t, path, "# mine\nclaude_command = \"/bin/claude\" # pinned\n\n[notify]\n# quiet nights\ncooldown = \"20s\"\n")
 	f := OpenFile(path)
-	c, err := f.Set(map[string]any{"notify.cooldown": "1m", "notify.enabled": "off", "claude_args": []any{"--model", "opus"}})
+	c, err := f.Set(map[string]any{"notify.cooldown": "1m", "notify.enabled": "off", "editor.command": []any{"nvim", "{dir}"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Notify.Cooldown != "1m0s" || c.Notify.Enabled || strings.Join(c.ClaudeArgs, " ") != "--model opus" {
+	if c.Notify.Cooldown != "1m0s" || c.Notify.Enabled || strings.Join(c.Editor.Command, " ") != "nvim {dir}" {
 		t.Fatalf("settings in effect: %+v", c)
 	}
 	text := readFile(t, path)
-	for _, want := range []string{"# mine\n", "# quiet nights\n", `cooldown = "1m0s"`, "enabled = false", `claude_args = ["--model", "opus"]`} {
+	for _, want := range []string{"# mine\n", "# quiet nights\n", `cooldown = "1m0s"`, "enabled = false", `command = ["nvim", "{dir}"]`} {
 		if !strings.Contains(text, want) {
 			t.Errorf("file lacks %q:\n%s", want, text)
 		}

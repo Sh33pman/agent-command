@@ -146,22 +146,22 @@ func TestCheckJob(t *testing.T) {
 		field string
 		want  string
 	}{
-		"no name":       {func(j *core.Job) { j.Name = "  " }, "name", "Give the job a name"},
-		"long name":     {func(j *core.Job) { j.Name = strings.Repeat("x", 101) }, "name", "over 100"},
-		"bad schedule":  {func(j *core.Job) { j.Schedule = "sometimes" }, "schedule", "Couldn't read"},
-		"past":          {func(j *core.Job) { j.Schedule = "once on 2026-11-11 at 08:00" }, "schedule", "passed"},
-		"no prompt":     {func(j *core.Job) { j.Prompt = " \n" }, "prompt", "Write a prompt"},
-		"no file":       {func(j *core.Job) { j.PromptFile = file }, "prompt", "isn't there"},
-		"no where":      {func(j *core.Job) { j.Where = "" }, "where", "Choose where"},
-		"no folder":     {func(j *core.Job) { j.Cwd = "" }, "cwd", "Choose a folder"},
-		"relative":      {func(j *core.Job) { j.Cwd = "notes" }, "cwd", "full path"},
-		"gone":          {func(j *core.Job) { j.Cwd = filepath.Join(dir, "gone") }, "cwd", "isn't there"},
-		"not a repo":    {func(j *core.Job) { j.Where = core.WhereWorktree }, "cwd", "git repository"},
-		"no session":    {func(j *core.Job) { j.Where = core.WhereSession }, "session", "Choose the session"},
-		"lost session":  {func(j *core.Job) { j.Where, j.SessionID = core.WhereSession, "nope" }, "session", "gone"},
-		"bad setting":   {func(j *core.Job) { j.Settings = map[string][]string{"effort": {"huge"}} }, "settings", "one of low"},
-		"other harness": {func(j *core.Job) { j.Harness = "codex" }, "harness", "Only Claude Code and Antigravity"},
-		"lost group":    {func(j *core.Job) { j.GroupID = "nope" }, "group", "gone"},
+		"no name":      {func(j *core.Job) { j.Name = "  " }, "name", "Give the job a name"},
+		"long name":    {func(j *core.Job) { j.Name = strings.Repeat("x", 101) }, "name", "over 100"},
+		"bad schedule": {func(j *core.Job) { j.Schedule = "sometimes" }, "schedule", "Couldn't read"},
+		"past":         {func(j *core.Job) { j.Schedule = "once on 2026-11-11 at 08:00" }, "schedule", "passed"},
+		"no prompt":    {func(j *core.Job) { j.Prompt = " \n" }, "prompt", "Write a prompt"},
+		"no file":      {func(j *core.Job) { j.PromptFile = file }, "prompt", "isn't there"},
+		"no where":     {func(j *core.Job) { j.Where = "" }, "where", "Choose where"},
+		"no folder":    {func(j *core.Job) { j.Cwd = "" }, "cwd", "Choose a folder"},
+		"relative":     {func(j *core.Job) { j.Cwd = "notes" }, "cwd", "full path"},
+		"gone":         {func(j *core.Job) { j.Cwd = filepath.Join(dir, "gone") }, "cwd", "isn't there"},
+		"not a repo":   {func(j *core.Job) { j.Where = core.WhereWorktree }, "cwd", "git repository"},
+		"no session":   {func(j *core.Job) { j.Where = core.WhereSession }, "session", "Choose the session"},
+		"lost session": {func(j *core.Job) { j.Where, j.SessionID = core.WhereSession, "nope" }, "session", "gone"},
+		"bad setting":  {func(j *core.Job) { j.Settings = map[string][]string{"effort": {"huge"}} }, "settings", "one of low"},
+		"lost harness": {func(j *core.Job) { j.HarnessID = "codex" }, "harness", "Choose the harness"},
+		"lost group":   {func(j *core.Job) { j.GroupID = "nope" }, "group", "gone"},
 	} {
 		j := folderJob(dir)
 		tc.edit(&j)
@@ -190,9 +190,9 @@ func TestCheckJob(t *testing.T) {
 	}
 
 	// Settings are checked against the installed Claude Code.
-	d.cfg.AgentHelp = func(h string) string {
-		if h != core.HarnessClaude {
-			t.Errorf("asked %q for Claude's flags", h)
+	d.cfg.AgentHelp = func(h core.Harness) string {
+		if h.Kind != core.HarnessClaude {
+			t.Errorf("asked %q for Claude's flags", h.Name)
 		}
 		return "--model <model>\n--permission-mode"
 	}
@@ -204,7 +204,7 @@ func TestCheckJob(t *testing.T) {
 	if check := d.checkJob(ctx, &ok); len(check.Errors) != 0 {
 		t.Errorf("flags it has: %v", check.Errors)
 	}
-	d.cfg.AgentHelp = func(string) string { return "" } // couldn't run it: don't block
+	d.cfg.AgentHelp = func(core.Harness) string { return "" } // couldn't run it: don't block
 	if check := d.checkJob(ctx, &needsEffort); len(check.Errors) != 0 {
 		t.Errorf("no help: %v", check.Errors)
 	}
@@ -382,7 +382,7 @@ func TestRunInSession(t *testing.T) {
 	d, fh, clk, typed := jobDaemon(t)
 	ctx := context.Background()
 	dir := t.TempDir()
-	s := &core.Session{Kind: core.KindHosted, Cwd: dir, Harness: core.HarnessClaude, ClaudeSessionID: "c-1", Status: core.StatusPaused}
+	s := &core.Session{Kind: core.KindHosted, Cwd: dir, HarnessKind: core.HarnessClaude, ClaudeSessionID: "c-1", Status: core.StatusPaused}
 	must(t, d.store.CreateSession(ctx, s))
 	j := folderJob("")
 	j.Where, j.SessionID = core.WhereSession, s.ID
@@ -540,16 +540,21 @@ func TestJobOps(t *testing.T) {
 	}
 
 	var settings []harness.Setting
-	must(t, c.Call(ipc.OpAgentSettings, ipc.JobRef{}, &settings))
+	must(t, c.Call(ipc.OpHarnessSettings, ipc.HarnessRef{}, &settings))
 	if len(settings) != len(harness.ClaudeSettings) {
 		t.Errorf("settings: %d", len(settings))
 	}
-	must(t, c.Call(ipc.OpAgentSettings, ipc.JobRef{Harness: core.HarnessAntigravity}, &settings))
+	snap = snapshot(t, c)
+	must(t, c.Call(ipc.OpHarnessSettings, ipc.HarnessRef{ID: snap.Harnesses[1].ID}, &settings))
 	if len(settings) != len(harness.AntigravitySettings) || settings[2].Key != "mode" || settings[2].Flag != "--mode" {
 		t.Errorf("agy's settings: %+v", settings)
 	}
-	if err := c.Call(ipc.OpAgentSettings, ipc.JobRef{Harness: "terminal"}, &settings); err == nil {
-		t.Error("terminal settings")
+	must(t, c.Call(ipc.OpHarnessSettings, ipc.HarnessRef{Kind: core.HarnessAntigravity}, &settings))
+	if len(settings) != len(harness.AntigravitySettings) {
+		t.Errorf("by kind: %d", len(settings))
+	}
+	if err := c.Call(ipc.OpHarnessSettings, ipc.HarnessRef{ID: "nope"}, &settings); err == nil {
+		t.Error("no such harness")
 	}
 
 	must(t, c.Call(ipc.OpJobDelete, ipc.JobRef{ID: job.ID}, nil))
@@ -567,10 +572,23 @@ func TestJobOps(t *testing.T) {
 	}
 }
 
-func agyJob(dir string) core.Job {
+func agyJob(t *testing.T, d *Daemon, dir string) core.Job {
 	j := folderJob(dir)
-	j.Harness, j.Settings = core.HarnessAntigravity, map[string][]string{"mode": {"accept-edits"}, "effort": {"high"}}
+	j.HarnessID, j.Settings = kindID(t, d, core.HarnessAntigravity), map[string][]string{"mode": {"accept-edits"}, "effort": {"high"}}
 	return j
+}
+
+// kindID is the id of d's first harness of kind (the store makes Claude and
+// Antigravity).
+func kindID(t *testing.T, d *Daemon, kind string) string {
+	t.Helper()
+	for _, h := range d.harnessList(context.Background()) {
+		if h.Kind == kind {
+			return h.ID
+		}
+	}
+	t.Fatalf("no %s harness", kind)
+	return ""
 }
 
 // An Antigravity job is checked against agy's settings and agy's --help.
@@ -579,18 +597,18 @@ func TestCheckAntigravityJob(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 
-	ok := agyJob(dir)
+	ok := agyJob(t, d, dir)
 	if check := d.checkJob(ctx, &ok); len(check.Errors) != 0 {
 		t.Fatalf("valid: %v", check.Errors)
 	}
-	claudes := agyJob(dir)
+	claudes := agyJob(t, d, dir)
 	claudes.Settings = map[string][]string{"permission-mode": {"plan"}}
 	if check := d.checkJob(ctx, &claudes); !strings.Contains(check.Errors["settings"], `no setting "permission-mode"`) {
 		t.Errorf("Claude's setting on agy: %v", check.Errors)
 	}
 
-	d.cfg.AgentHelp = func(h string) string {
-		if h == core.HarnessAntigravity {
+	d.cfg.AgentHelp = func(h core.Harness) string {
+		if h.Kind == core.HarnessAntigravity {
 			return "  --model  Model\n  --effort  Reasoning effort"
 		}
 		return "--model --effort --permission-mode --mode"
@@ -600,14 +618,14 @@ func TestCheckAntigravityJob(t *testing.T) {
 	}
 
 	// A session to continue: its agent's conversation, and its agent.
-	none := &core.Session{Kind: core.KindHosted, Cwd: dir, Harness: core.HarnessAntigravity, Status: core.StatusDone}
+	none := &core.Session{Kind: core.KindHosted, Cwd: dir, HarnessKind: core.HarnessAntigravity, Status: core.StatusDone}
 	must(t, d.store.CreateSession(ctx, none))
 	j := folderJob("")
 	j.Where, j.SessionID, j.Settings = core.WhereSession, none.ID, nil
 	if check := d.checkJob(ctx, &j); check.Errors["session"] != "That session has no Antigravity conversation to continue." {
 		t.Errorf("no conversation: %v", check.Errors)
 	}
-	claude := &core.Session{Kind: core.KindHosted, Cwd: dir, Harness: core.HarnessClaude, Status: core.StatusDone}
+	claude := &core.Session{Kind: core.KindHosted, Cwd: dir, HarnessKind: core.HarnessClaude, Status: core.StatusDone}
 	must(t, d.store.CreateSession(ctx, claude))
 	j.SessionID = claude.ID
 	if check := d.checkJob(ctx, &j); check.Errors["session"] != "That session has no Claude conversation to continue." {
@@ -616,14 +634,14 @@ func TestCheckAntigravityJob(t *testing.T) {
 	none.ClaudeSessionID = "conv-1"
 	must(t, d.store.UpdateSession(ctx, none))
 	j.SessionID = none.ID
-	if check := d.checkJob(ctx, &j); len(check.Errors) != 0 || j.Harness != core.HarnessAntigravity || j.Cwd != dir {
-		t.Errorf("agy session: %v, harness %q", check.Errors, j.Harness)
+	if check := d.checkJob(ctx, &j); len(check.Errors) != 0 || j.HarnessID != kindID(t, d, core.HarnessAntigravity) || j.Cwd != dir {
+		t.Errorf("agy session: %v, harness %q", check.Errors, j.HarnessID)
 	}
 	claude.ClaudeSessionID = "c-1"
 	must(t, d.store.UpdateSession(ctx, claude))
 	j.SessionID = claude.ID
-	if check := d.checkJob(ctx, &j); len(check.Errors) != 0 || j.Harness != core.HarnessClaude {
-		t.Errorf("back to a Claude session: %v, harness %q", check.Errors, j.Harness)
+	if check := d.checkJob(ctx, &j); len(check.Errors) != 0 || j.HarnessID != kindID(t, d, core.HarnessClaude) {
+		t.Errorf("back to a Claude session: %v, harness %q", check.Errors, j.HarnessID)
 	}
 }
 
@@ -633,7 +651,7 @@ func TestRunAntigravityJob(t *testing.T) {
 	d, fh, clk, typed := jobDaemon(t)
 	ctx := context.Background()
 	dir := t.TempDir()
-	job := mustSave(t, d, agyJob(dir))
+	job := mustSave(t, d, agyJob(t, d, dir))
 	clk.set("2026-11-12 08:00:00")
 	d.runDueJobs(ctx)
 	run := lastRun(t, d, job.ID)
@@ -641,7 +659,7 @@ func TestRunAntigravityJob(t *testing.T) {
 		t.Fatalf("run: %+v", run)
 	}
 	r := fh.requests()
-	if len(r) != 1 || r[0].Harness != core.HarnessAntigravity || r[0].Prompt != job.Prompt || r[0].ClaudeSession != "" ||
+	if len(r) != 1 || r[0].Kind != core.HarnessAntigravity || r[0].Prompt != job.Prompt || r[0].ClaudeSession != "" ||
 		!slices.Equal(r[0].Args, []string{"--effort", "high", "--mode", "accept-edits"}) {
 		t.Errorf("host: %+v", r)
 	}
@@ -649,13 +667,13 @@ func TestRunAntigravityJob(t *testing.T) {
 		t.Errorf("session: %+v %v", s, err)
 	}
 
-	s := &core.Session{Kind: core.KindHosted, Cwd: dir, Harness: core.HarnessAntigravity, ClaudeSessionID: "conv-1", Status: core.StatusPaused}
+	s := &core.Session{Kind: core.KindHosted, Cwd: dir, HarnessKind: core.HarnessAntigravity, ClaudeSessionID: "conv-1", Status: core.StatusPaused}
 	must(t, d.store.CreateSession(ctx, s))
-	j := agyJob("")
-	j.Where, j.SessionID, j.Harness = core.WhereSession, s.ID, ""
+	j := agyJob(t, d, "")
+	j.Where, j.SessionID, j.HarnessID = core.WhereSession, s.ID, ""
 	cont := mustSave(t, d, j)
-	if cont.Harness != core.HarnessAntigravity {
-		t.Errorf("the job takes its session's agent: %q", cont.Harness)
+	if cont.HarnessID != kindID(t, d, core.HarnessAntigravity) {
+		t.Errorf("the job takes its session's agent: %q", cont.HarnessID)
 	}
 	clk.set("2026-11-13 08:00:00")
 	d.runDueJobs(ctx)
@@ -663,7 +681,7 @@ func TestRunAntigravityJob(t *testing.T) {
 	if run := lastRun(t, d, cont.ID); run.Result != core.RunStarted || len(r) != 2 { // the first job's run is still starting
 		t.Fatalf("resumed: %+v (%d starts)", run, len(r))
 	}
-	if got := r[len(r)-1]; got.ID != s.ID || got.Harness != core.HarnessAntigravity || got.Resume != "conv-1" || got.Prompt != j.Prompt ||
+	if got := r[len(r)-1]; got.ID != s.ID || got.Kind != core.HarnessAntigravity || got.Resume != "conv-1" || got.Prompt != j.Prompt ||
 		!slices.Equal(got.Args, []string{"--effort", "high", "--mode", "accept-edits"}) {
 		t.Errorf("resume: %+v", got)
 	}
@@ -682,7 +700,7 @@ func TestRunAntigravityJob(t *testing.T) {
 	// A job saved for Claude, before jobs took the session's agent, doesn't send
 	// Claude's flags to agy.
 	stale, _ := d.store.Job(ctx, cont.ID)
-	stale.Harness, stale.Settings = "", map[string][]string{"permission-mode": {"plan"}}
+	stale.HarnessID, stale.Settings = "", map[string][]string{"permission-mode": {"plan"}}
 	must(t, d.store.SaveJob(ctx, stale))
 	if run, _ := d.runJobNow(ctx, cont.ID); run.Result != core.RunFailed ||
 		run.Detail != "The session runs Antigravity, but the job's settings are for Claude: edit the job." {
@@ -694,9 +712,9 @@ func TestRunAntigravityJob(t *testing.T) {
 		t.Errorf("no hosts: %+v", run)
 	}
 	other, _ := d.store.Job(ctx, job.ID)
-	other.Harness = "codex"
+	other.HarnessID = "codex"
 	must(t, d.store.SaveJob(ctx, other))
-	if run, _ := d.runJobNow(ctx, job.ID); run.Detail != "acmd can't schedule codex." {
+	if run, _ := d.runJobNow(ctx, job.ID); run.Detail != "Its harness is gone: choose another for the job." {
 		t.Errorf("other: %+v", run)
 	}
 }

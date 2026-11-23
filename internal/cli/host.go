@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 
@@ -47,7 +48,10 @@ func newHostCmd() *cobra.Command {
 // hostOptions say what a host runs.
 type hostOptions struct {
 	ID, Dir, Name, Prompt, Resume, ClaudeSession, Harness string
-	Args                                                  []string
+	// Command and ConfigDir are the harness's program and, for Claude, its
+	// CLAUDE_CONFIG_DIR ("" for Claude's standard folder).
+	Command, ConfigDir string
+	Args               []string
 }
 
 // hostArgv builds the harness argv for a host.
@@ -77,13 +81,16 @@ func hostEnv(base []string) []string {
 	return append(out, "TERM=xterm-256color")
 }
 
-// hostHarness resolves what a host runs and the environment to run it in.
-func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) {
-	switch name {
+// hostHarness resolves what a host runs and the environment to run it in:
+// o.Harness is the kind, with its harness's program and folder.
+func hostHarness(p paths.Paths, o hostOptions) (harness.Harness, []string, error) {
+	h := core.Harness{Kind: o.Harness, Command: o.Command, ConfigDir: o.ConfigDir}
+	switch o.Harness {
 	case "", core.HarnessClaude:
-		claude, env, err := claudeCommand(p)
+		h.Kind = core.HarnessClaude
+		claude, env, err := harnessCommand(p, h)
 		if err != nil {
-			return nil, nil, fmt.Errorf("claude not found: %w", err)
+			return nil, nil, err
 		}
 		// Read when the session starts, so a change applies to the next one.
 		cfg, err := config.Load(p.Config())
@@ -92,7 +99,7 @@ func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) 
 		}
 		return harness.Claude{Path: claude, RemoteControl: cfg.AgentRemoteControl}, env, nil
 	case core.HarnessAntigravity:
-		agy, env, err := agyCommand(p)
+		agy, env, err := harnessCommand(p, h)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -116,7 +123,7 @@ func hostHarness(p paths.Paths, name string) (harness.Harness, []string, error) 
 		}
 		return harness.Terminal{Shell: shell}, env, nil
 	}
-	return nil, nil, fmt.Errorf("unknown harness %q", name)
+	return nil, nil, fmt.Errorf("unknown harness kind %q", o.Harness)
 }
 
 // archiveSelf tells the daemon that this host's terminal is over. If the daemon
@@ -150,15 +157,11 @@ func newHostServeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			h, env, err := hostHarness(p, o.Harness)
+			// The harness's own arguments come first in args (the daemon puts
+			// them there), then the session's.
+			h, env, err := hostHarness(p, o)
 			if err != nil {
 				return err
-			}
-			// claude_args or agy_args come first, then the session's own: so every
-			// session acmd starts or resumes gets them, from the app, the CLI or a
-			// job, read when it starts.
-			if cfg, err := config.Load(p.Config()); err == nil {
-				o.Args = append(newSessionArgs(cfg, o.Harness), o.Args...)
 			}
 			if st, err := os.Stat(o.Dir); err != nil || !st.IsDir() {
 				return fmt.Errorf("folder %s is gone", o.Dir)
@@ -182,7 +185,9 @@ func newHostServeCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.ID, "session", "", "the acmd session")
-	f.StringVar(&o.Harness, "harness", "", "what the session runs: claude (default), antigravity or terminal")
+	f.StringVar(&o.Harness, "harness", "", "the harness kind: claude (default), antigravity or terminal")
+	f.StringVar(&o.Command, "command", "", "the harness's program (default: claude or agy)")
+	f.StringVar(&o.ConfigDir, "config-dir", "", "a Claude harness's CLAUDE_CONFIG_DIR (default: Claude's standard folder)")
 	f.StringVar(&o.Dir, "dir", "", "the folder to run in")
 	f.StringVar(&o.Name, "name", "", "the session's name")
 	f.StringVar(&o.Prompt, "prompt", "", "the first prompt")
@@ -196,15 +201,10 @@ type execHosts struct{ paths paths.Paths }
 
 // Start implements daemon.Hosts.
 func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
-	// The agent is checked here, not in the host: its errors only reach the
-	// daemon's log.
-	switch r.Harness {
-	case "", core.HarnessClaude:
-		if _, _, err := claudeCommand(h.paths); err != nil {
-			return fmt.Errorf("claude not found: %w", err)
-		}
-	case core.HarnessAntigravity:
-		if _, _, err := agyCommand(h.paths); err != nil {
+	// The harness's program is checked here, not in the host: its errors
+	// only reach the daemon's log.
+	if r.Harness != nil {
+		if _, _, err := harnessCommand(h.paths, *r.Harness); err != nil {
 			return err
 		}
 	}
@@ -218,8 +218,19 @@ func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
 	}
 	defer logf.Close()
 	args := []string{"host", "serve", "--session", r.ID, "--dir", r.Dir}
-	if r.Harness != "" {
-		args = append(args, "--harness", r.Harness)
+	if r.Kind != "" {
+		args = append(args, "--harness", r.Kind)
+	}
+	sessionArgs := r.Args
+	if hr := r.Harness; hr != nil {
+		if hr.Command != "" {
+			args = append(args, "--command", hr.Command)
+		}
+		if hr.Kind == core.HarnessClaude && hr.ConfigDir != "" {
+			home, _ := os.UserHomeDir()
+			args = append(args, "--config-dir", core.ExpandHome(hr.ConfigDir, home))
+		}
+		sessionArgs = append(slices.Clone(hr.Args), r.Args...)
 	}
 	if r.Name != "" {
 		args = append(args, "--name", r.Name)
@@ -234,7 +245,7 @@ func (h execHosts) Start(_ context.Context, r daemon.HostRequest) error {
 		args = append(args, "--resume", r.Resume)
 	}
 	args = append(args, "--")
-	args = append(args, r.Args...)
+	args = append(args, sessionArgs...)
 	c := exec.Command(exe, args...) // #nosec G204 -- our own binary
 	c.Env = procenv.Scrub(os.Environ())
 	c.Stdout, c.Stderr = logf, logf

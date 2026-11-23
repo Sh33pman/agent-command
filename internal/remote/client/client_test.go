@@ -23,7 +23,7 @@ import (
 var t0 = time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)
 
 func remoteSession(id, name string) core.Session {
-	return core.Session{ID: id, Name: name, Cwd: "/w/" + name, Harness: core.HarnessTerminal, Status: core.StatusRunning,
+	return core.Session{ID: id, Name: name, Cwd: "/w/" + name, HarnessKind: core.HarnessTerminal, Status: core.StatusRunning,
 		Remote: true, CreatedAt: t0, LastEventAt: t0.Add(time.Hour)}
 }
 
@@ -358,7 +358,7 @@ func TestKnownHostsStayConnected(t *testing.T) {
 	l.know(r)
 	h, err := l.c.Harnesses(ctx5(), "studio")
 	must(t, err)
-	if h.Default != core.HarnessClaude || len(h.Harnesses) != 2 {
+	if h.Default != "hc" || len(h.Harnesses) != 1 || !h.Terminal {
 		t.Errorf("harnesses = %+v", h)
 	}
 	// The host daemon's own ops, as acmd --host runs them.
@@ -420,14 +420,14 @@ func TestNewSessionOnAHost(t *testing.T) {
 	r := newRemoteHost(t, "studio")
 	r.authorize(l.fingerprint())
 	l.know(r)
-	s, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: core.HarnessTerminal, Name: "fresh"})
+	s, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", HarnessKind: core.HarnessTerminal, Name: "fresh"})
 	must(t, err)
 	made := r.b.session(s.ID)
 	if made.Name != "fresh" || made.Cwd != r.home || s.Host != "studio" || s.RemoteID != s.ID {
 		t.Errorf("on the host: %+v, here %+v", made, s)
 	}
 	eventually(t, "it in the host's tree", func() bool { return l.c.Is(s.ID) })
-	if _, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: "emacs"}); !wire.IsCode(err, wire.CodeNotFound) &&
+	if _, err := l.c.NewSession(ctx5(), ipc.RemoteNewRequest{Host: "studio", Dir: "~", HarnessKind: "emacs"}); !wire.IsCode(err, wire.CodeNotFound) &&
 		!wire.IsCode(err, wire.CodeBadRequest) {
 		t.Errorf("an unknown harness: %v", err)
 	}

@@ -97,12 +97,13 @@ func gather(ctx context.Context, captureEnv bool) (*gathered, error) {
 
 	exe, _ := executable()
 	g.in = setup.Input{
-		Home:       home,
-		ConfigFile: p.Config(),
-		EnvFile:    p.Env(),
-		AcmdPath:   setup.StableBinary(invokedAs, exe, exec.LookPath),
-		ClaudeDir:  setup.ClaudeConfigDir(home, os.Getenv),
-		Read:       os.ReadFile,
+		Home:        home,
+		ConfigFile:  p.Config(),
+		EnvFile:     p.Env(),
+		AcmdPath:    setup.StableBinary(invokedAs, exe, exec.LookPath),
+		ClaudeDir:   setup.ClaudeConfigDir(home, os.Getenv),
+		HarnessDirs: harnessFolders(ctx, p, home),
+		Read:        os.ReadFile,
 
 		AntigravityDir: setup.AntigravityConfigDir(home),
 	}
@@ -175,7 +176,7 @@ func runInit(ctx context.Context, in io.Reader, out io.Writer, o initOptions) (b
 	}
 	rec := setup.Record{
 		Version: version.Get().Version, At: time.Now().UTC(), AcmdPath: g.in.AcmdPath,
-		ClaudeDir: g.in.ClaudeDir, ConfigFile: g.in.ConfigFile,
+		ClaudeDir: g.in.ClaudeDir, ClaudeDirs: g.in.HarnessDirs, ConfigFile: g.in.ConfigFile,
 	}
 	if err := setup.WriteRecord(g.paths.Setup(), rec); err != nil {
 		return false, err
@@ -383,7 +384,7 @@ func runUninstall(cmd *cobra.Command, dryRun, yes, keepData bool) error {
 	in := setup.Input{Home: home, ClaudeDir: setup.ClaudeConfigDir(home, os.Getenv), Read: os.ReadFile,
 		AntigravityDir: setup.AntigravityConfigDir(home)}
 	if ok {
-		in.ClaudeDir = rec.ClaudeDir
+		in.ClaudeDir, in.HarnessDirs = rec.ClaudeDir, rec.ClaudeDirs
 	}
 	plan, err := setup.PlanUninstall(in)
 	if err != nil {

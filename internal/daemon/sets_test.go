@@ -20,7 +20,7 @@ func setsDaemon(t *testing.T) *ipc.Conn {
 
 func terminal(t *testing.T, c *ipc.Conn, name, with string) *ipc.Session {
 	t.Helper()
-	return newSess(t, c, ipc.NewRequest{Cwd: "/w", Harness: core.HarnessTerminal, Name: name, SetWith: with})
+	return newSess(t, c, ipc.NewRequest{Cwd: "/w", HarnessKind: core.HarnessTerminal, Name: name, SetWith: with})
 }
 
 // setOf describes the snapshot's sets as "name,name|name,name", members in

@@ -119,7 +119,7 @@ func (b *daemon) NewSession(_ context.Context, req ipc.NewRequest) (*core.Sessio
 	b.created++
 	id := "new" + strconv.Itoa(b.created)
 	b.mu.Unlock()
-	s := core.Session{ID: id, Name: req.Name, Cwd: req.Cwd, Harness: req.Harness, Status: core.StatusStarting,
+	s := core.Session{ID: id, Name: req.Name, Cwd: req.Cwd, HarnessKind: req.HarnessKind, Status: core.StatusStarting,
 		Remote: req.Remote != nil && *req.Remote, CreatedAt: time.Now()}
 	b.add(s)
 	return &s, nil
@@ -188,8 +188,9 @@ func (b *daemon) SetConfig(set ipc.ConfigSet) (ipc.ConfigState, error) {
 	return ipc.ConfigOf(b.file), err
 }
 
-func (b *daemon) Harnesses() ([]string, string) {
-	return []string{core.HarnessClaude, core.HarnessTerminal}, core.HarnessClaude
+func (b *daemon) Harnesses() ipc.Harnesses {
+	return ipc.Harnesses{Default: "hc", Terminal: true, Harnesses: []ipc.Harness{
+		{ID: "hc", Name: "Claude", Kind: core.HarnessClaude, Title: "Claude", Installed: true}}}
 }
 
 // remoteHost is another machine running Hosting with the host API.

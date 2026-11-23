@@ -14,8 +14,7 @@ func TestTemplateIsDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := Default()
-	if c.ClaudeCommand != d.ClaudeCommand || c.AgyCommand != "agy" || c.AgyCommand != d.AgyCommand || len(c.AgyArgs) != 0 ||
-		c.Editor.RunIn != d.Editor.RunIn || c.Editor.Target != d.Editor.Target ||
+	if c.DefaultHarness != "" || c.Editor.RunIn != d.Editor.RunIn || c.Editor.Target != d.Editor.Target ||
 		c.Editor.Preset != "" || len(c.Editor.Command) != 0 || c.Notify != d.Notify || c.Speech != d.Speech ||
 		c.AgentRemoteControl || !reflect.DeepEqual(c.Remote, d.Remote) {
 		t.Errorf("template %+v differs from defaults %+v", c, d)
@@ -117,7 +116,7 @@ func TestSetTemplateRoundTrip(t *testing.T) {
 		section, key string
 		value        any
 	}{
-		{"", "claude_command", "/Users/me/.local/bin/claude"},
+		{"", "default_harness", "01HARNESS"},
 		{"editor", "preset", "custom"},
 		{"editor", "command", []string{"open", "-a", "Sublime Text", "{dir}"}},
 		{"editor", "run_in", "tab"},
@@ -128,7 +127,7 @@ func TestSetTemplateRoundTrip(t *testing.T) {
 	}
 	c, err := Parse([]byte(text))
 	must(t, err)
-	if c.ClaudeCommand != "/Users/me/.local/bin/claude" || c.Editor.Preset != "custom" ||
+	if c.DefaultHarness != "01HARNESS" || c.Editor.Preset != "custom" ||
 		strings.Join(c.Editor.Command, "|") != "open|-a|Sublime Text|{dir}" || c.Editor.RunIn != "tab" {
 		t.Errorf("round trip: %+v", c)
 	}
@@ -197,5 +196,53 @@ voice = "af_heart"
 	}
 	if out, err := Retire("[keys]\na = 1\n"); err != nil || out != "" {
 		t.Errorf("only retired: %q %v", out, err)
+	}
+}
+
+// Harness settings move into harnesses (the daemon's harnesses table): what
+// config.toml had is read once, then taken out with the comments above it.
+func TestOldHarnessSettingsMoveOut(t *testing.T) {
+	const old = `# acmd
+agent_remote_control = false
+
+# Absolute path of the claude binary.
+claude_command = "/opt/homebrew/bin/claude"
+# Extra arguments for new sessions.
+claude_args = [
+  "--model", "opus",
+]
+agy_command = "agy"
+agy_args = []
+default_harness = "antigravity"
+
+[editor]
+preset = "zed"
+`
+	got, ok := ReadOldHarnesses(old)
+	if !ok || got.ClaudeCommand != "/opt/homebrew/bin/claude" || strings.Join(got.ClaudeArgs, " ") != "--model opus" ||
+		got.AgyCommand != "agy" || got.DefaultHarness != "antigravity" {
+		t.Errorf("read %+v %v", got, ok)
+	}
+	out, err := RetireHarnessKeys(old)
+	must(t, err)
+	const want = `# acmd
+agent_remote_control = false
+
+default_harness = "antigravity"
+
+[editor]
+preset = "zed"
+`
+	if out != want {
+		t.Errorf("got:\n%s\nwant:\n%s", out, want)
+	}
+	if left, ok := ReadOldHarnesses(out); !ok || left.ClaudeCommand != "" || left.ClaudeArgs != nil || left.DefaultHarness != "antigravity" {
+		t.Errorf("a default_harness naming a kind is left for the daemon to make an id: %+v", left)
+	}
+	if _, ok := ReadOldHarnesses(`default_harness = "01ABC"` + "\n"); ok {
+		t.Error("a harness id is nothing to move")
+	}
+	if same, err := Retire(old); err != nil || !strings.Contains(same, "claude_command") {
+		t.Errorf("acmd init's Retire leaves them for the daemon: %v", err)
 	}
 }

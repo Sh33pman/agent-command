@@ -35,7 +35,8 @@ type Session struct {
 	StatusDetail    string      `json:"status_detail,omitempty"`
 	Unseen          bool        `json:"unseen,omitempty"`
 	Kind            core.Kind   `json:"kind"`
-	Harness         string      `json:"harness"`
+	HarnessKind     string      `json:"harness_kind"`
+	HarnessID       string      `json:"harness_id,omitempty"`
 	BgID            string      `json:"bg_id,omitempty"`
 	Pid             int         `json:"pid,omitempty"`
 	Remote          bool        `json:"remote,omitempty"`
@@ -119,7 +120,7 @@ func SessionOf(s *core.Session) *Session {
 		Type: EntitySession, ID: s.ID, Name: s.Name, Description: s.Description, GroupID: s.GroupID, Parent: s.GroupID,
 		NameSource: s.NameSource, Cwd: s.Cwd, ClaudeSessionID: s.ClaudeSessionID, ClaudeHistory: s.ClaudeHistory,
 		TranscriptPath: s.TranscriptPath, Status: s.Status, StatusDetail: s.StatusDetail, Unseen: s.Unseen,
-		Kind: s.Kind, Harness: s.Harness, BgID: s.BgID, Pid: s.Pid, Remote: s.Remote, Host: s.Host,
+		Kind: s.Kind, HarnessKind: s.HarnessKind, HarnessID: s.HarnessID, BgID: s.BgID, Pid: s.Pid, Remote: s.Remote, Host: s.Host,
 		RemoteID: s.RemoteID, HostGone: s.HostGone, JobID: s.JobID, External: paneOf(s.External),
 		CreatedAt: s.CreatedAt, LastEventAt: s.LastEventAt, StatusSince: s.StatusSince, ArchivedAt: s.ArchivedAt,
 		Agent: s.Agent(), DisplayName: s.DisplayName(), Capabilities: s.Capabilities(),
@@ -143,7 +144,7 @@ func (w *Session) Core() *core.Session {
 		ID: w.ID, Name: w.Name, Description: w.Description, GroupID: w.GroupID, NameSource: w.NameSource,
 		Cwd: w.Cwd, ClaudeSessionID: w.ClaudeSessionID, ClaudeHistory: w.ClaudeHistory,
 		TranscriptPath: w.TranscriptPath, Status: w.Status, StatusDetail: w.StatusDetail, Unseen: w.Unseen,
-		Kind: w.Kind, Harness: w.Harness, BgID: w.BgID, Pid: w.Pid, Remote: w.Remote, Host: w.Host,
+		Kind: w.Kind, HarnessKind: w.HarnessKind, HarnessID: w.HarnessID, BgID: w.BgID, Pid: w.Pid, Remote: w.Remote, Host: w.Host,
 		RemoteID: w.RemoteID, HostGone: w.HostGone, JobID: w.JobID, External: w.External.Core(),
 		CreatedAt: w.CreatedAt, LastEventAt: w.LastEventAt, StatusSince: w.StatusSince, ArchivedAt: w.ArchivedAt,
 	}

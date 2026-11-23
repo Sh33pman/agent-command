@@ -76,7 +76,7 @@ func (d *Daemon) snapshot(ctx context.Context, clientID string) (ipc.Snapshot, e
 	tree := d.client.Tree()
 	return ipc.Snapshot{Sessions: append(ipc.SessionsOf(sessions), tree.Sessions...), Groups: append(ipc.GroupsOf(groups), tree.Groups...),
 		Sets: append(wireSets(sets), tree.Sets...), ViewState: ipc.ViewStateOf(vs), Notices: d.notices(), Inbox: d.withHostInbox(queue),
-		Jobs: jobs, Wake: wake, Remote: remote, RemoteHosts: d.remoteHosts(),
+		Jobs: jobs, Wake: wake, Remote: remote, RemoteHosts: d.remoteHosts(), Harnesses: d.harnesses(ctx).Harnesses,
 		Settings: config.Values(d.config()), Health: d.health(sessions, jobs, wake, remote), Dismissed: dismissed,
 		Features: d.features(), Update: d.update(), Speech: d.speechStatus()}, nil
 }
@@ -266,10 +266,11 @@ func (d *Daemon) finish(ctx context.Context, id string) error {
 	}
 	d.stopHost(s)
 	if s.Kind == core.KindBackground && s.BgID != "" && s.Status != core.StatusPaused {
-		if d.cfg.Stopper == nil {
+		stopper, _ := d.claudeFor(ctx, s)
+		if stopper == nil {
 			return errors.New("can't stop the background session: claude not available")
 		}
-		if err := d.cfg.Stopper.Stop(ctx, s.BgID); err != nil {
+		if err := stopper.Stop(ctx, s.BgID); err != nil {
 			return fmt.Errorf("stop %s: %w", s.BgID, err)
 		}
 	}
@@ -297,10 +298,11 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 	}
 	d.stopHost(s)
 	if s.Kind == core.KindBackground && s.BgID != "" && !s.Stopped() {
-		if d.cfg.Stopper == nil {
+		stopper, _ := d.claudeFor(ctx, s)
+		if stopper == nil {
 			return errors.New("can't stop the background session: claude not available")
 		}
-		if err := d.cfg.Stopper.Stop(ctx, s.BgID); err != nil {
+		if err := stopper.Stop(ctx, s.BgID); err != nil {
 			return fmt.Errorf("stop %s: %w", s.BgID, err)
 		}
 	}

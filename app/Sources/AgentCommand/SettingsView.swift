@@ -4,15 +4,14 @@ import SwiftUI
 
 /// The parts of the Settings window, in its sidebar.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, claude, antigravity, notifications, popup, speech, scheduled, remote, appearance, keyboard, editor, advanced
+    case general, harnesses, notifications, popup, speech, scheduled, remote, appearance, keyboard, editor, advanced
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: "General"
-        case .claude: "Claude"
-        case .antigravity: "Antigravity"
+        case .harnesses: "Harnesses"
         case .notifications: "Notifications"
         case .popup: "Reply Popup"
         case .speech: "Read Aloud"
@@ -28,8 +27,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: "gearshape"
-        case .claude: "sparkles"
-        case .antigravity: "arrow.up.circle"
+        case .harnesses: "sparkles"
         case .notifications: "bell.badge"
         case .popup: "rectangle.on.rectangle"
         case .speech: "speaker.wave.2"
@@ -122,14 +120,13 @@ struct SettingsView: View {
     }
 
     private var needsAcmd: Bool {
-        [.claude, .antigravity, .notifications, .speech, .editor, .remote].contains(section)
+        [.harnesses, .notifications, .speech, .editor, .remote].contains(section)
     }
 
     @ViewBuilder private var form: some View {
         switch section {
         case .general: GeneralSettings(model: model, notifier: notifier)
-        case .claude: ClaudeSettings(model: model)
-        case .antigravity: AntigravitySettings(model: model)
+        case .harnesses: HarnessSettings()
         case .notifications: NotificationSettings(model: model, notifier: notifier)
         case .popup: PopupSettingsForm()
         case .speech: SpeechSettings(model: model)
@@ -183,10 +180,10 @@ private struct GeneralSettings: View {
         Section {
             Picker(selection: Binding(get: { model.values.defaultHarness }, set: { model.set("default_harness", $0) })) {
                 Text("Ask which").tag("")
-                ForEach(DefaultHarness.choices) { Text($0.title).tag($0.rawValue) }
+                ForEach(DefaultHarness.choices) { Text($0.title).tag($0.harnessID) }
             } label: {
                 Text("⌘N starts")
-                Text("What a new session runs, in the app and with acmd new. Ask which: ⌘N asks first. ⇧⌘N always asks.")
+                Text("The harness a new session runs in, in the app and with acmd new. Ask which: ⌘N asks first, and acmd new takes the first installed. ⇧⌘N always asks.")
             }
             .disabled(model.busy == "default_harness")
         }
@@ -212,78 +209,6 @@ private struct GeneralSettings: View {
             loginError = "Couldn't change it: \(error.localizedDescription)"
         }
         atLogin = SMAppService.mainApp.status == .enabled
-    }
-}
-
-private struct ClaudeSettings: View {
-    let model: SettingsModel
-    @State private var command = ""
-    @State private var args = ""
-
-    var body: some View {
-        Section {
-            LabeledContent("Claude Code") {
-                HStack {
-                    TextField("claude", text: $command).labelsHidden()
-                    Button("Save") { model.set("claude_command", command) }
-                        .disabled(command == model.values.claudeCommand || command.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-            Text("The claude command acmd runs. `acmd init` sets it to the full path it finds.")
-                .font(.caption).foregroundStyle(.secondary)
-            LabeledContent("Extra arguments") {
-                HStack {
-                    TextField("--model opus", text: $args).labelsHidden()
-                    Button("Save") { model.setArgs(args) }
-                        .disabled(ShellWords.split(args) == model.values.claudeArgs)
-                }
-            }
-            Text("Added to every Claude session acmd starts or resumes, after the change. Quote an argument with spaces.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .onAppear(perform: fill)
-        .onChange(of: model.values) { fill() }
-    }
-
-    private func fill() {
-        command = model.values.claudeCommand
-        args = ShellWords.join(model.values.claudeArgs)
-    }
-}
-
-private struct AntigravitySettings: View {
-    let model: SettingsModel
-    @State private var command = ""
-    @State private var args = ""
-
-    var body: some View {
-        Section {
-            LabeledContent("Antigravity CLI") {
-                HStack {
-                    TextField("agy", text: $command).labelsHidden()
-                    Button("Save") { model.set("agy_command", command) }
-                        .disabled(command == model.values.agyCommand || command.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-            Text("The agy command acmd runs. Leave it as agy to use the one on your PATH.")
-                .font(.caption).foregroundStyle(.secondary)
-            LabeledContent("Extra arguments") {
-                HStack {
-                    TextField("agy's own flags", text: $args).labelsHidden()
-                    Button("Save") { model.setArgs(args, key: "agy_args") }
-                        .disabled(ShellWords.split(args) == model.values.agyArgs)
-                }
-            }
-            Text("Added to every Antigravity session acmd starts or resumes, after the change. Quote an argument with spaces.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .onAppear(perform: fill)
-        .onChange(of: model.values) { fill() }
-    }
-
-    private func fill() {
-        command = model.values.agyCommand
-        args = ShellWords.join(model.values.agyArgs)
     }
 }
 

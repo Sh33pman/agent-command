@@ -29,7 +29,7 @@ func TestForegroundFallback(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			s := &Session{Harness: tc.harness, Status: tc.from, ClaudeSessionID: tc.claudeID, LastEventAt: at(5)}
+			s := &Session{HarnessKind: tc.harness, Status: tc.from, ClaudeSessionID: tc.claudeID, LastEventAt: at(5)}
 			tr := Apply(s, tc.event)
 			if s.Status != tc.want || s.StatusDetail != tc.wantDetail || tr.Changed() != tc.changed {
 				t.Fatalf("got %s %q changed=%v, want %s %q changed=%v", s.Status, s.StatusDetail, tr.Changed(), tc.want, tc.wantDetail, tc.changed)
@@ -42,7 +42,7 @@ func TestForegroundFallback(t *testing.T) {
 }
 
 func TestShellBackForgetsTheAgent(t *testing.T) {
-	s := &Session{Harness: HarnessTerminal, Status: StatusDone, ClaudeSessionID: "c1", TranscriptPath: "/t", Pid: 7,
+	s := &Session{HarnessKind: HarnessTerminal, Status: StatusDone, ClaudeSessionID: "c1", TranscriptPath: "/t", Pid: 7,
 		Name: "fix the bug", NameSource: NameAuto}
 	Apply(s, Event{Kind: EventForeground, Front: FrontShell, Time: at(1)})
 	if s.ClaudeSessionID != "" || s.TranscriptPath != "" || s.Pid != 0 || s.Name != "" {
@@ -56,7 +56,7 @@ func TestShellBackForgetsTheAgent(t *testing.T) {
 }
 
 func TestHooksReplaceUnknown(t *testing.T) {
-	s := &Session{Harness: HarnessTerminal, Status: StatusRunning, LastEventAt: at(5)}
+	s := &Session{HarnessKind: HarnessTerminal, Status: StatusRunning, LastEventAt: at(5)}
 	Apply(s, Event{Kind: EventForeground, Front: "claude", Time: at(20)})
 	// A hook sent before the host was asked still counts.
 	e := Event{Kind: HookUserPromptSubmit, SessionID: "c1", Time: at(19)}
@@ -70,7 +70,7 @@ func TestHooksReplaceUnknown(t *testing.T) {
 }
 
 func TestShellBackClosesTheInboxItem(t *testing.T) {
-	s := &Session{Harness: HarnessTerminal}
+	s := &Session{HarnessKind: HarnessTerminal}
 	if _, drop := InboxEffect(s, Event{Kind: EventForeground, Front: FrontShell}); !drop {
 		t.Fatal("item kept after the agent went")
 	}

@@ -14,7 +14,7 @@ enum PaletteAction: Equatable {
     case copy(String)
     case select(sessionID: String)
     case nextAttention
-    case newSession(harness: String)
+    case newSession(harness: String) // a Harness's id
     /// Asks which harness, then the folder.
     case chooseHarness
     case resume
@@ -166,9 +166,9 @@ enum Palette {
             list.append(PaletteEntry(
                 section: "New", title: "\(agent.title) session",
                 shortcut: agent == state.defaultHarness ? keys.label(.newClaude) : "",
-                action: .newSession(harness: agent.rawValue)))
+                action: .newSession(harness: agent.id)))
         }
-        list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: Harness.terminal.rawValue)))
+        list.append(PaletteEntry(section: "New", title: "Terminal", shortcut: keys.label(.newTerminal), action: .newSession(harness: Harness.terminal.id)))
         list.append(PaletteEntry(section: "New", title: "New session…", shortcut: keys.label(.newSession), action: .chooseHarness))
         list.append(PaletteEntry(section: "New", title: "Resume a session…", shortcut: keys.label(.resume), action: .resume))
         list.append(PaletteEntry(section: "New", title: "Group…", action: .newGroup([])))

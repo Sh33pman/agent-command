@@ -51,7 +51,8 @@ struct RemoteHostsClient {
     private struct NewRequest: Encodable {
         let host: String
         let dir: String
-        var harness: String?
+        var harness_id: String?
+        var harness_kind: String?
         /// A session from the same host to put it in a set with, for a split.
         var set_with: String?
     }
@@ -103,9 +104,9 @@ struct RemoteHostsClient {
 
     /// Starts a session on a host: it shows here in the host's tree.
     /// setWith is a session from the same host to put it in a set with (a split).
-    func newSession(host: String, dir: String, harness: String?, setWith: String? = nil,
+    func newSession(host: String, dir: String, harness: (id: String, kind: String)?, setWith: String? = nil,
                     done: @escaping (Result<Session, Error>) -> Void) {
-        call("remote.new", NewRequest(host: host, dir: dir, harness: harness, set_with: setWith), done)
+        call("remote.new", NewRequest(host: host, dir: dir, harness_id: harness?.id, harness_kind: harness?.kind, set_with: setWith), done)
     }
 
     // MARK: Folders and harnesses

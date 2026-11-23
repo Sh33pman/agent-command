@@ -175,10 +175,10 @@ type Features struct {
 // HostFeatures: its OS, the agents installed, and whether it can wake for
 // jobs and host Remote sessions.
 type HostFeatures struct {
-	OS      string   `json:"os"`     // runtime.GOOS: "darwin", "linux"
-	Agents  []string `json:"agents"` // harnesses installed: claude, antigravity, terminal
-	Wake    bool     `json:"wake"`
-	Hosting bool     `json:"hosting"`
+	OS           string   `json:"os"`            // runtime.GOOS: "darwin", "linux"
+	HarnessKinds []string `json:"harness_kinds"` // the kinds an installed harness has, and terminal
+	Wake         bool     `json:"wake"`
+	Hosting      bool     `json:"hosting"`
 }
 
 // DeviceFeatures: what the machine in front of the person can do.
@@ -200,24 +200,67 @@ func ConfigOf(f *config.File) ConfigState {
 	return ConfigState{Path: f.Path(), Settings: config.Specs, Values: config.Values(c), Versions: config.Versions(c), Problem: f.Problem()}
 }
 
-// OpHarnesses lists what new sessions can run here (as the Remote API's
-// harnesses.list does for a host), with an icon key for each. A client shows
-// an icon key it doesn't know generically.
-const OpHarnesses = "harnesses" // no arguments → Harnesses
+// Harnesses: what sessions and jobs run in. A harness is one of a kind
+// (claude, antigravity) with its own name and settings (core.Harness); a
+// terminal isn't one. The ones on this machine are in the snapshot too
+// (EntityHarness); the Remote API's harnesses.list lists a host's.
+const (
+	OpHarnesses       = "harnesses"        // no arguments → Harnesses
+	OpHarnessAdd      = "harness.add"      // HarnessSave (no ID) → Harness
+	OpHarnessUpdate   = "harness.update"   // HarnessSave → Harness
+	OpHarnessRemove   = "harness.remove"   // HarnessRef; refused while a job uses it
+	OpHarnessSettings = "harness.settings" // a harness's settings for jobs (HarnessRef) → []harness.Setting
+)
 
-// Harness is something a new session can run.
+// Harness is a harness, as clients list and pick it.
 type Harness struct {
-	Name  string `json:"name"`  // what new and job.save take: claude, antigravity, terminal
-	Title string `json:"title"` // what to call it: "Claude", "Antigravity", "Terminal"
-	Icon  string `json:"icon"`  // the client's icon for it; unknown ones are generic
-	Agent bool   `json:"agent"` // keeps a conversation, runs jobs and can be resumed
+	Type  string `json:"type"` // EntityHarness
+	ID    string `json:"id"`
+	Host  string `json:"host,omitempty"`
+	Name  string `json:"name"`
+	Kind  string `json:"kind"`  // claude, antigravity
+	Title string `json:"title"` // the kind's name: "Claude", "Antigravity"
+	Icon  string `json:"icon"`  // the client's icon for the kind; unknown ones are generic
+	Order int    `json:"order"`
+	// Installed: its program is found here, so it can start sessions.
+	Installed bool `json:"installed"`
+	// Command is the program it runs ("" is the kind's own: claude or agy),
+	// and Args extra arguments for each session it starts.
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	// ConfigDir is a Claude harness's CLAUDE_CONFIG_DIR, as set ("" is
+	// Claude's standard folder), and Folder the folder that means, in full.
+	ConfigDir string `json:"config_dir,omitempty"`
+	Folder    string `json:"folder,omitempty"`
 }
 
-// Harnesses are the harnesses installed, and the default for a plain new
-// session ("" while it isn't chosen).
+// Harnesses are the harnesses, in list order, and the one a plain new
+// session runs in ("" when none is installed). Terminal says a new session
+// can be a terminal instead.
 type Harnesses struct {
 	Harnesses []Harness `json:"harnesses"`
 	Default   string    `json:"default,omitempty"`
+	Terminal  bool      `json:"terminal"`
+}
+
+// HarnessSave adds a harness (no ID) or changes one. On a change, a field
+// left out stays as it is, and Kind can't change. A Claude harness added
+// with no ConfigDir gets its own folder, ~/.claude-<name> (core.DefaultConfigDir);
+// "" is Claude's standard folder.
+type HarnessSave struct {
+	ID        string    `json:"id,omitempty"`
+	Kind      string    `json:"kind,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	Command   *string   `json:"command,omitempty"`
+	Args      *[]string `json:"args,omitempty"`
+	ConfigDir *string   `json:"config_dir,omitempty"`
+}
+
+// HarnessRef names a harness. harness.settings also takes a kind instead,
+// for that kind's settings.
+type HarnessRef struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind,omitempty"`
 }
 
 // DoctorReport is what acmd doctor finds (OpDoctor): each check, by section.

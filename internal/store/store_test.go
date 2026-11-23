@@ -439,13 +439,13 @@ func TestSessionHarness(t *testing.T) {
 	s, _ := open(t)
 	defer s.Close()
 	agent := &core.Session{Name: "agent"}
-	shell := &core.Session{Name: "shell", Harness: core.HarnessTerminal}
+	shell := &core.Session{Name: "shell", HarnessKind: core.HarnessTerminal}
 	for _, sess := range []*core.Session{agent, shell} {
 		if err := s.CreateSession(ctx, sess); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got, err := s.Session(ctx, agent.ID); err != nil || got.Harness != core.HarnessClaude {
+	if got, err := s.Session(ctx, agent.ID); err != nil || got.HarnessKind != core.HarnessClaude {
 		t.Errorf("default harness = %+v, %v", got, err)
 	}
 	if got, err := s.Session(ctx, shell.ID); err != nil || !got.IsTerminal() {
@@ -477,7 +477,7 @@ func TestTerminalDoesNotClaimConversation(t *testing.T) {
 	if err := st.CreateSession(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	term := &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted}
+	term := &core.Session{HarnessKind: core.HarnessTerminal, Kind: core.KindHosted}
 	if err := st.CreateSession(ctx, term); err != nil {
 		t.Fatal(err)
 	}

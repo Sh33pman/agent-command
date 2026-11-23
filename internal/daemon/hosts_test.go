@@ -228,15 +228,15 @@ func TestTerminalSessionLifecycle(t *testing.T) {
 	start(t, p, func(c *Config) { c.Hosts = fh })
 	c := dial(t, p)
 
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessTerminal})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessTerminal})
 	if !s.Core().IsTerminal() || s.Status != core.StatusRunning || s.ClaudeSessionID != "" {
 		t.Fatalf("new terminal: %+v", s)
 	}
 	r := fh.requests()
-	if len(r) != 1 || r[0].Harness != core.HarnessTerminal || r[0].ClaudeSession != "" {
+	if len(r) != 1 || r[0].Kind != core.HarnessTerminal || r[0].ClaudeSession != "" {
 		t.Fatalf("host request: %+v", r)
 	}
-	if got := sessionByID(t, c, s.ID); got.Harness != core.HarnessTerminal || got.Status != core.StatusRunning {
+	if got := sessionByID(t, c, s.ID); got.HarnessKind != core.HarnessTerminal || got.Status != core.StatusRunning {
 		t.Fatalf("stored terminal: %+v", got)
 	}
 
@@ -402,25 +402,25 @@ func TestResumeAntigravityConversation(t *testing.T) {
 	c := dial(t, p)
 
 	list := conversationsOf(t, c)
-	if len(list) != 3 || list[0].ID != newer || list[0].Harness != core.HarnessAntigravity || list[0].Cwd != "/w/agy" ||
-		list[0].Title != "Delete notes2.txt" || list[1].ID != claudeID || list[1].Harness != core.HarnessClaude ||
-		list[2].ID != older || list[2].Harness != core.HarnessAntigravity {
+	if len(list) != 3 || list[0].ID != newer || list[0].HarnessKind != core.HarnessAntigravity || list[0].Cwd != "/w/agy" ||
+		list[0].Title != "Delete notes2.txt" || list[1].ID != claudeID || list[1].HarnessKind != core.HarnessClaude ||
+		list[2].ID != older || list[2].HarnessKind != core.HarnessAntigravity {
 		t.Fatalf("conversations: %+v", list)
 	}
 
-	s := newSess(t, c, ipc.NewRequest{Harness: core.HarnessAntigravity, Resume: "84B306A4"})
+	s := newSess(t, c, ipc.NewRequest{HarnessKind: core.HarnessAntigravity, Resume: "84B306A4"})
 	if s.ClaudeSessionID != newer || !s.Core().IsAntigravity() || s.Cwd != "/w/agy" || s.Name != "Delete notes2.txt" {
 		t.Fatalf("resumed: %+v", s)
 	}
 	r := fh.requests()
-	if len(r) != 1 || r[0].Harness != core.HarnessAntigravity || r[0].Resume != newer || r[0].ClaudeSession != "" || r[0].Dir != "/w/agy" {
+	if len(r) != 1 || r[0].Kind != core.HarnessAntigravity || r[0].Resume != newer || r[0].ClaudeSession != "" || r[0].Dir != "/w/agy" {
 		t.Fatalf("host request: %+v", r)
 	}
 	list = conversationsOf(t, c)
 	if list[0].SessionID != s.ID {
 		t.Errorf("tracked: %+v", list[0])
 	}
-	if again := newSess(t, c, ipc.NewRequest{Harness: core.HarnessAntigravity, Resume: newer}); again.ID != s.ID || len(fh.requests()) != 1 {
+	if again := newSess(t, c, ipc.NewRequest{HarnessKind: core.HarnessAntigravity, Resume: newer}); again.ID != s.ID || len(fh.requests()) != 1 {
 		t.Errorf("resumed twice: %+v", again)
 	}
 
@@ -428,11 +428,11 @@ func TestResumeAntigravityConversation(t *testing.T) {
 	if err := c.Call(ipc.OpNew, ipc.NewRequest{Resume: newer}, nil); err == nil {
 		t.Error("resumed agy's conversation as Claude's")
 	}
-	if err := c.Call(ipc.OpNew, ipc.NewRequest{Harness: core.HarnessAntigravity, Resume: claudeID}, nil); err == nil ||
+	if err := c.Call(ipc.OpNew, ipc.NewRequest{HarnessKind: core.HarnessAntigravity, Resume: claudeID}, nil); err == nil ||
 		!strings.Contains(err.Error(), "no Antigravity conversation") {
 		t.Errorf("Claude's id as agy's: %v", err)
 	}
-	if err := c.Call(ipc.OpNew, ipc.NewRequest{Harness: core.HarnessTerminal, Resume: claudeID}, nil); err == nil {
+	if err := c.Call(ipc.OpNew, ipc.NewRequest{HarnessKind: core.HarnessTerminal, Resume: claudeID}, nil); err == nil {
 		t.Error("resumed a terminal conversation")
 	}
 }
@@ -464,7 +464,7 @@ func TestAgentInTerminalShowsOnItsRow(t *testing.T) {
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
 	c := dial(t, p)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessTerminal})
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessTerminal})
 
 	t0 := time.Now().Add(time.Hour)
 	in := ipc.HookContext{HostSession: s.ID, ClaudePid: 4242}
@@ -696,11 +696,11 @@ func TestHostedAntigravitySession(t *testing.T) {
 	fh := &fakeHosts{paths: p}
 	start(t, p, func(c *Config) { c.Hosts = fh })
 	c := dial(t, p)
-	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity, Prompt: "go"})
-	if s.Harness != core.HarnessAntigravity || s.ClaudeSessionID != "" || s.Status != core.StatusStarting {
+	s := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessAntigravity, Prompt: "go"})
+	if s.HarnessKind != core.HarnessAntigravity || s.ClaudeSessionID != "" || s.Status != core.StatusStarting {
 		t.Fatalf("new session: %+v", s)
 	}
-	if r := fh.requests(); len(r) != 1 || r[0].Harness != core.HarnessAntigravity || r[0].ClaudeSession != "" || r[0].Prompt != "go" {
+	if r := fh.requests(); len(r) != 1 || r[0].Kind != core.HarnessAntigravity || r[0].ClaudeSession != "" || r[0].Prompt != "go" {
 		t.Fatalf("host request: %+v", r)
 	}
 
@@ -733,12 +733,12 @@ func TestHostedAntigravitySession(t *testing.T) {
 	waitHost(t, p, s.ID, false)
 	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(s.ID)}, nil))
 	waitHost(t, p, s.ID, true)
-	if r := fh.requests(); len(r) != 2 || r[1].Resume != "conv-1" || r[1].Harness != core.HarnessAntigravity {
+	if r := fh.requests(); len(r) != 2 || r[1].Resume != "conv-1" || r[1].Kind != core.HarnessAntigravity {
 		t.Errorf("resume request: %+v", r)
 	}
 
 	// No conversation yet: resuming starts a new agy.
-	n := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", Harness: core.HarnessAntigravity})
+	n := newSess(t, c, ipc.NewRequest{Cwd: "/w/api", HarnessKind: core.HarnessAntigravity})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(n.ID)})
 	waitHost(t, p, n.ID, false)
 	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(n.ID)}, nil))

@@ -16,7 +16,7 @@ func makeRemoteSession(
 ) throws -> Session {
     var fields: [String: Any] = [
         "id": id, "name": id, "cwd": "/w/\(id)", "status": status, "kind": "hosted", "unseen": false,
-        "harness": "claude", "claude_session_id": "", "remote": remote,
+        "harness_kind": "claude", "claude_session_id": "", "remote": remote,
     ]
     if !host.isEmpty { fields["host"] = host; fields["remote_id"] = "r-\(id)"; fields["host_gone"] = gone }
     if status == "waiting" { fields["attention"] = ["rank": 1, "reason": "waiting", "since": "2026-11-20T09:00:00Z"] }
@@ -78,7 +78,7 @@ func makeRemoteSession(
 
 @Test func browseFoldersAndHarnessesDecode() throws {
     let b: RemoteBrowse = try decode("""
-        {"host": "studio", "sessions": [{"id": "s1", "name": "", "harness": "antigravity", "cwd": "/w/api", "status": "waiting",
+        {"host": "studio", "sessions": [{"id": "s1", "name": "", "harness_kind": "antigravity", "cwd": "/w/api", "status": "waiting",
          "status_detail": "permission: Write", "unseen": true, "host": "studio",
          "last_event_at": "2026-11-18T03:00:00Z", "created_at": "2026-11-18T02:00:00Z"}]}
         """)
@@ -86,8 +86,8 @@ func makeRemoteSession(
     #expect(b.host == "studio" && s.id == "s1" && s.displayName == "api" && s.harnessTitle == "Antigravity")
     #expect(s.statusLine == "waiting · permission: Write" && s.unseen && s.dir == "/w/api")
     #expect(s.added && s.localID == "s1" && s.lastActivity.hasPrefix("2026") && s.created.hasPrefix("2026"), "it's here, by its own id")
-    let plain: RemoteSession = try decode(#"{"id": "x", "name": "n", "status": "busy", "harness": "zsh"}"#)
-    #expect(plain.statusLine == "busy" && plain.harnessTitle == "zsh" && plain.displayName == "n")
+    let plain: RemoteSession = try decode(#"{"id": "x", "name": "n", "status": "busy", "harness_kind": "zsh"}"#)
+    #expect(plain.statusLine == "busy" && plain.harnessTitle == "Zsh" && plain.displayName == "n")
     #expect(RemoteSession(id: "y").harnessTitle == "Claude", "no harness is Claude's, as for local sessions")
     let empty: RemoteBrowse = try decode("{}")
     #expect(empty.sessions.isEmpty && empty.host.isEmpty)
@@ -104,12 +104,13 @@ func makeRemoteSession(
     #expect(folder == RemoteFolder(name: "n", path: "/n"))
 
     let h: RemoteHarnesses = try decode("""
-        {"harnesses": [{"name": "claude", "title": "Claude Code"}, {"name": "codex", "title": "Codex"}, {"name": "terminal", "title": "Terminal"}],
-         "default": "terminal"}
+        {"harnesses": [{"id": "HC", "name": "Claude", "kind": "claude", "title": "Claude", "installed": true},
+                       {"id": "HX", "name": "Work", "kind": "claude", "installed": false}],
+         "default": "HC", "terminal": true}
         """)
-    #expect(h.known == [.claude, .terminal], "what the app can't start is left out")
-    #expect(h.defaultHarness == .terminal)
-    #expect(RemoteHarnesses(["claude"], default: "codex").defaultHarness == nil)
+    #expect(h.known == [Harness(id: "HC", kind: "claude"), .terminal], "what isn't installed there is left out: \(h.known.map(\.id))")
+    #expect(h.defaultHarness?.harnessID == "HC" && h.harnesses[1].name == "Work")
+    #expect(RemoteHarnesses([Harness(id: "HC", kind: "claude")], default: "HX").defaultHarness == nil)
     let bare: RemoteHarnesses = try decode("{}")
     #expect(bare.known.isEmpty && bare.defaultHarness == nil)
 }
@@ -269,3 +270,4 @@ func makeRemoteSession(
     #expect(again.isEmpty && kept.newest == next.newest, "an empty queue forgets nothing")
     #expect(InboxNews([]).newest.isEmpty)
 }
+

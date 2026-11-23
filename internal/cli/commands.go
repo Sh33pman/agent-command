@@ -20,6 +20,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/editor"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/remote/api"
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
@@ -45,24 +46,19 @@ func newNewCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "new [--on <host> [--dir <folder there>]] [-- <first prompt>]",
-		Short: "Start a new session hosted by acmd (default_harness, else Claude, unless --harness says otherwise)",
+		Short: "Start a new session hosted by acmd, in the default harness unless --harness names another",
 		Long: "Starts an interactive `claude` in a folder (default: this one), hosted by acmd, and lists it in the app.\n" +
 			"A folder Claude hasn't trusted yet shows Claude's trust prompt in the session.\n" +
-			"Without --harness it starts default_harness from acmd's config, or Claude when that isn't set.\n" +
-			"--harness antigravity starts Antigravity's CLI (agy) instead, and --harness terminal a shell.\n" +
-			"claude_args (or agy_args) in acmd's config are added to the agent's arguments.\n" +
+			"Without --harness it starts in the default harness (default_harness, else the first one installed).\n" +
+			"--harness names a harness (acmd harness list), or a kind (claude, antigravity) for that kind's\n" +
+			"default; --harness terminal starts a shell. The harness's own arguments are added to the session's.\n" +
 			"--remote makes it a Remote session (clients of Hosting can use it), --no-remote a local one;\n" +
 			"without either, [remote] new_sessions_remote in acmd's config decides.\n\n" +
 			"--on <host> starts it on a Remote host instead (see acmd remote list), in --dir there\n" +
 			"(default: the host's home), and adds it here. It's a Remote session on the host; the\n" +
-			"host's own default_harness and claude_args apply. See acmd remote --help for exit codes.",
+			"--harness names one of the host's harnesses. See acmd remote --help for exit codes.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
-			switch o.harness {
-			case "", core.HarnessClaude, core.HarnessAntigravity, core.HarnessTerminal:
-			default:
-				return fmt.Errorf("--harness is claude, antigravity or terminal, not %q", o.harness)
-			}
 			if o.prompt, err = promptOf(o.prompt, args); err != nil {
 				return err
 			}
@@ -103,7 +99,7 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&o.cwd, "cwd", "", "folder to start in (default: the current folder)")
 	f.StringVar(&o.name, "name", "", "session name (default: the agent's)")
 	f.StringVar(&o.description, "description", "", "session description")
-	f.StringVar(&o.harness, "harness", "", "what runs in it: claude, antigravity or terminal (default: default_harness, else claude)")
+	f.StringVar(&o.harness, "harness", "", "the harness it runs in, by name; a kind (claude, antigravity) for its default; or terminal")
 	f.BoolVar(&remote, "remote", false, "make it a Remote session (default: [remote] new_sessions_remote)")
 	f.BoolVar(&noRemote, "no-remote", false, "make it a local session, not Remote")
 	f.StringVar(&o.prompt, "prompt", "", "the first prompt (or give it after --)")
@@ -129,9 +125,21 @@ type remoteNewOptions struct{ host, dir string }
 
 // startRemoteSession starts a session on a Remote host, and adds it here.
 func startRemoteSession(cmd *cobra.Command, o newOptions, on remoteNewOptions) error {
-	req := ipc.RemoteNewRequest{Host: on.host, Dir: cmp.Or(on.dir, "~"), Harness: o.harness, Name: o.name, Prompt: o.prompt}
+	req := ipc.RemoteNewRequest{Host: on.host, Dir: cmp.Or(on.dir, "~"), Name: o.name, Prompt: o.prompt}
 	var w ipc.Session
 	err := withDaemon(cmd, func(c *client) error {
+		if sel := strings.ToLower(o.harness); sel == core.HarnessTerminal || core.IsHarnessKind(sel) {
+			req.HarnessKind = sel // the host's own default of that kind
+		} else if o.harness != "" {
+			var hs api.Harnesses
+			if err := c.call(ipc.OpRemoteHarnesses, ipc.RemoteHostRef{Host: on.host}, &hs); err != nil {
+				return err
+			}
+			var err error
+			if req.HarnessID, req.HarnessKind, err = pickHarness(remoteHarnessChoices(hs), o.harness); err != nil {
+				return err
+			}
+		}
 		if o.group != "" {
 			snap, err := c.snapshot()
 			if err != nil {
@@ -170,11 +178,9 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 		return nil, err
 	}
 	// A broken config.toml stops here, before a session that would fail to start.
-	cfg, err := config.Load(p.Config())
-	if err != nil {
+	if _, err := config.Load(p.Config()); err != nil {
 		return nil, err
 	}
-	o.harness = harnessFor(o.harness, cfg)
 	dir, err := filepath.Abs(o.cwd)
 	if err != nil {
 		return nil, err
@@ -190,7 +196,11 @@ func startSession(ctx context.Context, o newOptions) (*core.Session, error) {
 func startOnHost(ctx context.Context, o newOptions, dir string) (*core.Session, error) {
 	var s ipc.Session
 	err := withClient(ctx, func(c *client, snap snapshot) error {
-		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Prompt: o.prompt, Harness: o.harness, Remote: o.remote}
+		req := ipc.NewRequest{Cwd: dir, Name: o.name, Description: o.description, Prompt: o.prompt, Remote: o.remote}
+		var err error
+		if req.HarnessID, req.HarnessKind, err = pickHarness(harnessChoices(snap.Harnesses), o.harness); err != nil {
+			return err
+		}
 		if o.group != "" {
 			g, err := resolveGroup(snap, o.group)
 			if err != nil && o.noCreate {
@@ -208,25 +218,6 @@ func startOnHost(ctx context.Context, o newOptions, dir string) (*core.Session, 
 		return c.call(ipc.OpNew, req, &s)
 	})
 	return s.Core(), err
-}
-
-// harnessFor is what a new session runs: --harness, else default_harness, else
-// Claude (the command line can't ask).
-func harnessFor(flag string, cfg config.Config) string {
-	return cmp.Or(flag, cfg.DefaultHarness, core.HarnessClaude)
-}
-
-// newSessionArgs are the extra arguments every session gets, which its host adds:
-// claude_args for Claude, agy_args for agy (each agent's are its own flags), none
-// for a terminal.
-func newSessionArgs(cfg config.Config, harnessName string) []string {
-	switch harnessName {
-	case "", core.HarnessClaude:
-		return cfg.ClaudeArgs
-	case core.HarnessAntigravity:
-		return cfg.AgyArgs
-	}
-	return nil
 }
 
 func newResumeCmd() *cobra.Command {

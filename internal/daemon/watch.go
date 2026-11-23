@@ -63,7 +63,7 @@ func (d *Daemon) watch(ctx context.Context, req ipc.WatchRequest) (ipc.WatchResp
 // newSession starts a hosted session.
 func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Session, error) {
 	if d.cfg.Hosts == nil {
-		return nil, fmt.Errorf("%s isn't available: run `acmd doctor`", core.AgentApp(req.Harness))
+		return nil, fmt.Errorf("sessions can't start here: run `acmd doctor`")
 	}
 	var (
 		s   *core.Session
@@ -114,7 +114,8 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 	case s.Kind == core.KindExternal && !s.Stopped():
 		return nil, errors.New("that session runs in your own pane: exit Claude there, or move it into acmd")
 	case s.Kind == core.KindBackground && !s.Stopped() && s.BgID != "" && d.cfg.Stopper != nil:
-		if err := d.cfg.Stopper.Stop(ctx, s.BgID); err != nil {
+		stopper, _ := d.claudeFor(ctx, s)
+		if err := stopper.Stop(ctx, s.BgID); err != nil {
 			return nil, fmt.Errorf("stop %s: %w", s.BgID, err)
 		}
 	}

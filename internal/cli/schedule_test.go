@@ -93,10 +93,10 @@ func TestScheduleCommands(t *testing.T) {
 		t.Error("agy took Claude's setting")
 	}
 	mustRun(t, "schedule", "add", "Agy", "--cron", "0 9 * * *", "--prompt", "go", "--harness", "antigravity", "--set", "mode=plan")
-	if j := job(t, "Agy"); j.Harness != "antigravity" || j.Settings["mode"][0] != "plan" {
+	if j := job(t, "Agy"); j.HarnessID == "" || j.Settings["mode"][0] != "plan" {
 		t.Errorf("agy job: %+v", j)
 	}
-	if out := mustRun(t, "schedule", "show", "Agy"); !strings.Contains(out, "Antigravity CLI") {
+	if out := mustRun(t, "schedule", "show", "Agy"); !strings.Contains(out, "Harness   Antigravity (Antigravity)") {
 		t.Errorf("show agy: %q", out)
 	}
 	mustRun(t, "schedule", "delete", "Agy", "--yes")

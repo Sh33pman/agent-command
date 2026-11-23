@@ -116,7 +116,7 @@ func (a *API) call(ctx context.Context, c *wire.Call) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if n.Harness, err = a.harness(n.Harness); err != nil {
+		if n.HarnessID, n.HarnessKind, err = a.harness(n.HarnessID, n.HarnessKind); err != nil {
 			return nil, err
 		}
 		n.Cwd = dir

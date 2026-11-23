@@ -12,7 +12,7 @@ struct SnapshotAssembler {
     /// Where each list entity lives in the snapshot, and its id's field.
     private static let lists: [String: (key: String, id: String)] = [
         "session": ("sessions", "id"), "group": ("groups", "id"), "set": ("sets", "id"), "inbox": ("inbox", "id"),
-        "job": ("jobs", "id"), "notice": ("notices", "seq"), "remote_host": ("remote_hosts", "name"),
+        "job": ("jobs", "id"), "notice": ("notices", "seq"), "remote_host": ("remote_hosts", "name"), "harness": ("harnesses", "id"),
     ]
     /// The single values, and their field in the snapshot.
     private static let singles: [String: String] = [

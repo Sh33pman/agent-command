@@ -317,6 +317,20 @@ func checkClaude(ctx context.Context, r *Report, e Env, rec setup.Record, initDo
 		}
 	}
 
+	// Each Claude harness with its own folder has its own settings.json.
+	for _, dir := range rec.ClaudeDirs {
+		path := filepath.Join(dir, "settings.json")
+		if filepath.Clean(dir) == filepath.Clean(setup.ClaudeConfigDir(e.Home, e.Getenv)) {
+			continue
+		}
+		b, err := e.Read(path)
+		if err != nil {
+			r.add(secClaude, Fail, fixInit, "%s is missing, so a harness's sessions there aren't tracked", setup.Tilde(path, e.Home))
+			continue
+		}
+		checkHooks(r, e, path, b, initDone)
+	}
+
 	for _, m := range ManagedSettings {
 		b, err := e.Read(m)
 		if err != nil {

@@ -109,20 +109,18 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
     #expect(JobDraft(folder: "/w").cwd == "/w" && JobDraft().isNew)
 }
 
-@Test func aJobRunsTheAgentItsSetTo() throws {
+@Test func aJobRunsInItsHarness() throws {
     let older = try decodeJob(["id": "J", "name": "n"])
-    #expect(older.harnessKind == .claude && JobDraft(older).harness == .claude, "no harness is Claude's")
-    #expect(try decodeJob(["id": "J", "harness": "claude"]).harnessKind == .claude)
-    let gravity = try decodeJob(["id": "J", "harness": "antigravity", "where": "session", "session_id": "S",
-                                 "settings": ["model": ["m"]]])
-    var draft = JobDraft(gravity)
-    #expect(draft.harness == .antigravity && draft.job.harness == "antigravity", "it goes back as it came")
-
+    #expect(older.harnessID == "" && older.harness == .claude && JobDraft(older).harness == .claude, "none: the default harness")
+    let removed = try decodeJob(["id": "J", "harness_id": "H9"])
+    #expect(removed.harnessID == "H9" && removed.harness.name == "Claude (removed harness)")
+    var draft = JobDraft(try decodeJob(["id": "J", "where": "session", "session_id": "S", "settings": ["model": ["m"]]]))
+    let work = Harness(id: "HW", kind: "claude", name: "Work")
+    draft.setHarness(work)
+    #expect(draft.harness == work && draft.job.harnessID == "HW", "it goes by id")
+    #expect(draft.sessionID == "S" && draft.settings["model"] == "m", "the same kind keeps them")
     draft.setHarness(.antigravity)
-    #expect(draft.sessionID == "S" && draft.settings["model"] == "m", "the same agent keeps them")
-    draft.setHarness(.claude)
-    #expect(draft.harness == .claude && draft.job.harness == "", "Claude's as before: no harness")
-    #expect(draft.settings.isEmpty && draft.sessionID.isEmpty, "the other agent's settings and session go")
+    #expect(draft.harness.isAntigravity && draft.settings.isEmpty && draft.sessionID.isEmpty, "another kind's settings and session go")
     #expect(JobDraft().harness == .claude)
 }
 
@@ -194,7 +192,7 @@ private func decodeJob(_ fields: [String: Any]) throws -> Job {
 @Test func aSessionAJobStartedOrContinuesIsMarkedScheduled() throws {
     func session(_ id: String, _ extra: [String: Any] = [:]) throws -> Session {
         var fields: [String: Any] = ["id": id, "name": id, "cwd": "/", "status": "done", "kind": "hosted", "unseen": false,
-                                     "harness": "claude", "claude_session_id": ""]
+                                     "harness_kind": "claude", "claude_session_id": ""]
         fields.merge(extra) { $1 }
         return try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
     }

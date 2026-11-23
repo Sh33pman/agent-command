@@ -156,8 +156,8 @@ func (d *Daemon) purge(ctx context.Context, id string) error {
 	if sess.Status != core.StatusArchived {
 		return invalid("%s isn't archived", nameOf(sess))
 	}
-	if sess.Kind == core.KindBackground && sess.BgID != "" && d.cfg.Remover != nil {
-		if err := d.cfg.Remover.Remove(ctx, sess.BgID); err != nil {
+	if _, remover := d.claudeFor(ctx, sess); sess.Kind == core.KindBackground && sess.BgID != "" && remover != nil {
+		if err := remover.Remove(ctx, sess.BgID); err != nil {
 			d.cfg.Log.Printf("purge: claude rm %s: %v", sess.BgID, err) // already gone: fine
 		}
 	}

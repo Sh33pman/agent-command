@@ -119,3 +119,29 @@ func TestHealth(t *testing.T) {
 		t.Error("sentence")
 	}
 }
+
+// A Claude harness with its own folder needs acmd's hooks there too: doctor
+// and the health list check each folder setup.json names.
+func TestHarnessFoldersNeedHooks(t *testing.T) {
+	f := newFake(t)
+	ctx := context.Background()
+	work := filepath.Join(f.home, ".claude-work")
+	p := f.paths()
+	f.write(p.Setup(), `{"version":"0.7.0","at":"2026-10-31T10:00:00Z","acmd_path":"`+f.acmd+`","claude_dir":"`+
+		filepath.Join(f.home, ".claude")+`","claude_dirs":["`+work+`"]}`, 0o600)
+	if h := Health(ctx, f.Env()); !strings.Contains(healthIDs(h), ipc.HealthSetupOffer) {
+		t.Errorf("no hooks in the harness folder: %s", healthIDs(h))
+	}
+	if _, out := f.run(); !strings.Contains(out, "~/.claude-work/settings.json is missing") {
+		t.Errorf("doctor:\n%s", out)
+	}
+	settings, _, err := setup.AddHooks([]byte(`{}`), f.acmd)
+	must(t, err)
+	f.write(filepath.Join(work, "settings.json"), string(settings), 0o600)
+	if h := Health(ctx, f.Env()); len(h) != 0 {
+		t.Errorf("hooks in both: %+v", h)
+	}
+	if r, out := f.run(); r.Count(Fail) != 0 {
+		t.Errorf("doctor:\n%s", out)
+	}
+}

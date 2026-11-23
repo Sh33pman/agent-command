@@ -29,8 +29,7 @@ private func configState(_ values: [String: Any], path: String = "/tmp/x/config.
 }
 
 private let fullValues: [String: Any] = [
-    "claude_command": "/bin/claude", "claude_args": ["--model", "opus"], "agent_remote_control": true,
-    "agy_command": "/bin/agy", "agy_args": ["--x"],
+    "default_harness": "HW", "agent_remote_control": true,
     "notify.enabled": true, "notify.on_waiting": true, "notify.on_error": false, "notify.on_done": true,
     "notify.on_paused": false, "notify.done_min_duration": "1m0s", "notify.cooldown": "20s", "notify.sound": "",
     "speech.voice": "af_heart:0.6,af_bella:0.4", "speech.speed": 1.25, "editor.preset": "zed",
@@ -56,14 +55,12 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     let v = m.values
     #expect(fake.ops == ["config.get"])
     #expect(m.loaded && m.acmd.path == "/tmp/x/config.toml" && m.acmd.voices == ["af_heart", "am_adam"] && m.acmd.problem == nil)
-    #expect(v.claudeCommand == "/bin/claude" && v.claudeArgs == ["--model", "opus"] && v.agentRemoteControl)
-    #expect(v.agyCommand == "/bin/agy" && v.agyArgs == ["--x"])
+    #expect(v.defaultHarness == "HW" && v.agentRemoteControl)
     #expect(!v.onError && v.doneMin == "1m0s" && v.sound.isEmpty && v.speed == 1.25 && v.editorTarget == "git_root")
 
     fake.replies["config.get"] = configState(["notify.cooldown": "5s"], path: "p", problem: ["line": 3, "message": "expected a value"])
     m.load()
-    #expect(m.values.cooldown == "5s" && m.values.claudeCommand == "claude" && m.values.agyCommand == "agy" && m.values.agyArgs.isEmpty,
-            "what's missing is the default")
+    #expect(m.values.cooldown == "5s" && m.values.defaultHarness.isEmpty && m.values.onWaiting, "what's missing is the default")
     #expect(m.acmd.problem?.text == "config.toml, line 3: expected a value")
 
     fake.failures["config.get"] = "daemon not reachable"
@@ -78,19 +75,17 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     #expect(fake.last["values"] as? [String: Bool] == ["notify.on_error": true])
     m.set("notify.cooldown", "60s")
     #expect(fake.last["values"] as? [String: String] == ["notify.cooldown": "60s"], "as typed: the daemon reads it")
-    m.setArgs(#"--model opus --append-system-prompt "be brief""#)
-    #expect(fake.last["values"] as? [String: [String]] == ["claude_args": ["--model", "opus", "--append-system-prompt", "be brief"]])
-    m.setArgs("", key: "agy_args")
-    #expect(fake.last["values"] as? [String: [String]] == ["agy_args": []])
-    #expect(fake.ops == ["config.set", "config.set", "config.set", "config.set"], "one call each, and the reply is the settings")
-    #expect(m.busy == nil && m.error == nil && m.values.claudeCommand == "/bin/claude")
-    #expect(HostSettings.shared.values["claude_command"] == .string("/bin/claude"), "this Mac's settings follow")
+    m.set("default_harness", "HW")
+    #expect(fake.last["values"] as? [String: String] == ["default_harness": "HW"])
+    #expect(fake.ops == ["config.set", "config.set", "config.set"], "one call each, and the reply is the settings")
+    #expect(m.busy == nil && m.error == nil && m.values.defaultHarness == "HW")
+    #expect(HostSettings.shared.values["default_harness"] == .string("HW"), "this Mac's settings follow")
 
     // Several at once: one call, all or none.
     m.setAll([("remote.host.port", "7500"), ("remote.host.port_fallback", "off")])
     #expect(fake.ops.last == "config.set" && fake.last["values"] as? [String: String] == ["remote.host.port": "7500", "remote.host.port_fallback": "off"])
     m.setAll([])
-    #expect(fake.ops.count == 5, "nothing to change")
+    #expect(fake.ops.count == 4, "nothing to change")
 
     fake.failures["config.set"] = "notify.cooldown is a length of time like 10s or 2m, not \"soon\""
     m.set("notify.cooldown", "soon")
@@ -103,17 +98,17 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
 @MainActor @Test func aHostsSettingsAreItsOwn() {
     let fake = FakeCalls()
     let m = model(fake)
-    fake.replies["remote.config.get"] = configState(["claude_command": "/opt/claude"], path: "/home/me/config.toml")
-    fake.replies["remote.config.set"] = configState(["claude_command": "/opt/claude2"], path: "/home/me/config.toml")
-    m.section = .claude
+    fake.replies["remote.config.get"] = configState(["notify.cooldown": "1m0s"], path: "/home/me/config.toml")
+    fake.replies["remote.config.set"] = configState(["notify.cooldown": "2m0s"], path: "/home/me/config.toml")
+    m.section = .notifications
     m.host = "studio"
     #expect(fake.ops.last == "remote.config.get" && fake.last["host"] as? String == "studio")
-    #expect(m.target == "studio" && m.values.claudeCommand == "/opt/claude")
-    m.set("claude_command", "/opt/claude2")
+    #expect(m.target == "studio" && m.values.cooldown == "1m0s")
+    let before = HostSettings.shared.values["notify.cooldown"]
+    m.set("notify.cooldown", "2m")
     #expect(fake.ops.last == "remote.config.set" && fake.last["host"] as? String == "studio")
-    #expect(m.values.claudeCommand == "/opt/claude2")
-    let before = HostSettings.shared.values["claude_command"]
-    #expect(HostSettings.shared.values["claude_command"] == before, "a host's change isn't this Mac's")
+    #expect(m.values.cooldown == "2m0s")
+    #expect(HostSettings.shared.values["notify.cooldown"] == before, "a host's change isn't this Mac's")
 
     // The editor is this Mac's, whichever host is chosen.
     m.section = .editor
@@ -131,7 +126,7 @@ private func model(_ fake: FakeCalls, _ given: FakeAcmd? = nil) -> SettingsModel
     m.load()
     m.host = nil
     fake.release()
-    #expect(m.target == nil && m.values.claudeCommand == "/bin/claude")
+    #expect(m.target == nil && m.values.defaultHarness == "HW")
 }
 
 @MainActor @Test func aNewVoiceIsDownloadedOnceSaved() {

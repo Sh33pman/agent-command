@@ -313,7 +313,7 @@ func TestPauseDeadHostsNeedsNoListing(t *testing.T) {
 func TestTerminalAgentThatDiedReturnsToRunning(t *testing.T) {
 	r, st, l, _ := setup(t)
 	r.HostAlive = func(*core.Session) bool { return true }
-	s := create(t, st, &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted,
+	s := create(t, st, &core.Session{HarnessKind: core.HarnessTerminal, Kind: core.KindHosted,
 		Status: core.StatusBusy, ClaudeSessionID: "a1", Pid: 77})
 	// Claude's own listing doesn't decide a terminal's status.
 	l.agents = []claudecli.Agent{agent("a1", "aaaaaaaa", "interactive", "", 0)}
@@ -327,7 +327,7 @@ func TestTerminalWithLiveAgentKeepsItsStatus(t *testing.T) {
 	r, st, _, _ := setup(t)
 	r.HostAlive = func(*core.Session) bool { return true }
 	r.Alive = func(int) bool { return true }
-	s := create(t, st, &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted,
+	s := create(t, st, &core.Session{HarnessKind: core.HarnessTerminal, Kind: core.KindHosted,
 		Status: core.StatusBusy, ClaudeSessionID: "a1", Pid: 77})
 	once(t, r)
 	if got := get(t, st, s.ID); got.Status != core.StatusBusy || got.ClaudeSessionID != "a1" {
@@ -340,7 +340,7 @@ func TestTerminalWithDeadHostStops(t *testing.T) {
 	r, st, _, c := setup(t)
 	r.HostAlive = func(*core.Session) bool { return false }
 	r.StartupGrace = time.Minute
-	s := create(t, st, &core.Session{Harness: core.HarnessTerminal, Kind: core.KindHosted,
+	s := create(t, st, &core.Session{HarnessKind: core.HarnessTerminal, Kind: core.KindHosted,
 		Status: core.StatusBusy, ClaudeSessionID: "a1", Pid: 77, CreatedAt: c.now().Add(-time.Hour)})
 	once(t, r)
 	if got := get(t, st, s.ID); got.Status != core.StatusPaused || got.ClaudeSessionID != "" {
@@ -373,14 +373,14 @@ func TestNeedsListing(t *testing.T) {
 	if need() {
 		t.Error("no sessions: wants the listing")
 	}
-	create(t, st, &core.Session{ID: "term", Harness: core.HarnessTerminal, Status: core.StatusRunning, CreatedAt: c.now()})
+	create(t, st, &core.Session{ID: "term", HarnessKind: core.HarnessTerminal, Status: core.StatusRunning, CreatedAt: c.now()})
 	create(t, st, &core.Session{ID: "old", ClaudeSessionID: "c-old", Kind: core.KindHosted, Status: core.StatusPaused, CreatedAt: c.now()})
 	create(t, st, &core.Session{ID: "done", ClaudeSessionID: "c-done", Kind: core.KindHosted, Status: core.StatusFinished, CreatedAt: c.now()})
 	if need() {
 		t.Error("only a terminal and stopped sessions: wants the listing")
 	}
 	// Claude never lists agy.
-	create(t, st, &core.Session{ID: "agy", Harness: core.HarnessAntigravity, ClaudeSessionID: "conv", Kind: core.KindHosted, Status: core.StatusBusy, CreatedAt: c.now()})
+	create(t, st, &core.Session{ID: "agy", HarnessKind: core.HarnessAntigravity, ClaudeSessionID: "conv", Kind: core.KindHosted, Status: core.StatusBusy, CreatedAt: c.now()})
 	if need() {
 		t.Error("only an Antigravity session running: wants the listing")
 	}
@@ -414,7 +414,7 @@ func TestAntigravityFollowsItsHost(t *testing.T) {
 	r, st, l, c := setup(t)
 	alive := true
 	r.HostAlive = func(*core.Session) bool { return alive }
-	s := create(t, st, &core.Session{Harness: core.HarnessAntigravity, ClaudeSessionID: "conv", Kind: core.KindHosted,
+	s := create(t, st, &core.Session{HarnessKind: core.HarnessAntigravity, ClaudeSessionID: "conv", Kind: core.KindHosted,
 		Status: core.StatusBusy, CreatedAt: c.now().Add(-time.Hour)})
 	l.agents = []claudecli.Agent{agent("conv", "aaaaaaaa", "background", "idle", 0)}
 	once(t, r)

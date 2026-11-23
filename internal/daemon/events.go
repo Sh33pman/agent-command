@@ -88,6 +88,9 @@ func entitiesOf(s ipc.Snapshot) ([]entity, error) {
 	for _, x := range s.RemoteHosts {
 		add(ipc.EntityRemoteHost, x.Name, x)
 	}
+	for _, x := range s.Harnesses {
+		addOn(ipc.EntityHarness, x.Host, x.ID, x)
+	}
 	add(ipc.EntityView, "", s.ViewState)
 	add(ipc.EntitySettings, "", s.Settings)
 	add(ipc.EntityHealth, "", s.Health)
@@ -104,7 +107,7 @@ func only(s ipc.Snapshot, wants func(string) bool) ipc.Snapshot {
 	for typ, clear := range map[string]func(){
 		ipc.EntitySession: func() { s.Sessions = nil }, ipc.EntityGroup: func() { s.Groups = nil },
 		ipc.EntitySet: func() { s.Sets = nil }, ipc.EntityInbox: func() { s.Inbox = nil }, ipc.EntityJob: func() { s.Jobs = nil },
-		ipc.EntityNotice: func() { s.Notices = nil }, ipc.EntityRemoteHost: func() { s.RemoteHosts = nil },
+		ipc.EntityNotice: func() { s.Notices = nil }, ipc.EntityRemoteHost: func() { s.RemoteHosts = nil }, ipc.EntityHarness: func() { s.Harnesses = nil },
 		ipc.EntityView: func() { s.ViewState = ipc.ViewState{} }, ipc.EntitySettings: func() { s.Settings = nil },
 		ipc.EntityHealth: func() { s.Health = nil }, ipc.EntityDismissed: func() { s.Dismissed = nil },
 		ipc.EntityFeatures: func() { s.Features = nil }, ipc.EntityUpdate: func() { s.Update = nil },

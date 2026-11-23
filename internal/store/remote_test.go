@@ -66,7 +66,7 @@ func TestClientScopes(t *testing.T) {
 	s, p := open(t)
 	must(t, s.AddAuthorizedClient(ctx, config.AuthorizedClient{Name: "old", Fingerprint: "SHA256:o"}))
 	// Back to before scopes, and up again: clients from then keep admin.
-	for _, q := range []string{`ALTER TABLE remote_clients DROP COLUMN scope`, `DROP TABLE requests`, `PRAGMA user_version = 16`} {
+	for _, q := range []string{`ALTER TABLE remote_clients DROP COLUMN scope`, `DROP TABLE requests`, `DROP TABLE harnesses`, `ALTER TABLE sessions DROP COLUMN harness_id`, `ALTER TABLE sessions RENAME COLUMN harness_kind TO harness`, `PRAGMA user_version = 16`} {
 		if _, err := s.db.Exec(q); err != nil {
 			t.Fatal(q, err)
 		}

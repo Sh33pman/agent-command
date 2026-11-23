@@ -419,7 +419,7 @@ func writeBrowse(w io.Writer, host string, list []*core.Session) error {
 		if s.Unseen {
 			status += "•"
 		}
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", i+1, status, display(s.Name, 40), s.Harness, filepath.Base(s.Cwd),
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n", i+1, status, display(s.Name, 40), s.HarnessKind, filepath.Base(s.Cwd),
 			ago(cmpTime(s.LastEventAt, s.CreatedAt)), s.ID)
 	}
 	return tw.Flush()

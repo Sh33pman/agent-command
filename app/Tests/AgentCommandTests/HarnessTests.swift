@@ -4,13 +4,14 @@ import Testing
 @testable import AgentCommand
 
 @Test func harnessesHaveTheirDaemonNames() {
-    #expect(Harness.allCases.map(\.rawValue) == ["claude", "antigravity", "terminal"])
+    #expect(Harness.allCases.map(\.kind) == ["claude", "antigravity", "terminal"])
     #expect(Harness.allCases.map(\.title) == ["Claude", "Antigravity", "Terminal"])
-    #expect(Harness.allCases.map(\.id) == ["claude", "antigravity", "terminal"])
+    #expect(Harness.allCases.map(\.id) == ["kind:claude", "kind:antigravity", "kind:terminal"])
     #expect(Harness.terminal.panelPrompt == "Open Terminal")
     #expect(Harness.antigravity.panelPrompt == "Start Session" && Harness.claude.panelPrompt == "Start Session")
-    #expect(Harness(session: "") == .claude && Harness(session: "antigravity") == .antigravity)
-    #expect(Harness(session: "codex") == nil)
+    #expect(Harness.resolve(id: "", kind: "") == .claude && Harness.resolve(id: "", kind: "antigravity") == .antigravity)
+    #expect(Harness.resolve(id: "", kind: "terminal") == .terminal && Harness(id: "gone") == nil)
+    #expect(Harness.resolve(id: "gone", kind: "antigravity").name == "Antigravity (removed harness)")
     #expect(Harness.agents == [.claude, .antigravity])
     #expect(Harness.claude.productName == "Claude Code" && Harness.antigravity.productName == "Antigravity")
     #expect(Harness.claude.conversationTitle == "Claude session")
@@ -19,7 +20,7 @@ import Testing
 
 private func conversation(_ id: String, _ title: String, harness: String? = nil, running: Bool = false) throws -> Conversation {
     var fields: [String: Any] = ["id": id, "cwd": "/w", "title": title, "updated_at": "2026-11-07T10:00:00Z", "running": running]
-    if let harness { fields["harness"] = harness }
+    if let harness { fields["harness_kind"] = harness }
     return try JSONDecoder().decode(Conversation.self, from: JSONSerialization.data(withJSONObject: fields))
 }
 
@@ -53,7 +54,7 @@ private func conversation(_ id: String, _ title: String, harness: String? = nil,
     #expect(choice.chosen?.target == ResumeTarget(id: "0123abcd-ef", harness: .claude), "Claude's first")
     choice.move(1)
     #expect(choice.chosen?.target == ResumeTarget(id: "0123abcd-ef", harness: .antigravity))
-    #expect(choice.rows.map(\.id) == ["typed:claude:0123abcd-ef", "typed:antigravity:0123abcd-ef"])
+    #expect(choice.rows.map(\.id) == ["typed:kind:claude:0123abcd-ef", "typed:kind:antigravity:0123abcd-ef"])
     choice.setSearch("0123abcd-ee")
     #expect(choice.chosen == .typed("0123abcd-ee", .claude), "a new search starts at the top")
     choice.setSearch("0123")

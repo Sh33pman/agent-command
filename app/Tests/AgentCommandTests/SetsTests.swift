@@ -141,7 +141,7 @@ private func panes(_ tree: PaneTree) -> [String] { tree.leaves.compactMap(\.sess
     var seen: [[String: [String]]] = []
     store.onSetsChanged = { seen.append($0) }
     func hosted(_ id: String, _ extra: [String: Any]) -> [String: Any] {
-        ["id": id, "name": id, "cwd": "/", "status": "done", "kind": "hosted", "unseen": false, "harness": "terminal",
+        ["id": id, "name": id, "cwd": "/", "status": "done", "kind": "hosted", "unseen": false, "harness_kind": "terminal",
          "claude_session_id": ""].merging(extra) { $1 }
     }
     let fields: [String: Any] = [
@@ -172,7 +172,7 @@ extension UsesSharedSpeech {
     @Suite @MainActor
     struct SetCallsTests {
         private func session(_ id: String, _ extra: [String: Any] = [:]) -> [String: Any] {
-            ["id": id, "name": id, "cwd": "/w", "status": "running", "kind": "hosted", "unseen": false, "harness": "terminal",
+            ["id": id, "name": id, "cwd": "/w", "status": "running", "kind": "hosted", "unseen": false, "harness_kind": "terminal",
              "claude_session_id": ""].merging(extra) { $1 }
         }
 
@@ -182,14 +182,14 @@ extension UsesSharedSpeech {
             daemon.reply("new", session("b", ["parent": "S", "order": 2]))
             let store = SessionStore()
             var placed: Session?
-            store.newSession(harness: "terminal", in: "/w", setWith: "a") { placed = $0 }
+            store.newSession(harness: .terminal, in: "/w", setWith: "a") { placed = $0 }
             try await until("the new session") { placed != nil }
             #expect(daemon.received("new").first?["set_with"] as? String == "a")
             #expect(placed?.parent == "S" && placed?.order == 2)
             #expect(store.selectedID == nil, "a split places it in the panes instead of selecting it")
 
             // On its own, a new session asks for no set.
-            store.newSession(harness: "terminal", in: "/w")
+            store.newSession(harness: .terminal, in: "/w")
             try await until("the second") { daemon.received("new").count == 2 }
             #expect(daemon.received("new").last?["set_with"] == nil)
         }

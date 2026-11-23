@@ -4,14 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
-	"github.com/brettmostert/agent-command/internal/paths"
 )
 
 func TestRemoteSessionsCommands(t *testing.T) {
@@ -138,14 +136,5 @@ func TestRemoteSessionsClients(t *testing.T) {
 	must(t, json.Unmarshal([]byte(b.String()), &got))
 	if got.Sessions[0].Clients != 2 || got.Sessions[1].Clients != 0 {
 		t.Errorf("--json: %+v", got)
-	}
-}
-
-func TestInstalledHarnesses(t *testing.T) {
-	dir := t.TempDir()
-	p := paths.Paths{ConfigDir: dir, StateDir: dir, RuntimeDir: dir}
-	must(t, os.WriteFile(p.Config(), []byte("claude_command = \"/usr/bin/true\"\nagy_command = \"acmd-test-no-such-agy\"\n"), 0o600))
-	if got := installedHarnesses(p)(); !slices.Equal(got, []string{core.HarnessClaude, core.HarnessTerminal}) {
-		t.Errorf("installed = %v", got)
 	}
 }

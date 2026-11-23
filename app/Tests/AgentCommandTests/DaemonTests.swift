@@ -73,11 +73,11 @@ private func iso(_ secondsAgo: TimeInterval) -> String {
 
 @Test func aConversationSaysWhoseItIs() throws {
     let older = try decode(Conversation.self, ["id": "x", "cwd": "/", "updated_at": "2026-11-07T10:00:00Z"])
-    #expect(older.harness == nil && older.harnessKind == .claude, "an older daemon sends no harness: Claude's")
-    let claude = try decode(Conversation.self, ["id": "x", "harness": "claude", "cwd": "/", "updated_at": "2026-11-07T10:00:00Z"])
-    #expect(claude.harnessKind == .claude)
-    let gravity = try decode(Conversation.self, ["id": "y", "harness": "antigravity", "cwd": "/w", "updated_at": "2026-11-07T10:00:00Z"])
-    #expect(gravity.harnessKind == .antigravity)
+    #expect(older.harness_id == nil && older.harness == .claude, "none: Claude's")
+    let claude = try decode(Conversation.self, ["id": "x", "harness_kind": "claude", "cwd": "/", "updated_at": "2026-11-07T10:00:00Z"])
+    #expect(claude.harness == .claude)
+    let gravity = try decode(Conversation.self, ["id": "y", "harness_kind": "antigravity", "cwd": "/w", "updated_at": "2026-11-07T10:00:00Z"])
+    #expect(gravity.harness == .antigravity)
     #expect(gravity.matches("antigrav") && !older.matches("antigrav"), "the agent's name finds it")
 }
 
@@ -122,11 +122,11 @@ extension UsesSharedSpeech {
         @Test func anotherProtocolIsRefused() throws {
             let daemon = try FakeDaemon()
             defer { daemon.stop() }
-            #expect(try DaemonConnection(socket: DaemonPaths.socket).daemon.proto == 1)
-            daemon.proto = 2
+            #expect(try DaemonConnection(socket: DaemonPaths.socket).daemon.proto == 2)
+            daemon.proto = 3
             do {
                 _ = try DaemonConnection(socket: DaemonPaths.socket)
-                Issue.record("connected to a daemon on protocol 2")
+                Issue.record("connected to a daemon on protocol 3")
             } catch let error as DaemonError {
                 #expect(error.code == "proto_unsupported" && error.message.contains("update the app"))
             }

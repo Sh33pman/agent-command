@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 
@@ -66,6 +67,14 @@ func setupNeed(e Env) need {
 	} else if !e.runsThis(claude) {
 		n.stale = true
 	}
+	for _, dir := range harnessDirs(e) {
+		b, _ := e.Read(filepath.Join(dir, "settings.json"))
+		if paths, _ := setup.HookPaths(b); len(paths) == 0 {
+			n.missing = append(n.missing, "the Claude settings in "+setup.Tilde(dir, e.Home))
+		} else if !e.runsThis(paths) {
+			n.stale = true
+		}
+	}
 	if _, err := e.LookPath("agy"); err == nil {
 		file, _ := e.Read(filepath.Join(setup.AntigravityConfigDir(e.Home), "hooks.json"))
 		agy := setup.AntigravityHooks(file).Paths
@@ -97,4 +106,18 @@ func sentence(text string) string {
 		text += "."
 	}
 	return text
+}
+
+// harnessDirs are the Claude harnesses' own folders acmd put hooks in, as
+// setup.json records them.
+func harnessDirs(e Env) []string {
+	b, err := e.Read(e.Paths.Setup())
+	if err != nil {
+		return nil
+	}
+	var rec setup.Record
+	if json.Unmarshal(b, &rec) != nil {
+		return nil
+	}
+	return rec.ClaudeDirs
 }

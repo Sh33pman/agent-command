@@ -115,13 +115,16 @@ type RemoteBrowse struct {
 // relative paths from its home), in GroupID, one of the host's groups ("" =
 // its Default), or in a set with SetWith, one of its sessions.
 type RemoteNewRequest struct {
-	Host    string   `json:"host"`
-	Dir     string   `json:"dir"`
-	Harness string   `json:"harness,omitempty"`
-	Name    string   `json:"name,omitempty"`
-	Prompt  string   `json:"prompt,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	GroupID string   `json:"group_id,omitempty"`
+	Host string `json:"host"`
+	Dir  string `json:"dir"`
+	// HarnessID is one of the host's harnesses; with none, HarnessKind as
+	// NewRequest says.
+	HarnessID   string   `json:"harness_id,omitempty"`
+	HarnessKind string   `json:"harness_kind,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	Prompt      string   `json:"prompt,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	GroupID     string   `json:"group_id,omitempty"`
 	// SetWith puts it in a set with a session added from the same host, as
 	// NewRequest.SetWith.
 	SetWith string `json:"set_with,omitempty"`

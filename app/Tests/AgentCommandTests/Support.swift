@@ -29,7 +29,7 @@ func makeSession(
 ) throws -> Session {
     var fields: [String: Any] = [
         "id": id, "name": name.isEmpty && cwd == "/tmp" ? id : name, "cwd": cwd, "status": status, "kind": "hosted",
-        "unseen": unseen, "harness": harness, "claude_session_id": claude,
+        "unseen": unseen, "harness_kind": harness, "claude_session_id": claude,
     ]
     switch (status, unseen) {
     case ("waiting", _): fields["attention"] = ["rank": 1, "reason": "waiting", "since": since]
@@ -102,7 +102,7 @@ final class FakeDaemon: @unchecked Sendable {
 
     func streams(_ events: [[String: Any]]) { lock.withLock { stream = events } }
     /// What it says in its hello.
-    var proto = 1
+    var proto = DaemonConnection.proto
 
     init() throws {
         try isolateFromTheRealDaemon()

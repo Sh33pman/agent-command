@@ -84,7 +84,7 @@ func (b *otherDaemon) get(id string) core.Session {
 }
 
 func (b *otherDaemon) NewSession(_ context.Context, req ipc.NewRequest) (*core.Session, error) {
-	s := &core.Session{ID: "new1", Name: req.Name, Cwd: req.Cwd, Harness: req.Harness, Status: core.StatusStarting, Remote: true, CreatedAt: time.Now()}
+	s := &core.Session{ID: "new1", Name: req.Name, Cwd: req.Cwd, HarnessKind: req.HarnessKind, Status: core.StatusStarting, Remote: true, CreatedAt: time.Now()}
 	b.change(func() { b.sessions = append(b.sessions, s) })
 	c := *s
 	return &c, nil
@@ -112,7 +112,9 @@ func (b *otherDaemon) HostSocket(id string) string {
 	return b.sockets[id]
 }
 
-func (b *otherDaemon) Harnesses() ([]string, string) { return []string{core.HarnessTerminal}, "" }
+func (b *otherDaemon) Harnesses() ipc.Harnesses {
+	return ipc.Harnesses{Harnesses: []ipc.Harness{}, Terminal: true}
+}
 
 func (b *otherDaemon) Config() ipc.ConfigState { return ipc.ConfigOf(b.file) }
 
@@ -282,7 +284,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 		// The host's own Default has the id every Default has: "default".
 		b.groups = []*core.Group{{ID: "g1", Name: "Backend", SortKey: 1, CreatedAt: time.Now()},
 			{ID: store.DefaultGroupID, Name: "Default", IsDefault: true, CreatedAt: time.Now()}}
-		b.sessions = append(b.sessions, &core.Session{ID: "r1", Name: "api", Cwd: other, Harness: core.HarnessTerminal, GroupID: "g1",
+		b.sessions = append(b.sessions, &core.Session{ID: "r1", Name: "api", Cwd: other, HarnessKind: core.HarnessTerminal, GroupID: "g1",
 			Status: core.StatusWaiting, Remote: true, CreatedAt: time.Now()})
 		b.inbox = []core.InboxItem{{ID: 5, SessionID: "r1", Kind: core.InboxPermission, Text: "Bash", Options: core.PermissionOptions,
 			State: core.InboxOpen, At: time.Now()}}
@@ -424,7 +426,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 		return false
 	})
 	var res ipc.Results
-	local := newSess(t, c, ipc.NewRequest{Cwd: "/w", Harness: core.HarnessTerminal, Name: "here"})
+	local := newSess(t, c, ipc.NewRequest{Cwd: "/w", HarnessKind: core.HarnessTerminal, Name: "here"})
 	targets := []ipc.Target{{Host: "studio", ID: s.ID}, {ID: local.ID}}
 	must(t, call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutRename, Targets: targets, Text: "both"}, &res))
 	if len(res.Results) != 2 || res.Results[0].ID != s.ID || res.Results[0].Host != "studio" || !res.Results[0].OK ||
@@ -537,7 +539,7 @@ func TestSessionsFromARemoteHost(t *testing.T) {
 	must(t, call(ipc.OpRemoteHostRetry, ipc.RemoteHostRef{Host: "studio"}, &rh))
 	// A new session on the host: it's the host's, and shows in its tree.
 	var fresh ipc.Session
-	must(t, call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~", Harness: core.HarnessTerminal, Name: "fresh"}, &fresh))
+	must(t, call(ipc.OpRemoteNew, ipc.RemoteNewRequest{Host: "studio", Dir: "~", HarnessKind: core.HarnessTerminal, Name: "fresh"}, &fresh))
 	if fresh.Host != "studio" || fresh.ID != "new1" || fresh.RemoteID != "new1" {
 		t.Errorf("new = %+v", fresh)
 	}

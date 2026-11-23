@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/brettmostert/agent-command/internal/config"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/errcode"
@@ -76,12 +75,12 @@ func TestHostServe(t *testing.T) {
 	script := filepath.Join(dir, "claude")
 	must(t, os.WriteFile(script, []byte("#!/bin/sh\necho \"ARGS:$*\"\necho \"CLAUDECODE:${CLAUDECODE:-unset}\"\nread line\necho \"GOT:$line\"\n"), 0o700))
 	// The old remote_control is still read by the host, as a session starts.
-	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+script+"\"\nremote_control = true\n"), 0o600))
+	must(t, os.WriteFile(p.Config(), []byte("remote_control = true\n"), 0o600))
 
 	id := "01HZZZZZZZZZZZZZZZZZZZZZZZ"
 	served := make(chan error, 1)
 	go func() {
-		_, err := acmd(t, "host", "serve", "--session", id, "--dir", dir, "--name", "auth", "--prompt", "hi", "--", "--model", "opus")
+		_, err := acmd(t, "host", "serve", "--session", id, "--dir", dir, "--command", script, "--name", "auth", "--prompt", "hi", "--", "--model", "opus")
 		served <- err
 	}()
 	sock := p.HostSocket(id)
@@ -228,16 +227,16 @@ func TestHostHarnessAntigravity(t *testing.T) {
 	t.Setenv("PATH", filepath.Join(dir, "nothing")) // not the real agy
 	must(t, os.WriteFile(p.Env(), []byte(`{"PATH":"`+bin+`","HOME":"`+dir+`"}`), 0o600))
 
-	if _, _, err := hostHarness(p, "antigravity"); !errors.Is(err, errNoAgy) || err.Error() != "Antigravity's CLI (agy) isn't installed" {
+	if _, _, err := hostHarness(p, hostOptions{Harness: "antigravity"}); !errors.Is(err, errNoAgy) || err.Error() != "Antigravity's CLI (agy) isn't installed" {
 		t.Errorf("without agy: %v", err)
 	}
-	if err := (execHosts{paths: p}).Start(context.Background(), daemon.HostRequest{ID: "x", Harness: "antigravity", Dir: dir}); !errors.Is(err, errNoAgy) {
+	if err := (execHosts{paths: p}).Start(context.Background(), daemon.HostRequest{ID: "x", Kind: "antigravity", Harness: &core.Harness{Kind: "antigravity"}, Dir: dir}); !errors.Is(err, errNoAgy) {
 		t.Errorf("starting without agy: %v", err)
 	}
 
 	agy := filepath.Join(bin, "agy")
 	must(t, os.WriteFile(agy, []byte("#!/bin/sh\n"), 0o700))
-	h, env, err := hostHarness(p, "antigravity")
+	h, env, err := hostHarness(p, hostOptions{Harness: "antigravity"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,60 +245,80 @@ func TestHostHarnessAntigravity(t *testing.T) {
 	}
 }
 
-// agy_command picks agy, as claude_command picks claude, and a job's settings
-// are checked against each agent's own --help (agy's is on stderr).
-func TestAgyCommandAndAgentHelp(t *testing.T) {
+// A harness runs its own program (or its kind's), and a job's settings are
+// checked against each one's own --help (agy's is on stderr). A Claude
+// harness with its own folder runs with CLAUDE_CONFIG_DIR.
+func TestHarnessCommandAndHelp(t *testing.T) {
 	dir := t.TempDir()
 	p := paths.Paths{StateDir: filepath.Join(dir, "s"), RuntimeDir: filepath.Join(dir, "r"), ConfigDir: filepath.Join(dir, "c")}
 	for _, d := range []string{p.StateDir, p.ConfigDir} {
 		must(t, os.MkdirAll(d, 0o700))
 	}
 	t.Setenv("PATH", filepath.Join(dir, "nothing"))
-	must(t, os.WriteFile(p.Env(), []byte(`{"PATH":"`+filepath.Join(dir, "nothing")+`"}`), 0o600))
+	t.Setenv("HOME", dir)
+	must(t, os.WriteFile(p.Env(), []byte(`{"PATH":"`+filepath.Join(dir, "nothing")+`","CLAUDE_CONFIG_DIR":"/elsewhere"}`), 0o600))
 	agy := filepath.Join(dir, "my-agy")
 	claude := filepath.Join(dir, "my-claude")
 	must(t, os.WriteFile(agy, []byte("#!/bin/sh\necho '  --mode   Set the agent execution mode' >&2\n"), 0o700))
 	must(t, os.WriteFile(claude, []byte("#!/bin/sh\necho '  --permission-mode <mode>'\n"), 0o700))
-	must(t, os.WriteFile(p.Config(), []byte("claude_command = \""+claude+"\"\nagy_command = \""+agy+"\"\n"), 0o600))
+	agyH := core.Harness{Kind: core.HarnessAntigravity, Command: agy}
+	work := core.Harness{Kind: core.HarnessClaude, Command: claude, ConfigDir: "~/.claude-work"}
+	std := core.Harness{Kind: core.HarnessClaude, Command: claude}
 
-	if got, _, err := agyCommand(p); err != nil || got != agy {
-		t.Errorf("agyCommand = %q, %v", got, err)
+	if got, _, err := harnessCommand(p, agyH); err != nil || got != agy {
+		t.Errorf("agy = %q, %v", got, err)
 	}
-	help := agentHelp(p)
-	if got := help("antigravity"); !strings.Contains(got, "--mode") || strings.Contains(got, "--permission-mode") {
+	_, env, err := harnessCommand(p, work)
+	must(t, err)
+	if !slices.Contains(env, "CLAUDE_CONFIG_DIR="+filepath.Join(dir, ".claude-work")) || slices.Contains(env, "CLAUDE_CONFIG_DIR=/elsewhere") {
+		t.Errorf("its own folder: %v", env)
+	}
+	if _, env, _ := harnessCommand(p, std); slices.ContainsFunc(env, func(kv string) bool {
+		return strings.HasPrefix(kv, "CLAUDE_CONFIG_DIR=") && kv != "CLAUDE_CONFIG_DIR=/elsewhere"
+	}) {
+		t.Errorf("Claude's standard folder sets nothing: %v", env)
+	}
+	help := harnessHelp(p)
+	if got := help(agyH); !strings.Contains(got, "--mode") || strings.Contains(got, "--permission-mode") {
 		t.Errorf("agy's help: %q", got)
 	}
-	if got := help("claude"); !strings.Contains(got, "--permission-mode") {
+	if got := help(work); !strings.Contains(got, "--permission-mode") {
 		t.Errorf("claude's help: %q", got)
 	}
 
-	must(t, os.WriteFile(p.Config(), []byte("claude_command = \"no-such-claude\"\nagy_command = \"no-such-agy\"\n"), 0o600))
-	if _, _, err := agyCommand(p); !errors.Is(err, errNoAgy) {
-		t.Errorf("a missing agy_command: %v", err)
+	missing := core.Harness{Kind: core.HarnessAntigravity, Command: "no-such-agy"}
+	if _, _, err := harnessCommand(p, missing); !errors.Is(err, errNoAgy) {
+		t.Errorf("a missing agy: %v", err)
 	}
-	if got := agentHelp(p)("antigravity"); got != "" {
+	if got := harnessHelp(p)(missing); got != "" {
 		t.Errorf("help without agy: %q", got)
 	}
-	if err := (execHosts{paths: p}).Start(context.Background(), daemon.HostRequest{ID: "x", Dir: dir}); err == nil ||
-		!strings.Contains(err.Error(), "claude not found") {
+	installed := installedHarnesses(p)
+	if !installed(std) || installed(missing) || installed(core.Harness{Kind: core.HarnessClaude}) {
+		t.Error("installed: a harness whose program is found")
+	}
+	r := daemon.HostRequest{ID: "x", Kind: core.HarnessClaude, Harness: &core.Harness{Kind: core.HarnessClaude, Command: "no-such-claude"}, Dir: dir}
+	if err := (execHosts{paths: p}).Start(context.Background(), r); err == nil || !strings.Contains(err.Error(), "no-such-claude not found") {
 		t.Errorf("starting without claude: %v", err)
 	}
 }
 
-func TestHarnessForNewSessions(t *testing.T) {
-	none, agy := config.Config{}, config.Config{DefaultHarness: core.HarnessAntigravity}
-	for _, c := range []struct {
-		flag string
-		cfg  config.Config
-		want string
-	}{
-		{"", none, core.HarnessClaude},
-		{"", agy, core.HarnessAntigravity},
-		{core.HarnessTerminal, agy, core.HarnessTerminal},
-		{core.HarnessClaude, agy, core.HarnessClaude},
+// --harness names a harness, ignoring case, or a kind, or terminal.
+func TestPickHarness(t *testing.T) {
+	hs := []harnessChoice{{"h1", "Claude", "claude"}, {"h2", "My Work", "claude"}, {"h3", "Antigravity", "antigravity"}}
+	for sel, want := range map[string][2]string{
+		"": {"", ""}, "claude": {"h1", "claude"}, "my work": {"h2", "claude"}, "MY_WORK": {"h2", "claude"},
+		"h3": {"h3", "antigravity"}, "Terminal": {"", "terminal"},
 	} {
-		if got := harnessFor(c.flag, c.cfg); got != c.want {
-			t.Errorf("harnessFor(%q, %q) = %q, want %q", c.flag, c.cfg.DefaultHarness, got, c.want)
+		id, kind, err := pickHarness(hs, sel)
+		if err != nil || id != want[0] || kind != want[1] {
+			t.Errorf("%q: %q %q %v", sel, id, kind, err)
 		}
+	}
+	if id, kind, err := pickHarness(hs[1:], "claude"); err != nil || id != "" || kind != "claude" {
+		t.Errorf("a kind with no harness so named: %q %q %v", id, kind, err)
+	}
+	if _, _, err := pickHarness(hs, "copilot"); err == nil || !strings.Contains(err.Error(), `"My Work"`) {
+		t.Errorf("unknown: %v", err)
 	}
 }

@@ -67,7 +67,7 @@ private func session(_ status: String, harness: String = "claude", claude: Strin
     let s = try session("done")
     #expect(s.statusDetail == nil && s.description == nil, "older daemons don't send them")
     let fields: [String: Any] = ["id": "a", "name": "a", "cwd": "/", "status": "busy", "kind": "hosted", "unseen": false,
-                                 "harness": "claude", "claude_session_id": "c", "status_detail": "Bash", "description": "d"]
+                                 "harness_kind": "claude", "claude_session_id": "c", "status_detail": "Bash", "description": "d"]
     let decoded = try JSONDecoder().decode(Session.self, from: JSONSerialization.data(withJSONObject: fields))
     #expect(decoded.statusDetail == "Bash" && decoded.description == "d")
 }

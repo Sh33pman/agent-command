@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -143,11 +142,12 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 		run.Result, run.Detail = core.RunFailed, fmt.Sprintf(format, a...)
 		return run
 	}
-	if !schedulable(j.Harness) {
-		return fail("acmd can't schedule %s.", j.Harness)
+	h, err := d.newHarness(ctx, j.HarnessID, "")
+	if err != nil || h == nil {
+		return fail("Its harness is gone: choose another for the job.")
 	}
 	if d.cfg.Hosts == nil {
-		return fail("%s isn't available: run `acmd doctor`.", core.AgentApp(j.Harness))
+		return fail("%s isn't available: run `acmd doctor`.", core.AgentApp(h.Kind))
 	}
 	if j.Where != core.WhereSession && j.LastRun != nil && j.LastRun.Result == core.RunStarted && j.LastRun.SessionID != "" {
 		d.mu.Lock()
@@ -162,7 +162,7 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 	if err != nil {
 		return fail("%s", sentence(err))
 	}
-	args := harness.SettingsArgs(harness.SettingsFor(j.Harness), j.Settings)
+	args := harness.SettingsArgs(harness.SettingsFor(h.Kind), j.Settings)
 
 	switch j.Where {
 	case core.WhereFolder, core.WhereWorktree:
@@ -175,7 +175,7 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 			}
 			args = append(args, "--worktree", worktreeName(j, due.In(d.cfg.Location)))
 		}
-		s, err := d.hostSession(ctx, ipc.NewRequest{GroupID: d.jobGroup(ctx, j), Cwd: j.Cwd, Harness: cmp.Or(j.Harness, core.HarnessClaude),
+		s, err := d.hostSession(ctx, ipc.NewRequest{GroupID: d.jobGroup(ctx, j), Cwd: j.Cwd, HarnessID: h.ID,
 			Name: j.Name, Description: j.Description, Prompt: prompt, Args: args, JobID: j.ID})
 		if err != nil {
 			return fail("Couldn't start the session: %s.", err)
@@ -183,7 +183,7 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 		run.Result, run.SessionID = core.RunStarted, s.ID
 		return run
 	case core.WhereSession:
-		return d.runInSession(ctx, j, run, prompt, args)
+		return d.runInSession(ctx, j, h.Kind, run, prompt, args)
 	}
 	return fail("The job doesn't say where to run.")
 }
@@ -191,7 +191,7 @@ func (d *Daemon) runJob(ctx context.Context, j *core.Job, due time.Time) core.Jo
 // runInSession sends the prompt to an existing session: it resumes a stopped
 // one with it, types it into one that's finished its turn, and skips one
 // that's busy.
-func (d *Daemon) runInSession(ctx context.Context, j *core.Job, run core.JobRun, prompt string, args []string) core.JobRun {
+func (d *Daemon) runInSession(ctx context.Context, j *core.Job, kind string, run core.JobRun, prompt string, args []string) core.JobRun {
 	d.mu.Lock()
 	s, err := d.store.Session(ctx, j.SessionID)
 	d.mu.Unlock()
@@ -206,10 +206,10 @@ func (d *Daemon) runInSession(ctx context.Context, j *core.Job, run core.JobRun,
 	case s.Status == core.StatusArchived:
 		run.Result, run.Detail = core.RunFailed, "The session it continues is archived."
 		return run
-	case len(args) > 0 && !s.IsTerminal() && agentOf(s.Harness) != agentOf(j.Harness):
-		// Saved before jobs took the session's agent: its settings are another's flags.
+	case len(args) > 0 && !s.IsTerminal() && cmpKind(s.HarnessKind) != kind:
+		// Its settings are another kind's flags.
 		run.Result, run.Detail = core.RunFailed, fmt.Sprintf("The session runs %s, but the job's settings are for %s: edit the job.",
-			core.AgentName(s.Harness), core.AgentName(j.Harness))
+			core.AgentName(s.HarnessKind), core.AgentName(kind))
 		return run
 	case s.Stopped():
 		if _, err := d.resumeHosted(ctx, s, prompt, args); err != nil {
@@ -243,13 +243,6 @@ func (d *Daemon) runInSession(ctx context.Context, j *core.Job, run core.JobRun,
 }
 
 // schedulable says whether jobs can run a harness's agent.
-func schedulable(h string) bool {
-	return h == "" || h == core.HarnessClaude || h == core.HarnessAntigravity
-}
-
-// agentOf is a harness with Claude's two names made one.
-func agentOf(h string) string { return cmp.Or(h, core.HarnessClaude) }
-
 func busy(st core.Status) bool {
 	return st == core.StatusStarting || st == core.StatusBusy || st == core.StatusWaiting
 }
@@ -379,8 +372,11 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 	case len(j.Name) > 100:
 		errs["name"] = "The name is over 100 characters."
 	}
-	if !schedulable(j.Harness) {
-		errs["harness"] = "Only Claude Code and Antigravity can be scheduled."
+	kind := core.HarnessClaude
+	if h, err := d.newHarness(ctx, j.HarnessID, ""); err != nil || h == nil {
+		errs["harness"] = "Choose the harness it runs in."
+	} else {
+		kind = h.Kind
 	}
 
 	var check ipc.JobCheck
@@ -427,15 +423,17 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 	case core.WhereSession:
 		if msg := d.checkJobSession(ctx, j); msg != "" {
 			errs["session"] = msg
+		} else if h, err := d.newHarness(ctx, j.HarnessID, ""); err == nil && h != nil {
+			kind = h.Kind
 		}
 	default:
 		errs["where"] = "Choose where it runs: a folder, a new worktree, or a session."
 	}
 
-	settings := harness.SettingsFor(j.Harness)
+	settings := harness.SettingsFor(kind)
 	if err := harness.CheckSettings(settings, j.Settings); err != nil {
 		errs["settings"] = sentence(err)
-	} else if msg := d.checkAgentFlags(j.Harness, settings, j.Settings); msg != "" {
+	} else if msg := d.checkHarnessFlags(ctx, j.HarnessID, settings, j.Settings); msg != "" {
 		errs["settings"] = msg
 	}
 	j.Settings = tidySettings(j.Settings)
@@ -469,27 +467,33 @@ func (d *Daemon) checkJobSession(ctx context.Context, j *core.Job) string {
 	case s.Status == core.StatusArchived:
 		return "That session is archived."
 	case s.ClaudeSessionID == "":
-		return fmt.Sprintf("That session has no %s conversation to continue.", core.AgentName(s.Harness))
+		return fmt.Sprintf("That session has no %s conversation to continue.", core.AgentName(s.HarnessKind))
 	case s.Kind == core.KindExternal:
 		return "That session runs in your own terminal, outside acmd."
 	}
 	j.Cwd = s.Cwd
-	switch {
-	case s.IsAntigravity():
-		j.Harness = core.HarnessAntigravity
-	case !s.IsTerminal() && j.Harness == core.HarnessAntigravity:
-		j.Harness = core.HarnessClaude
+	// It runs in the session's own harness, or its kind's default when that
+	// was removed; a terminal's conversation is Claude's.
+	if s.IsTerminal() {
+		s = &core.Session{HarnessKind: core.HarnessClaude}
+	}
+	if h, err := d.harnessForSession(ctx, s); err == nil && h != nil {
+		j.HarnessID = h.ID
 	}
 	return ""
 }
 
 // checkAgentFlags checks the installed agent takes the flags the settings
 // need, so a typo or an old Claude Code or agy fails now rather than at 08:00.
-func (d *Daemon) checkAgentFlags(harnessName string, settings []harness.Setting, values map[string][]string) string {
+func (d *Daemon) checkHarnessFlags(ctx context.Context, harnessID string, settings []harness.Setting, values map[string][]string) string {
 	if d.cfg.AgentHelp == nil {
 		return ""
 	}
-	help := d.cfg.AgentHelp(agentOf(harnessName))
+	h, err := d.newHarness(ctx, harnessID, "")
+	if err != nil || h == nil {
+		return ""
+	}
+	help := d.cfg.AgentHelp(*h)
 	if help == "" {
 		return ""
 	}
@@ -498,7 +502,7 @@ func (d *Daemon) checkAgentFlags(harnessName string, settings []harness.Setting,
 			continue
 		}
 		if !hasFlag(help, s.Flag) {
-			return fmt.Sprintf("The installed %s has no %s option: update it, or clear %s.", core.AgentApp(harnessName), s.Flag, s.Label)
+			return fmt.Sprintf("The installed %s has no %s option: update it, or clear %s.", core.AgentApp(h.Kind), s.Flag, s.Label)
 		}
 	}
 	return ""
@@ -712,12 +716,6 @@ func (d *Daemon) handleJob(ctx context.Context, req ipc.Request) (any, error) {
 			return d.store.JobRunsBefore(ctx, r.ID, before, n)
 		}, func(run core.JobRun) int64 { return run.ID })
 		return ipc.JobRunPage{Items: items, NextCursor: next}, err
-	case ipc.OpAgentSettings:
-		s := harness.SettingsFor(ref.Harness)
-		if s == nil {
-			return nil, fmt.Errorf("acmd can't schedule %q", ref.Harness)
-		}
-		return s, nil
 	}
 	return nil, fmt.Errorf("unknown op %q", req.Op)
 }
@@ -725,7 +723,7 @@ func (d *Daemon) handleJob(ctx context.Context, req ipc.Request) (any, error) {
 // isJobOp says whether op is one of the job ops.
 func isJobOp(op string) bool {
 	switch op {
-	case ipc.OpJobSave, ipc.OpJobCheck, ipc.OpJobDelete, ipc.OpJobPause, ipc.OpJobRun, ipc.OpJobRuns, ipc.OpAgentSettings, ipc.OpWakeSet:
+	case ipc.OpJobSave, ipc.OpJobCheck, ipc.OpJobDelete, ipc.OpJobPause, ipc.OpJobRun, ipc.OpJobRuns, ipc.OpWakeSet:
 		return true
 	}
 	return false

@@ -295,7 +295,7 @@ func (m *machine) newSession(name string, remote bool) *ipc.Session {
 		m.t.Fatal(err)
 	}
 	var s ipc.Session
-	m.call(ipc.OpNew, ipc.NewRequest{Cwd: dir, Harness: core.HarnessTerminal, Name: name, Remote: &remote}, &s)
+	m.call(ipc.OpNew, ipc.NewRequest{Cwd: dir, HarnessKind: core.HarnessTerminal, Name: name, Remote: &remote}, &s)
 	m.waitFor("the session's host", func() bool { return term.Running(m.p.HostSocket(s.ID)) })
 	return &s
 }

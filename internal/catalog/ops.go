@@ -145,7 +145,7 @@ func localOps() []Op {
 		act(ipc.OpJobPause, "Pauses or resumes a scheduled job.", host, ipc.JobRef{}, nil),
 		act(ipc.OpJobRun, "Runs a scheduled job now.", host, ipc.JobRef{}, core.JobRun{}).runsCode().retryable(),
 		read(ipc.OpJobRuns, "Lists a job's runs, newest first.", host, ipc.JobRunsRequest{}, ipc.JobRunPage{}),
-		read(ipc.OpAgentSettings, "Lists an agent's settings for jobs.", host, ipc.JobRef{}, []harness.Setting{}),
+		read(ipc.OpHarnessSettings, "Lists a harness's settings for jobs.", host, ipc.HarnessRef{}, []harness.Setting{}),
 		admin(ipc.OpWakeSet, "Turns waking the Mac for jobs on or off, checking the sudoers rule again.", host, ipc.WakeRef{}, ipc.WakeState{}).hostOnly(),
 
 		// Hosting: this machine's listener for other acmds.
@@ -191,7 +191,10 @@ func localOps() []Op {
 		act(ipc.OpKeysSet, "Registers the calling client's keyboard shortcuts, so acmd keys can list them.", host, map[string]any{}, nil),
 		read(ipc.OpKeys, "Reads a client's keyboard shortcuts: the one named, or the desktop app's seen most recently.", host, ipc.KeysRequest{}, ipc.Keymap{}),
 		read(ipc.OpNoticeGet, "Reads a recent notice by its id.", entities, ipc.NoticeRef{}, ipc.Notice{}),
-		read(ipc.OpHarnesses, "Lists what new sessions can run here, each with an icon key, and the default.", host, nil, ipc.Harnesses{}),
+		read(ipc.OpHarnesses, "Lists the harnesses, each with its kind, an icon key and whether it's installed, and the default.", host, nil, ipc.Harnesses{}),
+		admin(ipc.OpHarnessAdd, "Adds a harness: a kind, a name (letters and single spaces, unique ignoring case), and its settings.", host, ipc.HarnessSave{}, ipc.Harness{}).runsCode(),
+		admin(ipc.OpHarnessUpdate, "Renames a harness or changes its settings; its sessions and jobs stay with it.", host, ipc.HarnessSave{}, ipc.Harness{}).runsCode(),
+		admin(ipc.OpHarnessRemove, "Removes a harness, leaving its folder. Refused while a scheduled job uses it.", host, ipc.HarnessRef{}, nil).destructive(),
 
 		act(ipc.OpSessionAttach, "Attaches to a session's terminal: its output, then input and resizes, in a mode (stream, the only one now).",
 			entities, nil, nil).stream().runsCode(),

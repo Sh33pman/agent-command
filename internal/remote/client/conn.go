@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/brettmostert/agent-command/internal/config"
@@ -20,6 +21,9 @@ import (
 type hostConn struct {
 	c   *Client
 	cfg config.KnownHost
+	// telling sends this machine's presence one at a time, so a change
+	// never arrives before the one it replaced.
+	telling sync.Mutex
 
 	state, err, seen string
 	since, retryAt   time.Time
@@ -301,10 +305,7 @@ func (h *hostConn) serve(conn *wire.Conn) {
 	c := h.c
 	defer func() { _ = conn.Close() }()
 	go h.follow(conn)
-	c.mu.Lock()
-	presence := c.presence
-	c.mu.Unlock()
-	go h.tellPresence(conn, presence)
+	go h.tellPresence(conn)
 	for {
 		select {
 		case <-conn.Done():
@@ -366,11 +367,18 @@ func (h *hostConn) follow(conn *wire.Conn) {
 // tellPresence tells the host how this machine is used now (design 6.9):
 // the host routes its notices to the machine you're using, as to its own
 // UIs. It's best effort: a host that can't be told keeps the last it heard.
-func (h *hostConn) tellPresence(conn *wire.Conn, presence string) {
+// Calls go one at a time, each with the presence as it is when it goes, so
+// changes in quick succession leave the host with the last of them.
+func (h *hostConn) tellPresence(conn *wire.Conn) {
+	h.telling.Lock()
+	defer h.telling.Unlock()
+	c := h.c
+	c.mu.Lock()
+	presence := c.presence
+	c.mu.Unlock()
 	if presence == "" {
 		return
 	}
-	c := h.c
 	data, _ := json.Marshal(ipc.ClientPresence{Presence: presence})
 	ctx, cancel := context.WithTimeout(c.ctx, c.o.DialTimeout)
 	defer cancel()

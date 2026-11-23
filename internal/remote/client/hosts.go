@@ -264,6 +264,6 @@ func (c *Client) SetPresence(presence string) {
 	}
 	c.mu.Unlock()
 	for h, conn := range targets {
-		go h.tellPresence(conn, presence)
+		go h.tellPresence(conn)
 	}
 }

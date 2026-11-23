@@ -250,7 +250,7 @@ func TestUnsupported(t *testing.T) {
 	if _, err := plain.Env().Manager(); !errors.Is(err, service.ErrUnsupported) || strings.Contains(err.Error(), "wsl") {
 		t.Errorf("Linux without systemd: %v", err)
 	}
-	for _, goos := range []string{"windows", "freebsd"} {
+	for _, goos := range []string{"freebsd"} {
 		e := servicetest.New(goos, t.TempDir()).Env()
 		if _, err := e.Uninstall(ctx); !errors.Is(err, service.ErrUnsupported) {
 			t.Errorf("%s: %v", goos, err)

@@ -86,6 +86,15 @@ The app runs Homebrew's acmd: the cask installs the acmd formula, and runs `acmd
 
 `brew uninstall --cask agent-command` removes the app only: acmd and its sessions keep running. `--zap` also removes the app's preferences and the wake rule. To remove acmd too, run `acmd uninstall` first, which ends running sessions, stops the daemon, removes its service and the hooks, and asks whether to keep your sessions and settings (`--keep-data=false` deletes them), then `brew uninstall acmd`. Homebrew has no way for a formula to do that itself. Upgrades leave sessions running. After an uninstall, Claude conversations can still be resumed, and with your data kept, terminals come back as new shells in the same folders.
 
+**acmd on Windows** (Windows 10 1803 or later, or Windows 11; amd64 and arm64), with [Scoop](https://scoop.sh):
+
+```powershell
+scoop bucket add brettmostert https://github.com/brettmostert/scoop-bucket
+scoop install acmd
+```
+
+On Windows acmd only connects to hosts: it runs no sessions of its own, and can't host them. Pair it with a host as in [Windows](docs/remote-sessions.md#windows), then `acmd list` shows the host's sessions. The install runs `acmd init`, which adds a logon task in Task Scheduler (`Agent Command daemon`) that starts the daemon hidden at logon, as you, with no password stored. acmd keeps its files in `%LOCALAPPDATA%\agent-command`, which only you can open. `scoop update acmd` upgrades it and restarts the daemon, and `scoop uninstall acmd` removes the task. WSL2 is Linux: use brew there.
+
 <details>
 <summary>Manual download</summary>
 

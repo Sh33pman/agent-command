@@ -155,6 +155,36 @@ A machine with no screen, or one you only reach from another, can be a host: a L
 
 The host's sessions then show on the client, and you start new ones there with `acmd new --on server`, or ⇧⌘N in the app. The daemon keeps running across reboots, so Hosting and scheduled jobs do too. Upgrade with `brew upgrade acmd`: sessions keep running, and the next acmd command restarts the daemon as the new version.
 
+## Windows
+
+On Windows, acmd only connects to hosts. It runs no sessions of its own, and Hosting isn't there: the host is a Mac or a Linux machine. WSL2 is Linux, and uses brew.
+
+1. Install acmd with [Scoop](https://scoop.sh), in PowerShell or Windows Terminal:
+
+   ```powershell
+   scoop bucket add brettmostert https://github.com/brettmostert/scoop-bucket
+   scoop install acmd
+   ```
+
+   The install runs `acmd init`. It sets up acmd's settings, and a logon task that starts the daemon hidden each time you log on.
+
+2. Add the host, with the fingerprint it shows (`acmd remote identity` on the host):
+
+   ```powershell
+   acmd remote add studio studio.local:7433 --fingerprint SHA256:...
+   ```
+
+3. On the host, approve the request (step 3 of the [quick start](#3-on-the-host-approve-the-request)).
+
+4. Use the host's sessions: `acmd list` shows them, `acmd events` follows them, and `acmd remote attach` attaches this terminal to one. Ctrl+] detaches.
+
+What Windows can't do, and why:
+
+- **Run sessions.** That needs a pseudo-terminal host on Windows (ConPTY), and it isn't planned: the daemon is client-only by choice. `acmd new` without `--on` answers `not_supported`.
+- **Jobs, hooks, speech, the editor and waking.** They all go with sessions on the same machine.
+
+acmd's files are in `%LOCALAPPDATA%\agent-command`: state at the top, `config\` and the daemon's socket, `run\daemon.sock`. The folder's access list lets only you in, which is what keeps other users off the socket: AF_UNIX on Windows has no peer credentials. `acmd service status` shows the logon task, and `acmd doctor` checks the folder.
+
 ## Over the internet with Cloudflare Tunnel
 
 To reach a host that isn't on your network, don't open a port on your router. A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) carries the connection instead: `cloudflared` on the host makes an outgoing connection to Cloudflare, and `cloudflared` on the client reaches it through a hostname on your domain. Hosting stays on **Localhost**, so nothing listens on the network.

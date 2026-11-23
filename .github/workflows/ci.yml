@@ -196,6 +196,10 @@ jobs:
         run: go vet ./...
       - name: test
         run: go test -shuffle=on ./...
+      # Shown on its own, so a skip can't pass for a run: the real Task
+      # Scheduler, with the hidden launcher.
+      - name: the logon task, for real
+        run: go test ./internal/service -run TestRealLogonTask -count=1 -v
 
   linux:
     runs-on: ubuntu-latest
@@ -241,6 +245,11 @@ jobs:
         run: make test-ui-core
       - name: build
         run: make build
+      # As the release packs them, so a release is never the first time.
+      - name: pack the Windows zips, and check the Scoop manifest
+        run: |
+          scripts/pack-windows.sh 0.0.0 "$RUNNER_TEMP/windows"
+          make check-scoop
 
   # The two ends of what Linux users run: Debian stable ships older libraries
   # and tools than Ubuntu, and Arch newer ones. Go and Zig are the pinned

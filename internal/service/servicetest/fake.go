@@ -1,4 +1,4 @@
-// Package servicetest is a fake systemd and launchd for tests: it keeps the
+// Package servicetest is a fake systemd, launchd and Task Scheduler for tests: it keeps the
 // service's state in memory and records every command.
 package servicetest
 
@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -15,16 +16,18 @@ import (
 
 // Fake is a service manager.
 type Fake struct {
-	mu       sync.Mutex
-	GOOS     string
-	Home     string
-	Enabled  bool // systemd: enabled
-	Loaded   bool // launchd: loaded
-	Pid      int  // the service's daemon, 0 when stopped
-	Linger   bool
-	nextPid  int
-	calls    []string
-	detached []string
+	mu      sync.Mutex
+	GOOS    string
+	Home    string
+	Enabled bool // systemd: enabled
+	Loaded  bool // launchd: loaded
+	// Registered: Task Scheduler has the logon task.
+	Registered bool
+	Pid        int // the service's daemon, 0 when stopped
+	Linger     bool
+	nextPid    int
+	calls      []string
+	detached   []string
 	// started and stopped are what the command being answered did.
 	started, stopped bool
 
@@ -53,14 +56,23 @@ func New(goos, home string) *Fake {
 func (f *Fake) Env() service.Env {
 	return service.Env{
 		GOOS: f.GOOS, Home: f.Home, UID: 501, User: "tester",
-		Run:       f.run,
-		Detach:    f.detach,
-		Systemd:   func() bool { return !f.NoSystemd },
-		WSL:       f.WSL,
-		ReadFile:  os.ReadFile,
-		WriteFile: os.WriteFile,
-		Remove:    os.Remove,
+		Run:          f.run,
+		Detach:       f.detach,
+		Systemd:      func() bool { return !f.NoSystemd },
+		WSL:          f.WSL,
+		LocalAppData: filepath.Join(f.Home, "AppData", "Local"),
+		Exists:       func(p string) bool { _, err := os.Stat(p); return err == nil },
+		Alive:        f.alive,
+		Kill:         f.kill,
+		ReadFile:     os.ReadFile,
+		WriteFile:    os.WriteFile,
+		Remove:       os.Remove,
 	}
+}
+
+// envLocked is Env, for the fake's own use while f.mu is held.
+func (f *Fake) envLocked() service.Env {
+	return service.Env{GOOS: f.GOOS, Home: f.Home, LocalAppData: filepath.Join(f.Home, "AppData", "Local")}
 }
 
 // Calls are the commands run, as "name arg…".
@@ -88,6 +100,27 @@ func (f *Fake) detach(script string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.detached = append(f.detached, script)
+	return nil
+}
+
+// alive and kill are Windows': the daemon the logon task's launcher started.
+func (f *Fake) alive(pid int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return pid != 0 && pid == f.Pid
+}
+
+func (f *Fake) kill(pid int) error {
+	f.mu.Lock()
+	stopped := pid != 0 && pid == f.Pid
+	if stopped {
+		f.Pid = 0
+	}
+	onStop := f.OnStop
+	f.mu.Unlock()
+	if stopped && onStop != nil {
+		onStop()
+	}
 	return nil
 }
 
@@ -166,6 +199,29 @@ func (f *Fake) answer(name string, args []string) ([]byte, error) {
 				return []byte("Could not enable linger: Access denied"), errExit
 			}
 			f.Linger = true
+			return nil, nil
+		}
+	case "schtasks":
+		notFound := []byte("ERROR: The system cannot find the file specified.")
+		switch {
+		case strings.HasPrefix(cmd, "/Create /TN "+service.TaskName+" /XML ") && strings.HasSuffix(cmd, " /F"):
+			f.Registered = true
+			return []byte("SUCCESS: The scheduled task \"" + service.TaskName + "\" has successfully been created."), nil
+		case cmd == "/Run /TN "+service.TaskName:
+			if !f.Registered {
+				return notFound, errExit
+			}
+			// The launcher starts the daemon, writes its pid and exits.
+			start()
+			env := f.envLocked()
+			_ = os.MkdirAll(filepath.Dir(env.PidFile()), 0o700)
+			_ = os.WriteFile(env.PidFile(), fmt.Appendf(nil, "%d\n", f.Pid), 0o600)
+			return nil, nil
+		case cmd == "/Delete /TN "+service.TaskName+" /F":
+			if !f.Registered {
+				return notFound, errExit
+			}
+			f.Registered = false
 			return nil, nil
 		}
 	case "launchctl":

@@ -79,7 +79,7 @@ func gather(ctx context.Context, captureEnv bool) (*gathered, error) {
 		// No agents run here, so nothing needs their hooks or a login shell's
 		// environment.
 		g.in = setup.Input{ClientOnly: true, Home: home, ConfigFile: p.Config(), EnvFile: p.Env(),
-			AcmdPath: setup.StableBinary(invokedAs, exe, exec.LookPath), Read: os.ReadFile}
+			AcmdPath: stableBinary(exe), Read: os.ReadFile}
 		return g, nil
 	}
 
@@ -105,7 +105,7 @@ func gather(ctx context.Context, captureEnv bool) (*gathered, error) {
 		Home:        home,
 		ConfigFile:  p.Config(),
 		EnvFile:     p.Env(),
-		AcmdPath:    setup.StableBinary(invokedAs, exe, exec.LookPath),
+		AcmdPath:    stableBinary(exe),
 		ClaudeDir:   setup.ClaudeConfigDir(home, os.Getenv),
 		HarnessDirs: harnessFolders(ctx, p, home),
 		Read:        os.ReadFile,

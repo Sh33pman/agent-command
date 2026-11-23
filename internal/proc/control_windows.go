@@ -12,11 +12,14 @@ import (
 // stillActive is GetExitCodeProcess's code for a process that hasn't exited.
 const stillActive = 259
 
-// Detach makes cmd start with no console and in its own process group, so it
-// outlives the process that starts it and a Ctrl+C there doesn't reach it.
+// Detach makes cmd start in a console of its own with no window, and in its
+// own process group: it outlives the terminal that starts it, a Ctrl+C there
+// doesn't reach it, and the console programs it runs (schtasks, cmd) share
+// its hidden console instead of each opening a window. DETACHED_PROCESS,
+// with no console at all, would give each of those a window.
 func Detach(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,
+		CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP,
 		HideWindow:    true,
 	}
 }

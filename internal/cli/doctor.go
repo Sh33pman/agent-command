@@ -130,7 +130,7 @@ func doctorEnv() (doctor.Env, error) {
 		Home:         home,
 		Paths:        p,
 		Version:      version.Get().Version,
-		AcmdPath:     setup.StableBinary(invokedAs, exe, exec.LookPath),
+		AcmdPath:     stableBinary(exe),
 		Getenv:       os.Getenv,
 		Read:         os.ReadFile,
 		Stat:         os.Stat,

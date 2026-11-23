@@ -1,5 +1,6 @@
 // Package service runs acmd's daemon as a per-user service: a systemd user
-// unit on Linux (and WSL2), a launchd agent on macOS. The service runs as the
+// unit on Linux (and WSL2), a launchd agent on macOS, a logon task in Task
+// Scheduler on Windows (task.go). The service runs as the
 // user, so sessions get their login, keys and files.
 //
 // Everything outside acmd's own files goes through Env, so tests never touch
@@ -54,7 +55,16 @@ type Env struct {
 	// Systemd says systemd is the init system (/run/systemd/system exists).
 	Systemd func() bool
 	// WSL says this Linux is WSL.
-	WSL       bool
+	WSL bool
+	// LocalAppData is Windows' %LOCALAPPDATA%: the logon task's definition
+	// and the daemon's pid are kept in acmd's folder there.
+	LocalAppData string
+	// Exists says whether a file is there (the launcher, on Windows).
+	Exists func(string) bool
+	// Alive says whether pid is still the service's daemon, and Kill stops
+	// it: Windows' Task Scheduler keeps no pid to ask for or stop.
+	Alive     func(pid int) bool
+	Kill      func(pid int) error
 	ReadFile  func(string) ([]byte, error)
 	WriteFile func(string, []byte, os.FileMode) error
 	Remove    func(string) error
@@ -97,13 +107,19 @@ func (e Env) Manager() (string, error) {
 		return "", fmt.Errorf("%w: this Linux isn't running systemd, so acmd can't run the daemon as a service. "+
 			"It starts when something needs it", ErrUnsupported)
 	case "windows":
-		return "", fmt.Errorf("%w: acmd can't run the daemon as a service on Windows yet", ErrUnsupported)
+		if e.LocalAppData == "" {
+			return "", fmt.Errorf("%w: LOCALAPPDATA isn't set, so there's nowhere for the logon task", ErrUnsupported)
+		}
+		return TaskScheduler, nil
 	}
 	return "", fmt.Errorf("%w: acmd can't run the daemon as a service on %s", ErrUnsupported, e.GOOS)
 }
 
 // File is the unit or agent's path.
 func (e Env) File() string {
+	if e.GOOS == "windows" {
+		return filepath.Join(e.taskDir(), "logon-task.xml")
+	}
 	if e.GOOS == "darwin" {
 		return filepath.Join(e.Home, "Library", "LaunchAgents", Label+".plist")
 	}
@@ -122,6 +138,9 @@ func (e Env) Installed() bool {
 
 // Definition is the unit or plist that runs binary.
 func (e Env) Definition(binary string) []byte {
+	if e.GOOS == "windows" {
+		return utf16File(e.task(binary))
+	}
 	if e.GOOS == "darwin" {
 		return plist(binary)
 	}
@@ -208,7 +227,10 @@ func xmlEscape(s string) string {
 
 // Binary is the acmd an installed unit or plist runs ("" when it can't tell).
 func Binary(def []byte) string {
-	s := string(def)
+	s := fromUTF16(def)
+	if strings.Contains(s, "<Task ") {
+		return taskBinary(s)
+	}
 	for line := range strings.Lines(s) {
 		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "ExecStart="); ok {
 			v = strings.TrimSuffix(v, " daemon")
@@ -270,8 +292,11 @@ func (e Env) Install(ctx context.Context, binary string, o InstallOptions) (Chan
 			return ch, err
 		}
 	}
-	if mgr == Systemd {
+	switch mgr {
+	case Systemd:
 		return e.installSystemd(ctx, ch, o)
+	case TaskScheduler:
+		return e.installTask(ctx, binary, ch, o)
 	}
 	return e.installLaunchd(ctx, ch, o)
 }
@@ -361,9 +386,14 @@ func (e Env) Uninstall(ctx context.Context) (bool, error) {
 	if _, err := e.ReadFile(e.File()); err != nil {
 		return false, nil
 	}
-	if mgr == Systemd {
+	switch {
+	case mgr == TaskScheduler:
+		if err := e.uninstallTask(ctx); err != nil {
+			return true, err
+		}
+	case mgr == Systemd:
 		_ = e.systemctl(ctx, "disable", "--now", Unit)
-	} else if e.loaded(ctx) {
+	case e.loaded(ctx):
 		_ = e.launchctl(ctx, "bootout", e.target())
 		e.waitUnloaded(ctx)
 	}
@@ -382,8 +412,14 @@ func (e Env) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if mgr == Systemd {
+	switch mgr {
+	case Systemd:
 		return e.systemctl(ctx, "start", Unit)
+	case TaskScheduler:
+		if e.Running(ctx) {
+			return nil
+		}
+		return e.runTask(ctx)
 	}
 	if !e.loaded(ctx) {
 		return e.bootstrap(ctx)
@@ -398,8 +434,12 @@ func (e Env) Stop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if mgr == Systemd {
+	switch mgr {
+	case Systemd:
 		return e.systemctl(ctx, "stop", Unit)
+	case TaskScheduler:
+		e.stopTaskDaemon()
+		return nil
 	}
 	if !e.loaded(ctx) {
 		return nil
@@ -415,8 +455,12 @@ func (e Env) Restart(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if mgr == Systemd {
+	switch mgr {
+	case Systemd:
 		return e.systemctl(ctx, "restart", Unit)
+	case TaskScheduler:
+		e.stopTaskDaemon()
+		return e.runTask(ctx)
 	}
 	if !e.loaded(ctx) {
 		return e.bootstrap(ctx)
@@ -434,6 +478,9 @@ func (e Env) Pid(ctx context.Context) int {
 	mgr, err := e.Manager()
 	if err != nil {
 		return 0
+	}
+	if mgr == TaskScheduler {
+		return e.taskPid()
 	}
 	if mgr == Systemd {
 		out, err := e.Run(ctx, "systemctl", "--user", "show", "--property=MainPID", "--value", Unit)

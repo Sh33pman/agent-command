@@ -4,19 +4,25 @@
 #   release.sh notes <tag>                     print the draft release's notes
 #   release.sh tap <version> <dist> <notes>    publish the app and acmd's archives to the tap, and
 #                                              commit the cask and the formula
+#   release.sh scoop <version> <dist>          commit the Scoop manifest, once the tap release is out
 #   release.sh publish <tag>                   publish the draft release
 #   release.sh failed <tag> <run-url>          mark the draft release as failed
 # GH_TOKEN is the token for the repo the step changes: GITHUB_TOKEN for this
-# repo, the release App's token for the tap. TAP_REPO names the tap.
+# repo, the release App's token for the tap and the bucket. TAP_REPO names the
+# tap, and SCOOP_REPO the Scoop bucket.
 set -euo pipefail
 shopt -s inherit_errexit
 
 repo="${GITHUB_REPOSITORY:?set GITHUB_REPOSITORY}"
 tap="${TAP_REPO:-brettmostert/homebrew-tap}"
+bucket="${SCOOP_REPO:-brettmostert/scoop-bucket}"
 cask_path=Casks/agent-command.rb
 formula_path=Formula/acmd.rb
+scoop_path=bucket/acmd.json
 # acmd's archives for the formula, by platform, as scripts/pack-acmd.sh names them.
 platforms=(darwin-arm64 linux-amd64 linux-arm64)
+# acmd's zips for Scoop, as scripts/pack-windows.sh names them.
+windows=(windows-amd64 windows-arm64)
 # Ends the note "failed" puts at the top of a draft's notes. notes and publish
 # drop everything up to it.
 mark="<!-- end of the release failure note -->"
@@ -30,6 +36,7 @@ assets() {
 	local p
 	echo AgentCommand.zip
 	for p in "${platforms[@]}"; do echo "acmd-$1-$p.tar.gz"; done
+	for p in "${windows[@]}"; do echo "acmd-$1-$p.zip"; done
 }
 
 # Prints the SHA-256 of a file the tap serves for a version, as Homebrew downloads it.
@@ -45,9 +52,9 @@ published_sha() {
 # commit, and no token is written to disk. Passing the current file's blob SHA
 # makes the commit fail, not overwrite, if the file changed since it was read.
 commit_file() {
-	local file=$1 path=$2 message=$3 blob err
+	local file=$1 path=$2 message=$3 to=${4:-$tap} blob err
 	err="$(mktemp)"
-	if ! blob="$(gh api "repos/$tap/contents/$path?ref=main" --jq .sha 2>"$err")"; then
+	if ! blob="$(gh api "repos/$to/contents/$path?ref=main" --jq .sha 2>"$err")"; then
 		grep -q 'HTTP 404' "$err" || { cat "$err" >&2; exit 1; }
 		blob=""
 	fi
@@ -56,11 +63,11 @@ commit_file() {
 		echo "release: $path is already up to date"
 		return
 	fi
-	local args=(-X PUT "repos/$tap/contents/$path" -f "message=$message"
+	local args=(-X PUT "repos/$to/contents/$path" -f "message=$message"
 		-f branch=main -f "content=$(base64 <"$file" | tr -d '\n')")
 	[[ -z "$blob" ]] || args+=(-f "sha=$blob")
 	gh api "${args[@]}" --silent
-	echo "release: committed $path"
+	echo "release: committed $path to $to"
 }
 
 # Prints a file on the tap's main once it names version, waiting a minute for
@@ -168,6 +175,40 @@ tap() {
 	}
 }
 
+# The Scoop manifest, last: it points at the tap release's zips, so it's
+# committed only once they're out, and then checked against what Scoop
+# downloads.
+scoop() {
+	local version=$1 dist=$2 dir manifest committed p file want got try
+	[[ "$(gh api "repos/$tap/releases/tags/agent-command-v$version" --jq .draft)" == false ]] || {
+		echo "release: the tap release agent-command-v$version isn't published: the manifest waits for it" >&2
+		exit 1
+	}
+	dir="$(mktemp -d)"
+	manifest="$dir/acmd.json"
+	"$(dirname "$0")/render-scoop.sh" "$version" "$(sha256 "$dist/acmd-$version-windows-amd64.zip")" \
+		"$(sha256 "$dist/acmd-$version-windows-arm64.zip")" "$manifest"
+	commit_file "$manifest" "$scoop_path" "acmd $version" "$bucket"
+	rm -rf "$dir"
+
+	for try in 1 2 3 4 5 6; do
+		committed="$(gh api -H 'Accept: application/vnd.github.raw' "repos/$bucket/contents/$scoop_path?ref=main")"
+		[[ "$(jq -r .version <<<"$committed")" == "$version" ]] && break
+		[[ $try == 6 ]] && { echo "release: $scoop_path on main isn't at version $version" >&2; exit 1; }
+		sleep 10
+	done
+	for p in 64bit arm64; do
+		file="$(jq -r ".architecture.\"$p\".url" <<<"$committed")"
+		want="$(jq -r ".architecture.\"$p\".hash" <<<"$committed")"
+		got="$(published_sha "$version" "${file##*/}")"
+		if [[ "$got" != "$want" ]]; then
+			echo "release: the published ${file##*/}'s SHA-256 is $got, but the manifest has $want" >&2
+			exit 1
+		fi
+		echo "release: the published ${file##*/} matches the manifest ($got)"
+	done
+}
+
 publish() {
 	local tag=$1 body
 	body="$(notes "$tag")"
@@ -214,6 +255,17 @@ failed() {
 	else
 		cask_line+=" The formula couldn't be checked."
 	fi
+	if committed="$(gh api -H 'Accept: application/vnd.github.raw' "repos/$bucket/contents/$scoop_path?ref=main" 2>"$err")"; then
+		if [[ "$(jq -r .version <<<"$committed")" == "$version" ]]; then
+			cask_line+=" The Scoop manifest installs $version."
+		else
+			cask_line+=" The Scoop manifest still installs an earlier version."
+		fi
+	elif grep -q 'HTTP 404' "$err"; then
+		cask_line+=" There's no Scoop manifest yet."
+	else
+		cask_line+=" The Scoop manifest couldn't be checked."
+	fi
 	rm -f "$err"
 
 	body="$(notes "$tag")"
@@ -227,13 +279,14 @@ failed() {
 }
 
 usage() {
-	sed -n '2,9p' "$0" >&2
+	sed -n '2,11p' "$0" >&2
 	exit 2
 }
 case "${1:-}" in
 notes | publish) [[ $# -eq 2 ]] || usage ;;
 failed) [[ $# -eq 3 ]] || usage ;;
 tap) [[ $# -eq 4 ]] || usage ;;
+scoop) [[ $# -eq 3 ]] || usage ;;
 *) usage ;;
 esac
 "$@"

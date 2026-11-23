@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,8 @@ import (
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
-// The service: the daemon as a per-user systemd unit or launchd agent
+// The service: the daemon as a per-user systemd unit, launchd agent or
+// Windows logon task
 // (internal/service). Once it's installed, nothing starts a daemon outside it:
 // `acmd daemon` hands off to it, and restarts go through it.
 
@@ -49,6 +51,17 @@ func installedService() (service.Env, bool) {
 // thisBinary is the stable path of this acmd, as init writes it for hooks.
 func thisBinary() string {
 	exe, _ := executable()
+	return stableBinary(exe)
+}
+
+// stableBinary is the path to write for exe: one that stays put across
+// upgrades. On Windows it's exe itself: Scoop runs acmd.exe from its current
+// folder, which each update points at the new version, and the logon task's
+// launcher is next to it there (a PATH shim has none).
+func stableBinary(exe string) string {
+	if runtime.GOOS == "windows" && exe != "" {
+		return exe
+	}
 	return setup.StableBinary(invokedAs, exe, exec.LookPath)
 }
 
@@ -180,7 +193,8 @@ func newServiceCmd() *cobra.Command {
 		Use:   "service",
 		Short: "Run the daemon as a service that starts at boot or login",
 		Long: "acmd's daemon runs as a per-user service, as you: a systemd user unit on Linux, with lingering so it\n" +
-			"starts at boot, and a launchd agent on macOS, which starts at login. `acmd init` installs it.\n" +
+			"starts at boot, a launchd agent on macOS, which starts at login, and a logon task in Task Scheduler on\n" +
+			"Windows, which starts it hidden at logon. `acmd init` installs it.\n" +
 			"Sessions keep running when the service restarts.",
 		Args: cobra.NoArgs,
 	}

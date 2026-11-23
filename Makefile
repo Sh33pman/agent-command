@@ -171,6 +171,10 @@ check-cask: ## Render the Homebrew cask and formula with dummy values and run br
 	scripts/check-cask.sh
 	scripts/check-formula.sh
 
+.PHONY: check-scoop
+check-scoop: ## Render the Scoop manifest with dummy values and check it
+	scripts/check-scoop.sh
+
 .PHONY: speech-test
 speech-test: ## Unit-test the Swift speech engine (helpers/acmd-speech)
 	swift run --package-path $(SPEECH_PKG) --scratch-path $(SPEECH_SCRATCH) speech-core-checks
@@ -260,6 +264,16 @@ else
 	@if [ -f build/ghostty/lib/ghostty-internal.so ] && pkg-config --exists gtk4 libadwaita-1 2>/dev/null; then $(MAKE) linux-ui; fi
 endif
 	$(DIST)/acmd version
+
+# Windows: acmd.exe, a client-only daemon (it connects to hosts, and runs no
+# sessions), and acmdw.exe, the logon task's launcher, built with no console
+# window. Cross-compiled with cgo off: no libghostty-vt, which only hosts need.
+WINDOWS_ARCH ?= amd64
+.PHONY: build-windows
+build-windows: ## Build ./dist/windows-<arch>/acmd.exe and acmdw.exe (WINDOWS_ARCH=amd64|arm64)
+	mkdir -p $(DIST)/windows-$(WINDOWS_ARCH)
+	GOOS=windows GOARCH=$(WINDOWS_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/windows-$(WINDOWS_ARCH)/acmd.exe ./cmd/agent-command
+	GOOS=windows GOARCH=$(WINDOWS_ARCH) CGO_ENABLED=0 go build -trimpath -ldflags '-s -w -H=windowsgui' -o $(DIST)/windows-$(WINDOWS_ARCH)/acmdw.exe ./cmd/acmdw
 
 .PHONY: install
 install: build ## Dev install into $(INSTALL_DIR) (agent-command + acmd)

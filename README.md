@@ -39,6 +39,15 @@ Pair another Agent Command with this one, and it shows this Mac's sessions, grou
 
 Every command that reads or changes state takes `--json`, which prints the answer of the daemon op it runs, in the daemon's wire types (`internal/ipc`), and nothing else. A command that runs several ops prints one answer per line. `acmd events` follows the daemon as it changes: a snapshot, then each session, group, inbox item, job or setting added, updated or removed, one JSON event per line (`--types` to pick, `--since` to resume). Errors go to stderr as `{"error": {"code": "…", "message": "…"}}`. Name sessions by id in scripts: the numbers `acmd list` shows follow the list's order, which changes.
 
+**`acmd` on its own** opens a UI. That's the app when this machine has one and you're at it: the Mac app, or the Linux UI on a desktop. Otherwise it's the terminal UI: over SSH, on Windows, or on a machine with no screen. `acmd --app` and `acmd --terminal` choose. The terminal UI lists the sessions here, then each host's, grouped as in the app's sidebar, with what's waiting:
+
+- arrows or `j`/`k` move, and Enter attaches (Ctrl+] comes back to the list);
+- `a` answers the selected session's prompt;
+- `n` starts a session, here or on the selected session's host;
+- `/` filters, and `q` quits.
+
+It follows changes as they happen, shows each notice, and rings the bell for the ones sent to this terminal.
+
 From any terminal, on macOS, Linux and Windows:
 
 - **`acmd attach <#|id|name>`** attaches this terminal to a session, one here or a host's as `acmd list` shows it. Ctrl+] detaches. With `--host`, it picks among that host's own sessions.
@@ -86,7 +95,7 @@ acmd init
 
 `acmd init` adds the Claude Code hooks and installs the service, which runs acmd's daemon from boot on Linux and WSL2 and from login on macOS (see below). The install tries it too, but Homebrew's sandbox may stop it, so run it once yourself: it's safe to rerun. WSL2 is Linux here, and needs systemd turned on for the service. A headless Mac needs automatic login (System Settings → Users & Groups), since a launchd agent starts at login. To use the machine from another, see [A headless host](docs/remote-sessions.md#a-headless-host). Upgrade with `brew upgrade acmd`: the next acmd command restarts the daemon. Before `brew uninstall acmd`, run `acmd uninstall`.
 
-The app runs Homebrew's acmd: the cask installs the acmd formula, and runs `acmd init`, which adds the Claude Code hooks (removing any old ones first) and the service. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it. Upgrade with `brew upgrade`: the app and acmd upgrade separately, and work together one version apart. The daemon looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
+The app runs Homebrew's acmd: the cask installs the acmd formula, and runs `acmd init`, which adds the Claude Code hooks (removing any old ones first) and the service. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it (over SSH it opens the terminal UI instead). Upgrade with `brew upgrade`: the app and acmd upgrade separately, and work together one version apart. The daemon looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
 
 `acmd init` also installs the service, which runs acmd's daemon as you: a launchd agent on macOS (`~/Library/LaunchAgents/com.brettmostert.agent-command.daemon.plist`), which starts it at login, and a systemd user unit on Linux and WSL2 (`~/.config/systemd/user/agent-command.service`), which starts it at boot with lingering on. Sessions keep running when it restarts. `acmd service status` says whether it's installed and running, `acmd service install` puts it back, and `acmd service uninstall` removes it; without it, the daemon starts when something needs it. WSL2 needs systemd turned on (`[boot] systemd=true` in `/etc/wsl.conf`, then `wsl --shutdown`). `acmd daemon restart` and `acmd daemon stop` go through the service.
 

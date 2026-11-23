@@ -326,10 +326,12 @@ func openSession(ctx context.Context, s *core.Session, preset, target string) er
 const bundleID = "com.brettmostert.agent-command"
 
 // openApp brings up the app; swappable in tests.
-var openApp = func(w io.Writer, newInstance bool) error {
+var openApp = func(_ io.Writer, newInstance bool) error {
+	if runtime.GOOS == "linux" {
+		return openLinuxUI()
+	}
 	if runtime.GOOS != "darwin" {
-		fmt.Fprintln(w, "Agent Command GUI is not available on this platform yet. Run 'acmd --help' for CLI subcommands.")
-		return nil
+		return fmt.Errorf("there's no Agent Command app on %s: acmd --terminal opens the terminal UI", runtime.GOOS)
 	}
 	return exec.Command("/usr/bin/open", openArgs(thisBinary(), newInstance)...).Run() // #nosec G204 -- fixed program; argv only
 }

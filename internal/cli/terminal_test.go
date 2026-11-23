@@ -19,6 +19,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/tui"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -339,4 +340,41 @@ func TestWatchGetsTheNoticesRoutedHere(t *testing.T) {
 		t.Errorf("the OS showed it too: %+v", n)
 	default:
 	}
+}
+
+// acmd --terminal runs the terminal UI as this machine's terminal client,
+// with the daemon's ops, its own event stream and the attach acmd attach uses.
+func TestTerminalUIRunsAsATerminalClient(t *testing.T) {
+	f := newFakeDaemon(t)
+	hellos := helloRecorder(f)
+	f.reply(ipc.OpClientPresence, nil)
+	f.reply(ipc.OpSnapshot, attachSnapshot())
+	sockets := fakeAttach(t, true, nil)
+	fakeRunning(t, true)
+	fakeUIEnv(t, uiEnv{goos: "darwin", terminal: true, hasApp: true})
+	var got tui.Options
+	orig := runTerminalUIProgram
+	runTerminalUIProgram = func(o tui.Options, _ io.Reader, _ io.Writer) error {
+		got = o
+		var snap ipc.Snapshot
+		if err := o.Daemon.Call(ipc.OpSnapshot, nil, &snap); err != nil {
+			return err
+		}
+		return o.Attach(*snap.Sessions[0]).Run()
+	}
+	t.Cleanup(func() { runTerminalUIProgram = orig })
+
+	mustRun(t, "--terminal")
+	if !strings.HasPrefix(got.Me, "terminal-") || got.Subscribe == nil {
+		t.Errorf("options: %+v", got)
+	}
+	if len(*sockets) != 1 || (*sockets)[0] != f.p.HostSocket("L1") {
+		t.Errorf("attached to %v", *sockets)
+	}
+	if hs := hellos(); len(hs) == 0 || hs[0] == nil || hs[0].Kind != ipc.KindTerminal {
+		t.Errorf("hellos %+v", hs)
+	}
+	fakeRunning(t, false)
+	_, err := acmd(t, "--terminal")
+	errContains(t, err, `"api" isn't running`)
 }

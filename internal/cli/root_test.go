@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/brettmostert/agent-command/internal/term"
 	"github.com/brettmostert/agent-command/internal/version"
 )
@@ -81,6 +83,14 @@ func TestUnknownCommand(t *testing.T) {
 	}
 }
 
+// fakeUIEnv makes this machine look like e to a bare acmd.
+func fakeUIEnv(t *testing.T, e uiEnv) {
+	t.Helper()
+	orig := localUIEnv
+	localUIEnv = func(*cobra.Command) uiEnv { return e }
+	t.Cleanup(func() { localUIEnv = orig })
+}
+
 func TestPlainCommandOpensTheApp(t *testing.T) {
 	var got []bool
 	orig := openApp
@@ -89,6 +99,7 @@ func TestPlainCommandOpensTheApp(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { openApp = orig })
+	fakeUIEnv(t, uiEnv{goos: "darwin", terminal: true, hasApp: true})
 	if _, err := run(t, "acmd"); err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +108,45 @@ func TestPlainCommandOpensTheApp(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] || !got[1] {
 		t.Errorf("opened: %v", got)
+	}
+	// Not at a terminal: help, not a UI.
+	fakeUIEnv(t, uiEnv{goos: "darwin", hasApp: true})
+	if out, err := run(t, "acmd"); err != nil || !strings.Contains(out, "Usage:") || len(got) != 2 {
+		t.Errorf("no terminal: %v %q, opened %v", err, out, got)
+	}
+}
+
+func TestChooseUI(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		e    uiEnv
+		want string
+		err  string
+	}{
+		{"a Mac at its screen", uiEnv{goos: "darwin", terminal: true, hasApp: true}, uiApp, ""},
+		{"a Mac over SSH", uiEnv{goos: "darwin", terminal: true, hasApp: true, ssh: true}, uiTerminal, ""},
+		{"a Mac without the app", uiEnv{goos: "darwin", terminal: true}, uiTerminal, ""},
+		{"Linux with a desktop and the UI", uiEnv{goos: "linux", terminal: true, hasApp: true, display: true}, uiApp, ""},
+		{"Linux with the UI and no desktop", uiEnv{goos: "linux", terminal: true, hasApp: true}, uiTerminal, ""},
+		{"a headless Linux box", uiEnv{goos: "linux", terminal: true}, uiTerminal, ""},
+		{"Windows", uiEnv{goos: "windows", terminal: true}, uiTerminal, ""},
+		{"no terminal", uiEnv{goos: "darwin", hasApp: true}, uiHelp, ""},
+		{"--terminal on a Mac", uiEnv{goos: "darwin", terminal: true, hasApp: true, inTerm: true}, uiTerminal, ""},
+		{"--terminal with no terminal", uiEnv{goos: "linux", inTerm: true}, "", "needs a terminal"},
+		{"--app over SSH", uiEnv{goos: "darwin", terminal: true, hasApp: true, ssh: true, app: true}, uiApp, ""},
+		{"--app with none", uiEnv{goos: "windows", terminal: true, app: true}, "", "no Agent Command app"},
+		{"both", uiEnv{goos: "darwin", app: true, inTerm: true}, "", "pick one"},
+	} {
+		got, err := chooseUI(c.e)
+		if c.err != "" {
+			if err == nil || !strings.Contains(err.Error(), c.err) {
+				t.Errorf("%s: %q %v, want an error with %q", c.name, got, err, c.err)
+			}
+			continue
+		}
+		if err != nil || got != c.want {
+			t.Errorf("%s: %q %v, want %q", c.name, got, err, c.want)
+		}
 	}
 }
 

@@ -68,11 +68,14 @@ func NewRootCmd(name string, stdout, stderr io.Writer) *cobra.Command {
 		}
 		return autoInit(cmd)
 	}
-	// Plain `acmd` brings up the app, or its window if it's running.
-	var newInstance bool
+	// Plain `acmd` opens a UI: the app when this machine has one and you're at
+	// it, else the terminal UI (ui.go).
+	var newInstance, app, inTerm bool
 	root.Args = cobra.NoArgs
 	root.Flags().BoolVar(&newInstance, "new-instance", false, "start another copy of the app, even if one is running")
-	root.RunE = func(cmd *cobra.Command, _ []string) error { return openApp(cmd.OutOrStdout(), newInstance) }
+	root.Flags().BoolVar(&app, "app", false, "open the app, even over SSH")
+	root.Flags().BoolVar(&inTerm, "terminal", false, "open the terminal UI, even where there's an app")
+	root.RunE = func(cmd *cobra.Command, _ []string) error { return runUI(cmd, newInstance, app, inTerm) }
 	return root
 }
 

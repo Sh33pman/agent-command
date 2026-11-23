@@ -59,6 +59,9 @@ go.work.sum
 # OpenSpec skills
 /.agents/skills/
 
+# Claude Code's local settings and worktrees
+/.claude/
+
 
 # Python bytecode
 __pycache__/

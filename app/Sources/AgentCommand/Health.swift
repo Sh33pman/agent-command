@@ -1,14 +1,19 @@
 import Foundation
 
 /// What the host can do (internal/ipc.Features): the app shows what works.
+///
+/// Every field is optional on the wire. The app and acmd upgrade separately,
+/// so the daemon can be older than the app and leave out a field this one
+/// knows: that field takes its default, and the snapshot still decodes.
 struct HostFeatures: Decodable, Equatable {
     struct Host: Decodable, Equatable {
         var os = ""
         /// The kinds an installed harness has, and terminal.
         var harnessKinds: [String] = []
         /// It runs sessions here. A client-only daemon (Windows) only uses
-        /// its hosts', and refuses what needs sessions here.
-        var sessions = false
+        /// its hosts', and refuses what needs sessions here. A daemon from
+        /// before it was sent (0.87 and older) always runs them.
+        var sessions = true
         var wake = false
         var hosting = false
 
@@ -16,11 +21,54 @@ struct HostFeatures: Decodable, Equatable {
             case os, sessions, wake, hosting
             case harnessKinds = "harness_kinds"
         }
+
+        init(os: String = "", harnessKinds: [String] = [], sessions: Bool = true, wake: Bool = false, hosting: Bool = false) {
+            self.os = os
+            self.harnessKinds = harnessKinds
+            self.sessions = sessions
+            self.wake = wake
+            self.hosting = hosting
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            os = try c.decodeIfPresent(String.self, forKey: .os) ?? ""
+            harnessKinds = try c.decodeIfPresent([String].self, forKey: .harnessKinds) ?? []
+            sessions = try c.decodeIfPresent(Bool.self, forKey: .sessions) ?? true
+            wake = try c.decodeIfPresent(Bool.self, forKey: .wake) ?? false
+            hosting = try c.decodeIfPresent(Bool.self, forKey: .hosting) ?? false
+        }
     }
 
     struct Device: Decodable, Equatable {
         var speech = false
         var editor = false
+
+        enum CodingKeys: String, CodingKey { case speech, editor }
+
+        init(speech: Bool = false, editor: Bool = false) {
+            self.speech = speech
+            self.editor = editor
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            speech = try c.decodeIfPresent(Bool.self, forKey: .speech) ?? false
+            editor = try c.decodeIfPresent(Bool.self, forKey: .editor) ?? false
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case host, device }
+
+    init(host: Host = Host(), device: Device = Device()) {
+        self.host = host
+        self.device = device
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        host = try c.decodeIfPresent(Host.self, forKey: .host) ?? Host()
+        device = try c.decodeIfPresent(Device.self, forKey: .device) ?? Device()
     }
 
     var host = Host()

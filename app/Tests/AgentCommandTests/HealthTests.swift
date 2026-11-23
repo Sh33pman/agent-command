@@ -19,6 +19,19 @@ import Testing
     #expect(UpdateState(current: "1").releaseURL == nil)
 }
 
+// An older daemon leaves out fields this app knows: the snapshot still
+// decodes, with their defaults. A 0.87 daemon sends no "sessions" and runs
+// them; with the field missing, the app showed nothing at all.
+@Test func featuresFromAnOlderDaemonStillDecode() throws {
+    let json = #"""
+        {"features": {"host": {"os": "darwin", "harness_kinds": ["claude"], "wake": true, "hosting": true}, "device": {}}}
+        """#
+    let s = try JSONDecoder().decode(Snapshot.self, from: Data(json.utf8))
+    #expect(s.features == HostFeatures(host: .init(os: "darwin", harnessKinds: ["claude"], sessions: true, wake: true, hosting: true)))
+    let bare = try JSONDecoder().decode(HostFeatures.self, from: Data("{}".utf8))
+    #expect(bare == HostFeatures())
+}
+
 @Test func healthEntriesBecomeWarnings() {
     var ran: [HealthItem.Fix] = []
     let health = [

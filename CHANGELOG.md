@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.84.0](https://github.com/brettmostert/agent-command/compare/v0.83.0...v0.84.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* harnesses: more than one Claude account, each with its own folder ([#158](https://github.com/brettmostert/agent-command/issues/158))
+
+### Features
+
+* harnesses: more than one Claude account, each with its own folder ([#158](https://github.com/brettmostert/agent-command/issues/158)) ([f03fbf0](https://github.com/brettmostert/agent-command/commit/f03fbf04c35922ada03bd5d3efeabe5b3f5321ac))
+
 ## [0.83.0](https://github.com/brettmostert/agent-command/compare/v0.82.1...v0.83.0) (2026-11-22)
 
 

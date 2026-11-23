@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.88.0](https://github.com/brettmostert/agent-command/compare/v0.87.0...v0.88.0) (2026-11-23)
+
+
+### Features
+
+* acmd builds for Windows, as a client-only daemon ([#172](https://github.com/brettmostert/agent-command/issues/172)) ([9515799](https://github.com/brettmostert/agent-command/commit/951579972e2521f82ac8deb1da7b6f47b9f56f48))
+
 ## [0.87.0](https://github.com/brettmostert/agent-command/compare/v0.86.0...v0.87.0) (2026-11-23)
 
 

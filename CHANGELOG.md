@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.4](https://github.com/brettmostert/agent-command/compare/v0.91.3...v0.91.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* upgrade the app and acmd together, and document both install paths ([#188](https://github.com/brettmostert/agent-command/issues/188)) ([e394631](https://github.com/brettmostert/agent-command/commit/e394631d9855d15a73fb78888a6f97967a37b394))
+
 ## [0.91.3](https://github.com/brettmostert/agent-command/compare/v0.91.2...v0.91.3) (2026-11-24)
 
 

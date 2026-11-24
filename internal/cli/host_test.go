@@ -191,7 +191,7 @@ func TestAttachHost(t *testing.T) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "h.sock")
-	if err := attachHost(context.Background(), sock, term.ModeStream, 0); err == nil {
+	if err := attachHost(context.Background(), sock, term.ModeStream, false); err == nil {
 		t.Error("attach without a host should fail")
 	}
 	// The CLI exits while attached: attach returns without an error.
@@ -199,12 +199,12 @@ func TestAttachHost(t *testing.T) {
 	go func() { _ = srv.Serve(context.Background()) }()
 	waitUntil(t, "host socket", func() bool { return term.Running(sock) })
 	// A mode the terminal doesn't have: not_supported, exit 11.
-	err = attachHost(context.Background(), sock, term.ModeRendered, 0)
+	err = attachHost(context.Background(), sock, term.ModeRendered, false)
 	if ExitCode(err) != exitNotSupported || errorCode(err) != errcode.NotSupported {
 		t.Errorf("rendered: %v (exit %d, code %s)", err, ExitCode(err), errorCode(err))
 	}
 	done := make(chan error, 1)
-	go func() { done <- attachHost(context.Background(), sock, term.ModeStream, 0) }()
+	go func() { done <- attachHost(context.Background(), sock, term.ModeStream, false) }()
 	select {
 	case err := <-done:
 		if err != nil {

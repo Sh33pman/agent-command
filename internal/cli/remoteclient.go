@@ -496,7 +496,7 @@ func (c *client) findRemoteSession(host, sel string) (*core.Session, error) {
 // attachTerminal attaches this terminal to a session's socket until it's
 // detached; swappable in tests.
 var attachTerminal = func(ctx context.Context, socket string) error {
-	err := attachHost(ctx, socket, term.ModeStream, detachKey)
+	err := attachHost(ctx, socket, term.ModeStream, true)
 	if errors.Is(err, errNoHost) {
 		return errors.New("the session's socket isn't there: is the daemon running?")
 	}

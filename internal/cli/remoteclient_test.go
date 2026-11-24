@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -623,19 +624,117 @@ func TestListShowsTheHost(t *testing.T) {
 func TestBeforeDetach(t *testing.T) {
 	for _, tc := range []struct {
 		in       string
-		detach   byte
+		detach   bool
 		want     string
 		detached bool
 	}{
-		{"abc", detachKey, "abc", false},
-		{"ab\x1dcd", detachKey, "ab", true},
-		{"\x1d", detachKey, "", true},
-		{"ab\x1dcd", 0, "ab\x1dcd", false},
+		{"abc", true, "abc", false},
+		{"ab\x1dcd", true, "ab", true},
+		{"\x1d", true, "", true},
+		{"ab\x1dcd", false, "ab\x1dcd", false},
+		// Ctrl+] with the kitty keyboard protocol on, as under Claude Code.
+		{"ab\x1b[93;5ucd", true, "ab", true},
+		{"\x1b[93;5:1u", true, "", true},
+		{"\x1b[93;5:2u", true, "", true},
+		{"\x1b[93;69u", true, "", true},               // Caps Lock on
+		{"\x1b[93:125;5;29u", true, "", true},         // alternate keys and text
+		{"\x1b[93;5:3u", true, "\x1b[93;5:3u", false}, // the release
+		{"\x1b[93;6u", true, "\x1b[93;6u", false},     // Ctrl+Shift+]
+		{"\x1b[93;3u", true, "\x1b[93;3u", false},     // Alt+]
+		{"\x1b[93;5u", false, "\x1b[93;5u", false},
+		// xterm's modifyOtherKeys.
+		{"x\x1b[27;5;93~y", true, "x", true},
+		{"\x1b[27;2;93~", true, "\x1b[27;2;93~", false},
+		// The first Ctrl+] counts.
+		{"a\x1b[93;6ub\x1dc", true, "a\x1b[93;6ub", true},
+		{"a\x1b[93;5ub\x1dc", true, "a", true},
 	} {
 		got, d := beforeDetach([]byte(tc.in), tc.detach)
 		if string(got) != tc.want || d != tc.detached {
 			t.Errorf("%q: %q %v", tc.in, got, d)
 		}
+	}
+}
+
+// pipeStdin makes the attach read a pipe, and returns its writing end.
+func pipeStdin(t *testing.T) (r, w *os.File) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close(); w.Close() })
+	old := attachStdin
+	attachStdin = r
+	t.Cleanup(func() { attachStdin = old })
+	return r, w
+}
+
+// Typed after an attach ends, keys reach what reads stdin next (the terminal
+// UI's list), not a reader the attach left behind.
+func TestAttachInputStopsWithTheAttach(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a pipe isn't the console: only the console's reads can be canceled")
+	}
+	r, w := pipeStdin(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	in, stop := readInput(ctx, cancel, true)
+	if _, err := w.WriteString("ls\r"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case b := <-in:
+		if string(b) != "ls\r" {
+			t.Errorf("attached input %q", b)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no input while attached")
+	}
+	stop()
+	if _, err := w.WriteString("j"); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 8)
+	_ = r.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, err := r.Read(buf)
+	if err != nil || string(buf[:n]) != "j" {
+		t.Errorf("after the attach: %q, %v; want the key for the next reader", buf[:n], err)
+	}
+}
+
+func TestAttachInputDetachesOnKittyCtrlBracket(t *testing.T) {
+	_, w := pipeStdin(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	in, stop := readInput(ctx, cancel, true)
+	defer stop()
+	if _, err := w.WriteString("hi\x1b[93;5u"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("Ctrl+] in the kitty form didn't detach")
+	}
+	if b := <-in; string(b) != "hi" {
+		t.Errorf("input before the detach = %q", b)
+	}
+}
+
+func TestAttachRefusesItsOwnSession(t *testing.T) {
+	t.Setenv("ACMD_SESSION_ID", "01ME")
+	s := &core.Session{ID: "01ME", Name: "shell"}
+	err := notOwnSession(s, attachWhat(s))
+	if err == nil || !strings.Contains(err.Error(), `this terminal is "shell"`) {
+		t.Errorf("own session: %v", err)
+	}
+	if err := notOwnSession(&core.Session{ID: "01OTHER"}, "other"); err != nil {
+		t.Errorf("another session: %v", err)
+	}
+	// A host's session with the same id is another machine's.
+	if err := notOwnSession(&core.Session{ID: "01ME", Host: "studio"}, "on studio"); err != nil {
+		t.Errorf("a host's session: %v", err)
 	}
 }
 
@@ -766,3 +865,32 @@ func jsonText(t *testing.T, s string) string {
 	}
 	return string(b)
 }
+
+// Stdin that can't be watched (/dev/null, as under CI) is still read: the
+// attach sees its end, not closed input.
+func TestAttachInputReadsStdinItCantWatch(t *testing.T) {
+	old := attachStdin
+	t.Cleanup(func() { attachStdin = old })
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	attachStdin = devNull{f}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	in, stop := readInput(ctx, cancel, true)
+	stop()
+	select {
+	case _, ok := <-in:
+		if !ok {
+			t.Error("input closed")
+		}
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// devNull is /dev/null with an fd cancelreader won't accept.
+type devNull struct{ *os.File }
+
+func (devNull) Fd() uintptr { return ^uintptr(0) }

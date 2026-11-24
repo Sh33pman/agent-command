@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -49,6 +50,9 @@ func newAttachCmd() *cobra.Command {
 				return err
 			}
 			what := attachWhat(s)
+			if err := notOwnSession(s, what); err != nil {
+				return err
+			}
 			if !sessionRunning(p.HostSocket(s.ID)) {
 				return fmt.Errorf("%s isn't running: resume it with acmd resume %s", what, s.ID)
 			}
@@ -84,4 +88,13 @@ func attachWhat(s *core.Session) string {
 		return strconv.Quote(s.Name)
 	}
 	return "session " + s.ID
+}
+
+// notOwnSession refuses to attach to the session this terminal runs in: its
+// output would be drawn inside itself, over and over.
+func notOwnSession(s *core.Session, what string) error {
+	if s.Host == "" && s.ID != "" && os.Getenv("ACMD_SESSION_ID") == s.ID {
+		return fmt.Errorf("this terminal is %s: attach to it from another terminal", what)
+	}
+	return nil
 }

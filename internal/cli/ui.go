@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/proc"
@@ -162,7 +163,7 @@ func runTerminalUI(cmd *cobra.Command) error {
 			return s.conn, nil
 		},
 		Attach: func(s ipc.Session) tea.ExecCommand {
-			return &attachRun{ctx: ctx, socket: p.HostSocket(s.ID), what: attachWhat(s.Core()), id: s.ID, errOut: cmd.ErrOrStderr()}
+			return &attachRun{ctx: ctx, socket: p.HostSocket(s.ID), s: s.Core(), errOut: cmd.ErrOrStderr()}
 		},
 	}
 	return runTerminalUIProgram(o, cmd.InOrStdin(), cmd.OutOrStdout())
@@ -172,17 +173,21 @@ func runTerminalUI(cmd *cobra.Command) error {
 // the process's own stdin and stdout, as acmd attach does, so the streams
 // Bubble Tea offers aren't kept.
 type attachRun struct {
-	ctx          context.Context
-	socket, what string
-	id           string
-	errOut       io.Writer
+	ctx    context.Context
+	socket string
+	s      *core.Session
+	errOut io.Writer
 }
 
 func (a *attachRun) Run() error {
-	if !sessionRunning(a.socket) {
-		return fmt.Errorf("%s isn't running: resume it with acmd resume %s", a.what, a.id)
+	what := attachWhat(a.s)
+	if err := notOwnSession(a.s, what); err != nil {
+		return err
 	}
-	fmt.Fprintf(a.errOut, "Attached to %s. Detach with Ctrl+].\r\n", a.what)
+	if !sessionRunning(a.socket) {
+		return fmt.Errorf("%s isn't running: resume it with acmd resume %s", what, a.s.ID)
+	}
+	fmt.Fprintf(a.errOut, "Attached to %s. Detach with Ctrl+].\r\n", what)
 	return attachTerminal(a.ctx, a.socket)
 }
 

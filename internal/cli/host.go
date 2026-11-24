@@ -5,15 +5,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"syscall"
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
+	"github.com/muesli/cancelreader"
 	"github.com/spf13/cobra"
 
 	"github.com/brettmostert/agent-command/internal/config"
@@ -306,7 +310,7 @@ func attachOrLeave(ctx context.Context, socket, mode string, wait time.Duration)
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	if err := attachHost(ctx, socket, mode, 0); !errors.Is(err, errNoHost) {
+	if err := attachHost(ctx, socket, mode, false); !errors.Is(err, errNoHost) {
 		return err
 	}
 	return nil
@@ -316,10 +320,30 @@ func attachOrLeave(ctx context.Context, socket, mode string, wait time.Duration)
 // (as in telnet), which agents and shells leave alone.
 const detachKey = 0x1d
 
+// detachSeq is Ctrl+] as a terminal sends it once a program turns on its
+// keyboard enhancements, as Claude Code does: the kitty keyboard protocol's
+// CSI 93;<mods>u (with an optional event type), or xterm's modifyOtherKeys
+// CSI 27;<mods>;93~.
+var detachSeq = regexp.MustCompile(`\x1b\[(?:93(?::[0-9]*)*;([0-9]+)(?::([0-9]+))?(?:;[0-9:]*)?u|27;([0-9]+);93~)`)
+
+// lockMods are Caps Lock and Num Lock in a key's modifiers: Ctrl+] with
+// them is still Ctrl+].
+const lockMods = 64 | 128
+
+// attachReset turns off the modes a session may have turned on in this
+// terminal, for what runs in it next: the alternate screen, the kitty
+// keyboard flags (on both screens), modifyOtherKeys, mouse reporting, focus
+// events, bracketed paste, application cursor keys and keypad, a hidden
+// cursor and the text style.
+const attachReset = "\x1b[<99u\x1b[?1049l\x1b[<99u\x1b[>4m" +
+	"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[?1004l" +
+	"\x1b[?2004l\x1b[?1l\x1b>\x1b[?25h\x1b[0m"
+
 // attachHost attaches the terminal to socket. A detach (SIGTERM, or typing
-// detach when it isn't 0) or the CLI exiting end it without an error; no host
-// listening is an error.
-func attachHost(parent context.Context, socket, mode string, detach byte) error {
+// Ctrl+] when detach is set) or the CLI exiting end it without an error; no
+// host listening is an error. Once it ends, stdin is left for whatever reads
+// it next, and the session's terminal modes are reset.
+func attachHost(parent context.Context, socket, mode string, detach bool) error {
 	if !term.Running(socket) {
 		return errNoHost
 	}
@@ -329,26 +353,13 @@ func attachHost(parent context.Context, socket, mode string, detach byte) error 
 	if state, err := xterm.MakeRaw(fd); err == nil {
 		defer func() { _ = xterm.Restore(fd, state) }()
 	}
-	in := make(chan []byte, 16)
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			n, err := os.Stdin.Read(buf)
-			if n > 0 {
-				b, detached := beforeDetach(buf[:n], detach)
-				if len(b) > 0 {
-					in <- b
-				}
-				if detached {
-					cancel()
-					return
-				}
-			}
-			if err != nil {
-				return
-			}
+	defer func() {
+		if isTerminal(os.Stdout) {
+			_, _ = os.Stdout.WriteString(attachReset)
 		}
 	}()
+	in, stop := readInput(ctx, cancel, detach)
+	defer stop()
 	size := func() (int, int) {
 		cols, rows, err := xterm.GetSize(os.Stdout.Fd())
 		if err != nil {
@@ -384,15 +395,95 @@ func attachHost(parent context.Context, socket, mode string, detach byte) error 
 	return err
 }
 
-// beforeDetach is a copy of the input up to the detach key, and whether the
-// key was in it (never, when detach is 0).
-func beforeDetach(b []byte, detach byte) ([]byte, bool) {
-	if detach != 0 {
-		if i := bytes.IndexByte(b, detach); i >= 0 {
-			return append([]byte(nil), b[:i]...), true
+// attachStdin is what an attach reads its input from; swappable in tests.
+var attachStdin cancelreader.File = os.Stdin
+
+// readInput reads stdin for an attach until stop, calling detached (and
+// ending) at Ctrl+] when detach is set. stop returns once nothing reads stdin
+// any more: input typed after the attach goes to what runs next (the
+// terminal UI's list), not to a reader left behind.
+func readInput(ctx context.Context, detached func(), detach bool) (<-chan []byte, func()) {
+	in := make(chan []byte, 16)
+	r, err := cancelreader.NewReader(attachStdin)
+	if err != nil {
+		// Not a file it can watch (/dev/null under CI's epoll): read it as
+		// is, without canceling.
+		r = plainReader{attachStdin}
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Read(buf)
+			if n > 0 {
+				b, d := beforeDetach(buf[:n], detach)
+				if len(b) > 0 {
+					select {
+					case in <- b:
+					case <-ctx.Done():
+						return
+					}
+				}
+				if d {
+					detached()
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	return in, func() {
+		// A reader that can't be canceled (not the console) is left to end
+		// by itself.
+		if r.Cancel() {
+			<-done
+		}
+		_ = r.Close()
+	}
+}
+
+// plainReader reads stdin when it can't be watched for canceling.
+type plainReader struct{ io.Reader }
+
+func (plainReader) Cancel() bool { return false }
+func (plainReader) Close() error { return nil }
+
+// beforeDetach is a copy of the input up to Ctrl+], in any of its forms, and
+// whether it was there (never, when detach isn't set).
+func beforeDetach(b []byte, detach bool) ([]byte, bool) {
+	if detach {
+		at := bytes.IndexByte(b, detachKey)
+		for _, m := range detachSeq.FindAllSubmatchIndex(b, -1) {
+			if at >= 0 && m[0] > at {
+				break
+			}
+			if ctrlOnly(b, m) {
+				at = m[0]
+				break
+			}
+		}
+		if at >= 0 {
+			return append([]byte(nil), b[:at]...), true
 		}
 	}
 	return append([]byte(nil), b...), false
+}
+
+// ctrlOnly says whether the detachSeq match m is Ctrl+] pressed: Ctrl the
+// only modifier besides the locks, and not a key release.
+func ctrlOnly(b []byte, m []int) bool {
+	lo, hi := m[2], m[3]
+	if lo < 0 {
+		lo, hi = m[6], m[7] // the modifyOtherKeys form
+	}
+	mods, err := strconv.Atoi(string(b[lo:hi]))
+	if err != nil || (mods-1)&^lockMods != 4 {
+		return false
+	}
+	return m[4] < 0 || string(b[m[4]:m[5]]) != "3"
 }
 
 func splitEnv(kv string) (string, string, bool) {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.91.3](https://github.com/brettmostert/agent-command/compare/v0.91.2...v0.91.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* attach detaches under Claude, gives the keys back, and refuses its own session ([#186](https://github.com/brettmostert/agent-command/issues/186)) ([c851433](https://github.com/brettmostert/agent-command/commit/c851433093aa87920be2c09784b5aa85d8cc139e))
+
 ## [0.91.2](https://github.com/brettmostert/agent-command/compare/v0.91.1...v0.91.2) (2026-11-23)
 
 

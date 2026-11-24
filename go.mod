@@ -10,6 +10,8 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
+	github.com/diamondburned/gotk4-adwaita/pkg v0.0.0-20261031204147-41c057c79b39
+	github.com/diamondburned/gotk4/pkg v0.4.2-0.20261031093702-169e0f82bca8
 	github.com/hashicorp/yamux v0.1.2
 	github.com/invopop/jsonschema v0.13.0
 	github.com/muesli/cancelreader v0.2.2
@@ -28,8 +30,6 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/diamondburned/gotk4-adwaita/pkg v0.0.0-20261031204147-41c057c79b39 // indirect
-	github.com/diamondburned/gotk4/pkg v0.4.2-0.20261031093702-169e0f82bca8 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

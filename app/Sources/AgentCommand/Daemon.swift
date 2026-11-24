@@ -542,6 +542,8 @@ struct DaemonError: LocalizedError {
     /// What kind of error, as the daemon says (internal/errcode): decide from
     /// it, never from the message. "" for one the app made itself.
     var code = ""
+    /// The daemon answered, saying no: the connection is still good.
+    var answered = false
     var errorDescription: String? { message }
 }
 
@@ -592,7 +594,7 @@ enum DaemonPaths {
 }
 
 /// One connection to the daemon: newline-delimited JSON over its unix socket.
-/// Calls block, so use it off the main thread.
+/// Calls block, so use it off the main thread: DaemonClient does.
 ///
 /// This must never ask the daemon to shut down. The CLI does that on a version
 /// mismatch, but the app can meet a daemon of another version and only needs
@@ -606,6 +608,7 @@ final class DaemonConnection {
     /// older (they upgrade separately). A dev build has none, and says "app".
     static let appVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "app"
     private let fd: Int32
+    private var timeout: TimeInterval?
     /// The daemon's hello: the version agreed, and its ops.
     private(set) var daemon = DaemonHello()
     private var pending = Data()
@@ -613,13 +616,16 @@ final class DaemonConnection {
     /// Once fd is open, a throw below leaves closing it to deinit, which
     /// runs for an init that throws: closing it here too would close it
     /// twice, and the second time the number can be another socket's.
-    init(socket path: String) throws {
+    /// timeout is the longest a call waits for its reply (nil: as long as it
+    /// takes, as the event stream does).
+    init(socket path: String, timeout: TimeInterval? = nil) throws {
         fd = Foundation.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw DaemonError(message: "socket failed") }
         // A daemon that goes away is an error to report. Without this, writing to it
         // ends the whole app with SIGPIPE.
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        setTimeout(timeout)
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)
@@ -652,55 +658,117 @@ final class DaemonConnection {
         }
     }
 
+    /// Sets the longest a call waits for its reply (nil: as long as it takes).
+    func setTimeout(_ timeout: TimeInterval?) {
+        self.timeout = timeout
+        let t = timeout ?? 0 // 0: no timeout
+        var tv = timeval(tv_sec: Int(t), tv_usec: Int32((t - t.rounded(.down)) * 1_000_000))
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    }
+
     /// Whether the daemon has op: the app offers what it can do.
     func has(_ op: String) -> Bool { daemon.ops.contains(op) }
 
     deinit { close(fd) }
 
     func call<Out: Decodable>(_ op: String, _ input: some Encodable) throws -> Out {
-        try JSONDecoder().decode(Out.self, from: try exchange(op, JSONEncoder().encode(input)))
+        try decodeReply(try exchange(try JSONEncoder().encode(Request(op: op, data: input))))
     }
 
     func call<Out: Decodable>(_ op: String) throws -> Out {
-        try JSONDecoder().decode(Out.self, from: try exchange(op, nil))
+        try decodeReply(try exchange(try JSONEncoder().encode(Request<Empty>(op: op, data: nil))))
     }
 
     /// A call with its input and its reply as JSON.
     func raw(_ op: String, _ input: Data) throws -> Data {
-        try exchange(op, input)
+        var line = Data(#"{"op":"#.utf8)
+        line.append(try JSONEncoder().encode(op))
+        line.append(Data(#","data":"#.utf8))
+        line.append(input)
+        line.append(Data("}".utf8))
+        let reply = try JSONSerialization.jsonObject(with: try exchange(line)) as? [String: Any]
+        guard reply?["ok"] as? Bool == true else { throw Self.refusal(reply) }
+        return try JSONSerialization.data(withJSONObject: reply?["data"] ?? [String: Any](), options: .fragmentsAllowed)
     }
 
     /// A call whose reply has no data to read.
     func send(_ op: String, _ input: some Encodable) throws {
-        _ = try exchange(op, JSONEncoder().encode(input))
+        let _: Ignored = try call(op, input)
     }
 
-    private func exchange(_ op: String, _ data: Data?) throws -> Data {
-        var request: [String: Any] = ["op": op]
-        if let data { request["data"] = try JSONSerialization.jsonObject(with: data) }
-        var line = try JSONSerialization.data(withJSONObject: request)
+    /// Whether the connection can take another call: the daemon hasn't closed
+    /// it (a restart), and nothing is left unread from an earlier one.
+    var isOpen: Bool {
+        guard pending.isEmpty else { return false }
+        var byte: UInt8 = 0
+        let n = recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+        return n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)
+    }
+
+    private struct Request<In: Encodable>: Encodable {
+        let op: String
+        let data: In?
+    }
+
+    private struct Empty: Encodable {}
+
+    /// Any reply data, unread.
+    private struct Ignored: Decodable {
+        init(from decoder: Decoder) throws {}
+    }
+
+    /// The daemon's reply: ok and its data, or why not.
+    private struct Reply<Out: Decodable>: Decodable {
+        let ok: Bool
+        let data: Out?
+        let error: String?
+        let code: String?
+    }
+
+    /// Decodes a reply once. A reply with no data decodes as {}, as an empty
+    /// result does.
+    private func decodeReply<Out: Decodable>(_ line: Data) throws -> Out {
+        let reply = try JSONDecoder().decode(Reply<Out>.self, from: line)
+        guard reply.ok else {
+            throw DaemonError(message: reply.error ?? "daemon error", code: reply.code ?? "", answered: true)
+        }
+        if let data = reply.data { return data }
+        return try JSONDecoder().decode(Out.self, from: Data("{}".utf8))
+    }
+
+    private static func refusal(_ reply: [String: Any]?) -> DaemonError {
+        DaemonError(message: reply?["error"] as? String ?? "daemon error", code: reply?["code"] as? String ?? "", answered: true)
+    }
+
+    /// Writes one request line and reads its reply line.
+    private func exchange(_ request: Data) throws -> Data {
+        var line = request
         line.append(0x0A)
         try line.withUnsafeBytes { raw in
             var offset = 0
             while offset < raw.count {
                 let n = write(fd, raw.baseAddress! + offset, raw.count - offset)
-                guard n > 0 else { throw DaemonError(message: "daemon connection lost") }
+                guard n > 0 else { throw lost() }
                 offset += n
             }
         }
-        let reply = try JSONSerialization.jsonObject(with: try readLine()) as? [String: Any]
-        guard reply?["ok"] as? Bool == true else {
-            throw DaemonError(message: reply?["error"] as? String ?? "daemon error", code: reply?["code"] as? String ?? "")
+        return try readLine()
+    }
+
+    /// Why a read or write failed: the timeout, or the daemon gone.
+    private func lost() -> DaemonError {
+        if errno == EAGAIN || errno == EWOULDBLOCK, let timeout {
+            return DaemonError(message: "acmd's daemon didn't answer within \(Int(timeout)) s", code: "timeout")
         }
-        return try JSONSerialization.data(
-            withJSONObject: reply?["data"] ?? [String: Any](), options: .fragmentsAllowed)
+        return DaemonError(message: "daemon connection lost")
     }
 
     /// Starts the daemon's event stream on this connection (subscribe): read it
     /// with nextEvent. Nothing else can be called on it after.
     func subscribe(since: UInt64) throws {
         struct Subscribe: Encodable { let since: UInt64 }
-        _ = try exchange("subscribe", JSONEncoder().encode(Subscribe(since: since)))
+        try send("subscribe", Subscribe(since: since))
     }
 
     /// The stream's next event.
@@ -720,8 +788,86 @@ final class DaemonConnection {
                 return Data(line)
             }
             let n = read(fd, &buffer, buffer.count)
-            guard n > 0 else { throw DaemonError(message: "daemon connection lost") }
+            guard n > 0 else { throw n < 0 ? lost() : DaemonError(message: "daemon connection lost") }
             pending.append(contentsOf: buffer[0..<n])
+        }
+    }
+}
+
+/// Calls to the daemon, off the caller's thread, on connections kept open
+/// between calls. A call takes an idle connection, or opens one when none is
+/// free, so calls at the same time don't wait on each other (speech.stop
+/// while speech.say is still talking). Each call waits at most callTimeout
+/// for its reply, except the ops in untimed. The event stream has a
+/// connection of its own.
+final class DaemonClient: @unchecked Sendable {
+    /// The app's calls.
+    static let shared = DaemonClient()
+    /// Longer than the daemon waits for a Remote host (15 s).
+    static let callTimeout: TimeInterval = 30
+    /// Ops that answer when they're done, however long that takes: speech.say
+    /// answers when the speech ends.
+    static let untimed: Set<String> = ["speech.say"]
+    /// The most idle connections kept.
+    static let keep = 4
+
+    private let socket: @Sendable () -> String
+    private let timeout: TimeInterval
+    private let lock = NSLock()
+    private var idle: [DaemonConnection] = []
+
+    init(socket: @escaping @Sendable () -> String = { DaemonPaths.socket }, timeout: TimeInterval = callTimeout) {
+        self.socket = socket
+        self.timeout = timeout
+    }
+
+    /// Runs work on a connection, off the caller's thread. op says which
+    /// timeout applies.
+    func with<T>(_ op: String = "", _ work: @escaping (DaemonConnection) throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { done in
+            DispatchQueue.global(qos: .userInitiated).async {
+                done.resume(with: Result { try self.withBlocking(op, work) })
+            }
+        }
+    }
+
+    func call<Out: Decodable>(_ op: String, _ input: some Encodable) async throws -> Out {
+        let input = try JSONEncoder().encode(input)
+        let data = try await raw(op, input)
+        return try JSONDecoder().decode(Out.self, from: data)
+    }
+
+    func raw(_ op: String, _ input: Data) async throws -> Data {
+        try await with(op) { try $0.raw(op, input) }
+    }
+
+    /// Runs work on a connection here, blocking. A connection goes back to the
+    /// idle ones after the call, or after the daemon's own no; after anything
+    /// else it's closed, since a reply could still be on its way.
+    func withBlocking<T>(_ op: String, _ work: (DaemonConnection) throws -> T) throws -> T {
+        let conn = try checkout()
+        conn.setTimeout(Self.untimed.contains(op) ? nil : timeout)
+        do {
+            let result = try work(conn)
+            checkin(conn)
+            return result
+        } catch let error as DaemonError where error.answered {
+            checkin(conn)
+            throw error
+        }
+    }
+
+    /// An idle connection the daemon hasn't closed (a restart), or a new one.
+    private func checkout() throws -> DaemonConnection {
+        while let conn = lock.withLock({ idle.popLast() }) {
+            if conn.isOpen { return conn }
+        }
+        return try DaemonConnection(socket: socket(), timeout: timeout)
+    }
+
+    private func checkin(_ conn: DaemonConnection) {
+        lock.withLock {
+            if idle.count < Self.keep { idle.append(conn) }
         }
     }
 }

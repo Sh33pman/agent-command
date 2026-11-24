@@ -20,6 +20,14 @@ func isolateFromTheRealDaemon() throws {
     try #require(DaemonPaths.socket == dir + "/daemon.sock")
 }
 
+/// A socket path of the test's own, for a FakeDaemon and a client of it alone.
+func ownSocket() -> String {
+    "/tmp/acmdc-\(getpid())-\(UUID().uuidString.prefix(8))/d.sock"
+}
+
+/// A client that reaches no daemon.
+let noDaemon = DaemonClient(socket: { "/tmp/acmd-no-daemon-\(getpid()).sock" })
+
 /// A session as the daemon sends it. Like the daemon, it says why the session
 /// needs you (internal/core Attention), waiting since `since`.
 func makeSession(
@@ -95,8 +103,10 @@ final class FakeDaemon: @unchecked Sendable {
     private let path: String
     private var requests: [(op: String, data: [String: Any])] = []
     private var replies: [String: Any] = [:]
-    private var failures: [String: String] = [:]
+    private var failures: [String: (message: String, code: String)] = [:]
+    private var delays: [String: TimeInterval] = [:]
     private var clients: [Int32] = []
+    private var accepted = 0
     /// The events it sends after a subscribe's OK.
     private var stream: [[String: Any]] = []
 
@@ -104,9 +114,14 @@ final class FakeDaemon: @unchecked Sendable {
     /// What it says in its hello.
     var proto = DaemonConnection.proto
 
-    init() throws {
+    /// at puts it on a socket of its own, which only a client given that path
+    /// reaches; by default it's on the app's socket.
+    init(at own: String? = nil) throws {
         try isolateFromTheRealDaemon()
-        path = DaemonPaths.socket
+        if let own {
+            try FileManager.default.createDirectory(atPath: (own as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        }
+        path = own ?? DaemonPaths.socket
         unlink(path)
         listener = socket(AF_UNIX, SOCK_STREAM, 0)
         var addr = sockaddr_un()
@@ -126,7 +141,10 @@ final class FakeDaemon: @unchecked Sendable {
                 if client < 0 { return }
                 var on: Int32 = 1
                 setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
-                self?.lock.withLock { self?.clients.append(client) }
+                self?.lock.withLock {
+                    self?.clients.append(client)
+                    self?.accepted += 1
+                }
                 Thread.detachNewThread { self?.serve(client) }
             }
         }
@@ -155,9 +173,17 @@ final class FakeDaemon: @unchecked Sendable {
         lock.withLock { replies[op + "#" + cursor] = data }
     }
 
-    func fail(_ op: String, _ message: String) {
-        lock.withLock { failures[op] = message }
+    func fail(_ op: String, _ message: String, code: String = "") {
+        lock.withLock { failures[op] = (message, code) }
     }
+
+    /// Answers op only after seconds.
+    func delay(_ op: String, _ seconds: TimeInterval) {
+        lock.withLock { delays[op] = seconds }
+    }
+
+    /// How many connections it has taken.
+    var connections: Int { lock.withLock { accepted } }
 
     /// What it has been asked, apart from saying hello.
     func received(_ op: String) -> [[String: Any]] {
@@ -190,7 +216,7 @@ final class FakeDaemon: @unchecked Sendable {
                     }
                     requests.append((op, request["data"] as? [String: Any] ?? [:]))
                     if let failure = failures[op] {
-                        answer = ["ok": false, "error": failure]
+                        answer = ["ok": false, "error": failure.message, "code": failure.code]
                     } else if let cursor = (request["data"] as? [String: Any])?["cursor"] as? String,
                               let data = replies[op + "#" + cursor] {
                         answer["data"] = data
@@ -198,6 +224,7 @@ final class FakeDaemon: @unchecked Sendable {
                         answer["data"] = data
                     }
                 }
+                if let wait = lock.withLock({ delays[op] }) { Thread.sleep(forTimeInterval: wait) }
                 var lines = [answer]
                 if op == "subscribe", answer["ok"] as? Bool == true { lines += lock.withLock { stream } }
                 for line in lines {

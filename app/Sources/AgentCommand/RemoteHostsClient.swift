@@ -6,12 +6,17 @@ protocol DaemonCalls {
     func call(_ op: String, _ input: Data, done: @escaping (Result<Data, Error>) -> Void)
 }
 
-/// The daemon on its socket, off the main thread.
+/// The daemon on its socket, through the app's DaemonClient.
 struct DaemonSocketCalls: DaemonCalls {
+    var client = DaemonClient.shared
+
     func call(_ op: String, _ input: Data, done: @escaping (Result<Data, Error>) -> Void) {
-        DispatchQueue.global().async {
-            let result = Result { try DaemonConnection(socket: DaemonPaths.socket).raw(op, input) }
-            DispatchQueue.main.async { done(result) }
+        Task { @MainActor in
+            do {
+                done(.success(try await client.raw(op, input)))
+            } catch {
+                done(.failure(error))
+            }
         }
     }
 }

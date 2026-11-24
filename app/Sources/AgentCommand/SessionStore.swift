@@ -412,8 +412,9 @@ final class SessionStore {
         calls.async {
             var failure: String?
             do {
-                let conn = try DaemonConnection(socket: DaemonPaths.socket)
-                try conn.send("inbox.answer", InboxAnswerRequest(host: id.host.isEmpty ? nil : id.host, id: id.id, option: option, text: text))
+                try self.client.withBlocking("inbox.answer") { conn in
+                    try conn.send("inbox.answer", InboxAnswerRequest(host: id.host.isEmpty ? nil : id.host, id: id.id, option: option, text: text))
+                }
             } catch {
                 failure = error.localizedDescription
             }
@@ -426,7 +427,11 @@ final class SessionStore {
         let targets: [Target]
     }
 
+    /// The store's calls, one after another and in order (a rename before a
+    /// delete), on client.
     private let calls = DispatchQueue(label: "acmd.daemon.calls")
+    /// The daemon's connections; tests swap it.
+    @ObservationIgnored var client = DaemonClient.shared
 
     /// Follows the daemon's state until the app quits.
     func start() {
@@ -560,10 +565,11 @@ final class SessionStore {
         }
         guard !sets.isEmpty else { return }
         calls.async {
-            guard let conn = try? DaemonConnection(socket: DaemonPaths.socket) else { return }
             for set in sets {
                 do {
-                    try conn.send("mutate", Create(set_id: set.id, targets: set.members.map { Target(id: $0) }))
+                    try self.client.withBlocking("mutate") { conn in
+                        try conn.send("mutate", Create(set_id: set.id, targets: set.members.map { Target(id: $0) }))
+                    }
                 } catch {
                     NSLog("couldn't move set %@ to the daemon: %@", set.id, error.localizedDescription)
                 }
@@ -792,14 +798,16 @@ final class SessionStore {
     func loadConversations(done: @escaping ([Conversation], String?) -> Void) {
         calls.async {
             do {
-                let conn = try DaemonConnection(socket: DaemonPaths.socket)
-                var list: [Conversation] = []
-                var cursor = ""
-                repeat { // all of them, for the picker's search
-                    let page: Page<Conversation> = try conn.call("conversations", PageRequest(limit: Page<Conversation>.max, cursor: cursor))
-                    list += page.items
-                    cursor = page.items.isEmpty ? "" : page.nextCursor
-                } while !cursor.isEmpty
+                let list = try self.client.withBlocking("conversations") { conn -> [Conversation] in
+                    var list: [Conversation] = []
+                    var cursor = ""
+                    repeat { // all of them, for the picker's search
+                        let page: Page<Conversation> = try conn.call("conversations", PageRequest(limit: Page<Conversation>.max, cursor: cursor))
+                        list += page.items
+                        cursor = page.items.isEmpty ? "" : page.nextCursor
+                    } while !cursor.isEmpty
+                    return list
+                }
                 DispatchQueue.main.async { done(list, nil) }
             } catch {
                 DispatchQueue.main.async { done([], error.localizedDescription) }
@@ -877,7 +885,7 @@ final class SessionStore {
     /// what's wrong. done gets nil when the daemon can't be reached.
     func checkJob(_ job: Job, done: @escaping (JobCheck?) -> Void) {
         calls.async {
-            let check: JobCheck? = try? DaemonConnection(socket: DaemonPaths.socket).call("job.check", job)
+            let check: JobCheck? = try? self.client.withBlocking("job.check") { try $0.call("job.check", job) }
             DispatchQueue.main.async { done(check) }
         }
     }
@@ -921,7 +929,7 @@ final class SessionStore {
     func runJob(_ id: String, done: @escaping (Result<JobRun, Error>) -> Void) {
         calls.async {
             let result = Result { () throws -> JobRun in
-                try DaemonConnection(socket: DaemonPaths.socket).call("job.run", JobRef(id: id))
+                try self.client.withBlocking("job.run") { try $0.call("job.run", JobRef(id: id)) }
             }
             DispatchQueue.main.async { done(result) }
         }
@@ -955,7 +963,7 @@ final class SessionStore {
     ) {
         calls.async {
             do {
-                let result = try work(try DaemonConnection(socket: DaemonPaths.socket))
+                let result = try self.client.withBlocking("", work)
                 DispatchQueue.main.async { done(result) }
             } catch {
                 DispatchQueue.main.async { self.problem = "\(failure): \(error.localizedDescription)" }

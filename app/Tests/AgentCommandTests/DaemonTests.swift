@@ -138,6 +138,99 @@ extension UsesSharedSpeech {
             #expect(throws: DaemonError.self) { try DaemonConnection(socket: "/tmp/" + String(repeating: "x", count: 200)) }
         }
 
+        /// Calls share a connection: one call after another opens one.
+        @Test func theClientKeepsItsConnection() async throws {
+            let socket = ownSocket()
+            let daemon = try FakeDaemon(at: socket)
+            defer { daemon.stop() }
+            daemon.reply("thing", ["name": "back"])
+            let client = DaemonClient(socket: { socket })
+            for _ in 0..<3 {
+                let out: Named = try await client.call("thing", Named(name: "there"))
+                #expect(out.name == "back")
+            }
+            #expect(daemon.connections == 1)
+        }
+
+        /// The daemon's own no keeps the connection, with its code.
+        @Test func theDaemonsNoKeepsTheConnection() async throws {
+            let socket = ownSocket()
+            let daemon = try FakeDaemon(at: socket)
+            defer { daemon.stop() }
+            daemon.fail("thing", "no such session", code: "not_found")
+            let client = DaemonClient(socket: { socket })
+            for _ in 0..<2 {
+                do {
+                    let _: Empty = try await client.call("thing", Empty())
+                    Issue.record("the call didn't fail")
+                } catch let error as DaemonError {
+                    #expect(error.code == "not_found" && error.message == "no such session" && error.answered)
+                }
+            }
+            #expect(daemon.connections == 1)
+        }
+
+        /// A daemon that doesn't answer fails the call within the timeout, and
+        /// the next call gets a new connection.
+        @Test func aCallThatGetsNoAnswerTimesOut() async throws {
+            let socket = ownSocket()
+            let daemon = try FakeDaemon(at: socket)
+            defer { daemon.stop() }
+            daemon.delay("slow", 2)
+            daemon.reply("thing", ["name": "back"])
+            let client = DaemonClient(socket: { socket }, timeout: 0.3)
+            let start = Date()
+            do {
+                let _: Empty = try await client.call("slow", Empty())
+                Issue.record("the call didn't time out")
+            } catch let error as DaemonError {
+                #expect(error.code == "timeout" && !error.answered)
+            }
+            #expect(Date().timeIntervalSince(start) < 1.5)
+            let out: Named = try await client.call("thing", Empty())
+            #expect(out.name == "back")
+            #expect(daemon.connections == 2)
+        }
+
+        /// speech.say answers when the speech ends: it isn't timed.
+        @Test func speechSayIsNotTimed() async throws {
+            let socket = ownSocket()
+            let daemon = try FakeDaemon(at: socket)
+            defer { daemon.stop() }
+            daemon.delay("speech.say", 0.6)
+            let client = DaemonClient(socket: { socket }, timeout: 0.2)
+            let _: Empty = try await client.call("speech.say", Empty())
+        }
+
+        /// A slow call doesn't hold up another: speech.stop while speech.say talks.
+        @Test func callsAtTheSameTimeDontWait() async throws {
+            let socket = ownSocket()
+            let daemon = try FakeDaemon(at: socket)
+            defer { daemon.stop() }
+            daemon.delay("speech.say", 1.5)
+            let client = DaemonClient(socket: { socket })
+            let say = Task { let _: Empty = try await client.call("speech.say", Empty()) }
+            try await until("speech.say is asked") { !daemon.received("speech.say").isEmpty }
+            let start = Date()
+            let _: Empty = try await client.call("speech.stop", Empty())
+            #expect(Date().timeIntervalSince(start) < 1, "stop waited for say")
+            try await say.value
+        }
+
+        /// After the daemon restarts, the next call reconnects.
+        @Test func theClientReconnectsAfterARestart() async throws {
+            let socket = ownSocket()
+            let first = try FakeDaemon(at: socket)
+            let client = DaemonClient(socket: { socket })
+            let _: Empty = try await client.call("thing", Empty())
+            first.stop()
+            let second = try FakeDaemon(at: socket)
+            defer { second.stop() }
+            second.reply("thing", ["name": "again"])
+            let out: Named = try await client.call("thing", Empty())
+            #expect(out.name == "again" && second.connections == 1)
+        }
+
         @Test func aDaemonThatGoesAwayIsNoticed() throws {
             let daemon = try FakeDaemon()
             let conn = try DaemonConnection(socket: DaemonPaths.socket)

@@ -14,7 +14,8 @@ private final class Board {
     var closed = false
     var shown: String?
 
-    init(jobs: [Job], sessions: [Session] = []) throws {
+    /// client is the store's daemon: by default none.
+    init(jobs: [Job], sessions: [Session] = [], client: DaemonClient = noDaemon) throws {
         try isolateFromTheRealDaemon()
         _ = NSApplication.shared
         store.jobs = jobs
@@ -24,6 +25,7 @@ private final class Board {
         model.runAcmd = { _, done in done(false, "tests don't run acmd") }
         model.calls = fake
         store.jobCalls = fake
+        store.client = client
         model.folders = RemoteHostsClient(calls: fake)
         model.close = { [unowned self] in self.closed = true }
         model.goToSession = { [unowned self] in self.shown = $0 }
@@ -384,7 +386,7 @@ extension UsesSharedSpeech {
             var gravityJob = job("G", "gravity")
             gravityJob.harnessID = "HG"
             gravityJob.settings = ["mode": ["plan"]]
-            let board = try Board(jobs: [job("A", "alpha"), gravityJob])
+            let board = try Board(jobs: [job("A", "alpha"), gravityJob], client: DaemonClient())
             let model = board.model
             try await until { !model.settings(for: .claude).isEmpty }
             #expect(daemon.received("harness.settings").map { $0["kind"] as? String } == ["claude"], "the default's kind")

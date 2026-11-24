@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.93.0](https://github.com/brettmostert/agent-command/compare/v0.92.0...v0.93.0) (2026-11-24)
+
+
+### Features
+
+* the app builds in Swift 6 mode, so the compiler checks data races ([#192](https://github.com/brettmostert/agent-command/issues/192)) ([3137f7d](https://github.com/brettmostert/agent-command/commit/3137f7d9003fa51fca544fd4a9012348d788d25d))
+
 ## [0.92.0](https://github.com/brettmostert/agent-command/compare/v0.91.4...v0.92.0) (2026-11-24)
 
 

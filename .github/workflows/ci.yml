@@ -231,6 +231,10 @@ jobs:
         with:
           path: ~/.cache/agent-command/ghostty
           key: ${{ steps.ghostty.outputs.key }}
+      - name: install the Linux UI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev libgirepository1.0-dev
       - name: build libghostty-vt
         run: scripts/build-ghostty.sh
       - name: lint
@@ -243,10 +247,12 @@ jobs:
         run: make test
       - name: test with libghostty-vt
         run: make test-vt
-      - name: test the Linux UI's daemon client and preferences
+      - name: test the Linux UI's daemon client and state
         run: make test-ui-core
       - name: build
         run: make build
+      - name: build the Linux UI
+        run: make linux-ui
       # As the release packs them, so a release is never the first time.
       - name: pack the Windows zips, and check the Scoop manifest
         run: |
@@ -283,10 +289,10 @@ jobs:
         if: matrix.distro == 'debian'
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl git make gcc g++ pkg-config xz-utils procps
+          apt-get install -y --no-install-recommends ca-certificates curl git make gcc g++ pkg-config xz-utils procps libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev libgirepository1.0-dev
       - name: install the build tools (Arch)
         if: matrix.distro == 'arch'
-        run: pacman -Syu --noconfirm --needed base-devel git curl xz
+        run: pacman -Syu --noconfirm --needed base-devel git curl xz gtk4 libadwaita vte4 gobject-introspection
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -321,5 +327,9 @@ jobs:
         run: make test
       - name: test with libghostty-vt
         run: make test-vt
+      - name: test the Linux UI's daemon client and state
+        run: make test-ui-core
       - name: build
         run: make build
+      - name: build the Linux UI
+        run: make linux-ui

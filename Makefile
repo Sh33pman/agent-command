@@ -238,20 +238,16 @@ speech-helper: ## Build the Swift speech engine into $(SPEECH_OUT)
 app: ## Build "dist/Agent Command.app" (needs scripts/build-ghostty.sh first)
 	scripts/build-app.sh
 
-# The Linux UI's own logic (the daemon client, preferences) has unit tests that
-# need neither GTK nor Ghostty, so they run wherever Zig is installed.
+# The Linux UI's own logic (daemon client, sidebar layout, palette, notice
+# routing) has unit tests that need no GTK.
 .PHONY: test-ui-core
-test-ui-core: ## Run the Linux UI's unit tests that need no GTK (needs Zig)
-	cd app-linux && zig test src/ipc/client.zig -lc && zig test src/config/prefs.zig -lc
+test-ui-core: ## Run the Linux UI's unit tests that need no GTK
+	go test -race -tags noui -cover ./internal/linuxui/...
 
 .PHONY: linux-ui
-linux-ui: ## Build ./dist/agent-command-ui (needs scripts/build-ghostty.sh first)
+linux-ui: ## Build ./dist/agent-command-ui (needs GTK4, libadwaita, vte4, gobject-introspection)
 	mkdir -p $(DIST)
-	cd app-linux && zig build -Doptimize=ReleaseFast
-	install -m 0755 app-linux/zig-out/bin/agent-command-ui $(DIST)/agent-command-ui
-	@if [ -f build/ghostty/lib/ghostty-internal.so ]; then \
-		install -m 0755 build/ghostty/lib/ghostty-internal.so $(DIST)/ghostty-internal.so; \
-	fi
+	CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command-ui ./cmd/agent-command-ui
 
 .PHONY: build
 build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) for this machine

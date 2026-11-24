@@ -1,3 +1,5 @@
+//go:build linux
+
 package linuxui
 
 import (
@@ -127,14 +129,14 @@ func SetThemeInConfig(text, theme string) string {
 // (falling back to ~/.config/ghostty/config if unset).
 func ReadSavedTheme() string {
 	if p, err := GhosttyConfigPath(); err == nil {
-		if b, err := os.ReadFile(p); err == nil {
+		if b, err := os.ReadFile(p); err == nil { // #nosec G304 -- user ghostty config path
 			if name := ThemeInConfig(string(b)); name != "" {
 				return name
 			}
 		}
 	}
 	if cfg, err := os.UserConfigDir(); err == nil && cfg != "" {
-		if b, err := os.ReadFile(filepath.Join(cfg, "ghostty", "config")); err == nil {
+		if b, err := os.ReadFile(filepath.Join(cfg, "ghostty", "config")); err == nil { // #nosec G304 -- user ghostty config path
 			return ThemeInConfig(string(b))
 		}
 	}
@@ -148,12 +150,12 @@ func SaveTheme(name string) error {
 		return err
 	}
 	var existing string
-	if b, err := os.ReadFile(p); err == nil {
+	if b, err := os.ReadFile(p); err == nil { // #nosec G304 -- user ghostty config path
 		existing = string(b)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 		return err
 	}
 	next := SetThemeInConfig(existing, name)
@@ -167,7 +169,7 @@ func LoadTheme(name string, folders []string) Palette {
 	}
 	for _, dir := range folders {
 		p := filepath.Join(dir, name)
-		b, err := os.ReadFile(p)
+		b, err := os.ReadFile(p) // #nosec G304 -- theme file inside discovered theme folder
 		if err == nil {
 			return ParseGhosttyTheme(string(b))
 		}

@@ -1,3 +1,5 @@
+//go:build linux
+
 package linuxui
 
 import (
@@ -369,7 +371,7 @@ func removeByID[T any](items []T, key string, keyFn func(T) string) []T {
 }
 
 // RunStream subscribes to the daemon and delivers snapshot/event notifications
-// to onEvent until ctx is cancelled. Reconnects with backoff on drop.
+// to onEvent until ctx is canceled. Reconnects with backoff on drop.
 func (c *Client) RunStream(ctx context.Context, store *Store, onEvent func(ipc.Event), onStatus func(string, error)) {
 	backoff := 250 * time.Millisecond
 	for {

@@ -60,7 +60,7 @@ type uiApp struct {
 	terminals   map[string]*VTETerminal // keyed by SessionKey(host, id)
 	lastSeq     uint64
 	acmdBin     string
-	cancelling  bool
+	closing     bool
 }
 
 // Run starts the GTK4/libadwaita Linux UI and returns the process exit code.
@@ -73,7 +73,7 @@ func Run(opts Options) int {
 	defer client.Close()
 
 	store := NewStore()
-	adwApp := adw.NewApplication(AppID, gio.ApplicationFlagsNone)
+	adwApp := adw.NewApplication(AppID, gio.ApplicationDefaultFlags)
 
 	km := DefaultKeymap()
 	if kmPath, err := KeymapPath(); err == nil {
@@ -122,7 +122,7 @@ func Run(opts Options) int {
 
 	adwApp.ConnectShutdown(func() {
 		u.mu.Lock()
-		u.cancelling = true
+		u.closing = true
 		u.mu.Unlock()
 		cancel()
 	})
@@ -351,7 +351,7 @@ func (u *uiApp) onStreamStatus(state string, err error) {
 	}
 }
 
-func (u *uiApp) onStreamEvent(ctx context.Context, ev ipc.Event) {
+func (u *uiApp) onStreamEvent(ctx context.Context, _ ipc.Event) {
 	u.renderSidebar(ctx)
 	u.refreshContent(ctx)
 	u.dispatchNotices()
@@ -589,7 +589,7 @@ func (u *uiApp) showTerminalView(ctx context.Context, s *ipc.Session) {
 		vt.ConnectChildExited(func(_ int) {
 			glib.IdleAdd(func() {
 				u.mu.Lock()
-				if u.cancelling {
+				if u.closing {
 					u.mu.Unlock()
 					return
 				}

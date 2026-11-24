@@ -147,7 +147,7 @@ lint: fmt tidy-check workflow-check $(BIN)/golangci-lint ## gofmt, go vet, go mo
 
 .PHONY: test
 test: ## Run tests with -race and enforce coverage gates
-	go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+	go test -race -tags noui -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
 	scripts/coverage-gate.sh coverage.out $(COVER_MIN_TOTAL) $(COVER_MIN_CORE) $(COVER_MIN_REMOTE)
 
 .PHONY: fuzz

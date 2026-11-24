@@ -1,3 +1,5 @@
+//go:build linux
+
 package linuxui
 
 import (
@@ -175,7 +177,7 @@ func LoadKeymap(path string) (*Keymap, error) {
 	if path == "" {
 		return m, nil
 	}
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) // #nosec G304 -- user keymap config path
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return m, nil
@@ -199,7 +201,7 @@ func LoadKeymap(path string) (*Keymap, error) {
 
 // Save writes the current bindings to path as JSON.
 func (m *Keymap) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	out := make(map[string]string, len(m.bindings))

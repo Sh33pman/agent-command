@@ -175,12 +175,12 @@ func newGroupArchiveCmd() *cobra.Command {
 				for _, s := range snap.Sessions {
 					if s.GroupID == g.ID && s.Status != core.StatusArchived {
 						n++
-						if s.Managed() && !s.Stopped() {
+						if !s.Stopped() {
 							running++
 						}
 					}
 				}
-				q := fmt.Sprintf("Archive group %q and its %d session(s)? %d running background session(s) will be stopped (conversations are kept).", g.Name, n, running)
+				q := fmt.Sprintf("Archive group %q and its %d session(s)? %d running session(s) will be stopped (conversations are kept).", g.Name, n, running)
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {
 					return err
 				}

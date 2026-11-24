@@ -75,7 +75,6 @@ func (c *client) attachTarget(sel string) (*core.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	snap.Sessions = visibleSessions(snap.Sessions)
 	return resolveSession(snap, sel)
 }
 

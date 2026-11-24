@@ -14,16 +14,6 @@ import (
 	"github.com/brettmostert/agent-command/internal/store"
 )
 
-// Remover deletes a background session (claudecli.CLI.Remove).
-type Remover interface {
-	Remove(ctx context.Context, id string) error
-}
-
-// Stopper stops a background session (claudecli.CLI.Stop in production).
-type Stopper interface {
-	Stop(ctx context.Context, id string) error
-}
-
 var validSorts = map[string]bool{"created": true, "name": true, "activity": true, "status": true, "cwd": true}
 
 // snapshot is everything the apps show. clientID, when set, says which
@@ -248,32 +238,21 @@ func (d *Daemon) updateViewState(ctx context.Context, fn func(*core.ViewState)) 
 	return d.store.PutViewState(ctx, vs)
 }
 
-// finish stops a background session (claude stop; Claude keeps the
-// conversation) and marks it finished; views showing it go back to their
-// list. Showing it again resumes it.
+// finish stops a session's host (its agent keeps the conversation) and marks
+// it finished; views showing it go back to their list. Showing it again
+// resumes it.
 func (d *Daemon) finish(ctx context.Context, id string) error {
 	s, err := d.store.Session(ctx, id)
 	if err != nil {
 		return err
 	}
-	switch {
-	case s.Status == core.StatusArchived:
+	switch s.Status {
+	case core.StatusArchived:
 		return errors.New("that session is archived")
-	case !s.Managed():
-		return errors.New("that session runs in your own pane: exit Claude there, or move it into acmd first")
-	case s.Status == core.StatusFinished:
+	case core.StatusFinished:
 		return nil
 	}
 	d.stopHost(s)
-	if s.Kind == core.KindBackground && s.BgID != "" && s.Status != core.StatusPaused {
-		stopper, _ := d.claudeFor(ctx, s)
-		if stopper == nil {
-			return errors.New("can't stop the background session: claude not available")
-		}
-		if err := stopper.Stop(ctx, s.BgID); err != nil {
-			return fmt.Errorf("stop %s: %w", s.BgID, err)
-		}
-	}
 	core.Apply(s, core.Event{Kind: core.EventFinished, Time: d.eventTime(s)})
 	if err := d.store.CloseInboxItems(ctx, s.ID); err != nil {
 		return err
@@ -285,9 +264,8 @@ func (d *Daemon) finish(ctx context.Context, id string) error {
 		Kind: string(core.EventFinished), Detail: string(s.Status)})
 }
 
-// archive stops a running background session (Claude keeps the
-// conversation) and marks it archived. External sessions are never
-// killed: acmd doesn't own the user's pane.
+// archive stops a session's host (its agent keeps the conversation) and
+// marks it archived.
 func (d *Daemon) archive(ctx context.Context, id string) error {
 	s, err := d.store.Session(ctx, id)
 	if err != nil {
@@ -297,15 +275,6 @@ func (d *Daemon) archive(ctx context.Context, id string) error {
 		return nil
 	}
 	d.stopHost(s)
-	if s.Kind == core.KindBackground && s.BgID != "" && !s.Stopped() {
-		stopper, _ := d.claudeFor(ctx, s)
-		if stopper == nil {
-			return errors.New("can't stop the background session: claude not available")
-		}
-		if err := stopper.Stop(ctx, s.BgID); err != nil {
-			return fmt.Errorf("stop %s: %w", s.BgID, err)
-		}
-	}
 	core.Apply(s, core.Event{Kind: core.EventArchived, Time: d.eventTime(s)})
 	if err := d.store.CloseInboxItems(ctx, s.ID); err != nil {
 		return err

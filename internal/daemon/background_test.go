@@ -18,6 +18,7 @@ func wakeupPrompt(id string) string {
 func TestBackgroundWorkIsNotifiedWhenItFinishes(t *testing.T) {
 	d, clock, _ := notifyDaemon(t, config.Default().Notify)
 	ctx := context.Background()
+	must(t, d.store.CreateSession(ctx, &core.Session{Kind: core.KindHosted, ClaudeSessionID: "c1"}))
 	t0 := *clock
 	hook := func(after time.Duration, name, payload string) {
 		t.Helper()
@@ -76,6 +77,7 @@ func TestBackgroundWorkIsNotifiedWhenItFinishes(t *testing.T) {
 func TestBackgroundAgentsAndWorkThatEnds(t *testing.T) {
 	d, clock, _ := notifyDaemon(t, config.Default().Notify)
 	ctx := context.Background()
+	must(t, d.store.CreateSession(ctx, &core.Session{Kind: core.KindHosted, ClaudeSessionID: "c1"}))
 	t0 := *clock
 	hook := func(after time.Duration, name, payload string) {
 		t.Helper()
@@ -118,6 +120,7 @@ func TestBackgroundAgentsAndWorkThatEnds(t *testing.T) {
 func TestBackgroundWorkIsForgottenAfterAWhile(t *testing.T) {
 	d, clock, _ := notifyDaemon(t, config.Default().Notify)
 	ctx := context.Background()
+	must(t, d.store.CreateSession(ctx, &core.Session{Kind: core.KindHosted, ClaudeSessionID: "c1"}))
 	t0 := *clock
 	hook := func(after time.Duration, name, payload string) {
 		t.Helper()

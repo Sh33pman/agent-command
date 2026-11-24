@@ -34,21 +34,20 @@ type Session struct {
 	Status          core.Status `json:"status"`
 	StatusDetail    string      `json:"status_detail,omitempty"`
 	Unseen          bool        `json:"unseen,omitempty"`
-	Kind            core.Kind   `json:"kind"`
-	HarnessKind     string      `json:"harness_kind"`
-	HarnessID       string      `json:"harness_id,omitempty"`
-	BgID            string      `json:"bg_id,omitempty"`
-	Pid             int         `json:"pid,omitempty"`
-	Remote          bool        `json:"remote,omitempty"`
-	Host            string      `json:"host,omitempty"`
-	RemoteID        string      `json:"remote_id,omitempty"`
-	HostGone        bool        `json:"host_gone,omitempty"`
-	JobID           string      `json:"job_id,omitempty"`
-	External        *PaneLoc    `json:"external,omitempty"`
-	CreatedAt       time.Time   `json:"created_at,omitzero"`
-	LastEventAt     time.Time   `json:"last_event_at,omitzero"`
-	StatusSince     time.Time   `json:"status_since,omitzero"`
-	ArchivedAt      time.Time   `json:"archived_at,omitzero"`
+	// Kind is always "hosted". Clients show only hosted sessions.
+	Kind        core.Kind `json:"kind"`
+	HarnessKind string    `json:"harness_kind"`
+	HarnessID   string    `json:"harness_id,omitempty"`
+	Pid         int       `json:"pid,omitempty"`
+	Remote      bool      `json:"remote,omitempty"`
+	Host        string    `json:"host,omitempty"`
+	RemoteID    string    `json:"remote_id,omitempty"`
+	HostGone    bool      `json:"host_gone,omitempty"`
+	JobID       string    `json:"job_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at,omitzero"`
+	LastEventAt time.Time `json:"last_event_at,omitzero"`
+	StatusSince time.Time `json:"status_since,omitzero"`
+	ArchivedAt  time.Time `json:"archived_at,omitzero"`
 	// Attention is why it needs you, if it does.
 	Attention *Attention `json:"attention,omitempty"`
 	// What it runs, its name to show, and what can be done with it (core/caps.go).
@@ -63,21 +62,6 @@ type Attention struct {
 	Rank   int       `json:"rank"`
 	Reason string    `json:"reason"`
 	Since  time.Time `json:"since,omitzero"`
-}
-
-// PaneLoc is the terminal pane a session outside acmd's own terminals runs in.
-type PaneLoc struct {
-	Terminal      string `json:"terminal"`
-	KittySocket   string `json:"kitty_socket,omitempty"`
-	KittyWindow   int    `json:"kitty_window,omitempty"`
-	GhosttyTerm   string `json:"ghostty_term,omitempty"`
-	TTY           string `json:"tty,omitempty"`
-	RestoreLayout string `json:"restore_layout,omitempty"`
-	BarWindow     int    `json:"bar_window,omitempty"`
-	HeaderWindow  int    `json:"header_window,omitempty"`
-	HeaderTerm    string `json:"header_term,omitempty"`
-	TermWindow    int    `json:"term_window,omitempty"`
-	TermTerm      string `json:"term_term,omitempty"`
 }
 
 // Group is a group of sessions.
@@ -120,8 +104,8 @@ func SessionOf(s *core.Session) *Session {
 		Type: EntitySession, ID: s.ID, Name: s.Name, Description: s.Description, GroupID: s.GroupID, Parent: s.GroupID,
 		NameSource: s.NameSource, Cwd: s.Cwd, ClaudeSessionID: s.ClaudeSessionID, ClaudeHistory: s.ClaudeHistory,
 		TranscriptPath: s.TranscriptPath, Status: s.Status, StatusDetail: s.StatusDetail, Unseen: s.Unseen,
-		Kind: s.Kind, HarnessKind: s.HarnessKind, HarnessID: s.HarnessID, BgID: s.BgID, Pid: s.Pid, Remote: s.Remote, Host: s.Host,
-		RemoteID: s.RemoteID, HostGone: s.HostGone, JobID: s.JobID, External: paneOf(s.External),
+		Kind: s.Kind, HarnessKind: s.HarnessKind, HarnessID: s.HarnessID, Pid: s.Pid, Remote: s.Remote, Host: s.Host,
+		RemoteID: s.RemoteID, HostGone: s.HostGone, JobID: s.JobID,
 		CreatedAt: s.CreatedAt, LastEventAt: s.LastEventAt, StatusSince: s.StatusSince, ArchivedAt: s.ArchivedAt,
 		Agent: s.Agent(), DisplayName: s.DisplayName(), Capabilities: s.Capabilities(),
 	}
@@ -144,8 +128,8 @@ func (w *Session) Core() *core.Session {
 		ID: w.ID, Name: w.Name, Description: w.Description, GroupID: w.GroupID, NameSource: w.NameSource,
 		Cwd: w.Cwd, ClaudeSessionID: w.ClaudeSessionID, ClaudeHistory: w.ClaudeHistory,
 		TranscriptPath: w.TranscriptPath, Status: w.Status, StatusDetail: w.StatusDetail, Unseen: w.Unseen,
-		Kind: w.Kind, HarnessKind: w.HarnessKind, HarnessID: w.HarnessID, BgID: w.BgID, Pid: w.Pid, Remote: w.Remote, Host: w.Host,
-		RemoteID: w.RemoteID, HostGone: w.HostGone, JobID: w.JobID, External: w.External.Core(),
+		Kind: w.Kind, HarnessKind: w.HarnessKind, HarnessID: w.HarnessID, Pid: w.Pid, Remote: w.Remote, Host: w.Host,
+		RemoteID: w.RemoteID, HostGone: w.HostGone, JobID: w.JobID,
 		CreatedAt: w.CreatedAt, LastEventAt: w.LastEventAt, StatusSince: w.StatusSince, ArchivedAt: w.ArchivedAt,
 	}
 	if w.Order > 0 {
@@ -161,25 +145,6 @@ func SessionsOf(ss []*core.Session) []*Session {
 		out = append(out, SessionOf(s))
 	}
 	return out
-}
-
-func paneOf(p *core.PaneLoc) *PaneLoc {
-	if p == nil {
-		return nil
-	}
-	return &PaneLoc{Terminal: p.Terminal, KittySocket: p.KittySocket, KittyWindow: p.KittyWindow,
-		GhosttyTerm: p.GhosttyTerm, TTY: p.TTY, RestoreLayout: p.RestoreLayout, BarWindow: p.BarWindow,
-		HeaderWindow: p.HeaderWindow, HeaderTerm: p.HeaderTerm, TermWindow: p.TermWindow, TermTerm: p.TermTerm}
-}
-
-// Core is the pane as internal/core has it.
-func (p *PaneLoc) Core() *core.PaneLoc {
-	if p == nil {
-		return nil
-	}
-	return &core.PaneLoc{Terminal: p.Terminal, KittySocket: p.KittySocket, KittyWindow: p.KittyWindow,
-		GhosttyTerm: p.GhosttyTerm, TTY: p.TTY, RestoreLayout: p.RestoreLayout, BarWindow: p.BarWindow,
-		HeaderWindow: p.HeaderWindow, HeaderTerm: p.HeaderTerm, TermWindow: p.TermWindow, TermTerm: p.TermTerm}
 }
 
 // GroupOf is g on the wire.

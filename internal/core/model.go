@@ -40,16 +40,9 @@ func (s Status) NeedsAttention() bool {
 // Kind says where a session runs.
 type Kind string
 
-// Session kinds.
-const (
-	// KindBackground is a Claude background session (`claude --bg`), viewable in acmd.
-	KindBackground Kind = "background"
-	// KindHosted is an interactive CLI that acmd hosts under its own PTY,
-	// viewable in acmd. It replaces KindBackground for new sessions.
-	KindHosted Kind = "hosted"
-	// KindExternal is an interactive `claude` in one of the user's own panes.
-	KindExternal Kind = "external"
-)
+// KindHosted is the one kind: an interactive CLI that acmd hosts under its
+// own PTY. It's on the wire, where clients check it.
+const KindHosted Kind = "hosted"
 
 // What a session runs.
 const (
@@ -87,29 +80,6 @@ const (
 	NameUser NameSource = "user"
 )
 
-// PaneLoc is a pane in the user's terminal.
-type PaneLoc struct {
-	Terminal    string // "kitty" | "ghostty" | "unknown"
-	KittySocket string
-	KittyWindow int
-	GhosttyTerm string
-	TTY         string
-	// RestoreLayout is the tab layout to restore when acmd removes this
-	// pane (a view's sidebar: the layout the tab had before).
-	RestoreLayout string `json:",omitempty"`
-	// BarWindow is the Kitty window of a view's full-width status bar
-	// (set on a view's sidebar; 0 = none, the sidebar shows messages).
-	BarWindow int `json:",omitempty"`
-	// HeaderWindow / HeaderTerm: the header bar above a view pane (set on
-	// a view's sidebar; Kitty window id / Ghostty terminal id).
-	HeaderWindow int    `json:",omitempty"`
-	HeaderTerm   string `json:",omitempty"`
-	// TermWindow / TermTerm: the terminal pane under a view pane (set on a
-	// view's sidebar). It may have closed by itself since.
-	TermWindow int    `json:",omitempty"`
-	TermTerm   string `json:",omitempty"`
-}
-
 // Session is an acmd session. Its ID is stable while Claude's
 // session id changes on /clear, forks and moves into the background.
 type Session struct {
@@ -130,7 +100,6 @@ type Session struct {
 	// HarnessID is the harness it runs in ("" for a terminal, and for a
 	// session its hooks found before it's matched to one).
 	HarnessID string
-	BgID      string
 	Pid       int
 	// Remote: clients of this acmd's Hosting may see and use it (Remote sessions).
 	Remote bool
@@ -144,7 +113,6 @@ type Session struct {
 	// JobID is the scheduled job that started it ("" if none did). A job that
 	// continues an existing session leaves it as it was.
 	JobID       string
-	External    *PaneLoc
 	CreatedAt   time.Time
 	LastEventAt time.Time
 	ArchivedAt  time.Time
@@ -249,10 +217,6 @@ type ViewState struct {
 // IsCollapsed reports whether group id is collapsed in this view.
 func (vs ViewState) IsCollapsed(id string) bool { return slices.Contains(vs.Collapsed, id) }
 
-// Managed reports whether acmd runs s, so a view can show it: a background
-// or a hosted session (not one in the user's own pane).
-func (s *Session) Managed() bool { return s.Kind == KindBackground || s.Kind == KindHosted }
-
 // IsTerminal reports whether s is a terminal session. It may have an agent
 // running in it, typed by the user, whose status it then shows.
 func (s *Session) IsTerminal() bool { return s.HarnessKind == HarnessTerminal }
@@ -317,16 +281,9 @@ func (s *Session) EndAgent() {
 	}
 }
 
-// NeedsResume reports whether a view must resume s before it can show it:
-// a stopped hosted session (its host is gone), or a session from before
-// hosting (`claude --bg`), which resume turns into a hosted one; either
-// with a conversation to resume.
-func (s *Session) NeedsResume() bool {
-	if s.ClaudeSessionID == "" {
-		return false
-	}
-	return (s.Kind == KindHosted && s.Stopped()) || s.Kind == KindBackground
-}
+// NeedsResume reports whether a view must resume s before it can show it: it's
+// stopped (its host is gone), with a conversation to resume.
+func (s *Session) NeedsResume() bool { return s.ClaudeSessionID != "" && s.Stopped() }
 
 // Stopped reports whether s's Claude process isn't running by design:
 // paused (reboot, idle stop, claude stop) or finished by the user.
@@ -336,11 +293,5 @@ func (s *Session) OnHost() bool { return s.Host != "" }
 
 func (s *Session) Stopped() bool { return s.Status == StatusPaused || s.Status == StatusFinished }
 
-// Ref names s on a command line (`acmd go <ref>`): the Claude background
-// id when it has one, else its acmd id.
-func (s *Session) Ref() string {
-	if s.BgID != "" {
-		return s.BgID
-	}
-	return s.ID
-}
+// Ref names s on a command line: its id.
+func (s *Session) Ref() string { return s.ID }

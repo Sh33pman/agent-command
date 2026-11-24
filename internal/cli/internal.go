@@ -27,6 +27,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
 	"github.com/brettmostert/agent-command/internal/procenv"
+	"github.com/brettmostert/agent-command/internal/reconcile"
 	"github.com/brettmostert/agent-command/internal/report"
 	"github.com/brettmostert/agent-command/internal/service"
 	"github.com/brettmostert/agent-command/internal/setup"
@@ -296,8 +297,8 @@ func installedHarnesses(p paths.Paths) func(core.Harness) bool {
 
 // claudeFor is Claude's CLI for a harness's own folder, for its background
 // sessions.
-func claudeFor(p paths.Paths) func(core.Harness) daemon.ClaudeCLI {
-	return func(h core.Harness) daemon.ClaudeCLI {
+func claudeFor(p paths.Paths) func(core.Harness) reconcile.Lister {
+	return func(h core.Harness) reconcile.Lister {
 		bin, env, err := harnessCommand(p, h)
 		if err != nil {
 			bin = h.RunCommand() // running it says it's missing
@@ -389,7 +390,7 @@ func localSessions(cfg *daemon.Config, p paths.Paths, logger *log.Logger) {
 	cfg.OSVersion = macOSVersion
 	if claude, env, err := claudeCommand(p); err == nil {
 		cli := claudecli.New(claude, env)
-		cfg.Agents, cfg.Stopper, cfg.Remover = cli, cli, cli
+		cfg.Agents = cli
 	} else {
 		logger.Printf("claude not found; reconciliation disabled: %v", err)
 	}

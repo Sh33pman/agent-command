@@ -1,9 +1,8 @@
 // Package reconcile cross-checks acmd's view of sessions with Claude's own
 // (`claude agents --json`) and with process liveness:
-// it discovers background sessions acmd hasn't seen hooks for, fills in
-// ids, pids and names, corrects the provisional Kind, marks stopped and
-// dead sessions paused, and lets Claude's `status` win when hooks and
-// Claude disagree for longer than a grace period.
+// it fills in pids, folders and names, marks sessions whose host has gone
+// paused, and lets Claude's `status` win when hooks and Claude disagree for
+// longer than a grace period.
 package reconcile
 
 import (
@@ -103,13 +102,9 @@ func (r *Reconciler) Apply(ctx context.Context, l Listing) (Result, error) {
 	var res Result
 	agents := l.Agents
 	bySession := make(map[string]claudecli.Agent, len(agents))
-	byShortID := make(map[string]claudecli.Agent, len(agents))
 	for _, a := range agents {
 		if a.SessionID != "" {
 			bySession[a.SessionID] = a
-		}
-		if a.ID != "" {
-			byShortID[a.ID] = a
 		}
 	}
 
@@ -120,16 +115,6 @@ func (r *Reconciler) Apply(ctx context.Context, l Listing) (Result, error) {
 	for _, s := range sessions {
 		if s.OnHost() { // its host says how it is
 			continue
-		}
-		if s.ClaudeSessionID == "" && s.BgID != "" {
-			// Started by acmd, no hook yet: link it by the short id.
-			if a, ok := byShortID[s.BgID]; ok && a.SessionID != "" {
-				s.ClaudeSessionID = a.SessionID
-				if err := r.Store.UpdateSession(ctx, s); err != nil {
-					return res, err
-				}
-				res.Updated++
-			}
 		}
 		if r.reconcileSession(s, bySession) {
 			if err := r.Store.UpdateSession(ctx, s); err != nil {
@@ -158,7 +143,7 @@ func (r *Reconciler) PauseDeadHosts(ctx context.Context) (int, error) {
 		case s.OnHost(): // its host says how it is
 		case s.IsTerminal():
 			gone = r.terminal(s)
-		case s.Kind == core.KindHosted:
+		default:
 			gone = r.unlisted(s)
 		}
 		if !gone {
@@ -187,7 +172,6 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 			*dst, changed = v, true
 		}
 	}
-	setStr(&s.BgID, a.ID)
 	setStr(&s.Cwd, a.Cwd)
 	if s.NameSource != core.NameUser {
 		setStr(&s.Name, a.Name)
@@ -199,16 +183,6 @@ func (r *Reconciler) reconcileSession(s *core.Session, bySession map[string]clau
 	if s.Pid != pid {
 		s.Pid, changed = pid, true
 	}
-	// Correct the provisional classification from the hook.
-	// (A hosted session is listed as interactive, which is expected.)
-	switch {
-	case s.Kind == core.KindHosted:
-	case a.Background() && s.Kind != core.KindBackground:
-		s.Kind, s.External, changed = core.KindBackground, nil, true
-	case a.Kind == "interactive" && s.Kind != core.KindExternal:
-		s.Kind, changed = core.KindExternal, true
-	}
-
 	status := a.StatusString()
 	if agrees(s.Status, status) {
 		delete(r.disagreeSince, s.ID)
@@ -254,27 +228,9 @@ func (r *Reconciler) unlisted(s *core.Session) bool {
 	case core.StatusPaused, core.StatusFinished, core.StatusArchived:
 		return false
 	}
-	if s.Kind == core.KindHosted {
-		// Its host process is acmd's, so the host says whether it runs, not
-		// Claude's listing (which can lag a new session's first hooks).
-		if r.HostAlive == nil || r.HostAlive(s) || r.Now().Sub(s.CreatedAt) < r.StartupGrace {
-			return false
-		}
-		s.Pid = 0
-		return r.apply(s, core.AgentStopped)
-	}
-	if s.Kind == core.KindExternal {
-		// Interactive sessions aren't always listed (e.g. child sessions,
-		// M0 C5): rely on the process.
-		if s.Pid > 0 && !r.Alive(s.Pid) {
-			s.Pid = 0
-			return r.apply(s, core.AgentStopped)
-		}
-		return false
-	}
-	// Claude's listing can lag a session's first hooks: don't pause a
-	// session we only just learned about, whatever its status.
-	if r.Now().Sub(s.CreatedAt) < r.StartupGrace {
+	// Its host process is acmd's, so the host says whether it runs, not
+	// Claude's listing (which can lag a new session's first hooks).
+	if r.HostAlive == nil || r.HostAlive(s) || r.Now().Sub(s.CreatedAt) < r.StartupGrace {
 		return false
 	}
 	s.Pid = 0

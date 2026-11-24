@@ -13,9 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/store"
 )
 
 const v = "1.2.3-test"
@@ -116,6 +118,18 @@ func TestRunSpoolsAndSpawnsWithoutDaemon(t *testing.T) {
 
 func TestRunSendsToDaemon(t *testing.T) {
 	p := testPaths(t)
+	// The session the hook's Claude runs in (ACMD_SESSION_ID), as acmd made it.
+	if err := os.MkdirAll(p.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	seed, err := store.Open(context.Background(), p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.CreateSession(context.Background(), &core.Session{ID: "S1", Kind: core.KindHosted}); err != nil {
+		t.Fatal(err)
+	}
+	seed.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- daemon.Run(ctx, daemon.Config{Paths: p, Version: v, Log: log.New(io.Discard, "", 0)}) }()

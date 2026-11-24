@@ -32,7 +32,7 @@ var ErrSilent = errors.New("silent failure")
 var versionOutput = func(ctx context.Context, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	return exec.CommandContext(ctx, name, args...).Output() // #nosec G204 -- claude/kitty found on PATH, fixed args
+	return exec.CommandContext(ctx, name, args...).Output() // #nosec G204 -- claude found on PATH, fixed args
 }
 
 func newDoctorCmd() *cobra.Command {

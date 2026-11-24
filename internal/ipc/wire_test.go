@@ -29,7 +29,7 @@ func sampleSnapshot() Snapshot {
 		{ID: "s2", Name: "docs", GroupID: "g1", Cwd: "/w/docs", Status: core.StatusBusy, Kind: core.KindHosted, HarnessKind: core.HarnessClaude, HarnessID: "h-gone",
 			SetID: "set1", SetOrder: 2, CreatedAt: at},
 		{ID: "s3", Name: "shell", GroupID: "default", Cwd: "/w", Status: core.StatusDone, Kind: core.KindHosted, HarnessKind: core.HarnessTerminal,
-			External: &core.PaneLoc{Terminal: "kitty", KittySocket: "unix:/tmp/kitty", KittyWindow: 7}, CreatedAt: at, ArchivedAt: at.Add(time.Hour)},
+			CreatedAt: at, ArchivedAt: at.Add(time.Hour)},
 		{ID: "s4", Name: "build", GroupID: "default", Cwd: "/r/build", Status: core.StatusDone, Kind: core.KindHosted, HarnessKind: core.HarnessClaude,
 			Host: "studio", RemoteID: "r9", JobID: "j1", CreatedAt: at},
 	}
@@ -165,10 +165,10 @@ func TestSessionOnTheWire(t *testing.T) {
 	if waiting.Agent != core.AgentClaude || waiting.DisplayName != "api" || !slices.Contains(waiting.Capabilities, core.CanAttach) {
 		t.Errorf("what it is: %+v", waiting)
 	}
-	if archived.External == nil || archived.External.KittyWindow != 7 || onHost.Host != "studio" {
-		t.Errorf("pane and host: %+v %+v", archived, onHost)
+	if archived.ArchivedAt.IsZero() || onHost.Host != "studio" {
+		t.Errorf("archived and host: %+v %+v", archived, onHost)
 	}
-	if SessionOf(nil) != nil || (*Session)(nil).Core() != nil || (*PaneLoc)(nil).Core() != nil {
+	if SessionOf(nil) != nil || (*Session)(nil).Core() != nil {
 		t.Error("nil")
 	}
 }
@@ -188,7 +188,7 @@ func TestTheSnapshotBackAsCore(t *testing.T) {
 		t.Errorf("round trip:\n%+v\n%+v", back.Sessions[0], snap.Sessions[0])
 	}
 	ss := back.CoreSessions()
-	if ss[1].SetID != "set1" || ss[1].SetOrder != 2 || ss[0].SetID != "" || ss[2].External.Terminal != "kitty" || ss[0].Status != core.StatusWaiting {
+	if ss[1].SetID != "set1" || ss[1].SetOrder != 2 || ss[0].SetID != "" || ss[2].HarnessKind != core.HarnessTerminal || ss[0].Status != core.StatusWaiting {
 		t.Errorf("sessions: %+v %+v", ss[0], ss[1])
 	}
 	gs := back.CoreGroups()

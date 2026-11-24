@@ -434,7 +434,6 @@ func TestRunInSession(t *testing.T) {
 		edit func(*core.Session)
 		want string
 	}{
-		{func(s *core.Session) { s.Status, s.Kind = core.StatusDone, core.KindExternal }, "outside acmd"},
 		{func(s *core.Session) { s.Status = core.StatusArchived }, "archived"},
 	} {
 		s, _ = d.store.Session(ctx, s.ID)
@@ -881,6 +880,7 @@ func TestLocalFolderOps(t *testing.T) {
 	if made.Path != filepath.Join(home, "proj", "new") {
 		t.Errorf("made = %+v", made)
 	}
+	seedHosted(t, p, "f1")
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"f1","source":"startup","cwd":"`+filepath.Join(home, "proj")+`"}`, time.Now(), ipc.HookContext{}), nil))
 	must(t, c.Call(ipc.OpFoldersRecent, nil, &list))
 	if len(list.Folders) != 1 || list.Folders[0].Name != "proj" {

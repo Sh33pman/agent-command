@@ -1260,7 +1260,7 @@
     },
     {
       "name": "resume",
-      "description": "Resumes a paused background session.",
+      "description": "Resumes a paused session.",
       "scope": "act",
       "kind": "change",
       "grant": "entities",
@@ -3191,9 +3191,6 @@
         "flag": {
           "type": "boolean"
         },
-        "pane": {
-          "$ref": "#/$defs/ipc.PaneLoc"
-        },
         "set_id": {
           "type": "string"
         },
@@ -3320,47 +3317,6 @@
         }
       },
       "type": "object"
-    },
-    "ipc.PaneLoc": {
-      "properties": {
-        "terminal": {
-          "type": "string"
-        },
-        "kitty_socket": {
-          "type": "string"
-        },
-        "kitty_window": {
-          "type": "integer"
-        },
-        "ghostty_term": {
-          "type": "string"
-        },
-        "tty": {
-          "type": "string"
-        },
-        "restore_layout": {
-          "type": "string"
-        },
-        "bar_window": {
-          "type": "integer"
-        },
-        "header_window": {
-          "type": "integer"
-        },
-        "header_term": {
-          "type": "string"
-        },
-        "term_window": {
-          "type": "integer"
-        },
-        "term_term": {
-          "type": "string"
-        }
-      },
-      "type": "object",
-      "required": [
-        "terminal"
-      ]
     },
     "ipc.PromptFile": {
       "properties": {
@@ -4057,9 +4013,6 @@
         "harness_id": {
           "type": "string"
         },
-        "bg_id": {
-          "type": "string"
-        },
         "pid": {
           "type": "integer"
         },
@@ -4077,9 +4030,6 @@
         },
         "job_id": {
           "type": "string"
-        },
-        "external": {
-          "$ref": "#/$defs/ipc.PaneLoc"
         },
         "created_at": {
           "type": "string",

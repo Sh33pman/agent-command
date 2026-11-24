@@ -77,29 +77,20 @@ func once(t *testing.T, r *Reconciler) Result {
 	return res
 }
 
-func TestCorrectsKindIDsPidAndName(t *testing.T) {
+func TestCorrectsPidCwdAndName(t *testing.T) {
 	r, st, l, _ := setup(t)
-	s := create(t, st, &core.Session{ClaudeSessionID: "s1", Kind: core.KindExternal, Status: core.StatusDone,
-		External: &core.PaneLoc{Terminal: "kitty"}, Name: "first prompt"})
-	u := create(t, st, &core.Session{ClaudeSessionID: "s2", Kind: core.KindBackground, Status: core.StatusDone,
-		Name: "mine", NameSource: core.NameUser})
-	l.agents = []claudecli.Agent{agent("s1", "aaaaaaaa", "background", "idle", 11), agent("s2", "bbbbbbbb", "background", "idle", 12)}
+	s := create(t, st, &core.Session{ClaudeSessionID: "s1", Status: core.StatusDone, Name: "first prompt"})
+	u := create(t, st, &core.Session{ClaudeSessionID: "s2", Status: core.StatusDone, Name: "mine", NameSource: core.NameUser})
+	l.agents = []claudecli.Agent{agent("s1", "aaaaaaaa", "interactive", "idle", 11), agent("s2", "bbbbbbbb", "interactive", "idle", 12)}
 	if res := once(t, r); res.Updated != 2 {
 		t.Fatalf("updated %d", res.Updated)
 	}
 	got := get(t, st, s.ID)
-	if got.Kind != core.KindBackground || got.External != nil || got.BgID != "aaaaaaaa" || got.Pid != 11 || got.Name != "claude-name-aaaaaaaa" || got.Cwd != "/w/aaaaaaaa" {
+	if got.Kind != core.KindHosted || got.Pid != 11 || got.Name != "claude-name-aaaaaaaa" || got.Cwd != "/w/aaaaaaaa" {
 		t.Errorf("corrected session: %+v", got)
 	}
 	if got := get(t, st, u.ID); got.Name != "mine" {
 		t.Errorf("user name overwritten: %q", got.Name)
-	}
-
-	// Claude says interactive: external.
-	l.agents = []claudecli.Agent{agent("s1", "", "interactive", "idle", 11)}
-	once(t, r)
-	if got := get(t, st, s.ID); got.Kind != core.KindExternal {
-		t.Errorf("interactive not external: %+v", got)
 	}
 }
 
@@ -170,32 +161,30 @@ func TestAgreement(t *testing.T) {
 	}
 }
 
+// A session Claude doesn't list follows its host: paused once the host is
+// gone, after the startup grace.
 func TestUnlistedSessions(t *testing.T) {
 	r, st, _, c := setup(t)
 	fresh := create(t, st, &core.Session{ClaudeSessionID: "new", Status: core.StatusStarting, CreatedAt: c.t})
-	freshHook := create(t, st, &core.Session{ClaudeSessionID: "hook", Status: core.StatusDone, CreatedAt: c.t}) // first seen through hooks
+	alive := create(t, st, &core.Session{ClaudeSessionID: "alive", Status: core.StatusBusy, Pid: 100, CreatedAt: c.t.Add(-time.Hour)})
 	gone := create(t, st, &core.Session{ClaudeSessionID: "gone", Status: core.StatusDone, Pid: 3, CreatedAt: c.t.Add(-time.Hour)})
-	extAlive := create(t, st, &core.Session{ClaudeSessionID: "ea", Kind: core.KindExternal, Status: core.StatusBusy, Pid: 100})
-	extDead := create(t, st, &core.Session{ClaudeSessionID: "ed", Kind: core.KindExternal, Status: core.StatusDone, Pid: 200})
 	paused := create(t, st, &core.Session{ClaudeSessionID: "p", Status: core.StatusPaused})
-	r.Alive = func(pid int) bool { return pid == 100 }
+	r.HostAlive = func(s *core.Session) bool { return s.ClaudeSessionID == "alive" }
 
 	once(t, r)
-	for id, want := range map[string]core.Status{fresh.ID: core.StatusStarting, freshHook.ID: core.StatusDone, gone.ID: core.StatusPaused,
-		extAlive.ID: core.StatusBusy, extDead.ID: core.StatusPaused, paused.ID: core.StatusPaused} {
+	for id, want := range map[string]core.Status{fresh.ID: core.StatusStarting, alive.ID: core.StatusBusy,
+		gone.ID: core.StatusPaused, paused.ID: core.StatusPaused} {
 		if got := get(t, st, id); got.Status != want {
 			t.Errorf("%s: %s, want %s", got.ClaudeSessionID, got.Status, want)
 		}
 	}
-	if got := get(t, st, extDead.ID); got.Pid != 0 {
-		t.Errorf("dead external pid not cleared: %d", got.Pid)
+	if got := get(t, st, gone.ID); got.Pid != 0 {
+		t.Errorf("gone host's pid not cleared: %d", got.Pid)
 	}
 	c.advance(time.Minute)
 	once(t, r)
-	for _, s := range []*core.Session{fresh, freshHook} {
-		if got := get(t, st, s.ID); got.Status != core.StatusPaused {
-			t.Errorf("%s never listed: %s, want paused after startup grace", got.ClaudeSessionID, got.Status)
-		}
+	if got := get(t, st, fresh.ID); got.Status != core.StatusPaused {
+		t.Errorf("never started: %s, want paused after startup grace", got.Status)
 	}
 }
 
@@ -204,24 +193,6 @@ func TestListerError(t *testing.T) {
 	l.err = errors.New("claude not found")
 	if _, err := r.Once(ctx); err == nil {
 		t.Error("expected error")
-	}
-}
-
-func TestLinksSessionsStartedByAcmd(t *testing.T) {
-	r, st, l, c := setup(t)
-	started := create(t, st, &core.Session{BgID: "abcd1234", Status: core.StatusStarting, CreatedAt: c.t, Name: "mine", NameSource: core.NameUser})
-	l.agents = []claudecli.Agent{agent("abcd1234-5678-uuid", "abcd1234", "background", "busy", 7)}
-	res := once(t, r)
-	if res.Discovered != 0 {
-		t.Errorf("acmd's own session discovered again: %+v", res)
-	}
-	got := get(t, st, started.ID)
-	if got.ClaudeSessionID != "abcd1234-5678-uuid" || got.Status != core.StatusStarting || got.Name != "mine" || got.Pid != 7 {
-		t.Errorf("not linked: %+v", got)
-	}
-	all, _ := st.Sessions(ctx, true)
-	if len(all) != 1 {
-		t.Errorf("%d sessions, want 1", len(all))
 	}
 }
 
@@ -383,8 +354,8 @@ func TestNeedsListing(t *testing.T) {
 // Apply works from a listing fetched earlier, as the daemon does.
 func TestFetchThenApplyIsOnce(t *testing.T) {
 	r, st, l, _ := setup(t)
-	create(t, st, &core.Session{ID: "a", ClaudeSessionID: "s1", Kind: core.KindExternal, Status: core.StatusBusy, CreatedAt: time.Now()})
-	l.agents = []claudecli.Agent{agent("s1", "aaaaaaaa", "background", "busy", 0)}
+	create(t, st, &core.Session{ID: "a", ClaudeSessionID: "s1", Status: core.StatusBusy, CreatedAt: time.Now()})
+	l.agents = []claudecli.Agent{agent("s1", "aaaaaaaa", "interactive", "busy", 9)}
 	fetched, err := r.Fetch(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -393,7 +364,7 @@ func TestFetchThenApplyIsOnce(t *testing.T) {
 	if _, err := r.Apply(ctx, fetched); err != nil {
 		t.Fatal(err)
 	}
-	if s := get(t, st, "a"); s.Kind != core.KindBackground || s.BgID != "aaaaaaaa" {
+	if s := get(t, st, "a"); s.Pid != 9 || s.Name != "claude-name-aaaaaaaa" {
 		t.Errorf("applied %+v", s)
 	}
 }
@@ -408,7 +379,7 @@ func TestAntigravityFollowsItsHost(t *testing.T) {
 		Status: core.StatusBusy, CreatedAt: c.now().Add(-time.Hour)})
 	l.agents = []claudecli.Agent{agent("conv", "aaaaaaaa", "background", "idle", 0)}
 	once(t, r)
-	if got := get(t, st, s.ID); got.Status != core.StatusBusy || got.Kind != core.KindHosted || got.BgID != "" {
+	if got := get(t, st, s.ID); got.Status != core.StatusBusy || got.Kind != core.KindHosted {
 		t.Fatalf("host alive: %+v", got)
 	}
 	alive = false

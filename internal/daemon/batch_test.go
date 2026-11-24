@@ -50,7 +50,7 @@ func TestManyIdsGetAResultEach(t *testing.T) {
 	must(t, st.SetAppState(ctx, movedKey, "done"))
 	must(t, st.Close())
 
-	start(t, p, withConfig(p, func(c *Config) { c.Stopper = &stops{} }))
+	start(t, p, withConfig(p, func(*Config) {}))
 	c := dial(t, p)
 	began := time.Now()
 	var res ipc.Results
@@ -82,6 +82,7 @@ func TestRenameManyIsNumbered(t *testing.T) {
 	p := settingsPaths(t)
 	start(t, p, withConfig(p))
 	c := dial(t, p)
+	seedHosted(t, p, "r1", "r2", "r3")
 	var ids []string
 	for _, cid := range []string{"r1", "r2", "r3"} {
 		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+cid+`","source":"startup","cwd":"/w"}`, time.Now(), ipc.HookContext{}), nil))

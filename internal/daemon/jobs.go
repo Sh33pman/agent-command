@@ -468,8 +468,6 @@ func (d *Daemon) checkJobSession(ctx context.Context, j *core.Job) string {
 		return "That session is archived."
 	case s.ClaudeSessionID == "":
 		return fmt.Sprintf("That session has no %s conversation to continue.", core.AgentName(s.HarnessKind))
-	case s.Kind == core.KindExternal:
-		return "That session runs in your own terminal, outside acmd."
 	}
 	j.Cwd = s.Cwd
 	// It runs in the session's own harness, or its kind's default when that

@@ -165,6 +165,7 @@ func TestEachClientKeepsItsOwnLayout(t *testing.T) {
 func TestTheSnapshotSaysWhatNeedsYou(t *testing.T) {
 	p := testPaths(t)
 	start(t, p)
+	seedHosted(t, p, "c1")
 	c := dial(t, p)
 	t0 := time.Now().UTC().Truncate(time.Millisecond)
 	for _, e := range []ipc.HookEvent{

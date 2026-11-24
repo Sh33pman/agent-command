@@ -34,7 +34,7 @@ const (
 
 // Synthetic events produced by acmd.
 const (
-	// EventCreated: acmd started `claude --bg` for this session.
+	// EventCreated: acmd started this session's host.
 	EventCreated EventKind = "acmd:created"
 	// EventInterrupted: the transcript shows "[Request interrupted by user".
 	EventInterrupted EventKind = "acmd:interrupted"

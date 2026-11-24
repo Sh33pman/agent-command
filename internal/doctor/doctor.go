@@ -24,12 +24,8 @@ import (
 	"github.com/brettmostert/agent-command/internal/setup"
 )
 
-// Minimum versions acmd is tested with (M0 findings).
-const (
-	MinClaude  = "2.1.314"
-	MinKitty   = "0.49.0"
-	MinGhostty = "1.4.0"
-)
+// MinClaude is the oldest Claude Code acmd is tested with.
+const MinClaude = "2.1.314"
 
 // Status is a check's outcome.
 type Status int

@@ -12,8 +12,8 @@ import (
 )
 
 const sessionCols = `id, name, description, group_id, name_source, cwd, claude_session_id,
-	claude_history, transcript_path, status, status_detail, unseen, kind, bg_id, pid,
-	external, created_at, last_event_at, archived_at, harness_kind, harness_id, remote, host, remote_id, host_gone, job_id`
+	claude_history, transcript_path, status, status_detail, unseen, kind, pid,
+	created_at, last_event_at, archived_at, harness_kind, harness_id, remote, host, remote_id, host_gone, job_id`
 
 // sessionReadCols are sessionCols and the set columns, which only the set
 // functions write.
@@ -32,7 +32,7 @@ func (s *Store) CreateSession(ctx context.Context, sess *core.Session) error {
 		sess.NameSource = core.NameAuto
 	}
 	if sess.Kind == "" {
-		sess.Kind = core.KindBackground
+		sess.Kind = core.KindHosted
 	}
 	if sess.HarnessKind == "" {
 		sess.HarnessKind = core.HarnessClaude
@@ -48,7 +48,7 @@ func (s *Store) CreateSession(ctx context.Context, sess *core.Session) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`, status_since) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sessions (`+sessionCols+`, status_since) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			append(args, ms(sess.StatusSince))...); err != nil {
 			return fmt.Errorf("create session: %w", err)
 		}
@@ -87,7 +87,7 @@ func (s *Store) UpdateSession(ctx context.Context, sess *core.Session) error {
 		res, err := tx.ExecContext(ctx, `UPDATE sessions SET name=?, description=?,
 			group_id=CASE WHEN set_id != '' THEN group_id ELSE ? END, name_source=?, cwd=?,
 			claude_session_id=?, claude_history=?, transcript_path=?, status=?, status_detail=?, unseen=?, kind=?,
-			bg_id=?, pid=?, external=?, created_at=?, last_event_at=?, archived_at=?, harness_kind=?, harness_id=?, remote=?, host=?, remote_id=?, host_gone=?, job_id=? WHERE id=?`,
+			pid=?, created_at=?, last_event_at=?, archived_at=?, harness_kind=?, harness_id=?, remote=?, host=?, remote_id=?, host_gone=?, job_id=? WHERE id=?`,
 			append(args[1:], args[0])...)
 		if err != nil {
 			return fmt.Errorf("update session: %w", err)
@@ -121,14 +121,6 @@ func (s *Store) Session(ctx context.Context, id string) (*core.Session, error) {
 func (s *Store) SessionByClaudeID(ctx context.Context, claudeID string) (*core.Session, error) {
 	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+prefixed("s", sessionReadCols)+`
 		FROM claude_ids c JOIN sessions s ON s.id = c.session_id WHERE c.claude_session_id = ?`, claudeID))
-}
-
-// SessionByBgID finds a session acmd started (`claude --bg`) that hasn't
-// been linked to its Claude session id yet. Claude's short id is the first
-// 8 characters of the session id (M0 A3), which links the first hook.
-func (s *Store) SessionByBgID(ctx context.Context, bgID string) (*core.Session, error) {
-	return scanSession(s.q.QueryRowContext(ctx, `SELECT `+sessionReadCols+` FROM sessions
-		WHERE bg_id = ? AND claude_session_id = '' ORDER BY created_at DESC LIMIT 1`, bgID))
 }
 
 // SessionByClaudePrefix finds the session whose Claude session id starts
@@ -236,17 +228,9 @@ func sessionArgs(sess *core.Session) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	ext := ""
-	if sess.External != nil {
-		b, err := json.Marshal(sess.External)
-		if err != nil {
-			return nil, err
-		}
-		ext = string(b)
-	}
 	return []any{sess.ID, sess.Name, sess.Description, sess.GroupID, string(sess.NameSource), sess.Cwd,
 		sess.ClaudeSessionID, string(hist), sess.TranscriptPath, string(sess.Status), sess.StatusDetail,
-		b2i(sess.Unseen), string(sess.Kind), sess.BgID, sess.Pid, ext,
+		b2i(sess.Unseen), string(sess.Kind), sess.Pid,
 		ms(sess.CreatedAt), ms(sess.LastEventAt), ms(sess.ArchivedAt), sess.HarnessKind, sess.HarnessID, b2i(sess.Remote), sess.Host, sess.RemoteID, b2i(sess.HostGone), sess.JobID}, nil
 }
 
@@ -256,14 +240,14 @@ func scanSession(row scanner) (*core.Session, error) {
 	var (
 		sess                         core.Session
 		nameSource, status, kind     string
-		hist, ext                    string
+		hist                         string
 		unseen, remote, gone         int
 		created, lastEvent, archived int64
 		since                        int64
 	)
 	err := row.Scan(&sess.ID, &sess.Name, &sess.Description, &sess.GroupID, &nameSource, &sess.Cwd,
 		&sess.ClaudeSessionID, &hist, &sess.TranscriptPath, &status, &sess.StatusDetail, &unseen, &kind,
-		&sess.BgID, &sess.Pid, &ext, &created, &lastEvent, &archived, &sess.HarnessKind, &sess.HarnessID, &remote, &sess.Host, &sess.RemoteID, &gone, &sess.JobID,
+		&sess.Pid, &created, &lastEvent, &archived, &sess.HarnessKind, &sess.HarnessID, &remote, &sess.Host, &sess.RemoteID, &gone, &sess.JobID,
 		&sess.SetID, &sess.SetOrder, &since)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -280,12 +264,6 @@ func scanSession(row scanner) (*core.Session, error) {
 	}
 	if len(sess.ClaudeHistory) == 0 {
 		sess.ClaudeHistory = nil
-	}
-	if ext != "" {
-		sess.External = &core.PaneLoc{}
-		if err := json.Unmarshal([]byte(ext), sess.External); err != nil {
-			return nil, fmt.Errorf("session %s external: %w", sess.ID, err)
-		}
 	}
 	return &sess, nil
 }

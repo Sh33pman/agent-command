@@ -50,13 +50,8 @@ type Config struct {
 	// Agents lists Claude sessions for the reconciler (claudecli.CLI); nil
 	// disables reconciliation (e.g. claude not found).
 	Agents reconcile.Lister
-	// Stopper stops background sessions on archive (claudecli.CLI).
-	Stopper Stopper
-	// Hosts runs hosted sessions; when set, new and resumed
-	// sessions are hosted interactive sessions instead of `claude --bg`.
+	// Hosts runs the sessions' hosts; nil: this daemon can't start sessions.
 	Hosts Hosts
-	// Remover deletes background sessions on purge (claudecli.CLI).
-	Remover Remover
 	// ClaudeDir is Claude's folder, and AgyDir agy's (agycli.Dir), read for
 	// conversations to resume. AgyDir "" leaves agy's out.
 	ClaudeDir string
@@ -71,7 +66,7 @@ type Config struct {
 	// (editor.preset or editor.command), and says if it isn't installed.
 	// nil leaves editor.resolved as it is.
 	ResolveEditor func(config.Editor) (config.Editor, error)
-	// Fallback shows a notification when no view's sidebar can (terminal-notifier,
+	// Fallback shows a notification when no client can (terminal-notifier,
 	// else osascript).
 	Fallback func(ipc.Notice)
 	// SendToHost types into a session's terminal (default: through its host).
@@ -112,10 +107,9 @@ type Config struct {
 	// HarnessesChanged is told the harnesses after one is added, changed or
 	// removed: acmd puts its hooks in each Claude harness's folder. nil: nothing.
 	HarnessesChanged func(ctx context.Context, harnesses []core.Harness)
-	// ClaudeFor is Claude's CLI for a harness with its own folder, for its
-	// background sessions; nil, or a harness on Claude's standard folder, uses
-	// Agents, Stopper and Remover.
-	ClaudeFor func(core.Harness) ClaudeCLI
+	// ClaudeFor lists Claude's sessions for a harness with its own folder;
+	// nil, or a harness on Claude's standard folder, uses Agents.
+	ClaudeFor func(core.Harness) reconcile.Lister
 	// Home is where the host API's folders start (default: $HOME).
 	Home string
 
@@ -593,7 +587,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	sess, isNew := d.hostedSessionOf(ctx, ev.Context), false
+	sess := d.hostedSessionOf(ctx, ev.Context)
 	switch {
 	case sess != nil && sess.IsTerminal():
 		if !sess.TakeAgentEvent(e, ev.Context.ClaudePid) {
@@ -608,13 +602,14 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 		// be taken for a Claude conversation.
 		return nil
 	default:
+		// A Claude acmd didn't start makes no session: only one it knows
+		// already, by its conversation, is followed.
 		sess, err = d.store.SessionByClaudeID(ctx, e.SessionID)
-		isNew = errors.Is(err, store.ErrNotFound)
-		if err != nil && !isNew {
-			return err
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
 		}
-		if isNew {
-			sess = sessionFromHook(e, ev.Context, d.cfg.Now())
+		if err != nil {
+			return err
 		}
 	}
 	tr := core.Apply(sess, e)
@@ -625,11 +620,7 @@ func (d *Daemon) ApplyHook(ctx context.Context, ev ipc.HookEvent) error {
 	// The session, its Inbox and the event log change together, or not at all:
 	// a crash in between would leave a status and an Inbox that disagree.
 	err = d.store.WithTx(ctx, func(st *store.Store) error {
-		if isNew {
-			if err := st.CreateSession(ctx, sess); err != nil {
-				return err
-			}
-		} else if tr.Applied {
+		if tr.Applied {
 			if err := st.UpdateSession(ctx, sess); err != nil {
 				return err
 			}
@@ -798,21 +789,6 @@ func (d *Daemon) tailOnce(ctx context.Context, tail *reconcile.Tailer) (bool, er
 		d.transition(s, tr)
 	}
 	return changed, nil
-}
-
-// sessionFromHook creates the row for a Claude session acmd hasn't seen yet.
-// Classification here is provisional: the reconciler (M1d) corrects Kind
-// from `claude agents --json`.
-func sessionFromHook(e core.Event, hc ipc.HookContext, now time.Time) *core.Session {
-	s := &core.Session{
-		ClaudeSessionID: e.SessionID,
-		Cwd:             e.Cwd,
-		TranscriptPath:  e.TranscriptPath,
-		Kind:            core.KindBackground,
-		Pid:             hc.ClaudePid,
-		CreatedAt:       now.UTC(),
-	}
-	return s
 }
 
 // drainSpool applies events that hooks spooled while the daemon was down.

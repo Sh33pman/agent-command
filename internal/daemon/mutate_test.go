@@ -1,29 +1,12 @@
 package daemon
 
 import (
-	"context"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/brettmostert/agent-command/internal/claudecli"
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 )
-
-type stops struct {
-	mu  sync.Mutex
-	ids []string
-	err error
-}
-
-func (s *stops) Stop(_ context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ids = append(s.ids, id)
-	return s.err
-}
 
 func snapshot(t *testing.T, c *ipc.Conn) ipc.Snapshot {
 	t.Helper()
@@ -50,15 +33,12 @@ func mutate(t *testing.T, c *ipc.Conn, m ipc.Mutation) {
 
 func TestMutations(t *testing.T) {
 	p := testPaths(t)
-	st := &stops{}
-	start(t, p, func(c *Config) { c.Stopper = st })
+	start(t, p)
 	c := dial(t, p)
 	t0 := time.Now()
-	view := ipc.HookContext{}
-	ext := ipc.HookContext{}
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg","source":"startup"}`, t0, view), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ext), nil))
-	makeExternal(t, p, "ext")
+	seedHosted(t, p, "bg", "ext")
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg","source":"startup"}`, t0, ipc.HookContext{}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{}), nil))
 	snap := snapshot(t, c)
 	bg, ex := byClaude(snap, "bg"), byClaude(snap, "ext")
 
@@ -129,58 +109,19 @@ func TestMutations(t *testing.T) {
 
 func TestArchiveRules(t *testing.T) {
 	p := testPaths(t)
-	st := &stops{}
-	pid := 9
-	agents := &fakeAgents{}
-	start(t, p, func(c *Config) {
-		c.Stopper = st
-		c.Agents = agents
-		c.ReconcileEvery = 30 * time.Millisecond
-	})
+	start(t, p)
 	c := dial(t, p)
 	t0 := time.Now()
-	view := ipc.HookContext{}
+	seedHosted(t, p, "run", "grp")
 	for _, cid := range []string{"run", "grp"} {
-		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+cid+`","source":"startup"}`, t0, view), nil))
-	}
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{}), nil))
-	makeExternal(t, p, "ext")
-	idle := "idle"
-	agents.add(bgAgent("run", "rrrrrrrr", &idle, &pid))
-	agents.add(bgAgent("grp", "gggggggg", &idle, &pid))
-	deadline := time.Now().Add(5 * time.Second)
-	for byClaude(snapshot(t, c), "grp").BgID == "" {
-		if time.Now().After(deadline) {
-			t.Fatal("reconciler didn't set short ids")
-		}
-		time.Sleep(20 * time.Millisecond)
+		must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"`+cid+`","source":"startup"}`, t0, ipc.HookContext{}), nil))
 	}
 	snap := snapshot(t, c)
-
-	// External: archived without any stop call (never killed).
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "ext").ID)})
-	// Running background: claude stop, then archived.
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "run").ID)})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "run").ID)}) // idempotent
-	if strings.Join(st.ids, ",") != "rrrrrrrr" {
-		t.Errorf("stop calls = %v", st.ids)
+	if s := byClaude(snapshot(t, c), "run"); s.Status != core.StatusArchived || s.ArchivedAt.IsZero() {
+		t.Errorf("run: %+v", s)
 	}
-	snap = snapshot(t, c)
-	for _, cid := range []string{"ext", "run"} {
-		if s := byClaude(snap, cid); s.Status != core.StatusArchived || s.ArchivedAt.IsZero() {
-			t.Errorf("%s: %+v", cid, s)
-		}
-	}
-
-	// A failing stop leaves the session unarchived.
-	st.err = context.DeadlineExceeded
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snap, "grp").ID)}, nil); err == nil {
-		t.Error("archive should fail when claude stop fails")
-	}
-	if s := byClaude(snapshot(t, c), "grp"); s.Status == core.StatusArchived {
-		t.Error("session archived although stop failed")
-	}
-	st.err = nil
 
 	// Group archive / unarchive with sessions.
 	var g ipc.Group
@@ -199,74 +140,30 @@ func TestArchiveRules(t *testing.T) {
 	if s := byClaude(snapshot(t, c), "grp"); s.Status != core.StatusPaused {
 		t.Errorf("unarchive --sessions: %+v", s)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutUnarchive, Targets: ipc.Here(byClaude(snap, "ext").ID)})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutUnarchive, Targets: ipc.Here(byClaude(snap, "run").ID)})
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutGroupDelete, GroupID: g.ID})
 	if s := byClaude(snapshot(t, c), "grp"); s.GroupID != "default" {
 		t.Errorf("group delete should move sessions to Default: %+v", s)
 	}
 }
 
-func TestArchiveWithoutClaude(t *testing.T) {
-	p := testPaths(t)
-	start(t, p) // no Stopper
-	c := dial(t, p)
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"bg","source":"startup"}`, time.Now(), ipc.HookContext{}), nil))
-	// Without a short id there is nothing to stop: archiving works.
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(byClaude(snapshot(t, c), "bg").ID)})
-}
-
-func bgAgent(sid, id string, status *string, pid *int) claudecli.Agent {
-	return claudecli.Agent{SessionID: sid, ID: id, Kind: "background", Status: status, Pid: pid}
-}
-
-// Finish stops a running background session and marks it finished; it
-// stays finished when Claude reports it stopped, a view showing it goes
-// back to its list, and resuming it brings it back.
+// Finish stops a session's host and marks it finished; it stays finished
+// when its Claude ends, and resuming it brings it back.
 func TestFinish(t *testing.T) {
 	sessionsHere(t)
 	p := testPaths(t)
-	st := &stops{}
-	pid := 9
-	agents := &fakeAgents{}
-	start(t, p, func(c *Config) {
-		c.Stopper, c.Agents, c.Hosts = st, agents, &fakeHosts{paths: p}
-		c.ReconcileEvery = 30 * time.Millisecond
-	})
+	start(t, p, func(c *Config) { c.Hosts = &fakeHosts{paths: p} })
 	c := dial(t, p)
-	t0 := time.Now()
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"run00000-x","source":"startup"}`, t0, ipc.HookContext{}), nil))
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"ext","source":"startup"}`, t0, ipc.HookContext{}), nil))
-	makeExternal(t, p, "ext")
-	idle := "idle"
-	agents.add(bgAgent("run00000-x", "rrrrrrrr", &idle, &pid))
-	deadline := time.Now().Add(5 * time.Second)
-	for byClaude(snapshot(t, c), "run00000-x").BgID == "" {
-		if time.Now().After(deadline) {
-			t.Fatal("reconciler didn't set the short id")
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	seedHosted(t, p, "run00000-x")
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"run00000-x","source":"startup"}`, time.Now(), ipc.HookContext{}), nil))
 	run := byClaude(snapshot(t, c), "run00000-x")
 
 	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(run.ID)})
-	if strings.Join(st.ids, ",") != "rrrrrrrr" {
-		t.Errorf("stop calls = %v", st.ids)
-	}
-	// Claude now lists it as stopped: it stays finished.
-	agents.mu.Lock()
-	agents.agents = []claudecli.Agent{bgAgent("run00000-x", "rrrrrrrr", nil, nil)}
-	agents.mu.Unlock()
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionEnd", `{"session_id":"run00000-x","reason":"other"}`, time.Now(), ipc.HookContext{}), nil))
-	time.Sleep(150 * time.Millisecond)
-	snap := snapshot(t, c)
-	if s := byClaude(snap, "run00000-x"); s.Status != core.StatusFinished {
+	if s := byClaude(snapshot(t, c), "run00000-x"); s.Status != core.StatusFinished {
 		t.Errorf("after finish: %s", s.Status)
 	}
-	// External sessions can't be finished; resuming brings it back.
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(byClaude(snap, "ext").ID)}, nil); err == nil {
-		t.Error("finished an external session")
-	}
-	agents.add(bgAgent("run00000-x", "run00000", &idle, &pid)) // Claude runs it again
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutFinish, Targets: ipc.Here(run.ID)}) // idempotent
 	var r ipc.Session
 	must(t, c.Call(ipc.OpResume, ipc.Mutation{Targets: ipc.Here(run.ID)}, &r))
 	if r.Status != core.StatusStarting {

@@ -21,7 +21,7 @@ type Input struct {
 	Home       string
 	ConfigFile string // acmd's config.toml
 	EnvFile    string // env.json
-	AcmdPath   string // stable path written into hooks and keybinds
+	AcmdPath   string // stable path written into hooks
 	ClaudeDir  string // Claude's standard folder, holding its settings.json
 	// HarnessDirs are the Claude harnesses' own folders (CLAUDE_CONFIG_DIR):
 	// acmd's hooks go in each, as in ClaudeDir.
@@ -298,8 +298,8 @@ func ClaudeConfigDir(home string, getenv func(string) string) string {
 	return filepath.Join(home, ".claude")
 }
 
-// StableBinary is the acmd path to write into hooks and keybinds (SPEC
-// §4.4): the path acmd was invoked as (argv0, looked up on PATH if it's a
+// StableBinary is the acmd path to write into hooks: the path acmd was
+// invoked as (argv0, looked up on PATH if it's a
 // bare name), never Homebrew's versioned Cellar path, which `brew upgrade`
 // removes. exe is os.Executable's result, the fallback.
 func StableBinary(argv0, exe string, lookPath func(string) (string, error)) string {

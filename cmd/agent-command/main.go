@@ -1,5 +1,6 @@
-// Command agent-command (alias acmd) tracks Claude Code sessions and shows
-// them in a sidebar in Kitty and Ghostty.
+// Command agent-command (alias acmd) runs AI coding agents and terminals as
+// sessions, through its daemon, which the app, the terminal UI and other
+// machines use.
 package main
 
 import (

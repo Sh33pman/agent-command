@@ -156,11 +156,6 @@ func (d *Daemon) purge(ctx context.Context, id string) error {
 	if sess.Status != core.StatusArchived {
 		return invalid("%s isn't archived", nameOf(sess))
 	}
-	if _, remover := d.claudeFor(ctx, sess); sess.Kind == core.KindBackground && sess.BgID != "" && remover != nil {
-		if err := remover.Remove(ctx, sess.BgID); err != nil {
-			d.cfg.Log.Printf("purge: claude rm %s: %v", sess.BgID, err) // already gone: fine
-		}
-	}
 	if err := d.store.DeleteSession(ctx, id); err != nil {
 		return err
 	}

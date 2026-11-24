@@ -107,6 +107,7 @@ func hookEvent(name, payload string, at time.Time, hc ipc.HookContext) ipc.HookE
 
 func TestDaemonAppliesHookEvents(t *testing.T) {
 	p := testPaths(t)
+	seedHosted(t, p, "c1")
 	start(t, p)
 	c := dial(t, p)
 	if c.Daemon.Version != testVersion || c.Daemon.Pid == 0 {
@@ -146,6 +147,7 @@ func TestDaemonAppliesHookEvents(t *testing.T) {
 
 func TestDaemonPersistsStateAcrossRestarts(t *testing.T) {
 	p := testPaths(t)
+	seedHosted(t, p, "c1", "s1")
 	d := start(t, p)
 	c := dial(t, p)
 	t0 := time.Now()
@@ -165,13 +167,14 @@ func TestDaemonPersistsStateAcrossRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Status != core.StatusDone || !s.Unseen || s.Kind != core.KindBackground || s.Pid != 99 {
+	if s.Status != core.StatusDone || !s.Unseen || s.Kind != core.KindHosted || s.Cwd != "/w" {
 		t.Errorf("session = %+v", s)
 	}
 }
 
 func TestDaemonDrainsSpoolOnStart(t *testing.T) {
 	p := testPaths(t)
+	seedHosted(t, p, "s1")
 	must(t, p.Ensure())
 	t0 := time.Now()
 	lines := []any{
@@ -242,25 +245,40 @@ func TestDaemonSingleInstanceAndShutdown(t *testing.T) {
 	}
 }
 
-func TestNewSessionClassification(t *testing.T) {
-	s := sessionFromHook(core.Event{SessionID: "x", Cwd: "/w"}, ipc.HookContext{ClaudePid: 7}, time.Now())
-	if s.Kind != core.KindBackground || s.External != nil || s.Pid != 7 {
-		t.Errorf("session: %+v", s)
+// A Claude acmd didn't start makes no session: its hooks are dropped.
+func TestAHookFromAClaudeOutsideAcmdMakesNoSession(t *testing.T) {
+	p := testPaths(t)
+	start(t, p)
+	c := dial(t, p)
+	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"outside","source":"startup","cwd":"/w"}`,
+		time.Now(), ipc.HookContext{ClaudePid: 7}), nil))
+	must(t, c.Call(ipc.OpEvent, hookEvent("Stop", `{"session_id":"outside"}`, time.Now(), ipc.HookContext{}), nil))
+	if snap := snapshot(t, c); len(snap.Sessions) != 0 {
+		t.Errorf("sessions from an outside Claude: %+v", snap.Sessions)
 	}
 }
 
-// makeExternal turns a session into one of v1's external rows, which a database
-// can still hold, though nothing creates them now.
-func makeExternal(t *testing.T, p paths.Paths, claudeID string) {
+// seedHosted adds a hosted session for each Claude id, as `acmd new` does
+// before its Claude's first hook, and returns their ids.
+func seedHosted(t *testing.T, p paths.Paths, claudeIDs ...string) []string {
 	t.Helper()
+	var ids []string
+	for _, cid := range claudeIDs {
+		ids = append(ids, seedSession(t, p, &core.Session{ClaudeSessionID: cid, Status: core.StatusStarting}))
+	}
+	return ids
+}
+
+// seedSession adds s to the store as a hosted session, and returns its id.
+func seedSession(t *testing.T, p paths.Paths, s *core.Session) string {
+	t.Helper()
+	must(t, os.MkdirAll(filepath.Dir(p.DB()), 0o700)) // before the daemon makes it
 	st, err := store.Open(context.Background(), p.DB())
 	must(t, err)
 	defer st.Close()
-	s, err := st.SessionByClaudeID(context.Background(), claudeID)
-	must(t, err)
-	s.Kind = core.KindExternal
-	s.External = &core.PaneLoc{Terminal: "kitty", KittyWindow: 2}
-	must(t, st.UpdateSession(context.Background(), s))
+	s.Kind = core.KindHosted
+	must(t, st.CreateSession(context.Background(), s))
+	return s.ID
 }
 
 func must(t *testing.T, err error) {
@@ -292,6 +310,7 @@ func (f *fakeAgents) add(a claudecli.Agent) {
 func TestDaemonBackgroundLoops(t *testing.T) {
 	sessionsHere(t)
 	p := testPaths(t)
+	seedHosted(t, p, "esc-1")
 	transcript := filepath.Join(p.StateDir, "t.jsonl")
 	must(t, p.Ensure())
 	must(t, os.WriteFile(transcript, []byte("{\"type\":\"user\"}\n"), 0o600))
@@ -324,7 +343,7 @@ func TestDaemonBackgroundLoops(t *testing.T) {
 		esc, err := st.SessionByClaudeID(context.Background(), "esc-1")
 		st.Close()
 		if err == nil && esc.Status == core.StatusDone {
-			if esc.BgID != "eeeeeeee" || !esc.Unseen {
+			if !esc.Unseen {
 				t.Errorf("esc=%+v", esc)
 			}
 			return
@@ -395,6 +414,7 @@ func (s *slowAgents) Agents(ctx context.Context) ([]claudecli.Agent, error) {
 // second and spool their event.
 func TestHooksAreNotHeldUpByASlowListing(t *testing.T) {
 	p := testPaths(t)
+	seedHosted(t, p, "late", "s1")
 	agents := &slowAgents{called: make(chan struct{}), release: make(chan struct{})}
 	defer close(agents.release)
 	start(t, p, func(c *Config) {
@@ -426,6 +446,7 @@ func TestHooksAreNotHeldUpByASlowListing(t *testing.T) {
 // on the next reconcile tick, not at the next restart.
 func TestDaemonDrainsSpoolWhileRunning(t *testing.T) {
 	p := testPaths(t)
+	seedHosted(t, p, "late")
 	start(t, p, func(c *Config) { c.ReconcileEvery = 20 * time.Millisecond })
 	b, _ := json.Marshal(hookEvent("SessionStart", `{"session_id":"late","source":"startup"}`, time.Now(), ipc.HookContext{}))
 	must(t, os.WriteFile(p.Spool(), append(b, '\n'), 0o600))

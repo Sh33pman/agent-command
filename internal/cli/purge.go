@@ -20,7 +20,7 @@ func newPurgeCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "purge [--older-than 30d]",
-		Short: "Permanently delete archived sessions (and Claude's background sessions for them)",
+		Short: "Permanently delete archived sessions (an agent's conversation is kept)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			age, err := parseAge(olderThan)

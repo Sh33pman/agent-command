@@ -1,5 +1,5 @@
-// Package editor opens a session's folder in the configured editor (SPEC
-// §8.6): a preset's launcher (re-resolved if it moved, then `open -b
+// Package editor opens a session's folder in the configured editor: a
+// preset's launcher (re-resolved if it moved, then `open -b
 // <bundle id>`), or a custom argv with {dir}. Commands run directly,
 // never through a shell, so folder names can't inject anything.
 package editor

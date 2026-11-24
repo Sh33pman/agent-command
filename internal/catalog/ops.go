@@ -114,7 +114,7 @@ func localOps() []Op {
 
 		// Sessions.
 		act(ipc.OpNew, "Starts a session in the background, in a folder, with a harness.", entities, ipc.NewRequest{}, ipc.Session{}).runsCode().retryable(),
-		act(ipc.OpResume, "Resumes a paused background session.", entities, ipc.Mutation{}, ipc.Session{}).runsCode(),
+		act(ipc.OpResume, "Resumes a paused session.", entities, ipc.Mutation{}, ipc.Session{}).runsCode(),
 		read(ipc.OpConversations, "Lists earlier Claude and Antigravity conversations that can be resumed.", host, ipc.Page{}, ipc.ConversationPage{}),
 		// rename, archive, unarchive, move, purge, remote and remove_added take
 		// many ids (IDs), and return a result for each.

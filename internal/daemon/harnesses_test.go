@@ -13,6 +13,7 @@ import (
 	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/errcode"
 	"github.com/brettmostert/agent-command/internal/ipc"
+	"github.com/brettmostert/agent-command/internal/reconcile"
 )
 
 func harnessesOf(t *testing.T, c *ipc.Conn) ipc.Harnesses {
@@ -178,7 +179,7 @@ func TestHarnessFoldersHistoryAndAgents(t *testing.T) {
 	start(t, p, func(c *Config) {
 		c.Home, c.ClaudeDir, c.Hosts = home, std, &fakeHosts{paths: p}
 		c.Agents = folderAgents{agents: []claudecli.Agent{{SessionID: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Kind: "interactive", Pid: &pid, Status: &idle}}}
-		c.ClaudeFor = func(h core.Harness) ClaudeCLI {
+		c.ClaudeFor = func(h core.Harness) reconcile.Lister {
 			return folderAgents{dir: h.ConfigDir, agents: []claudecli.Agent{{SessionID: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb", Kind: "interactive", Pid: &pid, Status: &idle}}}
 		}
 	})

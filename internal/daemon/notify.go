@@ -85,7 +85,7 @@ func (d *Daemon) transition(s *core.Session, tr core.Transition) {
 		name = filepath.Base(s.Cwd)
 	}
 	if name == "" {
-		name = "session " + s.BgID
+		name = "session " + s.ID
 	}
 	no := ipc.Notice{SessionID: s.ID, Kind: kind, Sound: n.cfg.Sound}
 	switch kind {

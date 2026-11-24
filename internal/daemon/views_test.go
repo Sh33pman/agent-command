@@ -1,8 +1,6 @@
 package daemon
 
 import (
-	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -106,30 +104,20 @@ func TestCollapseIsInTheView(t *testing.T) {
 	}
 }
 
-type removes struct{ ids []string }
-
-func (r *removes) Remove(_ context.Context, id string) error {
-	r.ids = append(r.ids, id)
-	return fmt.Errorf("already gone") // logged, not fatal
-}
-
 func TestPurge(t *testing.T) {
 	p := testPaths(t)
-	rm := &removes{}
-	start(t, p, func(c *Config) { c.Remover, c.Stopper = rm, &stops{} })
+	start(t, p)
 	c := dial(t, p)
-	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"beef0001-x","source":"startup","cwd":"/w"}`, time.Now(), ipc.HookContext{}), nil))
-	s := byClaude(snapshot(t, c), "beef0001-x")
+	id := seedSession(t, p, &core.Session{ClaudeSessionID: "beef0001-x", Cwd: "/w"})
 	// One session that can't be purged is an error, with its code.
-	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, Targets: ipc.Here(s.ID)}, nil); codeOf(err) != ipc.CodeInvalid {
+	if err := c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, Targets: ipc.Here(id)}, nil); codeOf(err) != ipc.CodeInvalid {
 		t.Errorf("purged a live session: %v", err)
 	}
-	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(s.ID)})
+	mutate(t, c, ipc.Mutation{Kind: ipc.MutArchive, Targets: ipc.Here(id)})
 	var res ipc.Results
-	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, Targets: ipc.Here(s.ID, "nope")}, &res))
-	if len(res.Results) != 2 || !res.Results[0].OK || res.Results[1].Code != ipc.CodeNotFound ||
-		len(snapshot(t, c).Sessions) != 0 || len(rm.ids) != 0 {
-		t.Errorf("purge: %+v removes=%v", res, rm.ids) // no BgID known (hook-only session): no claude rm
+	must(t, c.Call(ipc.OpMutate, ipc.Mutation{Kind: ipc.MutPurge, Targets: ipc.Here(id, "nope")}, &res))
+	if len(res.Results) != 2 || !res.Results[0].OK || res.Results[1].Code != ipc.CodeNotFound || len(snapshot(t, c).Sessions) != 0 {
+		t.Errorf("purge: %+v", res)
 	}
 }
 
@@ -156,6 +144,7 @@ func TestWatch(t *testing.T) {
 func TestMarkSeen(t *testing.T) {
 	p := testPaths(t)
 	start(t, p)
+	seedHosted(t, p, "s1")
 	c := dial(t, p)
 	t0 := time.Now()
 	must(t, c.Call(ipc.OpEvent, hookEvent("SessionStart", `{"session_id":"s1","source":"startup"}`, t0, ipc.HookContext{}), nil))

@@ -102,7 +102,7 @@ func TestNotifyOff(t *testing.T) {
 	cfg.Enabled = true
 	d, _, _ = notifyDaemon(t, cfg)
 	d.transition(s, core.Transition{From: core.StatusDone, To: core.StatusPaused})
-	if n := d.notices(); len(n) != 1 || n[0].Kind != "paused" || n[0].Title != "‖ session  stopped" {
+	if n := d.notices(); len(n) != 1 || n[0].Kind != "paused" || n[0].Title != "‖ session s1 stopped" {
 		t.Errorf("paused: %+v", n)
 	}
 	d.transition(s, core.Transition{From: core.StatusPaused, To: core.StatusPaused}) // no change

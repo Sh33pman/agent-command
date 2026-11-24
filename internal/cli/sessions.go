@@ -165,7 +165,7 @@ func writeListJSON(w io.Writer, snap snapshot, rows []listRow) error {
 	return enc.Encode(out)
 }
 
-// where says where a session runs: "↗ <host>" on a Remote host.
+// where says where a session runs: "↗ <host>" on a Remote host, else "acmd".
 func where(s *core.Session) string {
 	if s.OnHost() {
 		if s.HostGone {
@@ -173,17 +173,7 @@ func where(s *core.Session) string {
 		}
 		return "↗ " + s.Host
 	}
-	if s.Kind == core.KindExternal {
-		t := "unknown"
-		if s.External != nil && s.External.Terminal != "" {
-			t = s.External.Terminal
-		}
-		return t + " ↗"
-	}
-	if s.Kind == core.KindHosted {
-		return "acmd"
-	}
-	return "bg"
+	return "acmd"
 }
 
 func age(s *core.Session) string {
@@ -320,8 +310,8 @@ func newArchiveCmd() *cobra.Command {
 				if len(ids) == 1 {
 					s, _ := resolveSession(snap, args[0])
 					q = fmt.Sprintf("Archive %q?", s.Name)
-					if s.Managed() && !s.Stopped() {
-						q = fmt.Sprintf("Archive %q? Its background session will be stopped (the conversation is kept).", s.Name)
+					if !s.Stopped() {
+						q = fmt.Sprintf("Archive %q? It will be stopped (the conversation is kept).", s.Name)
 					}
 				}
 				if err := confirm(cmd.InOrStdin(), cmd.OutOrStdout(), yes, q); err != nil {

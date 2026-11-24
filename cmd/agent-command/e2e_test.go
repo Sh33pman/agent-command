@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/brettmostert/agent-command/internal/core"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/version"
 )
 
@@ -48,6 +50,15 @@ func TestHookSpawnsDaemonEndToEnd(t *testing.T) {
 	if err := os.WriteFile(p.Setup(), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// The session the hook's Claude runs in (ACMD_SESSION_ID), as acmd made it.
+	seed, err := store.Open(context.Background(), p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.CreateSession(context.Background(), &core.Session{ID: "e2e", Kind: core.KindHosted}); err != nil {
+		t.Fatal(err)
+	}
+	seed.Close()
 
 	hook := exec.Command(bin, "hook", "SessionStart")
 	hook.Env = env
@@ -98,7 +109,7 @@ func TestHookSpawnsDaemonEndToEnd(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if st.Sessions != 1 || st.Events != 1 {
-		t.Fatalf("daemon status = %+v, want the spooled session", st)
+		t.Fatalf("daemon status = %+v, want the spooled event applied to the session", st)
 	}
 
 	// The daemon must not have inherited Claude's session variables.

@@ -352,7 +352,7 @@ func Resolve(rows []Row, all []*Session, sel string) (*Session, error) {
 		return nil, fmt.Errorf("%w: no session number %d in the current view", ErrNoMatch, n)
 	}
 	for _, s := range all {
-		if s.ID == sel || (s.BgID != "" && s.BgID == sel) || s.ClaudeSessionID == sel {
+		if s.ID == sel || s.ClaudeSessionID == sel {
 			return s, nil
 		}
 	}

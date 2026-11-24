@@ -83,11 +83,8 @@ func (d *Daemon) newSession(ctx context.Context, req ipc.NewRequest) (*core.Sess
 	return d.joinSet(ctx, s, req.SetWith), nil
 }
 
-// resume starts a stopped session again in a new host with `claude
-// --resume`. A session from before hosting (a `claude --bg`
-// one) is stopped first if it still runs (Claude keeps the conversation)
-// and becomes a hosted session; so does one that ended in the user's own
-// pane (acmd adopt).
+// resume starts a stopped session again in a new host, continuing its
+// conversation (`claude --resume`). A running one is left as it is.
 func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 	d.mu.Lock()
 	s, err := d.store.Session(ctx, id)
@@ -109,15 +106,8 @@ func (d *Daemon) resume(ctx context.Context, id string) (*core.Session, error) {
 		return nil, errors.New("that session is archived (acmd unarchive first)")
 	case s.ClaudeSessionID == "" && !s.IsTerminal() && !s.IsAntigravity(): // such an agy starts afresh
 		return nil, errors.New("that session has no Claude conversation to resume")
-	case s.Kind == core.KindHosted && !s.Stopped():
+	case !s.Stopped():
 		return s, nil // already running
-	case s.Kind == core.KindExternal && !s.Stopped():
-		return nil, errors.New("that session runs in your own pane: exit Claude there, or move it into acmd")
-	case s.Kind == core.KindBackground && !s.Stopped() && s.BgID != "" && d.cfg.Stopper != nil:
-		stopper, _ := d.claudeFor(ctx, s)
-		if err := stopper.Stop(ctx, s.BgID); err != nil {
-			return nil, fmt.Errorf("stop %s: %w", s.BgID, err)
-		}
 	}
 	return d.resumeHosted(ctx, s, "", nil)
 }

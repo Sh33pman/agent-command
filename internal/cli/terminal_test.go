@@ -268,6 +268,7 @@ func TestWatchGetsTheNoticesRoutedHere(t *testing.T) {
 	spawnDaemon = func(paths.Paths) error { return errors.New("tests start the daemon themselves") }
 	t.Cleanup(func() { spawnDaemon = orig })
 
+	seedHosted(t, p, "c-1")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	fellBack := make(chan ipc.Notice, 4)

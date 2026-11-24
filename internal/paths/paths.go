@@ -174,8 +174,8 @@ func (p Paths) Setup() string { return filepath.Join(p.StateDir, "setup.json") }
 // Backups holds copies of config files from before acmd edited them.
 func (p Paths) Backups() string { return filepath.Join(p.StateDir, "backups") }
 
-// TermSocket is the unix socket of session id's terminal server (SPEC
-// §8.7). The name is short: unix socket paths are limited to 104 bytes.
+// TermSocket is the unix socket of session id's terminal server. The name
+// is short: unix socket paths are limited to 104 bytes.
 func (p Paths) TermSocket(id string) string {
 	return filepath.Join(p.RuntimeDir, "t-"+termKey(id)+".sock")
 }

@@ -1,8 +1,6 @@
-// Package claudecli runs the `claude` management commands acmd still needs:
-// `agents --json` for status cross-checks, and `stop` / `rm`
-// for sessions started by `claude --bg` before acmd hosted its own (SPEC
-// §4.5). Sessions themselves are started by internal/harness under a PTY
-// host, not here. Agent view is a research preview, so parsing is lenient
+// Package claudecli runs the one `claude` management command acmd still
+// needs: `agents --json`, for status cross-checks. Sessions themselves are
+// started by internal/harness under a PTY host, not here. Agent view is a research preview, so parsing is lenient
 // and pinned by contract tests on recorded output (testdata/claudecli).
 package claudecli
 
@@ -149,18 +147,6 @@ func (c *CLI) Agents(ctx context.Context) ([]Agent, error) {
 		return nil, err
 	}
 	return ParseAgents(out)
-}
-
-// Stop runs `claude stop <id>`; the conversation is kept.
-func (c *CLI) Stop(ctx context.Context, id string) error {
-	_, err := c.run(ctx, "", "stop", id)
-	return err
-}
-
-// Remove runs `claude rm <id>` (purge).
-func (c *CLI) Remove(ctx context.Context, id string) error {
-	_, err := c.run(ctx, "", "rm", id)
-	return err
 }
 
 func firstLine(b []byte) string {

@@ -1,6 +1,5 @@
 // Package setup holds the side-effect-free config editors behind `acmd
-// init` and `acmd uninstall`: Claude Code hooks in settings.json,
-// Kitty's managed config, keybinding conflict detection and the login-shell
+// init` and `acmd uninstall`: the agents' hooks and the login-shell
 // environment. Callers do the file I/O, backups and confirmation.
 package setup
 

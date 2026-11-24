@@ -68,7 +68,7 @@ func (c Change) Action() string {
 type Plan struct {
 	Changes []Change
 	Notes   []string // warnings and skipped items
-	After   []string // what the user should do afterwards (e.g. restart Kitty)
+	After   []string // what the user should do afterwards (e.g. restart Claude)
 }
 
 // Pending returns the changes that actually change something.
@@ -200,7 +200,7 @@ func writeAtomic(path string, data []byte, mode os.FileMode, force bool) error {
 		}
 		path = target
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: config directories like ~/.config/kitty are normally 0755
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // G301: config directories like ~/.claude are normally 0755
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".acmd-*")

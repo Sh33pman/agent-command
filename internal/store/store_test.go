@@ -164,8 +164,7 @@ func TestSessionRoundTrip(t *testing.T) {
 		Name: "fix flaky e2e", Description: "PROJ-123", Cwd: "/w/api",
 		ClaudeSessionID: "c3", ClaudeHistory: []string{"c1", "c2"}, TranscriptPath: "/t/c3.jsonl",
 		Status: core.StatusWaiting, StatusDetail: "question", Unseen: true,
-		Kind: core.KindExternal, BgID: "", Pid: 4242, Remote: true, JobID: "job-1",
-		External:    &core.PaneLoc{Terminal: "kitty", KittySocket: "/tmp/k", KittyWindow: 7, TTY: "ttys010"},
+		Kind: core.KindHosted, Pid: 4242, Remote: true, JobID: "job-1",
 		LastEventAt: time.UnixMilli(1793380000123).UTC(),
 	}
 	if err := s.CreateSession(ctx, in); err != nil {
@@ -194,7 +193,7 @@ func TestSessionRoundTrip(t *testing.T) {
 	// Update: new Claude id after /clear, archived.
 	in.ClaudeHistory = append(in.ClaudeHistory, in.ClaudeSessionID)
 	in.ClaudeSessionID = "c4"
-	in.Status, in.External, in.Remote = core.StatusArchived, nil, false
+	in.Status, in.Remote = core.StatusArchived, false
 	in.ArchivedAt = time.UnixMilli(1793390000000).UTC()
 	if err := s.UpdateSession(ctx, in); err != nil {
 		t.Fatal(err)
@@ -504,12 +503,31 @@ func TestViewsTableDropped(t *testing.T) {
 	}
 }
 
+// Every session is hosted: the columns for v1's other kinds are gone.
+func TestSessionsHaveNoV1Columns(t *testing.T) {
+	st, _ := open(t)
+	rows, err := st.db.QueryContext(context.Background(), `SELECT name FROM pragma_table_info('sessions')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		if name == "bg_id" || name == "external" {
+			t.Errorf("sessions still has %s", name)
+		}
+	}
+}
+
 // The migration keeps sessions the app runs, and removes the rest with their ids.
 func TestUnhostedSessionsAreDeleted(t *testing.T) {
 	st, _ := open(t)
 	ctx := context.Background()
 	hosted := &core.Session{Kind: core.KindHosted, ClaudeSessionID: "keep"}
-	gone := &core.Session{Kind: core.KindExternal, ClaudeSessionID: "gone", External: &core.PaneLoc{Terminal: "kitty"}}
+	gone := &core.Session{Kind: core.Kind("external"), ClaudeSessionID: "gone"} // as v1 tracked
 	for _, s := range []*core.Session{hosted, gone} {
 		if err := st.CreateSession(ctx, s); err != nil {
 			t.Fatal(err)

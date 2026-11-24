@@ -2,7 +2,6 @@ package claudecli
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -97,8 +96,8 @@ func TestParseAgentsLenient(t *testing.T) {
 
 // The env scrub (M0 C5): never pass Claude's session variables to a new claude.
 func TestRunScrubsClaudeEnv(t *testing.T) {
-	c, f := newFake(map[string]answer{"stop": {}})
-	if err := c.Stop(context.Background(), "x"); err != nil {
+	c, f := newFake(map[string]answer{"agents": {out: []byte("[]")}})
+	if _, err := c.Agents(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	for _, kv := range f.envs[0] {
@@ -108,22 +107,11 @@ func TestRunScrubsClaudeEnv(t *testing.T) {
 	}
 }
 
-func TestStopRemoveAgents(t *testing.T) {
+func TestAgents(t *testing.T) {
 	c, f := newFake(map[string]answer{
-		"stop":   {out: []byte("stopped 77d411e3\n")},
-		"rm":     {err: errors.New("exit status 1"), out: []byte("no such session\n")},
 		"agents": {out: fixture(t, "agents-mixed.json")},
 	})
 	ctx := context.Background()
-	if err := c.Stop(ctx, "77d411e3"); err != nil {
-		t.Errorf("Stop: %v", err)
-	}
-	if !reflect.DeepEqual(f.calls[0][1:], []string{"stop", "77d411e3"}) {
-		t.Errorf("stop argv = %q", f.calls[0])
-	}
-	if err := c.Remove(ctx, "77d411e3"); err == nil || !strings.Contains(err.Error(), "no such session") {
-		t.Errorf("Remove error should carry claude's message: %v", err)
-	}
 	agents, err := c.Agents(ctx)
 	if err != nil || len(agents) != 4 {
 		t.Errorf("Agents = %d, %v", len(agents), err)

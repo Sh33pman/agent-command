@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -19,20 +18,9 @@ import (
 	"github.com/brettmostert/agent-command/internal/daemon"
 	"github.com/brettmostert/agent-command/internal/ipc"
 	"github.com/brettmostert/agent-command/internal/paths"
+	"github.com/brettmostert/agent-command/internal/store"
 	"github.com/brettmostert/agent-command/internal/version"
 )
-
-type stopRecorder struct {
-	mu  sync.Mutex
-	ids []string
-}
-
-func (s *stopRecorder) Stop(_ context.Context, id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ids = append(s.ids, id)
-	return nil
-}
 
 // agents plays `claude agents --json`: the two background sessions are
 // running with short ids, so archiving them must call claude stop.
@@ -46,19 +34,10 @@ func (agents) Agents(context.Context) ([]claudecli.Agent, error) {
 	}, nil
 }
 
-func (s *stopRecorder) stopped() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.ids...)
-}
-
-// env starts a real daemon in temp dirs (via ACMD_* overrides) and seeds
-// three sessions through hook events, like Claude would.
-func env(t *testing.T) *stopRecorder {
+// env starts a real daemon in temp dirs (via ACMD_* overrides) with three
+// hosted sessions, whose hook events then come as Claude's would.
+func env(t *testing.T) {
 	t.Helper()
-	origVisible := visibleSessions
-	visibleSessions = func(sessions []*core.Session) []*core.Session { return sessions }
-	t.Cleanup(func() { visibleSessions = origVisible })
 	// --host is kept between commands in one process: a test that calls a
 	// command's code directly starts with none, whatever ran before it.
 	origHost := targetHost
@@ -76,12 +55,12 @@ func env(t *testing.T) *stopRecorder {
 	spawnDaemon = func(paths.Paths) error { return errors.New("tests start the daemon themselves") }
 	t.Cleanup(func() { spawnDaemon = orig })
 
-	rec := &stopRecorder{}
+	seedHosted(t, p, "c-auth", "c-flaky", "c-docs")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- daemon.Run(ctx, daemon.Config{Paths: p, Version: version.Get().Version,
-			Log: log.New(io.Discard, "", 0), Stopper: rec, Agents: agents{}, TailEvery: time.Hour, ReconcileEvery: 50 * time.Millisecond,
+			Log: log.New(io.Discard, "", 0), Agents: agents{}, TailEvery: time.Hour, ReconcileEvery: 50 * time.Millisecond,
 			Waker: envWaker})
 	}()
 	t.Cleanup(func() {
@@ -121,7 +100,25 @@ func env(t *testing.T) *stopRecorder {
 	send("UserPromptSubmit", `{"session_id":"c-docs","prompt":"docs: hooks reference"}`, 6*time.Second,
 		ipc.HookContext{})
 	send("Stop", `{"session_id":"c-docs"}`, 7*time.Second, ipc.HookContext{})
-	return rec
+}
+
+// seedHosted adds a hosted session for each Claude id, before the daemon
+// starts, as `acmd new` does before its Claude's first hook.
+func seedHosted(t *testing.T, p paths.Paths, claudeIDs ...string) {
+	t.Helper()
+	if err := os.MkdirAll(p.StateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(context.Background(), p.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for _, cid := range claudeIDs {
+		if err := st.CreateSession(context.Background(), &core.Session{Kind: core.KindHosted, ClaudeSessionID: cid, Status: core.StatusStarting}); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func acmd(t *testing.T, args ...string) (string, error) {
@@ -185,7 +182,7 @@ func names(rows []jsonRow) string {
 func TestListCommand(t *testing.T) {
 	env(t)
 	out := mustRun(t, "list")
-	for _, want := range []string{"#", "STATUS", "WHERE", "refactor auth middleware", "busy", "waiting", "api-server", "bg", "Default"} {
+	for _, want := range []string{"#", "STATUS", "WHERE", "refactor auth middleware", "busy", "waiting", "api-server", "acmd", "Default"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("list output missing %q:\n%s", want, out)
 		}
@@ -336,26 +333,11 @@ func TestGroupsMoveViewAndFocus(t *testing.T) {
 }
 
 func TestArchive(t *testing.T) {
-	rec := env(t)
-	// Wait for the reconciler to give the background sessions short ids.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		rows := listJSON(t)
-		if rows[0].BgID == "aaaaaaaa" && rows[1].BgID == "ffffffff" {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("reconciler never set short ids: %+v", rows)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	env(t)
 	if _, err := acmd(t, "archive", "1"); err == nil || !strings.Contains(err.Error(), "--yes") {
 		t.Errorf("archive without confirmation: %v", err)
 	}
-	mustRun(t, "archive", "docs", "--yes") // external: never stopped/killed
-	if got := rec.stopped(); len(got) != 0 {
-		t.Errorf("external session was stopped: %v", got)
-	}
+	mustRun(t, "archive", "docs", "--yes")
 	if got := names(listJSON(t)); strings.Contains(got, "docs") {
 		t.Errorf("archived still listed: %s", got)
 	}
@@ -369,14 +351,11 @@ func TestArchive(t *testing.T) {
 		}
 	}
 
-	// Group archive archives its sessions and stops the running background ones.
+	// Group archive archives its sessions.
 	mustRun(t, "move", "refactor", "fix", "PROJ-1", "--create")
 	mustRun(t, "group", "archive", "PROJ-1", "--yes")
 	if got := names(listJSON(t)); got != "docs: hooks reference" {
 		t.Errorf("after group archive: %s", got)
-	}
-	if got := strings.Join(rec.stopped(), ","); got != "aaaaaaaa,ffffffff" {
-		t.Errorf("claude stop calls = %q, want both background sessions", got)
 	}
 	if _, err := acmd(t, "group", "archive", "default", "--yes"); err == nil {
 		t.Error("archiving Default should fail")
@@ -411,8 +390,8 @@ func TestConfirmAndHelpers(t *testing.T) {
 	if display("", 10) != "(unnamed)" || display("abcdefghijkl", 5) != "abcd…" {
 		t.Error("display")
 	}
-	if where(&core.Session{Kind: core.KindExternal}) != "unknown ↗" {
-		t.Error("where unknown")
+	if where(&core.Session{Kind: core.KindHosted}) != "acmd" {
+		t.Error("where here")
 	}
 	var buf bytes.Buffer
 	if err := writeListTable(&buf, nil); err != nil || !strings.Contains(buf.String(), "No sessions") {
@@ -445,15 +424,6 @@ func TestPurge(t *testing.T) {
 	}
 	if d, err := parseAge("12h"); err != nil || d != 12*time.Hour {
 		t.Errorf("12h: %v %v", d, err)
-	}
-}
-
-// Commands show what the app shows, not rows left over from v1.
-func TestHostedSessions(t *testing.T) {
-	hosted := &core.Session{ID: "h", Kind: core.KindHosted}
-	got := hostedSessions([]*core.Session{{ID: "e", Kind: core.KindExternal}, hosted, {ID: "b", Kind: core.KindBackground}})
-	if len(got) != 1 || got[0] != hosted {
-		t.Errorf("hosted: %+v", got)
 	}
 }
 

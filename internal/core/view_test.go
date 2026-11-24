@@ -195,9 +195,9 @@ func TestFocusGroupAndClear(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	ss, gs := fixtureView()
-	ss[0].BgID, ss[0].ClaudeSessionID = "9df2c810", "9df2c810-full"
+	ss[0].ClaudeSessionID = "9df2c810-full"
 	rows := Layout(ss, gs, ViewState{Mode: "list"})
-	cases := map[string]string{"2": "b", "a": "a", "9df2c810": "a", "9df2c810-full": "a", "FIX": "b", "invoice": "d"}
+	cases := map[string]string{"2": "b", "a": "a", "9df2c810-full": "a", "FIX": "b", "invoice": "d"}
 	for sel, want := range cases {
 		s, err := Resolve(rows, ss, sel)
 		if err != nil || s.ID != want {

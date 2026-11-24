@@ -40,8 +40,8 @@ const (
 	OpSnapshot = "snapshot" // sessions, groups and view state (Snapshot)
 	OpMutate   = "mutate"   // one change (Mutation)
 	OpWatch    = "watch"    // wait for a change (WatchRequest → WatchResponse); a view's heartbeat
-	OpNew      = "new"      // start a background session (NewRequest → *core.Session)
-	OpResume   = "resume"   // resume a paused background session (Mutation, one target → *core.Session)
+	OpNew      = "new"      // start a session (NewRequest → *core.Session)
+	OpResume   = "resume"   // resume a paused session (Mutation, one target → *core.Session)
 	// OpConversations lists earlier Claude and Antigravity conversations to
 	// resume (Page → ConversationPage).
 	OpConversations = "conversations"
@@ -357,7 +357,6 @@ type Mutation struct {
 	Text         string   `json:"text,omitempty"`
 	Color        string   `json:"color,omitempty"`
 	Flag         bool     `json:"flag,omitempty"`
-	Pane         *PaneLoc `json:"pane,omitempty"`
 	SetID        string   `json:"set_id,omitempty"`
 	After        string   `json:"after,omitempty"`
 	Before       string   `json:"before,omitempty"`
@@ -430,7 +429,7 @@ type WatchResponse struct {
 	Rev uint64 `json:"rev"`
 }
 
-// NewRequest starts a background session. The client resolves
+// NewRequest starts a session. The client resolves
 // the group and folder; ShowIn is the view that switches to it ("" = none).
 type NewRequest struct {
 	GroupID string `json:"group_id,omitempty"`

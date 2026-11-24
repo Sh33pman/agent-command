@@ -2,24 +2,21 @@ package core
 
 import "testing"
 
-func TestManagedAndNeedsResume(t *testing.T) {
+func TestNeedsResume(t *testing.T) {
 	for _, tc := range []struct {
-		s       Session
-		managed bool
-		resume  bool
+		s      Session
+		resume bool
 	}{
-		{Session{Kind: KindHosted, Status: StatusPaused, ClaudeSessionID: "c"}, true, true},
-		{Session{Kind: KindHosted, Status: StatusDone, ClaudeSessionID: "c"}, true, false},
-		{Session{Kind: KindHosted, Status: StatusPaused}, true, false},
-		{Session{Kind: KindBackground, Status: StatusPaused, ClaudeSessionID: "c"}, true, true},
-		{Session{Kind: KindBackground, BgID: "b", Status: StatusDone, ClaudeSessionID: "c"}, true, true}, // from before hosting
-		{Session{Kind: KindExternal, Status: StatusPaused, ClaudeSessionID: "c"}, false, false},
+		{Session{Kind: KindHosted, Status: StatusPaused, ClaudeSessionID: "c"}, true},
+		{Session{Kind: KindHosted, Status: StatusFinished, ClaudeSessionID: "c"}, true},
+		{Session{Kind: KindHosted, Status: StatusDone, ClaudeSessionID: "c"}, false},
+		{Session{Kind: KindHosted, Status: StatusPaused}, false}, // nothing to resume
 	} {
-		if tc.s.Managed() != tc.managed || tc.s.NeedsResume() != tc.resume {
-			t.Errorf("%+v: managed=%v resume=%v", tc.s, tc.s.Managed(), tc.s.NeedsResume())
+		if tc.s.NeedsResume() != tc.resume {
+			t.Errorf("%+v: resume=%v", tc.s, tc.s.NeedsResume())
 		}
 	}
-	if (&Session{ID: "x"}).Ref() != "x" || (&Session{ID: "x", BgID: "b"}).Ref() != "b" {
+	if (&Session{ID: "x"}).Ref() != "x" {
 		t.Error("Ref")
 	}
 }

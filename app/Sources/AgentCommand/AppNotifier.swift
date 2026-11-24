@@ -83,26 +83,26 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// calls this whenever it comes to the front.
     func refreshPermission() {
         guard let center else { return }
-        center.getNotificationSettings { [weak self] settings in
+        Task {
+            var settings = await center.notificationSettings()
             let status = settings.authorizationStatus
             // Earlier versions didn't ask for badges, so those installs are asked again.
             if status == .notDetermined || (status == .authorized && settings.badgeSetting == .notSupported) {
-                center.requestAuthorization(options: [.alert, .sound, .badge]) { _, error in
-                    if let error { NSLog("notification permission: %@", error.localizedDescription) }
-                    center.getNotificationSettings { settings in
-                        self?.setTurnedOff(settings)
-                    }
+                do {
+                    _ = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                } catch {
+                    NSLog("notification permission: %@", error.localizedDescription)
                 }
-            } else {
-                self?.setTurnedOff(settings)
+                settings = await center.notificationSettings()
             }
+            setTurnedOff(settings)
         }
     }
 
     private func setTurnedOff(_ settings: UNNotificationSettings) {
         let off = settings.authorizationStatus == .denied
         let badgeOff = settings.authorizationStatus == .authorized && settings.badgeSetting != .enabled
-        DispatchQueue.main.async { self.setPermission(turnedOff: off, badgeOff: badgeOff) }
+        setPermission(turnedOff: off, badgeOff: badgeOff)
     }
 
     func setPermission(turnedOff: Bool, badgeOff: Bool) {
@@ -223,7 +223,7 @@ final class AppNotifier: NSObject, UNUserNotificationCenterDelegate {
 }
 
 /// Something in the app's settings that stops a feature working.
-struct AppWarning: Identifiable {
+nonisolated struct AppWarning: Identifiable {
     let id: String
     let title: String
     /// What doesn't work because of it.

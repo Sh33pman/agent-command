@@ -5,7 +5,7 @@ import SwiftUI
 /// The font of the app's own interface. It defaults to JetBrains Mono, as the
 /// terminal does, and follows `font-family` in the app's Ghostty config, so the
 /// interface and the terminal match.
-enum AppFont {
+nonisolated enum AppFont {
     static let defaultFamily = "JetBrains Mono"
 
     static let family: String = {

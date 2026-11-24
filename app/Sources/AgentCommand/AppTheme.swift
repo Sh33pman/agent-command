@@ -89,7 +89,7 @@ final class ThemeStore {
 }
 
 /// Where libghostty finds its themes.
-enum GhosttyAppearance {
+nonisolated enum GhosttyAppearance {
     /// Where themes can be, as Ghostty searches for them.
     static var themeFolders: [String] {
         var folders = ["\(NSHomeDirectory())/.config/ghostty/themes"]

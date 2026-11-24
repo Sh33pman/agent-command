@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// How speech stands on this Mac, as the daemon says (internal/ipc.SpeechState).
-struct SpeechState: Decodable, Equatable {
+nonisolated struct SpeechState: Decodable, Equatable {
     var supported = false
     var enabled = false
     var installed = false

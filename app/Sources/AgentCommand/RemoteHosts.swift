@@ -149,7 +149,7 @@ struct RemoteHost: Decodable, Equatable, Identifiable {
 }
 
 /// What the Remote Hosts browser says about a host's state.
-struct RemoteHostMessage: Equatable {
+nonisolated struct RemoteHostMessage: Equatable {
     let text: String
     /// A fingerprint to offer a Copy button for.
     var copy: String? = nil
@@ -363,7 +363,7 @@ struct SessionPlace: Equatable {
 }
 
 /// Which sessions the sidebar lists.
-enum SidebarFilter: Hashable, Identifiable {
+nonisolated enum SidebarFilter: Hashable, Identifiable {
     case all
     /// Sessions on this Mac, shared or not.
     case local
@@ -451,7 +451,7 @@ enum RemoteDefaults {
 
 /// New inbox items since the last look: each host's ids count up, this Mac's
 /// ("" ) and every Remote host's alike.
-struct InboxNews: Equatable {
+nonisolated struct InboxNews: Equatable {
     /// The newest id seen, by host.
     var newest: [String: Int64] = [:]
 

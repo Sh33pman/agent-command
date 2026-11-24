@@ -3,11 +3,11 @@ import Foundation
 /// What a command palette entry does. The app carries it out; the list itself is
 /// worked out here, from what's showing, so it can be checked without a window.
 /// What a split starts: a terminal, the agent ⌘N starts, or what you pick.
-enum SplitKind: Equatable {
+nonisolated enum SplitKind: Equatable {
     case terminal, agent, ask
 }
 
-enum PaletteAction: Equatable {
+nonisolated enum PaletteAction: Equatable {
     case rename([Session])
     case archive([Session])
     case moveOut(sessionID: String)
@@ -58,7 +58,7 @@ enum PaletteAction: Equatable {
     case quit
 }
 
-struct PaletteEntry: Equatable {
+nonisolated struct PaletteEntry: Equatable {
     let section: String
     let title: String
     var shortcut = ""

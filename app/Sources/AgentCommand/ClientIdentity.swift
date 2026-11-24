@@ -5,7 +5,7 @@ import Foundation
 /// Who this app is to the daemon: an id it keeps, and what it is. It says so in
 /// the hello on every connection (internal/ipc.ClientHello), so the daemon knows
 /// who's there and who shows each notice.
-enum ClientIdentity {
+nonisolated enum ClientIdentity {
     /// This app's id, made once and kept in its defaults.
     static func id(_ defaults: UserDefaults = .standard) -> String {
         let key = "clientID"
@@ -21,7 +21,7 @@ enum ClientIdentity {
     }
 }
 
-struct ClientHello: Codable, Equatable {
+nonisolated struct ClientHello: Codable, Equatable {
     let id: String
     let kind: String
     let device: String
@@ -65,7 +65,7 @@ final class PresenceReporter {
         let now = (presence: presence, focus: focus())
         if let sent, sent == now { return }
         sent = now
-        struct Presence: Encodable { let presence: String; let focus: String }
+        nonisolated struct Presence: Encodable { let presence: String; let focus: String }
         let data = (try? JSONEncoder().encode(Presence(presence: now.presence, focus: now.focus))) ?? Data()
         calls.call("client.presence", data) { [weak self] result in
             if case .failure = result { self?.sent = nil } // tries again next time

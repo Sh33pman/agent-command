@@ -312,13 +312,13 @@ final class SessionStore {
         queue.filter { !$0.read && (id == nil || $0.sessionID == id) }.count
     }
 
-    private struct InboxMutation: Encodable {
+    nonisolated private struct InboxMutation: Encodable {
         let kind: String
         let items: [ItemTarget]
         var flag = false
     }
 
-    private struct InboxRequest: Encodable {
+    nonisolated private struct InboxRequest: Encodable {
         var host: String?
         let session_id: String?
         var limit: Int?
@@ -327,9 +327,9 @@ final class SessionStore {
 
     /// The most a whole-list load takes, page by page: what the daemon kept
     /// in one read before paging.
-    static let inboxLoadMax = 500
+    nonisolated static let inboxLoadMax = 500
 
-    private struct InboxAnswerRequest: Encodable {
+    nonisolated private struct InboxAnswerRequest: Encodable {
         var host: String?
         let id: Int64
         let option: Int?
@@ -409,36 +409,51 @@ final class SessionStore {
     /// Types an answer into the item's session (on its host), then reports why
     /// it failed, if it did.
     func answerInbox(_ id: InboxKey, option: Int?, text: String?, done: @escaping (String?) -> Void) {
-        calls.async {
-            var failure: String?
-            do {
-                try self.client.withBlocking("inbox.answer") { conn in
-                    try conn.send("inbox.answer", InboxAnswerRequest(host: id.host.isEmpty ? nil : id.host, id: id.id, option: option, text: text))
-                }
-            } catch {
-                failure = error.localizedDescription
-            }
-            DispatchQueue.main.async { done(failure) }
+        let request = InboxAnswerRequest(host: id.host.isEmpty ? nil : id.host, id: id.id, option: option, text: text)
+        queued("inbox.answer", { try $0.send("inbox.answer", request) }) { result in
+            if case .failure(let error) = result { done(error.localizedDescription) } else { done(nil) }
         }
     }
 
-    private struct Mutation: Encodable {
+    nonisolated private struct Mutation: Encodable {
         let kind: String
         let targets: [Target]
     }
 
-    /// The store's calls, one after another and in order (a rename before a
-    /// delete), on client.
-    private let calls = DispatchQueue(label: "acmd.daemon.calls")
     /// The daemon's connections; tests swap it.
     @ObservationIgnored var client = DaemonClient.shared
+    /// The last of the store's calls: each waits for the one before, so they
+    /// reach the daemon in order (a rename before a delete).
+    @ObservationIgnored private var lastCall: Task<Void, Never>?
+
+    /// Runs work on client after the store's earlier calls, then done with how
+    /// it went, here on the main actor.
+    private func queued<T: Sendable>(
+        _ op: String, _ work: @escaping @Sendable (DaemonConnection) throws -> T,
+        done: @escaping (Result<T, Error>) -> Void
+    ) {
+        let previous = lastCall
+        let client = client
+        lastCall = Task {
+            await previous?.value
+            do {
+                done(.success(try await client.with(op, work)))
+            } catch {
+                done(.failure(error))
+            }
+        }
+    }
 
     /// Follows the daemon's state until the app quits.
     func start() {
-        Thread.detachNewThread { [weak self] in self?.follow() }
+        let id = clientID
+        // Off the main thread: the stream's reads block.
+        Thread.detachNewThread { @Sendable [weak self] in self?.follow(clientID: id) }
     }
 
-    private func follow() {
+    /// Reads the stream on its own thread, and shows each change on the main
+    /// queue, in order.
+    nonisolated private func follow(clientID: String) {
         var startedDaemon = false
         var loadedLayout = false
         var state = SnapshotAssembler()
@@ -446,7 +461,7 @@ final class SessionStore {
             do {
                 let conn = try DaemonConnection(socket: DaemonPaths.socket)
                 if !loadedLayout {
-                    struct Layout: Codable {
+                    nonisolated struct Layout: Codable {
                         var client_id: String?
                         var json: String = ""
                     }
@@ -480,7 +495,7 @@ final class SessionStore {
         }
     }
 
-    func publish(_ snapshot: Snapshot) {
+    nonisolated func publish(_ snapshot: Snapshot) {
         // Only sessions acmd runs, oldest first: ids are time-ordered ULIDs.
         let hosted = snapshot.sessionsInGroups().filter { $0.kind == "hosted" }.sorted { $0.id < $1.id }
         let visible = hosted.filter { !$0.isArchived }
@@ -558,19 +573,16 @@ final class SessionStore {
     /// Makes sets in the daemon: the one-off move of sets from panes saved
     /// before it kept them. One that can't be made is left out.
     func createSets(_ sets: [(id: String, members: [String])]) {
-        struct Create: Encodable {
+        nonisolated struct Create: Encodable {
             let kind = "set.create"
             let set_id: String
             let targets: [Target]
         }
         guard !sets.isEmpty else { return }
-        calls.async {
-            for set in sets {
-                do {
-                    try self.client.withBlocking("mutate") { conn in
-                        try conn.send("mutate", Create(set_id: set.id, targets: set.members.map { Target(id: $0) }))
-                    }
-                } catch {
+        for set in sets {
+            let create = Create(set_id: set.id, targets: set.members.map { Target(id: $0) })
+            queued("mutate", { try $0.send("mutate", create) }) { result in
+                if case .failure(let error) = result {
                     NSLog("couldn't move set %@ to the daemon: %@", set.id, error.localizedDescription)
                 }
             }
@@ -580,7 +592,7 @@ final class SessionStore {
     // MARK: Groups
 
     /// A change to groups, or to sessions within them: all on one host.
-    private struct GroupMutation: Encodable {
+    nonisolated private struct GroupMutation: Encodable {
         let kind: String
         var host: String?
         var group_id: String?
@@ -680,7 +692,7 @@ final class SessionStore {
 
     /// The daemon takes a single-instance lock, so a spare start is harmless.
     /// It runs through a shell so it outlives the app.
-    private static func startDaemon() {
+    nonisolated private static func startDaemon() {
         let process = Process()
         // The only thing passed in is our own binary, as a quoted $0.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -695,7 +707,7 @@ final class SessionStore {
     /// setWith puts it in a set with that session, for a split.
     func newSession(harness: Harness, in folder: String, remote: Bool? = nil, setWith: String? = nil,
                     placed: ((Session) -> Void)? = nil) {
-        struct New: Encodable {
+        nonisolated struct New: Encodable {
             let cwd: String
             let harness_id: String
             let harness_kind: String
@@ -768,7 +780,7 @@ final class SessionStore {
 
     /// Resumes a stopped session.
     func resume(_ id: String, done: @escaping () -> Void) {
-        struct Mutation: Encodable {
+        nonisolated struct Mutation: Encodable {
             let kind: String
             let targets: [Target]
         }
@@ -783,7 +795,7 @@ final class SessionStore {
 
     /// Keeps the pane layout in the daemon, so it comes back after a restart.
     func saveLayout(_ json: String) {
-        struct Layout: Encodable {
+        nonisolated struct Layout: Encodable {
             let client_id: String
             let json: String
         }
@@ -796,21 +808,19 @@ final class SessionStore {
     /// Lists earlier agent conversations (Claude's and Antigravity's) that can be resumed. done gets an error
     /// message when that fails.
     func loadConversations(done: @escaping ([Conversation], String?) -> Void) {
-        calls.async {
-            do {
-                let list = try self.client.withBlocking("conversations") { conn -> [Conversation] in
-                    var list: [Conversation] = []
-                    var cursor = ""
-                    repeat { // all of them, for the picker's search
-                        let page: Page<Conversation> = try conn.call("conversations", PageRequest(limit: Page<Conversation>.max, cursor: cursor))
-                        list += page.items
-                        cursor = page.items.isEmpty ? "" : page.nextCursor
-                    } while !cursor.isEmpty
-                    return list
-                }
-                DispatchQueue.main.async { done(list, nil) }
-            } catch {
-                DispatchQueue.main.async { done([], error.localizedDescription) }
+        queued("conversations", { conn -> [Conversation] in
+            var list: [Conversation] = []
+            var cursor = ""
+            repeat { // all of them, for the picker's search
+                let page: Page<Conversation> = try conn.call("conversations", PageRequest(limit: Page<Conversation>.max, cursor: cursor))
+                list += page.items
+                cursor = page.items.isEmpty ? "" : page.nextCursor
+            } while !cursor.isEmpty
+            return list
+        }) { result in
+            switch result {
+            case .success(let list): done(list, nil)
+            case .failure(let error): done([], error.localizedDescription)
             }
         }
     }
@@ -818,7 +828,7 @@ final class SessionStore {
     /// Continues an earlier conversation of an agent's, by its id or an id prefix, and
     /// selects it.
     func resumeConversation(_ id: String, harness: Harness = .claude) {
-        struct New: Encodable {
+        nonisolated struct New: Encodable {
             let cwd: String
             let harness_id: String
             let harness_kind: String
@@ -848,7 +858,7 @@ final class SessionStore {
     /// change is said, with why.
     private func mutateMany(_ kind: String, _ ids: [String], text: String? = nil, flag: Bool? = nil, failure: String) {
         guard !ids.isEmpty else { return }
-        struct Many: Encodable {
+        nonisolated struct Many: Encodable {
             let kind: String
             let targets: [Target]
             var text: String?
@@ -876,7 +886,7 @@ final class SessionStore {
 
     // MARK: Scheduled jobs
 
-    private struct JobRef: Encodable {
+    nonisolated private struct JobRef: Encodable {
         var id = ""
         var paused = false
     }
@@ -884,9 +894,9 @@ final class SessionStore {
     /// Checks a job without saving it: its schedule read back, its next runs and
     /// what's wrong. done gets nil when the daemon can't be reached.
     func checkJob(_ job: Job, done: @escaping (JobCheck?) -> Void) {
-        calls.async {
-            let check: JobCheck? = try? self.client.withBlocking("job.check") { try $0.call("job.check", job) }
-            DispatchQueue.main.async { done(check) }
+        guard let input = try? JSONEncoder().encode(job) else { return done(nil) }
+        queued("job.check", { try $0.raw("job.check", input) }) { result in
+            done((try? result.get()).flatMap { try? JSONDecoder().decode(JobCheck.self, from: $0) })
         }
     }
 
@@ -927,17 +937,12 @@ final class SessionStore {
 
     /// Runs a job now. done gets its run, or why it couldn't start.
     func runJob(_ id: String, done: @escaping (Result<JobRun, Error>) -> Void) {
-        calls.async {
-            let result = Result { () throws -> JobRun in
-                try self.client.withBlocking("job.run") { try $0.call("job.run", JobRef(id: id)) }
-            }
-            DispatchQueue.main.async { done(result) }
-        }
+        queued("job.run", { try $0.call("job.run", JobRef(id: id)) as JobRun }) { done($0) }
     }
 
     /// A job's runs, newest first.
     func loadJobRuns(_ id: String, done: @escaping ([JobRun]) -> Void) {
-        struct Runs: Encodable {
+        nonisolated struct Runs: Encodable {
             let id: String
             let limit: Int
         }
@@ -950,31 +955,29 @@ final class SessionStore {
 
     /// The settings a harness takes for scheduled runs (its kind's).
     func loadAgentSettings(harness: Harness, done: @escaping ([AgentSetting]) -> Void) {
-        struct Ref: Encodable { let id: String; let kind: String }
+        nonisolated struct Ref: Encodable { let id: String; let kind: String }
         run(failure: "Couldn't read the harness's settings") { conn -> [AgentSetting] in
             try conn.call("harness.settings", Ref(id: harness.harnessID, kind: harness.kind))
         } done: { done($0) }
     }
 
-    private func run<T>(
+    private func run<T: Sendable>(
         failure: String,
-        _ work: @escaping (DaemonConnection) throws -> T,
+        _ work: @escaping @Sendable (DaemonConnection) throws -> T,
         done: @escaping (T) -> Void
     ) {
-        calls.async {
-            do {
-                let result = try self.client.withBlocking("", work)
-                DispatchQueue.main.async { done(result) }
-            } catch {
-                DispatchQueue.main.async { self.problem = "\(failure): \(error.localizedDescription)" }
+        queued("", work) { result in
+            switch result {
+            case .success(let value): done(value)
+            case .failure(let error): self.problem = "\(failure): \(error.localizedDescription)"
             }
         }
     }
 }
 
 /// What a change to many sessions did, one result each (internal/ipc.Results).
-struct BatchResults: Decodable, Equatable {
-    struct Result: Decodable, Equatable {
+nonisolated struct BatchResults: Decodable, Equatable {
+    nonisolated struct Result: Decodable, Equatable {
         let id: String
         let ok: Bool
         var code: String?

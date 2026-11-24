@@ -247,7 +247,7 @@ struct RemoteIdentity: Decodable, Equatable {
 }
 
 /// Fingerprints: "SHA256:" and the cert's hash in base64.
-enum RemoteFingerprint {
+nonisolated enum RemoteFingerprint {
     static let prefix = "SHA256:"
 
     /// "SHA256:AbCdEfGh…wXyZ": enough to tell them apart at a glance.
@@ -266,7 +266,7 @@ enum RemoteFingerprint {
 }
 
 /// Go's times (RFC 3339, with up to nine digits of fraction) and how long ago they were.
-enum RemoteTime {
+nonisolated enum RemoteTime {
     static func parse(_ text: String) -> Date? {
         guard !text.isEmpty, !text.hasPrefix("0001-") else { return nil }
         // Foundation reads at most milliseconds: drop the rest of the fraction.

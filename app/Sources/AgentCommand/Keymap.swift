@@ -107,7 +107,7 @@ extension KeyCombo.Mods {
 }
 
 /// A key the shortcuts can use, by its US layout name.
-struct KeyName {
+nonisolated struct KeyName {
     let code: UInt16
     /// What the settings call it: "j", "return".
     let name: String
@@ -186,7 +186,7 @@ struct KeyName {
 }
 
 /// The parts of the keyboard's map, as the shortcuts list groups them.
-enum KeySection: String, CaseIterable {
+nonisolated enum KeySection: String, CaseIterable {
     case anyApp, app, panes, goTo, lists, inbox, scheduled, editing
 
     var title: String {
@@ -672,8 +672,8 @@ extension Keymap {
 /// folder as it starts and after each change, as the command line can't read the
 /// app's settings.
 extension Keymap {
-    struct Export: Encodable, Equatable {
-        struct Key: Encodable, Equatable {
+    nonisolated struct Export: Encodable, Equatable {
+        nonisolated struct Key: Encodable, Equatable {
             let action: String
             let title: String
             let note: String
@@ -681,12 +681,12 @@ extension Keymap {
             let changed: Bool
         }
 
-        struct Section: Encodable, Equatable {
+        nonisolated struct Section: Encodable, Equatable {
             let title: String
             let keys: [Key]
         }
 
-        struct Fixed: Encodable, Equatable {
+        nonisolated struct Fixed: Encodable, Equatable {
             let section: String
             let keys: String
             let title: String

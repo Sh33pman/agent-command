@@ -143,7 +143,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         store.onLayoutLoaded = { [weak self] json in self?.restorePanes(json) }
         notifier.isLooking = { [weak store] id in store?.isInMainWindow == true && store?.visibleIDs.contains(id) == true }
         presence.focus = { [weak store] in store?.selectedID ?? "" }
-        presenceTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.presence.update() }
+        presenceTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.presence.update() } // a timer on the main run loop
+        }
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
         // The daemon says what's wrong, for this Mac and its clients alike.
         notifier.moreWarnings = { [weak store, weak self] in
@@ -582,13 +584,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func chooseRemoteFolder(host: String, harness: Harness) {
         let chooser = RemoteFolderChooser(host: host, client: store.remoteClient)
         chooser.choose = { [weak self, weak chooser] dir in
-            self?.store.newRemoteSession(host: host, dir: dir, harness: harness) { failure in
+            self?.store.newRemoteSession(host: host, dir: dir, harness: harness, done: { failure in
                 if let failure, let chooser {
                     chooser.fail(failure)
                 } else {
                     self?.closePopup()
                 }
-            }
+            })
         }
         showPopup(RemoteFolderView(model: chooser, harness: harness, close: { [weak self] in self?.closePopup() }))
     }
@@ -1043,11 +1045,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         settingsClosed = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak self] _ in
-            keys.stop()
-            if let observer = self?.settingsClosed { NotificationCenter.default.removeObserver(observer) }
-            self?.settingsClosed = nil
-            self?.settingsWindow = nil
-            self?.settingsModel = nil
+            MainActor.assumeIsolated { // queue: .main
+                keys.stop()
+                if let observer = self?.settingsClosed { NotificationCenter.default.removeObserver(observer) }
+                self?.settingsClosed = nil
+                self?.settingsWindow = nil
+                self?.settingsModel = nil
+            }
         }
         settingsWindow = window
         window.makeKeyAndOrderFront(nil)

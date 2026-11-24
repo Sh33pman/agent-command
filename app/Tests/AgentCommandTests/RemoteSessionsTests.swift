@@ -85,13 +85,13 @@ extension UsesSharedSpeech {
                 "harness_kind": "claude", "claude_session_id": "", "host": "studio", "remote_id": "r1",
             ]
             var failure: String? = "unset"
-            s.newRemoteSession(host: "studio", dir: "/w", harness: .claude) { failure = $0 }
+            s.newRemoteSession(host: "studio", dir: "/w", harness: .claude, done: { failure = $0 })
             #expect(failure == nil && s.selectedID == "N1" && s.sessions.last?.id == "N1")
             #expect(fake.last as? [String: String] == ["host": "studio", "dir": "/w", "harness_id": "", "harness_kind": "claude"])
-            s.newRemoteSession(host: "studio", dir: "/w", harness: nil) { _ in }
+            s.newRemoteSession(host: "studio", dir: "/w", harness: nil, done: { _ in })
             #expect(s.sessions.filter { $0.id == "N1" }.count == 1, "listed once")
             fake.failures["remote.new"] = "no such folder: /w"
-            s.newRemoteSession(host: "studio", dir: "/w", harness: nil) { failure = $0 }
+            s.newRemoteSession(host: "studio", dir: "/w", harness: nil, done: { failure = $0 })
             #expect(failure == "no such folder: /w")
         }
 

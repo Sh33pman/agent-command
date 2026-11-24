@@ -1,6 +1,6 @@
 import Foundation
 
-enum ReportKind: String {
+nonisolated enum ReportKind: String {
     case bug, feature
 
     var title: String { self == .bug ? "Report a bug" : "Request a feature" }
@@ -8,7 +8,7 @@ enum ReportKind: String {
 }
 
 /// What the form holds, and the rules for what's sent.
-struct ReportDraft {
+nonisolated struct ReportDraft {
     let kind: ReportKind
     var title = ""
     var description = ""
@@ -36,7 +36,7 @@ struct ReportDraft {
 
 /// What the daemon's report.page answers: the page to open, and the full report in
 /// case the page's link had to be cut.
-struct ReportPage: Decodable, Equatable {
+nonisolated struct ReportPage: Decodable, Equatable {
     let page_url: String
     let body: String
     let cut: Bool?

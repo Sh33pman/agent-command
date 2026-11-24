@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// How a sidebar row marks its session.
-enum RowMark: Equatable {
+nonisolated enum RowMark: Equatable {
     /// Claude: in the status's color, greyed out when stopped, hopping while busy.
     case claude(dimmed: Bool, busy: Bool)
     /// Antigravity, the same way with its own mark.
@@ -25,7 +25,7 @@ enum RowMark: Equatable {
 }
 
 /// The status bar's summary of every session, such as "1 needs you · 2 busy".
-enum StatusSummary {
+nonisolated enum StatusSummary {
     struct Part: Equatable {
         let text: String
         /// waiting and error need you; the rest are for information.

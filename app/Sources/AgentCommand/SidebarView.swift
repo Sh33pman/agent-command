@@ -487,7 +487,7 @@ struct SessionRow: View {
 
 /// The line joining a set's rows. It's drawn rather than typed, so it meets the
 /// next row whatever the font's line height.
-struct SetLinkMark: Shape {
+nonisolated struct SetLinkMark: Shape {
     let link: SetLink
 
     func path(in rect: CGRect) -> Path {

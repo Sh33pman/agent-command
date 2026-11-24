@@ -3,7 +3,7 @@ import SwiftUI
 
 /// One block of a Markdown message, as the popup and the Inbox show it. Inline
 /// styles (bold, italics, code, links) stay in the attributed text.
-enum MarkdownBlock: Equatable {
+nonisolated enum MarkdownBlock: Equatable {
     case heading(level: Int, text: AttributedString)
     case paragraph(AttributedString)
     /// marker is "•", "◦" or "3." and is empty for a list item's later paragraphs.

@@ -2,7 +2,7 @@ import Foundation
 
 /// How this app's sidebar lists sessions: its own view (D2), kept in
 /// UserDefaults. The daemon sends what contains what; this decides the order.
-struct SidebarOptions: Codable, Equatable {
+nonisolated struct SidebarOptions: Codable, Equatable {
     enum Mode: String, Codable, CaseIterable {
         case groups, list
 
@@ -44,7 +44,7 @@ struct SidebarOptions: Codable, Equatable {
 }
 
 /// A group's header in the sidebar.
-struct GroupHeader: Equatable {
+nonisolated struct GroupHeader: Equatable {
     let group: SessionGroup
     /// The sessions listed in it.
     let count: Int
@@ -54,7 +54,7 @@ struct GroupHeader: Equatable {
 }
 
 /// One line of the sidebar.
-enum SidebarRow: Equatable, Identifiable {
+nonisolated enum SidebarRow: Equatable, Identifiable {
     case header(GroupHeader)
     case session(Session, link: SetLink)
 

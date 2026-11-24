@@ -1,7 +1,7 @@
 import Foundation
 
 /// The parts of the daemon's state the app shows (internal/ipc, internal/core).
-struct Snapshot: Decodable {
+nonisolated struct Snapshot: Decodable {
     let sessions: [Session]?
     let notices: [Notice]?
     let inbox: [InboxItem]?
@@ -65,7 +65,7 @@ struct Snapshot: Decodable {
 
 /// An entity as every type has it (design 7.1): its type, id, host and
 /// parent. Enough to place what's inside one of a type the app doesn't know.
-struct EntityRef: Decodable, Equatable {
+nonisolated struct EntityRef: Decodable, Equatable {
     var type = ""
     var id = ""
     var host = ""
@@ -83,7 +83,7 @@ struct EntityRef: Decodable, Equatable {
 }
 
 /// Something wrong with the host (internal/ipc.Health), and how to fix it.
-struct HealthItem: Decodable, Equatable {
+nonisolated struct HealthItem: Decodable, Equatable {
     let id: String
     var severity = "warning"
     let title: String
@@ -92,7 +92,7 @@ struct HealthItem: Decodable, Equatable {
 
     /// An op to call with data, or on this Mac an acmd command (one that asks for a
     /// password, say), with what a button for it says.
-    struct Fix: Decodable, Equatable {
+    nonisolated struct Fix: Decodable, Equatable {
         var op: String? = nil
         var data: [String: SettingValue]? = nil
         var command: [String]? = nil
@@ -118,7 +118,7 @@ struct HealthItem: Decodable, Equatable {
 
 /// Waking the Mac for jobs (internal/ipc.WakeState): whether acmd may (its
 /// sudoers rule is in place), whether every job wakes it, and the wake it set.
-struct WakeState: Decodable, Equatable {
+nonisolated struct WakeState: Decodable, Equatable {
     var allowed = false
     var all = false
     var next = ""
@@ -140,7 +140,7 @@ struct WakeState: Decodable, Equatable {
 }
 
 /// A group of sessions (internal/ipc.Group): a named, coloured container you arrange.
-struct SessionGroup: Decodable, Identifiable, Equatable {
+nonisolated struct SessionGroup: Decodable, Identifiable, Equatable {
     /// Its id on its host: every host's Default is "default", so a group is
     /// told apart by key.
     let id: String
@@ -197,13 +197,13 @@ struct SessionGroup: Decodable, Identifiable, Equatable {
 
 /// An Inbox item named on its host (design 7.4): ids are unique only within
 /// their host.
-struct InboxKey: Hashable {
+nonisolated struct InboxKey: Hashable {
     let host: String
     let id: Int64
 }
 
 /// Something a session sent you (internal/core.InboxItem).
-struct InboxItem: Decodable, Identifiable, Equatable {
+nonisolated struct InboxItem: Decodable, Identifiable, Equatable {
     /// Its id on its host.
     let itemID: Int64
     let sessionID: String
@@ -295,7 +295,7 @@ struct InboxItem: Decodable, Identifiable, Equatable {
 }
 
 /// Something the daemon decided to notify about.
-struct Notice: Decodable {
+nonisolated struct Notice: Decodable {
     let seq: UInt64
     let sessionID: String
     let kind: String
@@ -338,7 +338,7 @@ struct Notice: Decodable {
 
 /// Why a session needs you, from the daemon: rank 1 is the most urgent, and
 /// since is when it started. A reason this app doesn't know still sorts by rank.
-struct SessionAttention: Decodable, Equatable {
+nonisolated struct SessionAttention: Decodable, Equatable {
     let rank: Int
     let reason: String
     var since: String = ""
@@ -348,7 +348,7 @@ struct SessionAttention: Decodable, Equatable {
 }
 
 /// Reads the daemon's RFC 3339 times, with or without fractional seconds.
-enum Timestamps {
+nonisolated enum Timestamps {
     static func date(_ text: String) -> Date? {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -358,14 +358,14 @@ enum Timestamps {
 
 /// A set as the daemon sends it: sessions made together by splitting, all in
 /// one group (its parent) and on one host.
-struct SessionSetEntity: Decodable, Equatable {
+nonisolated struct SessionSetEntity: Decodable, Equatable {
     let type: String
     let id: String
     let parent: String
     var host: String?
 }
 
-struct Session: Decodable, Identifiable, Equatable {
+nonisolated struct Session: Decodable, Identifiable, Equatable {
     let id: String
     let name: String
     let cwd: String
@@ -485,9 +485,9 @@ struct Session: Decodable, Identifiable, Equatable {
     var isTerminal: Bool { harnessKind == "terminal" }
     /// The harness it runs in, or its kind when that was removed; a terminal.
     /// A host's session runs in one of the host's harnesses: it shows its kind.
-    var harness: Harness { isOnHost ? Harness(kind: harnessKind.isEmpty ? "claude" : harnessKind) : Harness.resolve(id: harnessID, kind: harnessKind) }
+    @MainActor var harness: Harness { isOnHost ? Harness(kind: harnessKind.isEmpty ? "claude" : harnessKind) : Harness.resolve(id: harnessID, kind: harnessKind) }
     /// Its harness's name ("Claude", "Work"), or "Terminal".
-    var harnessTitle: String { harness.title }
+    @MainActor var harnessTitle: String { harness.title }
     var isArchived: Bool { status == "archived" }
 
     var displayName: String {
@@ -498,14 +498,14 @@ struct Session: Decodable, Identifiable, Equatable {
 
 /// What can be done with a session (internal/core's capabilities). Ones the app
 /// doesn't know yet are ignored.
-enum SessionCapability: String {
+nonisolated enum SessionCapability: String {
     case resume, attach, archive, unarchive, purge
     case continueInJob = "continue_in_job"
     case openInEditor = "open_in_editor", setRemote = "set_remote"
 }
 
 /// An earlier agent conversation that can be resumed (internal/ipc.Conversation).
-struct Conversation: Decodable, Identifiable, Hashable {
+nonisolated struct Conversation: Decodable, Identifiable, Hashable {
     let id: String
     /// The harness whose history it's in, and its kind.
     var harness_id: String? = nil
@@ -519,7 +519,7 @@ struct Conversation: Decodable, Identifiable, Hashable {
 
     var displayTitle: String { title ?? "Untitled" }
     /// The harness it's from.
-    var harness: Harness { Harness.resolve(id: harness_id ?? "", kind: harness_kind ?? "claude") }
+    @MainActor var harness: Harness { Harness.resolve(id: harness_id ?? "", kind: harness_kind ?? "claude") }
     var isRunning: Bool { running == true }
 
     /// The time, as far as RFC 3339 can be parsed.
@@ -530,14 +530,14 @@ struct Conversation: Decodable, Identifiable, Hashable {
         return precise.date(from: updated_at) ?? plain.date(from: updated_at)
     }
 
-    func matches(_ search: String) -> Bool {
+    @MainActor func matches(_ search: String) -> Bool {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return true }
         return [displayTitle, cwd, branch ?? "", id, harness.title].contains { $0.lowercased().contains(query) }
     }
 }
 
-struct DaemonError: LocalizedError {
+nonisolated struct DaemonError: LocalizedError {
     let message: String
     /// What kind of error, as the daemon says (internal/errcode): decide from
     /// it, never from the message. "" for one the app made itself.
@@ -548,7 +548,7 @@ struct DaemonError: LocalizedError {
 }
 
 /// Where acmd keeps things, the same way internal/paths resolves them.
-enum DaemonPaths {
+nonisolated enum DaemonPaths {
     static var socket: String { socket(ProcessInfo.processInfo.environment) }
 
     static func socket(_ env: [String: String]) -> String {
@@ -599,7 +599,7 @@ enum DaemonPaths {
 /// This must never ask the daemon to shut down. The CLI does that on a version
 /// mismatch, but the app can meet a daemon of another version and only needs
 /// the same protocol.
-final class DaemonConnection {
+nonisolated final class DaemonConnection {
     /// The protocol versions the app speaks (internal/ipc.ProtoMin, Proto): it
     /// uses the highest it shares with the daemon (design 8.2).
     static let protoMin = 2
@@ -641,7 +641,7 @@ final class DaemonConnection {
         guard status == 0 else {
             throw DaemonError(message: "daemon not reachable")
         }
-        struct Hello: Encodable {
+        nonisolated struct Hello: Encodable {
             let proto: Int
             let proto_min: Int
             let proto_max: Int
@@ -706,20 +706,20 @@ final class DaemonConnection {
         return n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)
     }
 
-    private struct Request<In: Encodable>: Encodable {
+    nonisolated private struct Request<In: Encodable>: Encodable {
         let op: String
         let data: In?
     }
 
-    private struct Empty: Encodable {}
+    nonisolated private struct Empty: Encodable {}
 
     /// Any reply data, unread.
-    private struct Ignored: Decodable {
+    nonisolated private struct Ignored: Decodable {
         init(from decoder: Decoder) throws {}
     }
 
     /// The daemon's reply: ok and its data, or why not.
-    private struct Reply<Out: Decodable>: Decodable {
+    nonisolated private struct Reply<Out: Decodable>: Decodable {
         let ok: Bool
         let data: Out?
         let error: String?
@@ -767,7 +767,7 @@ final class DaemonConnection {
     /// Starts the daemon's event stream on this connection (subscribe): read it
     /// with nextEvent. Nothing else can be called on it after.
     func subscribe(since: UInt64) throws {
-        struct Subscribe: Encodable { let since: UInt64 }
+        nonisolated struct Subscribe: Encodable { let since: UInt64 }
         try send("subscribe", Subscribe(since: since))
     }
 
@@ -800,7 +800,7 @@ final class DaemonConnection {
 /// while speech.say is still talking). Each call waits at most callTimeout
 /// for its reply, except the ops in untimed. The event stream has a
 /// connection of its own.
-final class DaemonClient: @unchecked Sendable {
+nonisolated final class DaemonClient: @unchecked Sendable {
     /// The app's calls.
     static let shared = DaemonClient()
     /// Longer than the daemon waits for a Remote host (15 s).
@@ -823,7 +823,7 @@ final class DaemonClient: @unchecked Sendable {
 
     /// Runs work on a connection, off the caller's thread. op says which
     /// timeout applies.
-    func with<T>(_ op: String = "", _ work: @escaping (DaemonConnection) throws -> T) async throws -> T {
+    func with<T: Sendable>(_ op: String = "", _ work: @escaping @Sendable (DaemonConnection) throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { done in
             DispatchQueue.global(qos: .userInitiated).async {
                 done.resume(with: Result { try self.withBlocking(op, work) })
@@ -873,7 +873,7 @@ final class DaemonClient: @unchecked Sendable {
 }
 
 /// Runs the app's own acmd for a command, off the main thread.
-enum Acmd {
+nonisolated enum Acmd {
     /// Runs it with args, then done(succeeded, output) on the main actor. It has
     /// no terminal, so a command that needs an admin password asks through
     /// macOS's dialog.
@@ -912,7 +912,9 @@ enum Acmd {
 
 /// One page of a list op (internal/ipc/page.go): its items, and the cursor
 /// for the next page, "" on the last.
-struct Page<Item: Decodable>: Decodable {
+extension Page: Sendable where Item: Sendable {}
+
+nonisolated struct Page<Item: Decodable>: Decodable {
     var items: [Item] = []
     var nextCursor = ""
 
@@ -936,7 +938,7 @@ struct Page<Item: Decodable>: Decodable {
 }
 
 /// Asks for one page of a list: "" is the first.
-struct PageRequest: Encodable {
+nonisolated struct PageRequest: Encodable {
     var limit: Int?
     var cursor: String?
 
@@ -948,7 +950,7 @@ struct PageRequest: Encodable {
 
 /// A session, group or set as an op names it: its id on its host ("" for
 /// this Mac), design 7.4.
-struct Target: Encodable, Equatable {
+nonisolated struct Target: Encodable, Equatable {
     var host: String?
     let id: String
 
@@ -959,7 +961,7 @@ struct Target: Encodable, Equatable {
 }
 
 /// An Inbox item as an op names it.
-struct ItemTarget: Encodable, Equatable {
+nonisolated struct ItemTarget: Encodable, Equatable {
     var host: String?
     let id: Int64
 
@@ -971,7 +973,7 @@ struct ItemTarget: Encodable, Equatable {
 
 /// The daemon's hello (internal/ipc.Hello): the protocol version agreed, the
 /// range it speaks, and its ops.
-struct DaemonHello: Decodable, Equatable {
+nonisolated struct DaemonHello: Decodable, Equatable {
     var proto = 0
     var protoMin = 0
     var protoMax = 0
@@ -997,7 +999,7 @@ struct DaemonHello: Decodable, Equatable {
 
 /// Opens something in the editor chosen in Settings, on this Mac
 /// (internal/ipc.EditorOpen): a session's folder, or a file at a line.
-struct EditorOpen: Encodable, Equatable {
+nonisolated struct EditorOpen: Encodable, Equatable {
     var id: String?
     var path: String?
     var `in`: String?
@@ -1006,8 +1008,8 @@ struct EditorOpen: Encodable, Equatable {
 }
 
 /// What acmd doctor finds (internal/ipc.DoctorReport).
-struct DoctorReport: Decodable, Equatable {
-    struct Check: Decodable, Equatable {
+nonisolated struct DoctorReport: Decodable, Equatable {
+    nonisolated struct Check: Decodable, Equatable {
         var section = ""
         var status = "ok"
         var text = ""

@@ -12,7 +12,7 @@ enum UsesSharedSpeech {}
 /// Nothing here may reach a real daemon, or it would read and change the person's real
 /// Inbox. Every test that uses the store calls this first: the runtime folder is its own,
 /// and the store's follow loop, the only thing that starts a daemon, is never started.
-func isolateFromTheRealDaemon() throws {
+nonisolated func isolateFromTheRealDaemon() throws {
     // Short: unix socket paths are limited to 104 bytes.
     let dir = "/tmp/acmdt-\(getpid())"
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
@@ -97,7 +97,7 @@ func until(_ what: String = "the result", sourceLocation: SourceLocation = #_sou
 
 /// Stands in for the daemon on the test's own socket: it speaks the same protocol, says
 /// what it's told to, and records what it was asked.
-final class FakeDaemon: @unchecked Sendable {
+nonisolated final class FakeDaemon: @unchecked Sendable {
     private let lock = NSLock()
     private var listener: Int32 = -1
     private let path: String
@@ -145,7 +145,7 @@ final class FakeDaemon: @unchecked Sendable {
                     self?.clients.append(client)
                     self?.accepted += 1
                 }
-                Thread.detachNewThread { self?.serve(client) }
+                Thread.detachNewThread { [weak self] in self?.serve(client) }
             }
         }
     }

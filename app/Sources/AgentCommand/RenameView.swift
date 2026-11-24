@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The names a rename gives: the name itself for one session, or the name with
 /// its position for several. This has no dependencies beyond the standard library.
-enum RenameNames {
+nonisolated enum RenameNames {
     static func names(base: String, count: Int) -> [String] {
         let name = base.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return [] }

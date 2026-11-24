@@ -5,7 +5,7 @@ import Observation
 /// antigravity, with its own name and settings: there can be several of a
 /// kind), or a terminal, which isn't a harness. Equal when they're the same
 /// harness. The app draws the icons it knows; any other is drawn generically.
-struct Harness: Hashable, Identifiable {
+nonisolated struct Harness: Hashable, Identifiable {
     /// Its id; "" for a terminal, and for one known only by its kind.
     let harnessID: String
     /// claude, antigravity or terminal (or one the app doesn't know).
@@ -59,10 +59,10 @@ struct Harness: Hashable, Identifiable {
     static let known: [Harness] = [.claude, .antigravity]
 
     /// What a new session can run in here: the harnesses, then a terminal.
-    static var allCases: [Harness] { HarnessList.shared.harnesses + [.terminal] }
+    @MainActor static var allCases: [Harness] { HarnessList.shared.harnesses + [.terminal] }
 
     /// The harnesses: what keeps a conversation, runs scheduled jobs and can be resumed.
-    static var agents: [Harness] { HarnessList.shared.harnesses }
+    @MainActor static var agents: [Harness] { HarnessList.shared.harnesses }
 
     /// The kind's own product name, as in "Claude Code settings".
     var productName: String { isClaude ? "Claude Code" : kindTitle }
@@ -77,14 +77,14 @@ struct Harness: Hashable, Identifiable {
     var request: (id: String, kind: String) { (harnessID, kind) }
 
     /// The harness with this id, or nil.
-    init?(id: String) {
+    @MainActor init?(id: String) {
         guard !id.isEmpty, let h = HarnessList.shared.harnesses.first(where: { $0.harnessID == id }) else { return nil }
         self = h
     }
 
     /// What a session (or a job, or a conversation) runs in: its harness, by
     /// id; one that was removed, or none, its kind (shown so).
-    static func resolve(id: String, kind: String) -> Harness {
+    @MainActor static func resolve(id: String, kind: String) -> Harness {
         if let h = Harness(id: id) { return h }
         if kind == "terminal" { return .terminal }
         var h = Harness(kind: kind.isEmpty ? "claude" : kind)
@@ -131,7 +131,7 @@ extension Harness: Decodable {
 
     @ObservationIgnored var calls: DaemonCalls = DaemonSocketCalls()
 
-    struct Answer: Decodable {
+    nonisolated struct Answer: Decodable {
         var harnesses: [Harness]
         var `default`: String?
     }
@@ -162,7 +162,7 @@ extension Harness: Decodable {
     }
 
     /// A harness to save (internal/ipc.HarnessSave): a field left nil stays as it is.
-    struct Save: Encodable, Equatable {
+    nonisolated struct Save: Encodable, Equatable {
         var id: String? = nil
         var kind: String? = nil
         var name: String? = nil
@@ -250,7 +250,7 @@ struct HarnessChoice {
 
 /// A conversation to resume: its id, the agent it's from, and whether that agent
 /// says it's still live.
-struct ResumeTarget: Equatable {
+nonisolated struct ResumeTarget: Equatable {
     let id: String
     let harness: Harness
     var isRunning = false

@@ -3,7 +3,7 @@ import Foundation
 /// The daemon's state, kept from its event stream (internal/ipc.Event): a
 /// snapshot, then each entity added, updated (whole) or removed. The app still
 /// reads it as a Snapshot.
-struct SnapshotAssembler {
+nonisolated struct SnapshotAssembler {
     /// The last revision applied: sent back to resume after a dropped connection.
     private(set) var rev: UInt64 = 0
     private var root: [String: Any] = [:]

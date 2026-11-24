@@ -3,8 +3,8 @@ import Observation
 
 /// acmd's settings, as config.get gives them: their values, typed, and what's wrong
 /// with config.toml if anything is.
-struct AcmdSettings: Equatable {
-    struct Values: Decodable, Equatable {
+nonisolated struct AcmdSettings: Equatable {
+    nonisolated struct Values: Decodable, Equatable {
         var agentRemoteControl = false
         var notify = true
         var onWaiting = true
@@ -90,7 +90,7 @@ struct AcmdSettings: Equatable {
 }
 
 /// Lengths of time as Go writes them: "10s", "1m30s", "2h0m0s".
-enum GoDuration {
+nonisolated enum GoDuration {
     static func seconds(_ text: String) -> Double? {
         guard !text.isEmpty else { return nil }
         var total = 0.0
@@ -125,7 +125,7 @@ enum GoDuration {
 }
 
 /// Arguments as you'd type them: words, with quotes around ones that have spaces.
-enum ShellWords {
+nonisolated enum ShellWords {
     static func split(_ text: String) -> [String] {
         var words: [String] = []
         var word = ""

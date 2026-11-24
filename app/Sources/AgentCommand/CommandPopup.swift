@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// One thing the command popup can do.
-struct PopupCommand: Identifiable {
+nonisolated struct PopupCommand: Identifiable {
     let section: String
     let title: String
     var shortcut = ""

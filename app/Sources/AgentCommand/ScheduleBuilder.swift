@@ -2,7 +2,7 @@ import Foundation
 
 /// The schedule form as the daemon reads and writes it (internal/schedule.Form):
 /// the daemon maps it to and from cron, so the app has no cron of its own.
-struct ScheduleForm: Codable, Equatable {
+nonisolated struct ScheduleForm: Codable, Equatable {
     var kind = "weekdays"
     var every: Int?
     var hour = 9
@@ -42,7 +42,7 @@ struct ScheduleForm: Codable, Equatable {
 /// The daemon turns it into cron or a one-off (job.check), and back, so typing
 /// cron moves the controls once the daemon has read it. Cron the controls
 /// can't show is Custom, and stays as typed.
-struct ScheduleBuilder: Equatable {
+nonisolated struct ScheduleBuilder: Equatable {
     enum Kind: String, CaseIterable, Identifiable {
         case minutes, hours, daily, weekdays, weekly, monthly, once, custom
         var id: String { rawValue }

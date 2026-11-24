@@ -7,7 +7,7 @@ protocol DaemonCalls {
 }
 
 /// The daemon on its socket, through the app's DaemonClient.
-struct DaemonSocketCalls: DaemonCalls {
+nonisolated struct DaemonSocketCalls: DaemonCalls {
     var client = DaemonClient.shared
 
     func call(_ op: String, _ input: Data, done: @escaping (Result<Data, Error>) -> Void) {
@@ -23,7 +23,7 @@ struct DaemonSocketCalls: DaemonCalls {
 
 /// A known host to add, or the changes to one (internal/ipc.RemoteHostEdit).
 /// For an edit, host names the entry, and what's nil stays as it is.
-struct RemoteHostEdit: Encodable, Equatable {
+nonisolated struct RemoteHostEdit: Encodable, Equatable {
     var host: String?
     var name: String?
     var address: String?
@@ -40,12 +40,12 @@ struct RemoteHostEdit: Encodable, Equatable {
 struct RemoteHostsClient {
     var calls: DaemonCalls = DaemonSocketCalls()
 
-    private struct Ref: Encodable {
+    nonisolated private struct Ref: Encodable {
         var host: String?
         var id: String?
     }
 
-    private struct FolderRequest: Encodable {
+    nonisolated private struct FolderRequest: Encodable {
         let host: String
         let path: String
         var hidden: Bool?
@@ -53,7 +53,7 @@ struct RemoteHostsClient {
         var exts: [String]?
     }
 
-    private struct NewRequest: Encodable {
+    nonisolated private struct NewRequest: Encodable {
         let host: String
         let dir: String
         var harness_id: String?
@@ -62,7 +62,7 @@ struct RemoteHostsClient {
         var set_with: String?
     }
 
-    private struct Nothing: Decodable {}
+    nonisolated private struct Nothing: Decodable {}
 
     private func call<Out: Decodable>(_ op: String, _ input: some Encodable, _ done: @escaping (Result<Out, Error>) -> Void) {
         let data: Data

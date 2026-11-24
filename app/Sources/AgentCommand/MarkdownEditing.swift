@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the prompt editor's toolbar and shortcuts do to Markdown.
-enum MarkdownCommand: Equatable, CaseIterable {
+nonisolated enum MarkdownCommand: Equatable, CaseIterable {
     case bold, italic, strikethrough, code, link
     case heading1, heading2, heading3
     case bulletList, numberedList, taskList, quote, codeBlock
@@ -98,7 +98,7 @@ enum MarkdownCommand: Equatable, CaseIterable {
 
 /// Applies MarkdownCommands to text. Ranges are NSRanges in UTF-16, as
 /// NSTextView has them.
-enum MarkdownEdit {
+nonisolated enum MarkdownEdit {
     struct Result: Equatable {
         let text: String
         let selection: NSRange
@@ -301,7 +301,7 @@ enum MarkdownEdit {
 }
 
 /// How the editor styles Markdown as you type: what each stretch of text is.
-enum MarkdownStyle: Equatable {
+nonisolated enum MarkdownStyle: Equatable {
     case heading(Int)
     case bold, italic, strikethrough, code, link
     case codeBlock, quote, listMarker
@@ -309,12 +309,12 @@ enum MarkdownStyle: Equatable {
     case syntax
 }
 
-struct MarkdownSpan: Equatable {
+nonisolated struct MarkdownSpan: Equatable {
     let range: NSRange
     let style: MarkdownStyle
 }
 
-enum MarkdownHighlighter {
+nonisolated enum MarkdownHighlighter {
     /// The spans to style in text, in UTF-16 ranges. Later spans go over earlier
     /// ones where they overlap.
     static func spans(_ text: String) -> [MarkdownSpan] {

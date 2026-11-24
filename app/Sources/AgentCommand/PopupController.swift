@@ -4,7 +4,7 @@ import Observation
 import SwiftUI
 
 /// What makes the popup open by itself.
-enum PopupOpens: String, CaseIterable, Identifiable {
+nonisolated enum PopupOpens: String, CaseIterable, Identifiable {
     case needsYou, everything, never
 
     var id: String { rawValue }
@@ -36,7 +36,7 @@ enum PopupOpens: String, CaseIterable, Identifiable {
 }
 
 /// How the popup appears.
-enum ReplyPopupStyle: String, CaseIterable, Identifiable {
+nonisolated enum ReplyPopupStyle: String, CaseIterable, Identifiable {
     /// Opens over everything, and drops behind when you click something else.
     case window
     /// A panel floating over a dimmed screen, which stays in front of every app.
@@ -119,7 +119,7 @@ final class PopupSettings {
         }
     }
 
-    private struct Profile: Codable {
+    nonisolated private struct Profile: Codable {
         var notify: [String]?
         var popup_opens: String?
     }
@@ -356,7 +356,8 @@ final class SystemHotKey {
         if status != noErr { NSLog("system shortcut %u: couldn't register (%d)", id, status) }
     }
 
-    deinit {
+    // On the main actor, as the hot key was registered.
+    isolated deinit {
         if let ref { UnregisterEventHotKey(ref) }
     }
 

@@ -2,14 +2,14 @@ import AppKit
 import Observation
 
 /// Where the Inbox puts the message box, relative to the list of messages.
-enum InboxLayout: String {
+nonisolated enum InboxLayout: String {
     case columns, stacked
 
     static let key = "inbox.layout"
 }
 
 /// What the Inbox lists.
-enum InboxFilter: Hashable {
+nonisolated enum InboxFilter: Hashable {
     /// What's left to deal with, in arrival order.
     case queue
     /// Everything, newest first.
@@ -21,7 +21,7 @@ enum InboxFilter: Hashable {
 }
 
 /// Which part of the Inbox has the keyboard, unless the reply box does.
-enum InboxPanel {
+nonisolated enum InboxPanel {
     case sessions, messages
 }
 
@@ -467,7 +467,9 @@ final class InboxModel {
     private func say(_ text: String) {
         notice = text
         noticeTimer?.invalidate()
-        noticeTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in self?.notice = nil }
+        noticeTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.notice = nil } // a timer on the main run loop
+        }
     }
 
     /// What follows wherever the cursor ended up.

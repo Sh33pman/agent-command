@@ -12,7 +12,9 @@ let package = Package(
             name: "AgentCommand",
             dependencies: ["GhosttyKit"],
             resources: [.copy("Resources/Fonts")],
-            swiftSettings: [.swiftLanguageMode(.v5)],
+            // Swift 6 checks data races. An app's types run on the main thread
+            // unless they say otherwise (nonisolated).
+            swiftSettings: [.swiftLanguageMode(.v6), .defaultIsolation(MainActor.self)],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Carbon"),
@@ -28,7 +30,7 @@ let package = Package(
         .testTarget(
             name: "AgentCommandTests",
             dependencies: ["AgentCommand"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v6), .defaultIsolation(MainActor.self)]
         ),
     ]
 )

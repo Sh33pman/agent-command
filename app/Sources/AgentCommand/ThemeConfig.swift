@@ -3,7 +3,7 @@ import Foundation
 /// Reading and changing settings in the app's Ghostty config (the theme, the font),
 /// and finding the themes that can be chosen. This has no dependencies, so it can be
 /// checked on its own.
-enum ThemeConfig {
+nonisolated enum ThemeConfig {
     /// The theme a config sets, if any. Like Ghostty, the last line wins and an
     /// empty value means none.
     static func theme(inConfig text: String) -> String? {

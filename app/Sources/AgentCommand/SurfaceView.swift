@@ -69,7 +69,8 @@ final class SurfaceView: NSView, NSTextInputClient {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    deinit {
+    // On the main actor, where libghostty's surfaces are used.
+    isolated deinit {
         if let surface { ghostty_surface_free(surface) }
     }
 

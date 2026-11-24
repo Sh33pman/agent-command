@@ -1,13 +1,13 @@
 import Foundation
 
 /// Sessions created together with pane splits. It has no name, only an id.
-struct SessionSet: Codable, Equatable {
+nonisolated struct SessionSet: Codable, Equatable {
     let id: String
     var tree: PaneTree
 }
 
 /// How a row in the session list connects to the rows around it.
-enum SetLink: Equatable {
+nonisolated enum SetLink: Equatable {
     case none, first, middle, last
 }
 
@@ -148,7 +148,7 @@ struct PaneSets: Codable, Equatable {
     /// The format the app saves now: panes only, with sets kept by the daemon.
     static let savedVersion = 2
 
-    private struct Saved: Codable {
+    nonisolated private struct Saved: Codable {
         let version: Int
         let panes: PaneSets
     }

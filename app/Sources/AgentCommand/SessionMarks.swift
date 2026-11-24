@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// A mark drawn from a pixel grid, so it takes any color.
-protocol PixelMark: Shape {
+nonisolated protocol PixelMark: Shape {
     /// One string per row, "#" for a filled pixel. Pixels are twice as tall as
     /// they are wide, like the terminal's quarter-block characters.
     static var pixels: [String] { get }
 }
 
-extension PixelMark {
+nonisolated extension PixelMark {
     static var columns: CGFloat { CGFloat(pixels[0].count) }
     static var rows: CGFloat { CGFloat(pixels.count) }
     /// Width over height.
@@ -32,7 +32,7 @@ extension PixelMark {
 
 /// Claude Code's crab. It's the pixel grid of the logo Claude Code prints in the
 /// terminal: a body with two eyes, arms out to the sides and four legs.
-struct ClaudeMarkShape: PixelMark {
+nonisolated struct ClaudeMarkShape: PixelMark {
     static let pixels = [
         "  ############  ",
         "  ## ###### ##  ",
@@ -43,7 +43,7 @@ struct ClaudeMarkShape: PixelMark {
 }
 
 /// Antigravity's mark: an arch, the same size as the crab.
-struct AntigravityMarkShape: PixelMark {
+nonisolated struct AntigravityMarkShape: PixelMark {
     static let pixels = [
         "      ####      ",
         "    ########    ",

@@ -3,7 +3,7 @@ import Observation
 
 /// A setting's value, as the daemon sends it (internal/config): on or off, a
 /// number, text, or a list of text.
-enum SettingValue: Codable, Equatable {
+nonisolated enum SettingValue: Codable, Equatable {
     case bool(Bool)
     case number(Double)
     case string(String)
@@ -37,7 +37,7 @@ enum SettingValue: Codable, Equatable {
 }
 
 /// What a setting is (internal/config.Spec): the daemon describes each one.
-struct SettingSpec: Decodable, Equatable {
+nonisolated struct SettingSpec: Decodable, Equatable {
     let key: String
     let type: String
     var description = ""
@@ -67,7 +67,7 @@ struct SettingSpec: Decodable, Equatable {
 }
 
 /// What's wrong with config.toml, while changes wait for it to be fixed.
-struct ConfigProblem: Decodable, Equatable {
+nonisolated struct ConfigProblem: Decodable, Equatable {
     var line: Int? = nil
     let message: String
 
@@ -77,7 +77,7 @@ struct ConfigProblem: Decodable, Equatable {
 }
 
 /// config.get's answer (internal/ipc.ConfigState).
-struct ConfigState: Decodable {
+nonisolated struct ConfigState: Decodable {
     var path = ""
     var settings: [SettingSpec] = []
     var values: [String: SettingValue] = [:]
@@ -105,13 +105,13 @@ struct ConfigState: Decodable {
 struct SettingsClient {
     var calls: DaemonCalls = DaemonSocketCalls()
 
-    private struct HostRef: Encodable { let host: String }
-    private struct Change: Encodable {
+    nonisolated private struct HostRef: Encodable { let host: String }
+    nonisolated private struct Change: Encodable {
         var host: String?
         let values: [String: SettingValue]
         var versions: [String: String]?
     }
-    private struct Nothing: Encodable {}
+    nonisolated private struct Nothing: Encodable {}
 
     /// The settings and what each one is. host nil is this Mac.
     func get(host: String? = nil, done: @escaping (Result<ConfigState, Error>) -> Void) {

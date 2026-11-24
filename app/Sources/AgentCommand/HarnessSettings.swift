@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The rules for a harness's name, as the daemon checks them: letters, with
 /// single spaces between words, unique ignoring case and "_" for a space.
-enum HarnessName {
+nonisolated enum HarnessName {
     /// Why name can't be a harness's name, or nil when it can.
     static func problem(_ name: String, others: [Harness]) -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)

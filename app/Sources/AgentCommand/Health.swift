@@ -5,8 +5,8 @@ import Foundation
 /// Every field is optional on the wire. The app and acmd upgrade separately,
 /// so the daemon can be older than the app and leave out a field this one
 /// knows: that field takes its default, and the snapshot still decodes.
-struct HostFeatures: Decodable, Equatable {
-    struct Host: Decodable, Equatable {
+nonisolated struct HostFeatures: Decodable, Equatable {
+    nonisolated struct Host: Decodable, Equatable {
         var os = ""
         /// The kinds an installed harness has, and terminal.
         var harnessKinds: [String] = []
@@ -40,7 +40,7 @@ struct HostFeatures: Decodable, Equatable {
         }
     }
 
-    struct Device: Decodable, Equatable {
+    nonisolated struct Device: Decodable, Equatable {
         var speech = false
         var editor = false
 
@@ -76,7 +76,7 @@ struct HostFeatures: Decodable, Equatable {
 }
 
 /// acmd's own version, and the newest release when it's newer (internal/ipc.Update).
-struct UpdateState: Decodable, Equatable {
+nonisolated struct UpdateState: Decodable, Equatable {
     var current = ""
     var latest: String? = nil
     var url: String? = nil
@@ -89,25 +89,25 @@ struct UpdateState: Decodable, Equatable {
 struct HealthClient {
     var calls: DaemonCalls = DaemonSocketCalls()
 
-    private struct Ref: Encodable {
+    nonisolated private struct Ref: Encodable {
         let client_id: String
         var id: String?
     }
 
-    private struct ReportRequest: Encodable {
+    nonisolated private struct ReportRequest: Encodable {
         let kind: String
         var title: String?
         var body: String?
     }
 
-    struct InitResult: Decodable, Equatable {
+    nonisolated struct InitResult: Decodable, Equatable {
         var output = ""
         var done = false
     }
 
-    struct ReportDetails: Decodable { let details: String }
+    nonisolated struct ReportDetails: Decodable { let details: String }
 
-    private struct Nothing: Codable {}
+    nonisolated private struct Nothing: Codable {}
 
     /// Stops showing a warning here, or (dismissed false) shows every one again.
     func dismiss(_ id: String?, client: String, done: @escaping (Result<[String], Error>) -> Void = { _ in }) {
@@ -152,7 +152,7 @@ struct HealthClient {
 }
 
 /// The daemon's health entries as the app's warnings.
-enum HealthWarnings {
+nonisolated enum HealthWarnings {
     /// Setup is offered once at launch, or done again quietly: not a warning.
     static let setupIDs: Set<String> = ["setup.offer", "setup.refresh"]
 

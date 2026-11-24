@@ -8,6 +8,22 @@ func ghostty_init_ok() -> Bool {
 /// The one libghostty app in this process, and its runtime callbacks. All C
 /// calls to the app live here and in SurfaceView, because the embedding API
 /// is unstable.
+/// libghostty asks for a tick, from any of its threads.
+nonisolated private func ghosttyWakeup(_: UnsafeMutableRawPointer?) {
+    DispatchQueue.main.async { GhosttyRuntime.shared.tick() }
+}
+
+/// A surface's program ended, maybe on one of libghostty's threads: the view is
+/// found and closed on the main thread.
+nonisolated private func ghosttyCloseSurface(_ userdata: UnsafeMutableRawPointer?, _: Bool) {
+    let bits = UInt(bitPattern: userdata)
+    DispatchQueue.main.async {
+        guard let view = SurfaceView.from(UnsafeMutableRawPointer(bitPattern: bits)) else { return }
+        trace("ghostty close surface")
+        view.onClose?()
+    }
+}
+
 final class GhosttyRuntime {
     static let shared = GhosttyRuntime()
     /// Opens a file clicked in a terminal, given the session it was in.
@@ -23,9 +39,7 @@ final class GhosttyRuntime {
         var runtime = ghostty_runtime_config_s(
             userdata: nil,
             supports_selection_clipboard: false,
-            wakeup_cb: { _ in
-                DispatchQueue.main.async { GhosttyRuntime.shared.tick() }
-            },
+            wakeup_cb: ghosttyWakeup,
             action_cb: { _, target, action in
                 GhosttyRuntime.handle(action, target: target)
             },
@@ -38,11 +52,7 @@ final class GhosttyRuntime {
             write_clipboard_cb: { _, location, content, len, confirm in
                 GhosttyRuntime.writeClipboard(location, content, len, confirm)
             },
-            close_surface_cb: { userdata, _ in
-                guard let view = SurfaceView.from(userdata) else { return }
-                trace("ghostty close surface")
-                DispatchQueue.main.async { view.onClose?() }
-            }
+            close_surface_cb: ghosttyCloseSurface
         )
         guard let app = ghostty_app_new(&runtime, config) else {
             fatalError("ghostty_app_new failed")
@@ -102,6 +112,7 @@ final class GhosttyRuntime {
     }
 
     func tick() { ghostty_app_tick(app) }
+
 
     func setFocus(_ focused: Bool) { ghostty_app_set_focus(app, focused) }
 

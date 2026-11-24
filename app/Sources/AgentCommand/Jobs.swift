@@ -161,7 +161,7 @@ extension Session {
     }
 }
 
-struct JobRun: Codable, Identifiable, Equatable {
+nonisolated struct JobRun: Codable, Identifiable, Equatable {
     let id: Int64
     let jobID: String
     let due: String
@@ -203,7 +203,7 @@ struct JobRun: Codable, Identifiable, Equatable {
 }
 
 /// What the daemon makes of a job before it's saved (internal/ipc.JobCheck).
-struct JobCheck: Decodable, Equatable {
+nonisolated struct JobCheck: Decodable, Equatable {
     /// The schedule as the daemon read it, for the form's controls.
     var form: ScheduleForm?
     var cron = ""
@@ -231,7 +231,7 @@ struct JobCheck: Decodable, Equatable {
 }
 
 /// A setting an agent takes for a scheduled run (internal/harness.Setting).
-struct AgentSetting: Decodable, Identifiable, Equatable {
+nonisolated struct AgentSetting: Decodable, Identifiable, Equatable {
     let key: String
     let label: String
     let help: String
@@ -259,7 +259,7 @@ struct AgentSetting: Decodable, Identifiable, Equatable {
 }
 
 /// Where a job runs (internal/core's Where).
-enum JobPlace: String, CaseIterable, Identifiable {
+nonisolated enum JobPlace: String, CaseIterable, Identifiable {
     case folder, worktree, session
     var id: String { rawValue }
 
@@ -283,7 +283,7 @@ enum JobPlace: String, CaseIterable, Identifiable {
 }
 
 /// How a job stands.
-enum JobState: Equatable {
+nonisolated enum JobState: Equatable {
     case scheduled, paused, failing, finished, never
 
     var label: String {
@@ -428,7 +428,7 @@ struct JobDraft: Equatable {
 }
 
 /// Times as the daemon sends them (RFC 3339), and as the list shows them.
-enum JobTime {
+nonisolated enum JobTime {
     static func parse(_ text: String) -> Date? {
         guard !text.isEmpty else { return nil }
         let precise = ISO8601DateFormatter()

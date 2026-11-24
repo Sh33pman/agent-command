@@ -1,26 +1,26 @@
 import CoreGraphics
 import Foundation
 
-enum SplitDirection: String, Codable {
+nonisolated enum SplitDirection: String, Codable {
     case right, down
 }
 
-enum FocusDirection {
+nonisolated enum FocusDirection {
     case left, right, up, down
 }
 
-indirect enum PaneNode: Codable, Equatable {
+nonisolated indirect enum PaneNode: Codable, Equatable {
     case leaf(id: String, session: String?)
     case split(direction: SplitDirection, ratio: Double, first: PaneNode, second: PaneNode)
 }
 
 /// Where a pane or a divider goes. y grows upward, as in AppKit.
-struct PaneFrame: Equatable {
+nonisolated struct PaneFrame: Equatable {
     let id: String
     let rect: CGRect
 }
 
-struct DividerFrame: Equatable {
+nonisolated struct DividerFrame: Equatable {
     /// How to reach this split from the root: false is first, true is second.
     let path: [Bool]
     let direction: SplitDirection
@@ -31,7 +31,7 @@ struct DividerFrame: Equatable {
 
 /// The layout of the panes: a tree of splits whose leaves each show at most one
 /// session. This has no dependencies, so it can be checked on its own.
-struct PaneTree: Codable, Equatable {
+nonisolated struct PaneTree: Codable, Equatable {
     static let minRatio = 0.1
 
     private(set) var root: PaneNode

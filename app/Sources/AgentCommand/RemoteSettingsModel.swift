@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// The two roles a cert can be for: Hosting, and connecting to hosts.
-enum RemoteRole: String, CaseIterable, Identifiable {
+nonisolated enum RemoteRole: String, CaseIterable, Identifiable {
     case host, client
 
     var id: String { rawValue }
@@ -21,7 +21,7 @@ enum RemoteRole: String, CaseIterable, Identifiable {
 }
 
 /// A client's connection, as the Connected clients list shows it.
-struct RemoteConnectionRow: Identifiable, Equatable {
+nonisolated struct RemoteConnectionRow: Identifiable, Equatable {
     let id: String
     let client: String
     let from: String
@@ -30,7 +30,7 @@ struct RemoteConnectionRow: Identifiable, Equatable {
 }
 
 /// What a click on a pending request's notification asks for.
-enum RemoteRequestResponse: Equatable {
+nonisolated enum RemoteRequestResponse: Equatable {
     case approve(String)
     case show(String)
 
@@ -194,7 +194,7 @@ enum RemoteRequestResponse: Equatable {
     // MARK: The daemon
 
     /// remote.*'s argument (internal/ipc.RemoteRef): what's nil isn't sent.
-    struct Ref: Encodable, Equatable {
+    nonisolated struct Ref: Encodable, Equatable {
         var id: String?
         var client: String?
         var name: String?
@@ -204,7 +204,7 @@ enum RemoteRequestResponse: Equatable {
         var scope: String?
     }
 
-    struct Cert: Encodable, Equatable {
+    nonisolated struct Cert: Encodable, Equatable {
         let role: String
         var cert: String?
         var key: String?
@@ -216,7 +216,7 @@ enum RemoteRequestResponse: Equatable {
         }
     }
 
-    private struct Nothing: Codable {}
+    nonisolated private struct Nothing: Codable {}
 
     private func call<Out: Decodable>(_ op: String, _ input: some Encodable, _ done: @escaping (Result<Out, Error>) -> Void) {
         let data: Data

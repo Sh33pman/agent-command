@@ -1,7 +1,7 @@
 import AppKit
 
 /// Links clicked in a terminal (⌘-click, or a link the program marked with OSC 8).
-enum TerminalLinks {
+nonisolated enum TerminalLinks {
     /// Only web and mail links open. A program can print any link, and a file or
     /// custom-scheme link could start an app.
     static let schemes: Set<String> = ["http", "https", "mailto"]
@@ -30,7 +30,7 @@ enum TerminalLinks {
 /// A file a terminal link points at: a path as Ghostty finds them in the output
 /// (/abs, ./rel, ../rel, ~/home, src/bare.go), or a file:// link from OSC 8, with
 /// the ":line:col" that compilers and Claude print after it.
-struct FileLink: Equatable {
+nonisolated struct FileLink: Equatable {
     let path: String
     var line = 0
     var column = 0

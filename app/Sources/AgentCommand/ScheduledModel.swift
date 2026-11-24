@@ -414,7 +414,7 @@ final class ScheduledModel {
         notice = message
         noticeTimer?.invalidate()
         noticeTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { [weak self] _ in
-            self?.notice = nil
+            MainActor.assumeIsolated { self?.notice = nil } // a timer on the main run loop
         }
     }
 
@@ -521,7 +521,7 @@ final class ScheduledModel {
 
 /// Names a prompt file to the daemon: a saved job's own by id, or a draft's
 /// folder and path (internal/ipc.PromptFileRef).
-struct PromptFileRef: Encodable, Equatable {
+nonisolated struct PromptFileRef: Encodable, Equatable {
     var job_id: String?
     var cwd: String?
     var path: String?
@@ -529,7 +529,7 @@ struct PromptFileRef: Encodable, Equatable {
 }
 
 /// A prompt file as the daemon read or wrote it.
-struct PromptFile: Decodable, Equatable {
+nonisolated struct PromptFile: Decodable, Equatable {
     var path = ""
     var text = ""
     var exists = false

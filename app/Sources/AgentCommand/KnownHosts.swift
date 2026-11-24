@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// What the Add Host and Edit Host sheets hold.
-struct KnownHostForm: Equatable {
+nonisolated struct KnownHostForm: Equatable {
     var name = ""
     /// host:port; the port is Hosting's, 7433 unless its owner changed it.
     var address = ""

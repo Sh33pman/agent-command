@@ -87,8 +87,8 @@ private func iso(_ secondsAgo: TimeInterval) -> String {
 extension UsesSharedSpeech {
     /// The real connection against a stand-in for the daemon.
     @Suite struct DaemonConnectionTests {
-        private struct Empty: Codable {}
-        private struct Named: Codable, Equatable { let name: String }
+        nonisolated private struct Empty: Codable {}
+        nonisolated private struct Named: Codable, Equatable { let name: String }
 
         @Test func callsSendTheirDataAndDecodeTheReply() throws {
             let daemon = try FakeDaemon()

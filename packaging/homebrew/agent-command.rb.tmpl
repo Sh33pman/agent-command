@@ -47,6 +47,9 @@ cask "agent-command" do
     To let scheduled jobs wake the Mac shortly before they run, run
     acmd schedule wake on (it asks for your password once).
 
+    Upgrade the app and acmd together, with brew upgrade acmd agent-command:
+    upgrading the app alone leaves acmd as it was.
+
     Uninstalling the app leaves acmd and its sessions running. To remove acmd too,
     run acmd uninstall, then brew uninstall acmd.
   EOS

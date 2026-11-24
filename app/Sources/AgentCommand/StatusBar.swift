@@ -118,7 +118,7 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .font(AppFont.ui(11))
-        .help("v\(latest) is available. Upgrade with brew upgrade --cask agent-command")
+        .help("v\(latest) is available. Upgrade the app and acmd with brew upgrade acmd agent-command")
     }
 
     /// Downloading the model has a percentage. Before and after that, a spinner.

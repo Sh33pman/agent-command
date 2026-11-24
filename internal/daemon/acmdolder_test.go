@@ -57,7 +57,7 @@ func TestWarnsWhenAcmdIsOlderThanTheApp(t *testing.T) {
 	app := helloAs(t, p, "mac-1", ipc.KindMac, "0.91.0")
 	h := healthOf(t, app, ipc.HealthAcmdOlder)
 	if h == nil || h.Severity != ipc.HealthWarning || !strings.Contains(h.Detail, "acmd 0.87.0 is older than the app (0.91.0)") ||
-		h.Fix == nil || !strings.Contains(h.Fix.Step, "brew upgrade") {
+		h.Fix == nil || !strings.Contains(h.Fix.Step, "brew upgrade acmd") {
 		t.Fatalf("health = %+v", h)
 	}
 	// Every client sees it: it's the machine's.

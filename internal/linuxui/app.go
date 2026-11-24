@@ -9,11 +9,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
-	"github.com/diamondburned/gotk4/pkg/gio/v2"
-	"github.com/diamondburned/gotk4/pkg/glib/v2"
-	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/jwijenbergh/puregotk/v4/adw"
+	"github.com/jwijenbergh/puregotk/v4/gdk"
+	"github.com/jwijenbergh/puregotk/v4/gio"
+	"github.com/jwijenbergh/puregotk/v4/glib"
+	"github.com/jwijenbergh/puregotk/v4/gobject"
+	"github.com/jwijenbergh/puregotk/v4/gtk"
+	"github.com/jwijenbergh/puregotk/v4/pango"
 	"github.com/oklog/ulid/v2"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -51,9 +53,13 @@ type uiApp struct {
 
 	mu          sync.Mutex
 	keymap      *Keymap
+	winPath     string
+	winState    WindowState
 	themeName   string
+	fontFamily  string
+	fontSize    int
 	palette     Palette
-	cssProvider *gtk.CSSProvider
+	cssProvider *gtk.CssProvider
 	sel         Selection
 	filter      string
 	rowMap      map[int]rowTarget
@@ -61,6 +67,26 @@ type uiApp struct {
 	lastSeq     uint64
 	acmdBin     string
 	closing     bool
+	cbs         []any // keep signal callbacks alive
+}
+
+func (u *uiApp) idle(fn func()) {
+	var cb glib.SourceFunc
+	cb = func(_ uintptr) bool {
+		fn()
+		return false
+	}
+	u.mu.Lock()
+	u.cbs = append(u.cbs, &cb)
+	u.mu.Unlock()
+	glib.IdleAdd(&cb, 0)
+}
+
+func keep[T any](u *uiApp, cb T) *T {
+	u.mu.Lock()
+	u.cbs = append(u.cbs, &cb)
+	u.mu.Unlock()
+	return &cb
 }
 
 // Run starts the GTK4/libadwaita Linux UI and returns the process exit code.
@@ -73,7 +99,7 @@ func Run(opts Options) int {
 	defer client.Close()
 
 	store := NewStore()
-	adwApp := adw.NewApplication(AppID, gio.ApplicationDefaultFlags)
+	adwApp := adw.NewApplication(AppID, gio.GApplicationFlagsNoneValue)
 
 	km := DefaultKeymap()
 	if kmPath, err := KeymapPath(); err == nil {
@@ -81,19 +107,25 @@ func Run(opts Options) int {
 			km = loaded
 		}
 	}
-
 	themeName := ReadSavedTheme()
+	fontFamily, fontSize := ReadSavedFont()
 	palette := LoadTheme(themeName, ThemeFolders())
+	winPath, _ := WindowStatePath()
+	winState := LoadWindowState(winPath)
 
 	u := &uiApp{
-		client:    client,
-		store:     store,
-		app:       adwApp,
-		keymap:    km,
-		themeName: themeName,
-		palette:   palette,
-		rowMap:    make(map[int]rowTarget),
-		terminals: make(map[string]*VTETerminal),
+		client:     client,
+		store:      store,
+		app:        adwApp,
+		keymap:     km,
+		winPath:    winPath,
+		winState:   winState,
+		themeName:  themeName,
+		fontFamily: fontFamily,
+		fontSize:   fontSize,
+		palette:    palette,
+		rowMap:     make(map[int]rowTarget),
+		terminals:  make(map[string]*VTETerminal),
 	}
 	if bin, err := ResolveACMD(); err == nil {
 		u.acmdBin = bin
@@ -102,38 +134,41 @@ func Run(opts Options) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adwApp.ConnectActivate(func() {
+	adwApp.ConnectActivate(keep(u, func(_ gio.Application) {
 		if u.win != nil {
 			u.win.Present()
 			return
 		}
 		u.buildWindow(ctx)
 		u.win.Present()
-		go u.client.RunStream(ctx, u.store, func(ev ipc.Event) {
-			glib.IdleAdd(func() {
-				u.onStreamEvent(ctx, ev)
+		go u.client.RunStream(ctx, u.store, func(_ ipc.Event) {
+			u.idle(func() {
+				u.onStreamEvent(ctx)
 			})
 		}, func(state string, err error) {
-			glib.IdleAdd(func() {
+			u.idle(func() {
 				u.onStreamStatus(state, err)
 			})
 		})
-	})
+	}))
 
-	adwApp.ConnectShutdown(func() {
+	adwApp.ConnectShutdown(keep(u, func(_ gio.Application) {
 		u.mu.Lock()
 		u.closing = true
 		u.mu.Unlock()
 		cancel()
-	})
+	}))
 
-	return adwApp.Run(os.Args)
+	return int(adwApp.Run(int32(len(os.Args)), os.Args))
 }
 
 func (u *uiApp) buildWindow(ctx context.Context) {
 	u.win = adw.NewApplicationWindow(&u.app.Application)
 	u.win.SetTitle("Agent Command")
-	u.win.SetDefaultSize(1200, 760)
+	u.win.SetDefaultSize(int32(u.winState.Width), int32(u.winState.Height))
+	if u.winState.Maximized {
+		u.win.Maximize()
+	}
 	u.applyTheme(u.themeName, false)
 
 	u.toast = adw.NewToastOverlay()
@@ -145,42 +180,53 @@ func (u *uiApp) buildWindow(ctx context.Context) {
 	u.split.SetSidebar(u.buildSidebar(ctx))
 	u.split.SetContent(u.buildContent(ctx))
 
-	u.toast.SetChild(u.split)
-	u.win.SetContent(u.toast)
+	u.toast.SetChild(&u.split.Widget)
+	u.win.SetContent(&u.toast.Widget)
 
-	u.win.NotifyProperty("is-active", func() {
-		u.reportPresence(ctx)
-	})
+	u.win.ConnectNotify(keep(u, func(_ gobject.Object, pspec uintptr) {
+		name := gobject.ParamSpecNewFromInternalPtr(pspec).GetName()
+		switch name {
+		case "is-active":
+			u.reportPresence(ctx)
+		case "default-width", "default-height", "maximized":
+			u.saveWindowState()
+		}
+	}))
+	u.win.ConnectCloseRequest(keep(u, func(_ gtk.Window) bool {
+		u.saveWindowState()
+		return false
+	}))
 
 	winKey := gtk.NewEventControllerKey()
-	winKey.SetPropagationPhase(gtk.PhaseCapture)
-	winKey.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
+	winKey.SetPropagationPhase(gtk.PhaseCaptureValue)
+	winKey.ConnectKeyPressed(keep(u, func(_ gtk.EventControllerKey, keyval, _ uint32, state gdk.ModifierType) bool {
 		return u.handleKey(ctx, keyval, state)
-	})
-	u.win.AddController(winKey)
+	}))
+	u.win.AddController(&winKey.EventController)
 }
 
 func (u *uiApp) buildSidebar(ctx context.Context) *adw.NavigationPage {
-	box := gtk.NewBox(gtk.OrientationVertical, 0)
+	box := gtk.NewBox(gtk.OrientationVerticalValue, 0)
 
 	hdr := adw.NewHeaderBar()
-	hdr.SetTitleWidget(gtk.NewLabel("Agent Command"))
+	hdrLbl := gtk.NewLabel("Agent Command")
+	hdr.SetTitleWidget(&hdrLbl.Widget)
 
 	newBtn := gtk.NewButtonFromIconName("list-add-symbolic")
 	newBtn.SetTooltipText("New Session")
-	newBtn.ConnectClicked(func() {
+	newBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		u.startNewSession(ctx, "", "")
-	})
-	hdr.PackStart(newBtn)
+	}))
+	hdr.PackStart(&newBtn.Widget)
 
 	u.searchToggle = gtk.NewToggleButton()
 	u.searchToggle.SetIconName("system-search-symbolic")
 	u.searchToggle.SetTooltipText("Filter sessions")
-	hdr.PackEnd(u.searchToggle)
+	hdr.PackEnd(&u.searchToggle.Widget)
 
 	harnessesBtn := gtk.NewButtonFromIconName("preferences-system-symbolic")
 	harnessesBtn.SetTooltipText("Harnesses")
-	harnessesBtn.ConnectClicked(func() {
+	harnessesBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		snap, _, ok := u.store.Snapshot()
 		if !ok || len(snap.Harnesses) == 0 {
 			u.showToast("No harnesses configured")
@@ -191,147 +237,149 @@ func (u *uiApp) buildSidebar(ctx context.Context) *adw.NavigationPage {
 		u.mu.Unlock()
 		u.split.SetShowContent(true)
 		u.refreshContent(ctx)
-	})
-	hdr.PackEnd(harnessesBtn)
+	}))
+	hdr.PackEnd(&harnessesBtn.Widget)
 
 	themeBtn := u.buildThemeButton()
-	hdr.PackEnd(themeBtn)
+	hdr.PackEnd(&themeBtn.Widget)
 
-	box.Append(hdr)
+	box.Append(&hdr.Widget)
 
 	searchBar := gtk.NewSearchBar()
 	u.searchEntry = gtk.NewSearchEntry()
 	u.searchEntry.SetPlaceholderText("Filter sessions…")
-	searchBar.SetChild(u.searchEntry)
+	searchBar.SetChild(&u.searchEntry.Widget)
 	searchBar.ConnectEntry(u.searchEntry)
-	u.searchToggle.ConnectToggled(func() {
-		searchBar.SetSearchMode(u.searchToggle.Active())
-	})
-	u.searchEntry.ConnectSearchChanged(func() {
+	u.searchToggle.ConnectToggled(keep(u, func(_ gtk.ToggleButton) {
+		searchBar.SetSearchMode(u.searchToggle.GetActive())
+	}))
+	u.searchEntry.ConnectSearchChanged(keep(u, func(_ gtk.SearchEntry) {
 		u.mu.Lock()
-		u.filter = u.searchEntry.Text()
+		u.filter = u.searchEntry.GetText()
 		u.mu.Unlock()
 		u.renderSidebar(ctx)
-	})
-	box.Append(searchBar)
+	}))
+	box.Append(&searchBar.Widget)
 
 	u.list = gtk.NewListBox()
-	u.list.SetSelectionMode(gtk.SelectionSingle)
-	u.list.AddCSSClass("navigation-sidebar")
-	u.list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
-		if row == nil {
+	u.list.SetSelectionMode(gtk.SelectionSingleValue)
+	u.list.AddCssClass("navigation-sidebar")
+	u.list.ConnectRowActivated(keep(u, func(_ gtk.ListBox, rowPtr uintptr) {
+		if rowPtr == 0 {
 			return
 		}
-		u.onRowActivated(ctx, row.Index())
-	})
+		row := gtk.ListBoxRowNewFromInternalPtr(rowPtr)
+		u.onRowActivated(ctx, int(row.GetIndex()))
+	}))
 
 	scroll := gtk.NewScrolledWindow()
-	scroll.SetVExpand(true)
-	scroll.SetChild(u.list)
-	box.Append(scroll)
+	scroll.SetVexpand(true)
+	scroll.SetChild(&u.list.Widget)
+	box.Append(&scroll.Widget)
 
-	statusBar := gtk.NewBox(gtk.OrientationHorizontal, 6)
+	statusBar := gtk.NewBox(gtk.OrientationHorizontalValue, 6)
 	statusBar.SetMarginStart(12)
 	statusBar.SetMarginEnd(12)
 	statusBar.SetMarginTop(6)
 	statusBar.SetMarginBottom(6)
 	u.statusLabel = gtk.NewLabel("Connecting…")
-	u.statusLabel.AddCSSClass("dim-label")
-	u.statusLabel.AddCSSClass("caption")
-	u.statusLabel.SetXAlign(0)
-	u.statusLabel.SetEllipsize(3) // PangoEllipsizeEnd
-	statusBar.Append(u.statusLabel)
-	box.Append(statusBar)
+	u.statusLabel.AddCssClass("dim-label")
+	u.statusLabel.AddCssClass("caption")
+	u.statusLabel.SetXalign(0)
+	u.statusLabel.SetEllipsize(pango.EllipsizeEndValue)
+	statusBar.Append(&u.statusLabel.Widget)
+	box.Append(&statusBar.Widget)
 
-	return adw.NewNavigationPage(box, "Sessions")
+	return adw.NewNavigationPage(&box.Widget, "Sessions")
 }
 
 func (u *uiApp) buildContent(ctx context.Context) *adw.NavigationPage {
 	u.contentStack = gtk.NewStack()
-	u.contentStack.SetHExpand(true)
-	u.contentStack.SetVExpand(true)
+	u.contentStack.SetHexpand(true)
+	u.contentStack.SetVexpand(true)
 
 	// Empty state
-	emptyBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	emptyBox := gtk.NewBox(gtk.OrientationVerticalValue, 0)
 	emptyHdr := adw.NewHeaderBar()
-	emptyHdr.SetTitleWidget(adw.NewWindowTitle("", ""))
-	emptyBox.Append(emptyHdr)
+	emptyTitle := adw.NewWindowTitle("", "")
+	emptyHdr.SetTitleWidget(&emptyTitle.Widget)
+	emptyBox.Append(&emptyHdr.Widget)
 
 	empty := adw.NewStatusPage()
-	empty.SetVExpand(true)
+	empty.SetVexpand(true)
 	empty.SetIconName("utilities-terminal-symbolic")
 	empty.SetTitle("No Session Selected")
 	empty.SetDescription("Select a session or harness from the sidebar, or start a new one.")
 	emptyBtn := gtk.NewButtonWithLabel("New Session")
-	emptyBtn.AddCSSClass("suggested-action")
-	emptyBtn.AddCSSClass("pill")
-	emptyBtn.SetHAlign(gtk.AlignCenter)
-	emptyBtn.ConnectClicked(func() {
+	emptyBtn.AddCssClass("suggested-action")
+	emptyBtn.AddCssClass("pill")
+	emptyBtn.SetHalign(gtk.AlignCenterValue)
+	emptyBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		u.startNewSession(ctx, "", "")
-	})
-	empty.SetChild(emptyBtn)
-	emptyBox.Append(empty)
-	u.contentStack.AddNamed(emptyBox, "empty")
+	}))
+	empty.SetChild(&emptyBtn.Widget)
+	emptyBox.Append(&empty.Widget)
+	u.contentStack.AddNamed(&emptyBox.Widget, "empty")
 
 	// Terminal view
-	termBox := gtk.NewBox(gtk.OrientationVertical, 0)
+	termBox := gtk.NewBox(gtk.OrientationVerticalValue, 0)
 	termHdr := adw.NewHeaderBar()
 	u.termTitle = adw.NewWindowTitle("Terminal", "")
-	termHdr.SetTitleWidget(u.termTitle)
+	termHdr.SetTitleWidget(&u.termTitle.Widget)
 
 	copyBtn := gtk.NewButtonFromIconName("edit-copy-symbolic")
 	copyBtn.SetTooltipText("Copy (Ctrl+Shift+C)")
-	copyBtn.ConnectClicked(func() {
+	copyBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		if vt := u.activeTerminal(); vt != nil {
 			vt.CopyClipboard()
 		}
-	})
-	termHdr.PackEnd(copyBtn)
+	}))
+	termHdr.PackEnd(&copyBtn.Widget)
 
 	pasteBtn := gtk.NewButtonFromIconName("edit-paste-symbolic")
 	pasteBtn.SetTooltipText("Paste (Ctrl+Shift+V)")
-	pasteBtn.ConnectClicked(func() {
+	pasteBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		if vt := u.activeTerminal(); vt != nil {
 			vt.PasteClipboard()
 		}
-	})
-	termHdr.PackEnd(pasteBtn)
+	}))
+	termHdr.PackEnd(&pasteBtn.Widget)
 
 	finishBtn := gtk.NewButtonFromIconName("process-stop-symbolic")
 	finishBtn.SetTooltipText("Finish Session")
-	finishBtn.ConnectClicked(func() {
+	finishBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		u.finishSelectedSession(ctx)
-	})
-	termHdr.PackEnd(finishBtn)
+	}))
+	termHdr.PackEnd(&finishBtn.Widget)
 
-	termBox.Append(termHdr)
+	termBox.Append(&termHdr.Widget)
 
 	u.termStack = gtk.NewStack()
-	u.termStack.SetHExpand(true)
-	u.termStack.SetVExpand(true)
-	termBox.Append(u.termStack)
-	u.contentStack.AddNamed(termBox, "terminal")
+	u.termStack.SetHexpand(true)
+	u.termStack.SetVexpand(true)
+	termBox.Append(&u.termStack.Widget)
+	u.contentStack.AddNamed(&termBox.Widget, "terminal")
 
 	// Harness view
-	harnessOuter := gtk.NewBox(gtk.OrientationVertical, 0)
+	harnessOuter := gtk.NewBox(gtk.OrientationVerticalValue, 0)
 	harnessHdr := adw.NewHeaderBar()
 	u.harnessTitle = adw.NewWindowTitle("Harness", "")
-	harnessHdr.SetTitleWidget(u.harnessTitle)
-	harnessOuter.Append(harnessHdr)
+	harnessHdr.SetTitleWidget(&u.harnessTitle.Widget)
+	harnessOuter.Append(&harnessHdr.Widget)
 
-	u.harnessBox = gtk.NewBox(gtk.OrientationVertical, 12)
+	u.harnessBox = gtk.NewBox(gtk.OrientationVerticalValue, 12)
 	u.harnessBox.SetMarginTop(24)
 	u.harnessBox.SetMarginBottom(24)
 	u.harnessBox.SetMarginStart(24)
 	u.harnessBox.SetMarginEnd(24)
 	harnessScroll := gtk.NewScrolledWindow()
-	harnessScroll.SetVExpand(true)
-	harnessScroll.SetChild(u.harnessBox)
-	harnessOuter.Append(harnessScroll)
-	u.contentStack.AddNamed(harnessOuter, "harness")
+	harnessScroll.SetVexpand(true)
+	harnessScroll.SetChild(&u.harnessBox.Widget)
+	harnessOuter.Append(&harnessScroll.Widget)
+	u.contentStack.AddNamed(&harnessOuter.Widget, "harness")
 
 	u.contentStack.SetVisibleChildName("empty")
-	return adw.NewNavigationPage(u.contentStack, "Workspace")
+	return adw.NewNavigationPage(&u.contentStack.Widget, "Workspace")
 }
 
 func (u *uiApp) onStreamStatus(state string, err error) {
@@ -351,7 +399,7 @@ func (u *uiApp) onStreamStatus(state string, err error) {
 	}
 }
 
-func (u *uiApp) onStreamEvent(ctx context.Context, _ ipc.Event) {
+func (u *uiApp) onStreamEvent(ctx context.Context) {
 	u.renderSidebar(ctx)
 	u.refreshContent(ctx)
 	u.dispatchNotices()
@@ -374,7 +422,7 @@ func (u *uiApp) renderSidebar(ctx context.Context) {
 	model := BuildSidebar(snap, filter)
 
 	for {
-		child := u.list.FirstChild()
+		child := u.list.GetFirstChild()
 		if child == nil {
 			break
 		}
@@ -384,12 +432,11 @@ func (u *uiApp) renderSidebar(ctx context.Context) {
 	newMap := make(map[int]rowTarget)
 	idx := 0
 
-	// Sessions section
 	for _, r := range model.Rows {
 		if r.IsHeader() {
 			row := gtk.NewListBoxRow()
 			row.SetSelectable(false)
-			box := gtk.NewBox(gtk.OrientationHorizontal, 6)
+			box := gtk.NewBox(gtk.OrientationHorizontalValue, 6)
 			box.SetMarginTop(8)
 			box.SetMarginBottom(4)
 			box.SetMarginStart(8)
@@ -399,12 +446,15 @@ func (u *uiApp) renderSidebar(ctx context.Context) {
 				arrow = "▸"
 			}
 			lbl := gtk.NewLabel(fmt.Sprintf("%s %s (%d)", arrow, r.Group.Name, r.Count))
-			lbl.AddCSSClass("heading")
-			lbl.SetXAlign(0)
-			lbl.SetHExpand(true)
-			box.Append(lbl)
-			row.SetChild(box)
-			u.list.Append(row)
+			lbl.AddCssClass("heading")
+			if r.Group.Color != "" {
+				lbl.AddCssClass("group-" + r.Group.Color)
+			}
+			lbl.SetXalign(0)
+			lbl.SetHexpand(true)
+			box.Append(&lbl.Widget)
+			row.SetChild(&box.Widget)
+			u.list.Append(&row.Widget)
 			newMap[idx] = rowTarget{isGroup: true, groupID: r.Group.ID}
 			idx++
 			continue
@@ -420,7 +470,7 @@ func (u *uiApp) renderSidebar(ctx context.Context) {
 		}
 
 		row := gtk.NewListBoxRow()
-		box := gtk.NewBox(gtk.OrientationHorizontal, 8)
+		box := gtk.NewBox(gtk.OrientationHorizontalValue, 8)
 		box.SetMarginTop(6)
 		box.SetMarginBottom(6)
 		box.SetMarginStart(8)
@@ -428,37 +478,44 @@ func (u *uiApp) renderSidebar(ctx context.Context) {
 
 		if r.Number > 0 {
 			numLbl := gtk.NewLabel(fmt.Sprintf("%d", r.Number))
-			numLbl.AddCSSClass("dim-label")
-			numLbl.AddCSSClass("caption")
-			box.Append(numLbl)
+			numLbl.AddCssClass("dim-label")
+			numLbl.AddCssClass("caption")
+			box.Append(&numLbl.Widget)
 		}
 
-		vBox := gtk.NewBox(gtk.OrientationVertical, 2)
-		vBox.SetHExpand(true)
+		vBox := gtk.NewBox(gtk.OrientationVerticalValue, 2)
+		vBox.SetHexpand(true)
 		nameLbl := gtk.NewLabel(title)
-		nameLbl.SetXAlign(0)
-		nameLbl.SetEllipsize(3) // PangoEllipsizeEnd
-		vBox.Append(nameLbl)
+		nameLbl.SetXalign(0)
+		nameLbl.SetEllipsize(pango.EllipsizeEndValue)
+		vBox.Append(&nameLbl.Widget)
 
 		sub := StatusLabel(r.Session.Status)
 		if r.Session.Host != "" {
 			sub = r.Session.Host + " · " + sub
 		}
 		subLbl := gtk.NewLabel(sub)
-		subLbl.SetXAlign(0)
-		subLbl.AddCSSClass("dim-label")
-		subLbl.AddCSSClass("caption")
-		vBox.Append(subLbl)
-		box.Append(vBox)
+		subLbl.SetXalign(0)
+		switch r.Session.Status {
+		case core.StatusWaiting:
+			subLbl.AddCssClass("status-waiting")
+		case core.StatusError:
+			subLbl.AddCssClass("status-error")
+		default:
+			subLbl.AddCssClass("dim-label")
+		}
+		subLbl.AddCssClass("caption")
+		vBox.Append(&subLbl.Widget)
+		box.Append(&vBox.Widget)
 
 		if r.Session.Unseen {
 			dot := gtk.NewLabel("●")
-			dot.AddCSSClass("accent")
-			box.Append(dot)
+			dot.AddCssClass("accent")
+			box.Append(&dot.Widget)
 		}
 
-		row.SetChild(box)
-		u.list.Append(row)
+		row.SetChild(&box.Widget)
+		u.list.Append(&row.Widget)
 		host := ""
 		if ws != nil {
 			host = ws.Host
@@ -572,6 +629,7 @@ func (u *uiApp) showTerminalView(ctx context.Context, s *ipc.Session) {
 	u.mu.Lock()
 	vt, exists := u.terminals[key]
 	pal := u.palette
+	fontDesc := pangoFontDesc(u.fontFamily, u.fontSize)
 	u.mu.Unlock()
 
 	if !exists {
@@ -586,8 +644,11 @@ func (u *uiApp) showTerminalView(ctx context.Context, s *ipc.Session) {
 		}
 		vt = NewVTETerminal()
 		vt.SetPalette(pal)
+		if fontDesc != "" {
+			vt.SetFont(fontDesc)
+		}
 		vt.ConnectChildExited(func(_ int) {
-			glib.IdleAdd(func() {
+			u.idle(func() {
 				u.mu.Lock()
 				if u.closing {
 					u.mu.Unlock()
@@ -601,6 +662,9 @@ func (u *uiApp) showTerminalView(ctx context.Context, s *ipc.Session) {
 		u.mu.Lock()
 		u.terminals[key] = vt
 		u.mu.Unlock()
+		if existing := u.termStack.GetChildByName(key); existing != nil {
+			u.termStack.Remove(existing)
+		}
 		u.termStack.AddNamed(vt.Widget(), key)
 		vt.SpawnAsync(s.Cwd, AttachArgv(u.acmdBin, s.ID))
 	}
@@ -616,7 +680,7 @@ func (u *uiApp) showHarnessView(ctx context.Context, h ipc.Harness) {
 	u.harnessTitle.SetSubtitle(h.Title)
 
 	for {
-		child := u.harnessBox.FirstChild()
+		child := u.harnessBox.GetFirstChild()
 		if child == nil {
 			break
 		}
@@ -625,55 +689,55 @@ func (u *uiApp) showHarnessView(ctx context.Context, h ipc.Harness) {
 
 	group := adw.NewPreferencesGroup()
 	group.SetTitle("Harness Details")
-	group.Add(makeInfoRow("Kind", h.Title))
+	group.Add(&makeInfoRow("Kind", h.Title).Widget)
 	installed := "No"
 	if h.Installed {
 		installed = "Yes"
 	}
-	group.Add(makeInfoRow("Installed", installed))
+	group.Add(&makeInfoRow("Installed", installed).Widget)
 	cmd := h.Command
 	if cmd == "" {
 		cmd = core.KindCommand(h.Kind)
 	}
-	group.Add(makeInfoRow("Command", cmd))
+	group.Add(&makeInfoRow("Command", cmd).Widget)
 	if len(h.Args) > 0 {
-		group.Add(makeInfoRow("Args", strings.Join(h.Args, " ")))
+		group.Add(&makeInfoRow("Args", strings.Join(h.Args, " ")).Widget)
 	}
 	if h.Folder != "" {
-		group.Add(makeInfoRow("Config Folder", h.Folder))
+		group.Add(&makeInfoRow("Config Folder", h.Folder).Widget)
 	} else if h.ConfigDir != "" {
-		group.Add(makeInfoRow("Config Dir", h.ConfigDir))
+		group.Add(&makeInfoRow("Config Dir", h.ConfigDir).Widget)
 	}
-	u.harnessBox.Append(group)
+	u.harnessBox.Append(&group.Widget)
 
-	actions := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	actions := gtk.NewBox(gtk.OrientationHorizontalValue, 12)
 	newBtn := gtk.NewButtonWithLabel("New Session with Harness")
-	newBtn.AddCSSClass("suggested-action")
+	newBtn.AddCssClass("suggested-action")
 	newBtn.SetSensitive(h.Installed)
-	newBtn.ConnectClicked(func() {
+	newBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		u.startNewSession(ctx, h.ID, "")
-	})
-	actions.Append(newBtn)
+	}))
+	actions.Append(&newBtn.Widget)
 
 	rmBtn := gtk.NewButtonWithLabel("Remove Harness")
-	rmBtn.AddCSSClass("destructive-action")
-	rmBtn.ConnectClicked(func() {
+	rmBtn.AddCssClass("destructive-action")
+	rmBtn.ConnectClicked(keep(u, func(_ gtk.Button) {
 		go func() {
 			if err := u.client.Call(ctx, ipc.OpHarnessRemove, ipc.HarnessRef{ID: h.ID}, nil); err != nil {
-				glib.IdleAdd(func() { u.showToast(err.Error()) })
+				u.idle(func() { u.showToast(err.Error()) })
 				return
 			}
-			glib.IdleAdd(func() {
+			u.idle(func() {
 				u.mu.Lock()
 				u.sel = Selection{}
 				u.mu.Unlock()
 				u.contentStack.SetVisibleChildName("empty")
 			})
 		}()
-	})
-	actions.Append(rmBtn)
+	}))
+	actions.Append(&rmBtn.Widget)
 
-	u.harnessBox.Append(actions)
+	u.harnessBox.Append(&actions.Widget)
 	u.contentStack.SetVisibleChildName("harness")
 }
 
@@ -681,7 +745,7 @@ func makeInfoRow(title, value string) *adw.ActionRow {
 	row := adw.NewActionRow()
 	row.SetTitle(title)
 	row.SetSubtitle(value)
-	row.AddCSSClass("property")
+	row.AddCssClass("property")
 	return row
 }
 
@@ -708,10 +772,10 @@ func (u *uiApp) startNewSession(ctx context.Context, harnessID, harnessKind stri
 			HarnessKind: harnessKind,
 		}, &s)
 		if err != nil {
-			glib.IdleAdd(func() { u.showToast(err.Error()) })
+			u.idle(func() { u.showToast(err.Error()) })
 			return
 		}
-		glib.IdleAdd(func() {
+		u.idle(func() {
 			u.mu.Lock()
 			u.sel = Selection{Kind: SelectSession, ID: s.ID, Host: s.Host}
 			u.mu.Unlock()
@@ -720,11 +784,11 @@ func (u *uiApp) startNewSession(ctx context.Context, harnessID, harnessKind stri
 	}()
 }
 
-func (u *uiApp) handleKey(ctx context.Context, keyval uint, state gdk.ModifierType) bool {
+func (u *uiApp) handleKey(ctx context.Context, keyval uint32, state gdk.ModifierType) bool {
 	if vt := u.activeTerminal(); vt != nil {
-		shift := state&gdk.ShiftMask != 0
-		ctrl := state&gdk.ControlMask != 0
-		if shift && !ctrl && (keyval == gdk.KEY_Return || keyval == gdk.KEY_KP_Enter) {
+		shift := state&gdk.ShiftMaskValue != 0
+		ctrl := state&gdk.ControlMaskValue != 0
+		if shift && !ctrl && (int32(keyval) == gdk.KEY_Return || int32(keyval) == gdk.KEY_KP_Enter) {
 			vt.FeedChild([]byte("\x1b[13;2u"))
 			return true
 		}
@@ -733,16 +797,16 @@ func (u *uiApp) handleKey(ctx context.Context, keyval uint, state gdk.ModifierTy
 		return false
 	}
 	var mods ModMask
-	if state&gdk.ControlMask != 0 {
+	if state&gdk.ControlMaskValue != 0 {
 		mods |= ModCtrl
 	}
-	if state&gdk.AltMask != 0 {
+	if state&gdk.AltMaskValue != 0 {
 		mods |= ModAlt
 	}
-	if state&gdk.ShiftMask != 0 {
+	if state&gdk.ShiftMaskValue != 0 {
 		mods |= ModShift
 	}
-	if state&gdk.SuperMask != 0 {
+	if state&gdk.SuperMaskValue != 0 {
 		mods |= ModSuper
 	}
 	name := gdk.KeyvalName(keyval)
@@ -759,8 +823,8 @@ func (u *uiApp) handleKey(ctx context.Context, keyval uint, state gdk.ModifierTy
 		return true
 	case ActionFilter:
 		if u.searchToggle != nil {
-			u.searchToggle.SetActive(!u.searchToggle.Active())
-			if u.searchToggle.Active() && u.searchEntry != nil {
+			u.searchToggle.SetActive(!u.searchToggle.GetActive())
+			if u.searchToggle.GetActive() && u.searchEntry != nil {
 				u.searchEntry.GrabFocus()
 			}
 		}
@@ -776,6 +840,7 @@ func (u *uiApp) handleKey(ctx context.Context, keyval uint, state gdk.ModifierTy
 			return true
 		}
 	case ActionQuit:
+		u.saveWindowState()
 		u.app.Quit()
 		return true
 	default:
@@ -829,7 +894,7 @@ func (u *uiApp) finishSelectedSession(ctx context.Context) {
 			Kind:    ipc.MutFinish,
 			Targets: []ipc.Target{{Host: sel.Host, ID: sel.ID}},
 		}, nil); err != nil {
-			glib.IdleAdd(func() { u.showToast(err.Error()) })
+			u.idle(func() { u.showToast(err.Error()) })
 		}
 	}()
 }
@@ -889,11 +954,35 @@ func (u *uiApp) showToast(msg string) {
 	u.toast.AddToast(adw.NewToast(msg))
 }
 
+func (u *uiApp) saveWindowState() {
+	if u.win == nil || u.winPath == "" {
+		return
+	}
+	max := u.win.IsMaximized()
+	u.mu.Lock()
+	ws := u.winState
+	ws.Maximized = max
+	if !max {
+		if w := int(u.win.GetWidth()); w > 0 {
+			ws.Width = w
+		}
+		if h := int(u.win.GetHeight()); h > 0 {
+			ws.Height = h
+		}
+	}
+	u.winState = ws
+	path := u.winPath
+	u.mu.Unlock()
+	_ = SaveWindowState(path, ws)
+}
+
 func (u *uiApp) applyTheme(name string, save bool) {
 	pal := LoadTheme(name, ThemeFolders())
 	u.mu.Lock()
 	u.themeName = name
 	u.palette = pal
+	fontFamily := u.fontFamily
+	fontSize := u.fontSize
 	terms := make([]*VTETerminal, 0, len(u.terminals))
 	for _, vt := range u.terminals {
 		terms = append(terms, vt)
@@ -901,15 +990,19 @@ func (u *uiApp) applyTheme(name string, save bool) {
 	u.mu.Unlock()
 
 	if u.cssProvider == nil {
-		u.cssProvider = gtk.NewCSSProvider()
+		u.cssProvider = gtk.NewCssProvider()
 		if disp := gdk.DisplayGetDefault(); disp != nil {
-			gtk.StyleContextAddProviderForDisplay(disp, u.cssProvider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+			gtk.StyleContextAddProviderForDisplay(disp, u.cssProvider, uint32(gtk.STYLE_PROVIDER_PRIORITY_APPLICATION))
 		}
 	}
-	u.cssProvider.LoadFromString(ThemeCSS(pal))
+	u.cssProvider.LoadFromString(ThemeCSS(pal, fontFamily, fontSize))
 
+	fontDesc := pangoFontDesc(fontFamily, fontSize)
 	for _, vt := range terms {
 		vt.SetPalette(pal)
+		if fontDesc != "" {
+			vt.SetFont(fontDesc)
+		}
 	}
 	if save {
 		if err := SaveTheme(name); err != nil {
@@ -918,37 +1011,73 @@ func (u *uiApp) applyTheme(name string, save bool) {
 	}
 }
 
-func (u *uiApp) buildThemeButton() *gtk.MenuButton {
-	btn := gtk.NewMenuButton()
-	btn.SetIconName("applications-graphics-symbolic")
-	btn.SetTooltipText("Ghostty Theme")
+func pangoFontDesc(family string, size int) string {
+	switch {
+	case family != "" && size > 0:
+		return fmt.Sprintf("%s %d", family, size)
+	case family != "":
+		return family
+	case size > 0:
+		return fmt.Sprintf("Monospace %d", size)
+	default:
+		return ""
+	}
+}
 
-	pop := gtk.NewPopover()
-	box := gtk.NewBox(gtk.OrientationVertical, 6)
+func (u *uiApp) buildThemeButton() *gtk.Button {
+	btn := gtk.NewButtonFromIconName("applications-graphics-symbolic")
+	btn.SetTooltipText("Ghostty Theme")
+	btn.ConnectClicked(keep(u, func(_ gtk.Button) {
+		u.openThemeDialog()
+	}))
+	return btn
+}
+
+func (u *uiApp) openThemeDialog() {
+	if u.win == nil {
+		return
+	}
+	dlg := adw.NewDialog()
+	dlg.SetTitle("Ghostty Theme")
+	dlg.SetContentWidth(340)
+	dlg.SetContentHeight(420)
+
+	tv := adw.NewToolbarView()
+	hdr := adw.NewHeaderBar()
+	tv.AddTopBar(&hdr.Widget)
+
+	box := gtk.NewBox(gtk.OrientationVerticalValue, 6)
 	box.SetMarginTop(8)
 	box.SetMarginBottom(8)
-	box.SetMarginStart(8)
-	box.SetMarginEnd(8)
-	box.SetSizeRequest(260, 340)
+	box.SetMarginStart(12)
+	box.SetMarginEnd(12)
 
 	search := gtk.NewSearchEntry()
 	search.SetPlaceholderText("Search themes…")
-	box.Append(search)
+	box.Append(&search.Widget)
 
 	list := gtk.NewListBox()
-	list.SetSelectionMode(gtk.SelectionSingle)
+	list.SetSelectionMode(gtk.SelectionSingleValue)
+	list.AddCssClass("navigation-sidebar")
 
 	scroll := gtk.NewScrolledWindow()
-	scroll.SetVExpand(true)
-	scroll.SetChild(list)
-	box.Append(scroll)
+	scroll.SetVexpand(true)
+	scroll.SetChild(&list.Widget)
+	box.Append(&scroll.Widget)
 
 	allThemes := append([]string{DefaultThemeLabel}, DiscoverThemes(ThemeFolders())...)
 	var visible []string
+	u.mu.Lock()
+	savedTheme := u.themeName
+	u.mu.Unlock()
+	committed := false
+	rebuilding := false
 
 	rebuild := func(query string) {
+		rebuilding = true
+		defer func() { rebuilding = false }()
 		for {
-			c := list.FirstChild()
+			c := list.GetFirstChild()
 			if c == nil {
 				break
 			}
@@ -965,41 +1094,72 @@ func (u *uiApp) buildThemeButton() *gtk.MenuButton {
 			}
 			visible = append(visible, name)
 			row := gtk.NewListBoxRow()
+			rowBox := gtk.NewBox(gtk.OrientationHorizontalValue, 8)
+			rowBox.SetMarginTop(4)
+			rowBox.SetMarginBottom(4)
+			rowBox.SetMarginStart(6)
+			rowBox.SetMarginEnd(6)
 			lbl := gtk.NewLabel(name)
-			lbl.SetXAlign(0)
-			lbl.SetMarginTop(4)
-			lbl.SetMarginBottom(4)
-			lbl.SetMarginStart(6)
-			lbl.SetMarginEnd(6)
-			row.SetChild(lbl)
-			list.Append(row)
+			lbl.SetXalign(0)
+			lbl.SetHexpand(true)
+			rowBox.Append(&lbl.Widget)
+			if (savedTheme == "" && name == DefaultThemeLabel) || savedTheme == name {
+				curLbl := gtk.NewLabel("current")
+				curLbl.AddCssClass("dim-label")
+				curLbl.AddCssClass("caption")
+				rowBox.Append(&curLbl.Widget)
+			}
+			row.SetChild(&rowBox.Widget)
+			list.Append(&row.Widget)
 			if (cur == "" && name == DefaultThemeLabel) || cur == name {
 				list.SelectRow(row)
 			}
 		}
 	}
 
-	rebuild("")
-	search.ConnectSearchChanged(func() {
-		rebuild(search.Text())
-	})
-	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
-		if row == nil {
-			return
-		}
-		idx := row.Index()
+	themeForIdx := func(idx int) (string, bool) {
 		if idx < 0 || idx >= len(visible) {
-			return
+			return "", false
 		}
 		chosen := visible[idx]
 		if chosen == DefaultThemeLabel {
 			chosen = ""
 		}
-		u.applyTheme(chosen, true)
-		pop.Popdown()
-	})
+		return chosen, true
+	}
 
-	pop.SetChild(box)
-	btn.SetPopover(pop)
-	return btn
+	rebuild("")
+	search.ConnectSearchChanged(keep(u, func(_ gtk.SearchEntry) {
+		rebuild(search.GetText())
+	}))
+	list.ConnectRowSelected(keep(u, func(_ gtk.ListBox, rowPtr uintptr) {
+		if rebuilding || rowPtr == 0 {
+			return
+		}
+		row := gtk.ListBoxRowNewFromInternalPtr(rowPtr)
+		if chosen, ok := themeForIdx(int(row.GetIndex())); ok {
+			u.applyTheme(chosen, false)
+		}
+	}))
+	list.ConnectRowActivated(keep(u, func(_ gtk.ListBox, rowPtr uintptr) {
+		if rowPtr == 0 {
+			return
+		}
+		row := gtk.ListBoxRowNewFromInternalPtr(rowPtr)
+		if chosen, ok := themeForIdx(int(row.GetIndex())); ok {
+			committed = true
+			u.applyTheme(chosen, true)
+			dlg.Close()
+		}
+	}))
+	dlg.ConnectClosed(keep(u, func(_ adw.Dialog) {
+		if !committed {
+			u.applyTheme(savedTheme, false)
+		}
+	}))
+
+	tv.SetContent(&box.Widget)
+	dlg.SetChild(&tv.Widget)
+	dlg.Present(&u.win.Widget)
+	search.GrabFocus()
 }

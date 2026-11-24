@@ -49,9 +49,9 @@ func TestDiscoverAndLoadTheme(t *testing.T) {
 		t.Fatalf("loaded bg = %+v, want %+v", p.Background, wantBG)
 	}
 
-	css := ThemeCSS(p)
-	if !strings.Contains(css, "#232136") || !strings.Contains(css, "#e0def4") {
-		t.Fatalf("ThemeCSS missing theme colors: %s", css)
+	css := ThemeCSS(p, "JetBrains Mono", 12)
+	if !strings.Contains(css, "#232136") || !strings.Contains(css, "#e0def4") || !strings.Contains(css, "JetBrains Mono") || !strings.Contains(css, "12pt") {
+		t.Fatalf("ThemeCSS missing theme colors or font: %s", css)
 	}
 }
 
@@ -64,11 +64,14 @@ func TestSaveAndReadSavedTheme(t *testing.T) {
 	if err := os.MkdirAll(ghosttyDir, 0o755); err != nil {
 		t.Fatalf("mkdir ghostty: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(ghosttyDir, "config"), []byte("theme = \"Aura Dark\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(ghosttyDir, "config"), []byte("theme = \"Aura Dark\"\nfont-family = \"JetBrains Mono\"\nfont-size = 12\n"), 0o644); err != nil {
 		t.Fatalf("write ghostty config: %v", err)
 	}
 	if got := ReadSavedTheme(); got != "Aura Dark" {
 		t.Fatalf("fallback ReadSavedTheme = %q, want Aura Dark", got)
+	}
+	if fam, sz := ReadSavedFont(); fam != "JetBrains Mono" || sz != 12 {
+		t.Fatalf("ReadSavedFont = (%q, %d), want (JetBrains Mono, 12)", fam, sz)
 	}
 
 	if err := SaveTheme("TokyoNight"); err != nil {

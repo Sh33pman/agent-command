@@ -234,7 +234,7 @@ jobs:
       - name: install the Linux UI dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev libgirepository1.0-dev
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev
       - name: build libghostty-vt
         run: scripts/build-ghostty.sh
       - name: lint
@@ -289,10 +289,10 @@ jobs:
         if: matrix.distro == 'debian'
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl git make gcc g++ pkg-config xz-utils procps libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev libgirepository1.0-dev
+          apt-get install -y --no-install-recommends ca-certificates curl git make gcc g++ pkg-config xz-utils procps libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev
       - name: install the build tools (Arch)
         if: matrix.distro == 'arch'
-        run: pacman -Syu --noconfirm --needed base-devel git curl xz gtk4 libadwaita vte4 gobject-introspection
+        run: pacman -Syu --noconfirm --needed base-devel git curl xz gtk4 libadwaita vte4
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

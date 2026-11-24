@@ -65,29 +65,25 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/diamondburned/gotk4/pkg/core/glib"
-	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/jwijenbergh/puregotk/v4/glib"
+	"github.com/jwijenbergh/puregotk/v4/gobject"
+	"github.com/jwijenbergh/puregotk/v4/gtk"
 )
 
 // VTETerminal wraps a GTK4 VteTerminal widget.
 type VTETerminal struct {
 	ptr    *C.VteTerminal
 	widget *gtk.Widget
+	cbs    []any // keep signal callbacks alive for the widget's lifetime
 }
 
 // NewVTETerminal creates a new VTE terminal widget with sensible defaults.
 func NewVTETerminal() *VTETerminal {
 	raw := C.acmd_vte_new()
-	obj := glib.Take(unsafe.Pointer(raw))
-	w := &gtk.Widget{
-		InitiallyUnowned: glib.InitiallyUnowned{Object: obj},
-		Object:           obj,
-		Accessible:       gtk.Accessible{Object: obj},
-		Buildable:        gtk.Buildable{Object: obj},
-		ConstraintTarget: gtk.ConstraintTarget{Object: obj},
-	}
-	w.SetHExpand(true)
-	w.SetVExpand(true)
+	C.g_object_ref_sink(C.gpointer(raw))
+	w := gtk.WidgetNewFromInternalPtr(uintptr(unsafe.Pointer(raw)))
+	w.SetHexpand(true)
+	w.SetVexpand(true)
 	w.SetFocusable(true)
 
 	term := (*C.VteTerminal)(unsafe.Pointer(raw))
@@ -160,17 +156,19 @@ func (v *VTETerminal) PasteClipboard() {
 }
 
 // GrabFocus focuses the terminal widget.
-func (v *VTETerminal) GrabFocus() {
-	v.widget.GrabFocus()
+func (v *VTETerminal) GrabFocus() bool {
+	return v.widget.GrabFocus()
 }
 
 // ConnectChildExited registers a callback invoked when the child process exits.
-func (v *VTETerminal) ConnectChildExited(fn func(status int)) glib.SignalHandle {
-	return v.widget.Connect("child-exited", func(_ *gtk.Widget, status int) {
+func (v *VTETerminal) ConnectChildExited(fn func(status int)) uint32 {
+	cb := func(_ uintptr, status int32, _ uintptr) {
 		if fn != nil {
-			fn(status)
+			fn(int(status))
 		}
-	})
+	}
+	v.cbs = append(v.cbs, &cb)
+	return gobject.SignalConnect(v.widget.GoPointer(), "child-exited", glib.NewCallback(&cb))
 }
 
 func toGdkRGBA(c RGB) C.GdkRGBA {

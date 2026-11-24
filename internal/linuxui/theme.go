@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/brettmostert/agent-command/internal/paths"
@@ -75,8 +76,8 @@ func GhosttyConfigPath() (string, error) {
 	return filepath.Join(p.ConfigDir, "ghostty"), nil
 }
 
-// ThemeInConfig parses the active "theme = ..." value (last line wins, "" means none).
-func ThemeInConfig(text string) string {
+// ConfigValue parses the active "<key> = ..." value (last line wins, "" means none).
+func ConfigValue(text, key string) string {
 	var found string
 	for _, raw := range strings.Split(text, "\n") {
 		line := strings.TrimSpace(raw)
@@ -84,7 +85,7 @@ func ThemeInConfig(text string) string {
 			continue
 		}
 		k, v, ok := strings.Cut(line, "=")
-		if !ok || strings.TrimSpace(k) != "theme" {
+		if !ok || strings.TrimSpace(k) != key {
 			continue
 		}
 		v = strings.TrimSpace(v)
@@ -92,6 +93,11 @@ func ThemeInConfig(text string) string {
 		found = v
 	}
 	return found
+}
+
+// ThemeInConfig parses the active "theme = ..." value (last line wins, "" means none).
+func ThemeInConfig(text string) string {
+	return ConfigValue(text, "theme")
 }
 
 // SetThemeInConfig updates or removes the "theme = ..." line while preserving other lines.
@@ -125,22 +131,50 @@ func SetThemeInConfig(text, theme string) string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-// ReadSavedTheme reads the saved theme name from ~/.config/agent-command/ghostty
-// (falling back to ~/.config/ghostty/config if unset).
-func ReadSavedTheme() string {
+func readGhosttyConfigs() []string {
+	var out []string
 	if p, err := GhosttyConfigPath(); err == nil {
 		if b, err := os.ReadFile(p); err == nil { // #nosec G304 -- user ghostty config path
-			if name := ThemeInConfig(string(b)); name != "" {
-				return name
-			}
+			out = append(out, string(b))
 		}
 	}
 	if cfg, err := os.UserConfigDir(); err == nil && cfg != "" {
 		if b, err := os.ReadFile(filepath.Join(cfg, "ghostty", "config")); err == nil { // #nosec G304 -- user ghostty config path
-			return ThemeInConfig(string(b))
+			out = append(out, string(b))
+		}
+	}
+	return out
+}
+
+// ReadSavedTheme reads the saved theme name from ~/.config/agent-command/ghostty
+// (falling back to ~/.config/ghostty/config if unset).
+func ReadSavedTheme() string {
+	for _, text := range readGhosttyConfigs() {
+		if name := ThemeInConfig(text); name != "" {
+			return name
 		}
 	}
 	return ""
+}
+
+// ReadSavedFont reads font-family and font-size from ~/.config/agent-command/ghostty
+// (falling back to ~/.config/ghostty/config).
+func ReadSavedFont() (string, int) {
+	var family string
+	var size int
+	for _, text := range readGhosttyConfigs() {
+		if family == "" {
+			family = ConfigValue(text, "font-family")
+		}
+		if size == 0 {
+			if v := ConfigValue(text, "font-size"); v != "" {
+				if n, err := strconv.Atoi(v); err == nil && n > 0 {
+					size = n
+				}
+			}
+		}
+	}
+	return family, size
 }
 
 // SaveTheme persists the selected theme name (or clears it when empty) in ~/.config/agent-command/ghostty.
@@ -199,18 +233,33 @@ func cssHex(c RGB) string {
 	return fmt.Sprintf("#%02x%02x%02x", clamp(c.R), clamp(c.G), clamp(c.B))
 }
 
-// ThemeCSS builds GTK4 CSS styling the window, sidebar, headerbars, and text
-// in the active Ghostty palette's colors (matching AppTheme.swift on macOS).
-func ThemeCSS(p Palette) string {
+// ThemeCSS builds GTK4 CSS styling the window, sidebar, headerbars, text, and
+// Ghostty font in the active palette's colors (matching AppTheme.swift on macOS).
+func ThemeCSS(p Palette, fontFamily string, fontSize int) string {
 	bg := cssHex(p.Background)
 	fg := cssHex(p.Foreground)
 	dim := cssHex(mixRGB(p.Foreground, p.Background, 0.45))
 	line := cssHex(mixRGB(p.Foreground, p.Background, 0.82))
-	sel := cssHex(mixRGB(p.Foreground, p.Background, 0.88))
-	accent := cssHex(p.Colors[4]) // ANSI blue
+	red := cssHex(p.Colors[1])
+	green := cssHex(p.Colors[2])
+	yellow := cssHex(p.Colors[3])
+	blue := cssHex(p.Colors[4])
+	magenta := cssHex(p.Colors[5])
+	cyan := cssHex(p.Colors[6])
+
+	var fontRules strings.Builder
+	if fontFamily != "" {
+		safe := strings.ReplaceAll(fontFamily, `"`, `\"`)
+		fmt.Fprintf(&fontRules, "\tfont-family: \"%s\", monospace;\n", safe)
+	} else {
+		fontRules.WriteString("\tfont-family: monospace;\n")
+	}
+	if fontSize > 0 {
+		fmt.Fprintf(&fontRules, "\tfont-size: %dpt;\n", fontSize)
+	}
 
 	return fmt.Sprintf(`
-window, .background, .sidebar-pane, .content-pane, popover > contents {
+window, .background, .sidebar-pane, .content-pane, popover > contents, dialog {
 	background-color: %s;
 	color: %s;
 }
@@ -227,21 +276,37 @@ headerbar {
 	background-color: %s;
 	color: %s;
 }
+.navigation-sidebar, .navigation-sidebar label, headerbar, dialog, .caption {
+%s}
 .navigation-sidebar row {
 	color: %s;
 	border-radius: 6px;
 	margin: 1px 6px;
 }
-.navigation-sidebar row:selected {
+.navigation-sidebar row:selected,
+.navigation-sidebar row:selected:focus {
 	background-color: %s;
+	color: %s;
+}
+.navigation-sidebar row:selected label,
+.navigation-sidebar row:selected .dim-label {
 	color: %s;
 }
 .dim-label {
 	color: %s;
 }
-.accent {
+.accent, .status-waiting {
 	color: %s;
 }
+.status-error {
+	color: %s;
+}
+.group-red { color: %s; }
+.group-green { color: %s; }
+.group-yellow { color: %s; }
+.group-blue { color: %s; }
+.group-magenta { color: %s; }
+.group-cyan { color: %s; }
 .suggested-action {
 	background-color: %s;
 	color: %s;
@@ -250,5 +315,5 @@ searchbar > revealer > box {
 	background-color: %s;
 	border-bottom: 1px solid %s;
 }
-`, bg, fg, line, bg, fg, line, bg, fg, fg, sel, fg, dim, accent, accent, bg, bg, line)
+`, bg, fg, line, bg, fg, line, bg, fg, fontRules.String(), fg, yellow, bg, bg, dim, blue, red, red, green, yellow, blue, magenta, cyan, yellow, bg, bg, line)
 }

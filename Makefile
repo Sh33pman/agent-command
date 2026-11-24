@@ -245,7 +245,7 @@ test-ui-core: ## Run the Linux UI's unit tests that need no GTK
 	go test -race -tags noui -cover ./internal/linuxui/...
 
 .PHONY: linux-ui
-linux-ui: ## Build ./dist/agent-command-ui (needs GTK4, libadwaita, vte4, gobject-introspection)
+linux-ui: ## Build ./dist/agent-command-ui (needs GTK4, libadwaita, vte4)
 	mkdir -p $(DIST)
 	CGO_ENABLED=1 go build -trimpath -ldflags '$(LDFLAGS)' -o $(DIST)/agent-command-ui ./cmd/agent-command-ui
 
@@ -257,7 +257,7 @@ build: ## Build ./dist/agent-command (+ acmd symlink, + acmd-speech on macOS) fo
 ifeq ($(UNAME_S),Darwin)
 	$(MAKE) speech-helper SPEECH_OUT=$(DIST)/acmd-speech
 else
-	@if [ -f build/ghostty/lib/ghostty-internal.so ] && pkg-config --exists gtk4 libadwaita-1 2>/dev/null; then $(MAKE) linux-ui; fi
+	@if pkg-config --exists gtk4 libadwaita-1 vte-2.91-gtk4 2>/dev/null; then $(MAKE) linux-ui; fi
 endif
 	$(DIST)/acmd version
 

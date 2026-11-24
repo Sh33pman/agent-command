@@ -30,9 +30,13 @@ type Selection struct {
 	Host string
 }
 
-// SessionKey uniquely identifies a session across hosts.
+// SessionKey uniquely identifies a session across hosts. It avoids NUL bytes
+// because it is also used as a GtkStack child name in C.
 func SessionKey(host, id string) string {
-	return host + "\x00" + id
+	if host == "" {
+		return "local:" + id
+	}
+	return host + ":" + id
 }
 
 // SidebarModel holds the computed sidebar rows and harnesses for rendering.

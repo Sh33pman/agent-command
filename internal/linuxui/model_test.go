@@ -5,6 +5,7 @@ package linuxui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brettmostert/agent-command/internal/core"
@@ -126,5 +127,19 @@ func TestResolveACMD(t *testing.T) {
 	}
 	if got != bin {
 		t.Fatalf("ResolveACMD = %q, want %q", got, bin)
+	}
+}
+
+func TestSessionKey(t *testing.T) {
+	local := SessionKey("", "s1")
+	remote := SessionKey("studio", "s1")
+	if local == "" || strings.ContainsRune(local, '\x00') {
+		t.Fatalf("invalid local SessionKey: %q", local)
+	}
+	if remote == "" || strings.ContainsRune(remote, '\x00') {
+		t.Fatalf("invalid remote SessionKey: %q", remote)
+	}
+	if local == remote {
+		t.Fatalf("expected distinct keys for local and remote, both %q", local)
 	}
 }

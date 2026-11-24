@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.92.0](https://github.com/brettmostert/agent-command/compare/v0.91.4...v0.92.0) (2026-11-24)
+
+
+### Features
+
+* the app's daemon calls reuse connections, time out, and decode once ([#190](https://github.com/brettmostert/agent-command/issues/190)) ([2812d74](https://github.com/brettmostert/agent-command/commit/2812d747c1ff6cf62e8f65ae234076997ac8217a))
+
 ## [0.91.4](https://github.com/brettmostert/agent-command/compare/v0.91.3...v0.91.4) (2026-11-24)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.93.1](https://github.com/brettmostert/agent-command/compare/v0.93.0...v0.93.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* a Claude acmd didn't start makes no session, and v1's session kinds are gone ([#194](https://github.com/brettmostert/agent-command/issues/194)) ([f343630](https://github.com/brettmostert/agent-command/commit/f343630e7512393038676bffc832680e2abcc5b6))
+
 ## [0.93.0](https://github.com/brettmostert/agent-command/compare/v0.92.0...v0.93.0) (2026-11-24)
 
 

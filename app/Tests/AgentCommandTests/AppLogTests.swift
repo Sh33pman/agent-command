@@ -51,3 +51,18 @@ private func write(_ path: String, _ text: String, modified: Date) throws {
     let kept = (1..<AppLog.days).map { "app.log." + ago($0) }
     #expect(left == (kept + ["daemon.log." + ago(10)]).sorted(), "another log isn't the app's to remove")
 }
+
+// The timer runs off the main thread. Isolated to the main actor, its first check
+// stopped the app.
+@Test(.timeLimit(.minutes(1))) func theTimerRotatesTheLog() async throws {
+    let dir = try tempDir()
+    let log = dir + "/app.log"
+    let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+    try write(log, "yesterday", modified: yesterday)
+    let (moves, moved) = AsyncStream<Void>.makeStream()
+    let timer = AppLog.watch(log, every: 0.05) { moved.yield() }
+    defer { timer.cancel() }
+    var next = moves.makeAsyncIterator()
+    await next.next()
+    #expect(FileManager.default.fileExists(atPath: log + "." + AppLog.day(yesterday)))
+}

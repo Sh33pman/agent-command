@@ -4,7 +4,10 @@ import Foundation
 /// as internal/cli/daemonlog.go keeps that one. Opened from Finder or the Dock, the app's
 /// output goes to /dev/null, which loses trace()'s record of why the app went away, and
 /// anything else libghostty or the Swift runtime writes there before an exit.
-enum AppLog {
+///
+/// It's nonisolated because its timer runs off the main thread. Isolated to the main
+/// actor, as the app's types are by default, the timer's first check stopped the app.
+nonisolated enum AppLog {
     /// How many days of logs are kept, today's included.
     static let days = 3
     /// A day's log is moved aside early past this, so the app can't fill the disk.
@@ -12,7 +15,8 @@ enum AppLog {
     /// How often a running app checks the log.
     static let check: TimeInterval = 10 * 60
 
-    private static var timer: DispatchSourceTimer?
+    /// Set once, by start, on the main thread.
+    nonisolated(unsafe) private static var timer: DispatchSourceTimer?
 
     static func path(_ env: [String: String]) -> String {
         (DaemonPaths.stateDir(env) as NSString).appendingPathComponent("app.log")
@@ -25,14 +29,21 @@ enum AppLog {
         let path = path(env)
         _ = rotate(path, now: Date())
         guard pointOutput(at: path) else { return }
+        timer = watch(path, every: check) { _ = pointOutput(at: path) }
+    }
+
+    /// Rotates the log at path every interval, off the main thread, and calls moved
+    /// there after it moves the log. Cancel the timer to stop it.
+    static func watch(_ path: String, every interval: TimeInterval,
+                      moved: @escaping @Sendable () -> Void) -> DispatchSourceTimer {
         let t = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-        t.schedule(deadline: .now() + check, repeating: check)
-        t.setEventHandler {
+        t.schedule(deadline: .now() + interval, repeating: interval)
+        t.setEventHandler { @Sendable in
             // Without a log to write to, the output keeps going where it was.
-            if rotate(path, now: Date()) { _ = pointOutput(at: path) }
+            if rotate(path, now: Date()) { moved() }
         }
         t.resume()
-        timer = t
+        return t
     }
 
     /// Gives a log from an earlier day, or one that has grown too big, the date of its

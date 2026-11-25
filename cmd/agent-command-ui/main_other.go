@@ -1,0 +1,13 @@
+//go:build !linux || noui
+
+package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Fprintln(os.Stderr, "agent-command-ui is only supported on Linux")
+	os.Exit(1)
+}

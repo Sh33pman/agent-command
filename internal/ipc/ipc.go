@@ -798,6 +798,9 @@ func (c *Conn) CallOnce(op, requestID string, in, out any) error {
 // Close closes the connection.
 func (c *Conn) Close() error { return c.c.Close() }
 
+// SetDeadline sets the read and write deadlines on the underlying connection.
+func (c *Conn) SetDeadline(t time.Time) error { return c.c.SetDeadline(t) }
+
 // WriteJSON writes v as one line.
 func WriteJSON(w net.Conn, v any) error {
 	b, err := json.Marshal(v)

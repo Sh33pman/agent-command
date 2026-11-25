@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.94.0](https://github.com/brettmostert/agent-command/compare/v0.93.1...v0.94.0) (2026-11-25)
+
+
+### Features
+
+* the app upgrades acmd when it's older, so brew upgrade agent-command covers both ([#197](https://github.com/brettmostert/agent-command/issues/197)) ([aa88443](https://github.com/brettmostert/agent-command/commit/aa884439dad13cf57b88d11af192e631c99f3295))
+
 ## [0.93.1](https://github.com/brettmostert/agent-command/compare/v0.93.0...v0.93.1) (2026-11-24)
 
 

@@ -36,10 +36,10 @@ type JobSpec struct {
 	// Settings are the agent's settings by key (harness.Settings), each with
 	// its values: one for most, several for lists.
 	Settings map[string][]string `json:"settings,omitempty"`
-	// RunMissed runs a run the Mac slept through when it wakes, instead of only
+	// RunMissed runs a run the host slept through when it wakes, instead of only
 	// showing it as missed.
 	RunMissed bool `json:"run_missed,omitempty"`
-	// Wake wakes the Mac shortly before each run, once acmd may (acmd schedule
+	// Wake wakes the host shortly before each run, once acmd may (acmd schedule
 	// wake on). Waking for every job is a setting of its own.
 	Wake bool `json:"wake,omitempty"`
 }

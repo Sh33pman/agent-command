@@ -38,7 +38,7 @@ var patterns = []struct {
 	{regexp.MustCompile(`\b[A-Za-z0-9+/_-]{48,}={0,2}`), "<long value>"},
 }
 
-// Redactor removes what shouldn't leave this Mac from text.
+// Redactor removes what shouldn't leave this host from text.
 type Redactor struct {
 	home string
 	name string

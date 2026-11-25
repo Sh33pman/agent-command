@@ -130,7 +130,7 @@ func (d *Daemon) acmdOlderHealth() *ipc.Health {
 		Fix:    &ipc.HealthFix{Step: "Run brew upgrade acmd in a terminal: the daemon restarts on the new version by itself."}}
 }
 
-// wakeHealth warns when scheduled jobs can't wake the Mac. nil wake: this
+// wakeHealth warns when scheduled jobs can't wake the host. nil wake: this
 // daemon can't wake it at all, so there's nothing to say.
 func wakeHealth(wake *ipc.WakeState, jobs []*core.Job) *ipc.Health {
 	if wake == nil {

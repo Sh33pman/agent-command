@@ -31,8 +31,8 @@ func newScheduleCmd() *cobra.Command {
 runs in the default harness unless --harness names another (acmd harness list).
 
 A schedule is cron: five fields, minute hour day-of-month month day-of-week,
-in this Mac's time zone. "0 9 * * 1-5" is weekdays at 09:00. Use --once for a
-single run instead. A job runs only while the Mac is awake.`,
+in the host's time zone. "0 9 * * 1-5" is weekdays at 09:00. Use --once for a
+single run instead. A job runs only while the host is awake.`,
 	}
 	cmd.AddCommand(newScheduleListCmd(), newScheduleShowCmd(), newScheduleAddCmd(), newScheduleEditCmd(),
 		newSchedulePauseCmd("pause", true), newSchedulePauseCmd("resume", false),
@@ -117,8 +117,8 @@ func (f *jobFlags) bind(cmd *cobra.Command) {
 	fl.StringVar(&f.harness, "harness", "", "the harness that runs it, by name, or a kind for its default (default: the default harness); --session takes its session's")
 	fl.StringArrayVar(&f.set, "set", nil, "an agent setting, key=value (repeat for lists); see `acmd schedule settings`")
 	fl.StringArrayVar(&f.unset, "unset", nil, "clear an agent setting, by key")
-	fl.BoolVar(&f.runMissed, "run-missed", false, "run a run the Mac slept through when it wakes")
-	fl.BoolVar(&f.wake, "wake", false, "wake the Mac shortly before each run (see `acmd schedule wake`)")
+	fl.BoolVar(&f.runMissed, "run-missed", false, "run a run the host slept through when it wakes")
+	fl.BoolVar(&f.wake, "wake", false, "wake the host shortly before each run (see `acmd schedule wake`)")
 	cmd.MarkFlagsMutuallyExclusive("cron", "once")
 	cmd.MarkFlagsMutuallyExclusive("prompt", "prompt-file")
 	cmd.MarkFlagsMutuallyExclusive("folder", "worktree", "session")
@@ -520,7 +520,7 @@ func resolveJob(snap snapshot, sel string) (*core.Job, error) {
 	return nil, fmt.Errorf("%q could be %s", sel, strings.Join(names, " or "))
 }
 
-// parseOnce reads a one-off time, in this Mac's time zone.
+// parseOnce reads a one-off time, in the host's time zone.
 func parseOnce(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	for _, layout := range []string{"2006-01-02 15:04", "2006-01-02T15:04", "2006-01-02 at 15:04"} {
@@ -612,10 +612,10 @@ func showJob(out io.Writer, j *core.Job, snap snapshot, runs []core.JobRun) {
 		row("Runs in", "the session"+sessionText(snap, j.SessionID, " "))
 	}
 	if j.RunMissed {
-		row("Missed runs", "run when the Mac wakes")
+		row("Missed runs", "run when the host wakes")
 	}
 	if j.Wake {
-		row("Wakes the Mac", "yes, before each run")
+		row("Wakes the host", "yes, before each run")
 	}
 	keys := make([]string, 0, len(j.Settings))
 	for k := range j.Settings {

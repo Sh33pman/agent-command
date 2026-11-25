@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	// wakeLead is how long before a run the Mac wakes: time for the network
+	// wakeLead is how long before a run the host wakes: time for the network
 	// to come back before the run starts.
 	wakeLead = 2 * time.Minute
 	// keepAwakeFor is the longest a woken run holds off idle sleep, and
@@ -27,7 +27,7 @@ const (
 	wakeRecheck = 5 * time.Minute
 )
 
-// waking is what the daemon knows about the Mac's wakes. syncMu serializes
+// waking is what the daemon knows about the host's wakes. syncMu serializes
 // the slow part (pmset and sudo); mu guards the fields and is only held
 // briefly, so a snapshot never waits on pmset. Lock order: d.mu, then mu.
 type waking struct {
@@ -47,7 +47,7 @@ type awakeRun struct {
 	stop  func()
 }
 
-// wantsWake says whether j's runs wake the Mac.
+// wantsWake says whether j's runs wake the host.
 func wantsWake(j *core.Job, all bool) bool {
 	return !j.Paused && (all || j.Wake)
 }
@@ -80,7 +80,7 @@ func (d *Daemon) nextWake(jobs []*core.Job, all bool) time.Time {
 	return best.Truncate(time.Second)
 }
 
-// syncWake sets the Mac's wake for the next run that wants one, changing
+// syncWake sets the host's wake for the next run that wants one, changing
 // it only when that time changes. force checks the sudoers rule again and
 // reads the power schedule afresh.
 func (d *Daemon) syncWake(ctx context.Context, force bool) {
@@ -160,7 +160,7 @@ func (d *Daemon) keepAwake(ctx context.Context, sessionID string) {
 	}
 	stop, err := w.KeepAwake(ctx, keepAwakeFor)
 	if err != nil {
-		d.cfg.Log.Printf("wake: keeping the Mac awake: %v", err)
+		d.cfg.Log.Printf("wake: keeping the host awake: %v", err)
 		return
 	}
 	d.wake.mu.Lock()
@@ -171,7 +171,7 @@ func (d *Daemon) keepAwake(ctx context.Context, sessionID string) {
 	d.wake.awake[sessionID] = awakeRun{since: d.cfg.Now(), stop: stop}
 }
 
-// releaseAwake lets the Mac sleep again once a woken run's session is done
+// releaseAwake lets the host sleep again once a woken run's session is done
 // (or gone, or past keepAwakeFor). all releases every one, as the daemon stops.
 func (d *Daemon) releaseAwake(ctx context.Context, all bool) {
 	now := d.cfg.Now()
@@ -200,7 +200,7 @@ func (d *Daemon) releaseAwake(ctx context.Context, all bool) {
 }
 
 // wakeState is the wake setting and what's set, for the snapshot (d.mu is
-// held; nil when acmd can't wake this Mac).
+// held; nil when acmd can't wake this host).
 func (d *Daemon) wakeState(ctx context.Context) *ipc.WakeState {
 	if d.cfg.Waker == nil {
 		return nil

@@ -1692,7 +1692,7 @@
     },
     {
       "name": "wake.set",
-      "description": "Turns waking the Mac for jobs on or off, checking the sudoers rule again.",
+      "description": "Turns waking the host for jobs on or off, checking the sudoers rule again.",
       "scope": "admin",
       "kind": "change",
       "grant": "host",

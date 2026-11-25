@@ -62,7 +62,7 @@ func newEditorShowCmd() *cobra.Command {
 func newEditorDetectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "detect",
-		Short: "List the supported editors installed on this Mac",
+		Short: "List the supported editors installed on this host",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			pathList := loginPath()

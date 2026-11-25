@@ -91,7 +91,7 @@ type Config struct {
 	// waits on you, for the answers it shows (default: through its host).
 	HostScreen func(sessionID string) (string, bool)
 	// ScheduleEvery is how often scheduled jobs are checked (15 s), and
-	// Location the time zone their schedules are in (the Mac's).
+	// Location the time zone their schedules are in (the host's).
 	ScheduleEvery time.Duration
 	Location      *time.Location
 	// AgentHelp is a harness's program's --help, to check a job's settings

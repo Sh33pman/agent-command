@@ -100,7 +100,7 @@ func TestWakeOnAndOff(t *testing.T) {
 	if !strings.Contains(out, "can't wake the host yet") {
 		t.Errorf("hint: %q", out)
 	}
-	if out := mustRun(t, "schedule", "show", "Brief"); !strings.Contains(out, "Wakes the Mac") {
+	if out := mustRun(t, "schedule", "show", "Brief"); !strings.Contains(out, "Wakes the host") {
 		t.Errorf("show: %q", out)
 	}
 

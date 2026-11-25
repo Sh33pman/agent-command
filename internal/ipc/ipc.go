@@ -63,7 +63,7 @@ const (
 	OpJobPause      = "job.pause"      // JobRef.ID, Paused
 	OpJobRun        = "job.run"        // runs it now (JobRef.ID) → core.JobRun
 	OpJobRuns       = "job.runs"       // its runs, newest first (JobRunsRequest) → JobRunPage
-	OpWakeSet       = "wake.set"       // wakes the Mac for every job or not (WakeRef), checking the sudoers rule again → WakeState
+	OpWakeSet       = "wake.set"       // wakes the host for every job or not (WakeRef), checking the sudoers rule again → WakeState
 	// Remote sessions: Hosting, this machine's listener for other acmds.
 	OpRemoteStatus     = "remote.status"              // → RemoteStatus
 	OpRemoteHosting    = "remote.hosting"             // turns Hosting on or off (RemoteRef.Enabled) → RemoteStatus
@@ -196,12 +196,12 @@ type JobRef struct {
 	Paused bool   `json:"paused,omitempty"`
 }
 
-// WakeRef turns waking the Mac for every job on or off.
+// WakeRef turns waking the host for every job on or off.
 type WakeRef struct {
 	All bool `json:"all"`
 }
 
-// WakeState is waking the Mac for jobs: whether acmd may (its sudoers rule is
+// WakeState is waking the host for jobs: whether acmd may (its sudoers rule is
 // in place), whether every job wakes it, and the wake it set.
 type WakeState struct {
 	Allowed bool      `json:"allowed"`
@@ -245,7 +245,7 @@ type Snapshot struct {
 	Inbox []core.InboxItem `json:"inbox,omitempty"`
 	// Jobs are the scheduled jobs, by name, with their next and last runs.
 	Jobs []*core.Job `json:"jobs,omitempty"`
-	// Wake is waking the Mac for jobs (nil: this daemon can't).
+	// Wake is waking the host for jobs (nil: this daemon can't).
 	Wake *WakeState `json:"wake,omitempty"`
 	// Remote is Hosting (nil: this daemon has none).
 	Remote *RemoteStatus `json:"remote,omitempty"`

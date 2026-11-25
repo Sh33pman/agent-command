@@ -172,7 +172,7 @@ func localOps() []Op {
 		act(ipc.OpJobRun, "Runs a scheduled job now.", host, ipc.JobRef{}, core.JobRun{}).runsCode().retryable(),
 		read(ipc.OpJobRuns, "Lists a job's runs, newest first.", host, ipc.JobRunsRequest{}, ipc.JobRunPage{}),
 		read(ipc.OpHarnessSettings, "Lists a harness's settings for jobs.", host, ipc.HarnessRef{}, []harness.Setting{}),
-		admin(ipc.OpWakeSet, "Turns waking the Mac for jobs on or off, checking the sudoers rule again.", host, ipc.WakeRef{}, ipc.WakeState{}).hostOnly(),
+		admin(ipc.OpWakeSet, "Turns waking the host for jobs on or off, checking the sudoers rule again.", host, ipc.WakeRef{}, ipc.WakeState{}).hostOnly(),
 
 		// Hosting: this machine's listener for other acmds.
 		read(ipc.OpRemoteStatus, "Returns Hosting's state: whether it's on, where it listens, and why not.", host, nil, ipc.RemoteStatus{}),

@@ -36,7 +36,7 @@ func PresetByName(name string) (EditorPreset, bool) {
 	return EditorPreset{}, false
 }
 
-// DetectedEditor is a preset and what was found of it on this Mac.
+// DetectedEditor is a preset and what was found of it on this host.
 type DetectedEditor struct {
 	EditorPreset
 	Launcher string // absolute path of the CLI launcher, "" if not found

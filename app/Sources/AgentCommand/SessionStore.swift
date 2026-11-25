@@ -51,6 +51,8 @@ final class SessionStore {
     private(set) var update: UpdateState?
     /// Told once, with the first snapshot's health: launch's setup offer.
     @ObservationIgnored var onFirstHealth: (([HealthItem]) -> Void)?
+    /// Told each time the health list changes.
+    @ObservationIgnored var onHealth: (([HealthItem]) -> Void)?
     @ObservationIgnored private var healthArrived = false
     /// The daemon's health, setup and report ops.
     @ObservationIgnored var healthClient = HealthClient()
@@ -524,7 +526,10 @@ final class SessionStore {
             if let settings = snapshot.settings, settings != HostSettings.shared.values { HostSettings.shared.values = settings }
             if let harnesses = snapshot.harnesses { HarnessList.shared.set(harnesses) }
             let health = snapshot.health ?? []
-            if health != self.health { self.health = health }
+            if health != self.health {
+                self.health = health
+                self.onHealth?(health)
+            }
             let dismissed = Set(snapshot.dismissed ?? [])
             if dismissed != self.dismissed { self.dismissed = dismissed }
             if snapshot.features != self.features { self.features = snapshot.features }

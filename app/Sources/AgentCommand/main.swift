@@ -149,8 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         notifier.onOpen = { [weak self] id in self?.openFromNotification(id) }
         // The daemon says what's wrong, for this Mac and its clients alike.
         notifier.moreWarnings = { [weak store, weak self] in
-            HealthWarnings.warnings(store?.health ?? []) { fix in self?.runFix(fix) }
+            HealthWarnings.warnings(store?.health ?? [], upgrade: AcmdUpgrade.shared.state) { fix in self?.runFix(fix) }
         }
+        store.onHealth = { health in AcmdUpgrade.shared.consider(health) }
         notifier.dismissed = { [weak store] in store?.dismissed ?? [] }
         notifier.onDismiss = { [weak store] id, on in store?.setDismissed(id, on) }
         notifier.onRestore = { [weak store] in store?.restoreDismissed() }

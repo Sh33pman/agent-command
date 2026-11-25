@@ -126,7 +126,7 @@ func (d *Daemon) acmdOlderHealth() *ipc.Health {
 		return nil
 	}
 	return &ipc.Health{ID: ipc.HealthAcmdOlder, Severity: ipc.HealthWarning, Title: "acmd is older than the app",
-		Detail: fmt.Sprintf("acmd %s is older than the app (%s), so the app may not show everything. Upgrading the app alone leaves acmd as it was.", d.cfg.Version, app),
+		Detail: fmt.Sprintf("acmd %s is older than the app (%s), so the app may not show everything.", d.cfg.Version, app),
 		Fix:    &ipc.HealthFix{Step: "Run brew upgrade acmd in a terminal: the daemon restarts on the new version by itself."}}
 }
 

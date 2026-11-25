@@ -413,7 +413,7 @@ If you don't know why, don't connect: something else may be answering at that ad
 
 **Waiting for approval** (exit 4). The host has this Mac's request, but no one has approved it. On the host, approve it in Settings → Remote → Pending requests or with `acmd remote requests approve <id>`. A client the host revoked, or whose request was denied, waits for approval again when it next tries. **Unauthorized** (exit 5) means the host turned this Mac away without keeping a request, which happens when too many unknown clients asked at once; authorize it on the host with `acmd remote authorize <fingerprint>`.
 
-**Version mismatch** (exit 7). The two Macs run acmd versions that speak different protocols. Upgrade acmd on both: `brew upgrade acmd`, or `brew upgrade acmd agent-command` on a Mac with the app. A host only says this once it has authorized the client: until then, a client of another version just waits for approval.
+**Version mismatch** (exit 7). The two Macs run acmd versions that speak different protocols. Upgrade acmd on both: `brew upgrade acmd`, or on a Mac with the app, `brew upgrade agent-command` and then open the app, which upgrades acmd. A host only says this once it has authorized the client: until then, a client of another version just waits for approval.
 
 **Port taken** (exit 8). Something else is listening on Hosting's port. Free it, choose another port, or turn on **Use another port if this one is taken** (`acmd config set remote.host.port_fallback on`), then turn Hosting off and on. See [Ports](#ports).
 

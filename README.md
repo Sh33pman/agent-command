@@ -99,13 +99,13 @@ brew install --cask brettmostert/tap/agent-command
 
 The cask installs the acmd formula, and runs `acmd init`, which adds the Claude Code hooks (removing any old ones first) and the service. Agent Command isn't notarized, so the cask also clears macOS's quarantine flag for it. Run `acmd` to open it (over SSH it opens the terminal UI instead).
 
-**Upgrade both together:**
+**Upgrade:**
 
 ```sh
-brew upgrade acmd agent-command
+brew upgrade agent-command
 ```
 
-Upgrading the app alone (`brew upgrade --cask agent-command`) leaves acmd as it was: Homebrew installs a cask's formula when it's missing, but doesn't upgrade it. The app warns when acmd is older than it. Within a minute of an upgrade, the daemon restarts on the new acmd by itself, and sessions keep running. The daemon looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
+Homebrew upgrades only the app: it installs a cask's formula when it's missing, but never upgrades it. So when the app next opens and finds acmd older than itself, it runs `brew upgrade brettmostert/tap/acmd`, and the status bar says so while it runs. Within a minute, the daemon restarts on the new acmd by itself, and sessions keep running. If brew fails, the app's warnings say why; then run `brew upgrade acmd` yourself. The daemon looks for a newer release every few hours, and the app's status bar shows a dot when there is one; `acmd config set updates.check off` turns that off, and then nothing is fetched.
 
 **Uninstall.** `brew uninstall --cask agent-command` removes the app only: acmd and its sessions keep running. `--zap` also removes the app's preferences and the wake rule. To remove acmd too, follow [Uninstall acmd](#uninstall-acmd).
 

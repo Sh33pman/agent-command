@@ -155,14 +155,30 @@ struct HealthClient {
 nonisolated enum HealthWarnings {
     /// Setup is offered once at launch, or done again quietly: not a warning.
     static let setupIDs: Set<String> = ["setup.offer", "setup.refresh"]
+    /// internal/ipc.HealthAcmdOlder: the app upgrades acmd itself (AcmdUpgrade).
+    static let acmdOlder = "acmd.older_than_app"
 
     /// fix runs an entry's fix: its op, or on this Mac its acmd command.
-    static func warnings(_ health: [HealthItem], fix: @escaping (HealthItem.Fix) -> Void) -> [AppWarning] {
-        health.filter { !setupIDs.contains($0.id) }.map { item in
+    /// upgrade is how the app's own upgrade of acmd is going: it hides the
+    /// warning while brew runs, and says how it ended.
+    static func warnings(_ health: [HealthItem], upgrade: AcmdUpgrade.State = .idle,
+                         fix: @escaping (HealthItem.Fix) -> Void) -> [AppWarning] {
+        health.filter { !setupIDs.contains($0.id) && !($0.id == acmdOlder && upgrade == .upgrading) }.map { item in
             let f = item.fix
             let runnable = f.map { $0.op != nil || $0.command != nil } ?? false
+            var detail = item.detail
+            if item.id == acmdOlder {
+                switch upgrade {
+                case .upgraded(let version):
+                    detail = "The app upgraded acmd to \(version). The daemon restarts on it within a minute."
+                case .failed(let reason):
+                    detail += "\n\nThe app couldn't upgrade it: \(reason)"
+                case .idle, .upgrading:
+                    break
+                }
+            }
             return AppWarning(
-                id: item.id, title: item.title, detail: item.detail, fix: f?.step ?? "",
+                id: item.id, title: item.title, detail: detail, fix: f?.step ?? "",
                 actionTitle: runnable ? (f?.title ?? "Fix") : "",
                 action: { if let f, runnable { fix(f) } })
         }

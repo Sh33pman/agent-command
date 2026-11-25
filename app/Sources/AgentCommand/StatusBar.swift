@@ -57,6 +57,9 @@ struct StatusBarView: View {
                 if speech.isSettingUp {
                     speechSetup
                 }
+                if AcmdUpgrade.shared.state == .upgrading {
+                    acmdUpgrading
+                }
                 if !store.inboxOpen, let failure = speech.failure {
                     Label(failure, systemImage: "exclamationmark.triangle.fill")
                         .font(AppFont.ui(11))
@@ -118,7 +121,19 @@ struct StatusBarView: View {
         }
         .buttonStyle(.plain)
         .font(AppFont.ui(11))
-        .help("v\(latest) is available. Upgrade the app and acmd with brew upgrade acmd agent-command")
+        .help("v\(latest) is available. Upgrade with brew upgrade agent-command: the app then upgrades acmd")
+    }
+
+    /// While the app runs brew to bring acmd up to it.
+    private var acmdUpgrading: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.mini)
+            Text("Upgrading acmd…").fixedSize()
+        }
+        .font(AppFont.ui(11))
+        .foregroundStyle(theme.dim)
+        .lineLimit(1)
+        .help("acmd is older than the app, so the app is running brew upgrade acmd. You can keep working.")
     }
 
     /// Downloading the model has a percentage. Before and after that, a spinner.

@@ -878,15 +878,27 @@ nonisolated enum Acmd {
     /// no terminal, so a command that needs an admin password asks through
     /// macOS's dialog.
     nonisolated static func run(_ args: [String], _ done: @escaping @MainActor (Bool, String) -> Void) {
+        let bin = DaemonPaths.acmd
+        if bin.hasPrefix("/") {
+            Command.run(bin, args, done)
+        } else {
+            Command.run("/usr/bin/env", [bin] + args, done)
+        }
+    }
+}
+
+/// Runs a program off the main thread, with no terminal.
+nonisolated enum Command {
+    /// Runs path with args, and env added to the app's environment, then
+    /// done(succeeded, output) on the main actor. output is stdout and stderr.
+    nonisolated static func run(_ path: String, _ args: [String], env: [String: String] = [:],
+                                _ done: @escaping @MainActor (Bool, String) -> Void) {
         DispatchQueue.global().async {
             let process = Process()
-            let bin = DaemonPaths.acmd
-            if bin.hasPrefix("/") {
-                process.executableURL = URL(fileURLWithPath: bin)
-                process.arguments = args
-            } else {
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-                process.arguments = [bin] + args
+            process.executableURL = URL(fileURLWithPath: path)
+            process.arguments = args
+            if !env.isEmpty {
+                process.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
             }
             process.standardInput = FileHandle.nullDevice
             let pipe = Pipe()

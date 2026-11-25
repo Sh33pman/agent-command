@@ -5,6 +5,7 @@
 #   release.sh tap <version> <dist> <notes>    publish the app and acmd's archives to the tap, and
 #                                              commit the cask and the formula
 #   release.sh scoop <version> <dist>          commit the Scoop manifest, once the tap release is out
+#   release.sh upload-linux <tag> <dist>       upload the .deb and Arch packages to the draft release
 #   release.sh publish <tag>                   publish the draft release
 #   release.sh failed <tag> <run-url>          mark the draft release as failed
 # GH_TOKEN is the token for the repo the step changes: GITHUB_TOKEN for this
@@ -209,6 +210,25 @@ scoop() {
 	done
 }
 
+upload_linux() {
+	local tag=$1 dist=$2
+	local version="${tag#v}" pkgver file
+	pkgver="${version//-/_}"
+	local files=()
+	for file in \
+		"acmd_${version}_amd64.deb" \
+		"agent-command_${version}_amd64.deb" \
+		"acmd_${version}_arm64.deb" \
+		"agent-command_${version}_arm64.deb" \
+		"acmd-${pkgver}-1-x86_64.pkg.tar.zst" \
+		"agent-command-${pkgver}-1-x86_64.pkg.tar.zst"; do
+		[[ -f "$dist/$file" ]] || { echo "release: $dist/$file is missing" >&2; exit 1; }
+		files+=("$dist/$file")
+	done
+	gh release upload "$tag" "${files[@]}" --repo "$repo" --clobber
+	echo "release: uploaded ${#files[@]} Linux packages to $tag"
+}
+
 publish() {
 	local tag=$1 body
 	body="$(notes "$tag")"
@@ -284,9 +304,14 @@ usage() {
 }
 case "${1:-}" in
 notes | publish) [[ $# -eq 2 ]] || usage ;;
-failed) [[ $# -eq 3 ]] || usage ;;
+failed | upload-linux) [[ $# -eq 3 ]] || usage ;;
 tap) [[ $# -eq 4 ]] || usage ;;
 scoop) [[ $# -eq 3 ]] || usage ;;
 *) usage ;;
 esac
+if [[ "$1" == "upload-linux" ]]; then
+	shift
+	upload_linux "$@"
+	exit 0
+fi
 "$@"

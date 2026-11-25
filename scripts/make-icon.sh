@@ -14,5 +14,7 @@ for s in 16 32 128 256 512; do
 	sips -z "$d" "$d" "$work/icon.png" --out "$set_dir/icon_${s}x${s}@2x.png" >/dev/null
 done
 iconutil -c icns "$set_dir" -o "$root/packaging/AppIcon.icns"
+mkdir -p "$root/packaging/linux"
+cp "$set_dir/icon_256x256.png" "$root/packaging/linux/com.brettmostert.agent-command.png"
 cp "$work/icon.png" "${1:-/dev/null}" 2>/dev/null || true
-echo "make-icon: wrote packaging/AppIcon.icns"
+echo "make-icon: wrote packaging/AppIcon.icns and packaging/linux/com.brettmostert.agent-command.png"

@@ -1,0 +1,27 @@
+pkgbase=agent-command
+pkgname=('acmd' 'agent-command')
+pkgver={{PKGVER}}
+pkgrel=1
+arch=('x86_64')
+url='https://github.com/brettmostert/agent-command'
+license=('MIT')
+options=('!strip' '!debug')
+
+package_acmd() {
+	pkgdesc='Agent Command CLI and session daemon'
+	depends=()
+
+	install -Dm755 "$srcdir/out/agent-command" "$pkgdir/usr/bin/acmd"
+	install -Dm755 "$srcdir/out/agent-command" "$pkgdir/usr/bin/agent-command"
+}
+
+package_agent-command() {
+	pkgdesc='Native Linux UI for Agent Command'
+	depends=("acmd>=$pkgver" 'gtk4' 'libadwaita' 'vte4')
+
+	install -Dm755 "$srcdir/out/agent-command-ui" "$pkgdir/usr/bin/agent-command-ui"
+	install -Dm644 "$srcdir/com.brettmostert.agent-command.desktop" \
+		"$pkgdir/usr/share/applications/com.brettmostert.agent-command.desktop"
+	install -Dm644 "$srcdir/com.brettmostert.agent-command.png" \
+		"$pkgdir/usr/share/icons/hicolor/256x256/apps/com.brettmostert.agent-command.png"
+}

@@ -195,23 +195,81 @@ jobs:
         with:
           version: 0.17.0
           use-cache: false
+      - name: install Linux UI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg-dev libgtk-4-dev libadwaita-1-dev libvte-2.91-gtk4-dev libgirepository1.0-dev
       - name: build libghostty-vt from source
         run: ACMD_GHOSTTY_CACHE="$RUNNER_TEMP/ghostty" scripts/build-ghostty.sh
       - name: test with libghostty-vt
         run: make test-vt
       - name: build and pack acmd
         run: scripts/pack-acmd.sh "$VERSION" dist
+      - name: build and pack .deb packages
+        run: scripts/pack-deb.sh "$VERSION" dist
       - name: checksums
-        run: cd dist && sha256sum "acmd-$VERSION-linux-$ARCH.tar.gz" > "checksums-linux-$ARCH.txt"
+        run: cd dist && sha256sum "acmd-$VERSION-linux-$ARCH.tar.gz" "acmd_${VERSION}_${ARCH}.deb" "agent-command_${VERSION}_${ARCH}.deb" > "checksums-linux-$ARCH.txt"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/acmd-*-linux-*.tar.gz
+          subject-path: |
+            dist/acmd-*-linux-*.tar.gz
+            dist/*.deb
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-linux-${{ matrix.arch }}
           path: |
             dist/acmd-*-linux-*.tar.gz
+            dist/*.deb
             dist/checksums-linux-*.txt
+          if-no-files-found: error
+          overwrite: true
+
+  # Split Arch Linux packages (acmd and agent-command) for x86_64, built in
+  # archlinux:latest from source with no caches and no secrets.
+  build-arch:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    container: archlinux:latest # zizmor: ignore[unpinned-images]
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write # the build provenance attestation
+      attestations: write
+    env:
+      VERSION: ${{ needs.release-please.outputs.version }}
+    steps:
+      - name: install Arch build tools
+        run: pacman -Syu --noconfirm --needed base-devel git curl xz gtk4 libadwaita vte4 gobject-introspection
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+          persist-credentials: false
+      - name: let git use the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+          use-cache: false
+      - name: build libghostty-vt from source
+        run: ACMD_GHOSTTY_CACHE="$RUNNER_TEMP/ghostty" scripts/build-ghostty.sh
+      - name: build and pack Arch packages
+        run: scripts/pack-arch.sh "$VERSION" dist
+      - name: checksums
+        run: cd dist && sha256sum ./*.pkg.tar.zst > checksums-arch-x86_64.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.pkg.tar.zst
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-arch-x86_64
+          path: |
+            dist/*.pkg.tar.zst
+            dist/checksums-arch-*.txt
           if-no-files-found: error
           overwrite: true
 
@@ -258,7 +316,7 @@ jobs:
   # Scoop bucket only, is made just before the steps that use it. This repo
   # uses GITHUB_TOKEN.
   publish:
-    needs: [release-please, gate, build, build-linux, build-windows]
+    needs: [release-please, gate, build, build-linux, build-arch, build-windows]
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     environment: release
@@ -289,15 +347,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd dist
-          for sums in checksums-app.txt checksums-linux-amd64.txt checksums-linux-arm64.txt checksums-windows.txt; do
+          for sums in checksums-app.txt checksums-linux-amd64.txt checksums-linux-arm64.txt checksums-arch-x86_64.txt checksums-windows.txt; do
             shasum -a 256 -c "$sums"
           done
           for file in AgentCommand.zip "acmd-$VERSION-darwin-arm64.tar.gz" "acmd-$VERSION-linux-amd64.tar.gz" "acmd-$VERSION-linux-arm64.tar.gz" \
-            "acmd-$VERSION-windows-amd64.zip" "acmd-$VERSION-windows-arm64.zip"; do
+            "acmd-$VERSION-windows-amd64.zip" "acmd-$VERSION-windows-arm64.zip" *.deb *.pkg.tar.zst; do
             gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
           done
-          cat checksums-app.txt checksums-linux-amd64.txt checksums-linux-arm64.txt checksums-windows.txt > checksums.txt
+          cat checksums-app.txt checksums-linux-amd64.txt checksums-linux-arm64.txt checksums-arch-x86_64.txt checksums-windows.txt > checksums.txt
           rm checksums-*.txt
 
       - name: read the release notes
@@ -329,15 +387,20 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: scripts/release.sh scoop "$VERSION" dist
 
+      - name: upload Linux packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release.sh upload-linux "$TAG" dist
+
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/release.sh publish "$TAG"
 
-  # Runs when gate, build, build-linux, build-windows or publish fails, or the run is cancelled. The draft
+  # Runs when gate, build, build-linux, build-arch, build-windows or publish fails, or the run is cancelled. The draft
   # stays a draft, retitled [FAILED], with a note on what reached the tap.
   failed:
-    needs: [release-please, gate, build, build-linux, build-windows, publish]
+    needs: [release-please, gate, build, build-linux, build-arch, build-windows, publish]
     if: (failure() || cancelled()) && needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5

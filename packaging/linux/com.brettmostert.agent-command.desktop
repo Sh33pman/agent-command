@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Agent Command
+Comment=Native app to run AI coding agents and terminals in panes, with live status
+Exec=agent-command-ui
+Icon=com.brettmostert.agent-command
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupWMClass=com.brettmostert.agent-command

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.94.1](https://github.com/brettmostert/agent-command/compare/v0.94.0...v0.94.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* bug reports name the real OS, and a host that can't wake refuses a job that wakes ([#199](https://github.com/brettmostert/agent-command/issues/199)) ([1fd3a0e](https://github.com/brettmostert/agent-command/commit/1fd3a0ec1b139b33c35a6bc48179b1431e1d31dd))
+
 ## [0.94.0](https://github.com/brettmostert/agent-command/compare/v0.93.1...v0.94.0) (2026-11-25)
 
 

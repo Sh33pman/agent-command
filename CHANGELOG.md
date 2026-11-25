@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.94.2](https://github.com/brettmostert/agent-command/compare/v0.94.1...v0.94.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* the app no longer crashes every 10 minutes when its log timer fires ([#201](https://github.com/brettmostert/agent-command/issues/201)) ([f317165](https://github.com/brettmostert/agent-command/commit/f31716532849e060dee864aa36c328e144ac0bed))
+
 ## [0.94.1](https://github.com/brettmostert/agent-command/compare/v0.94.0...v0.94.1) (2026-11-25)
 
 

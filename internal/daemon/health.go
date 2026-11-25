@@ -319,11 +319,9 @@ func (d *Daemon) report(ctx context.Context, r ipc.ReportRequest, page bool) (an
 	if r.Kind != "bug" && r.Kind != "feature" {
 		return nil, fmt.Errorf("a report is a bug or a feature, not %q", r.Kind)
 	}
-	os := "unknown"
+	os := ""
 	if d.cfg.OSVersion != nil {
-		if v := d.cfg.OSVersion(ctx); v != "" {
-			os = v
-		}
+		os = d.cfg.OSVersion(ctx)
 	}
 	red := report.NewRedactor()
 	if !page {

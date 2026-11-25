@@ -92,8 +92,8 @@ func TestDetails(t *testing.T) {
 	if err := os.WriteFile(path, []byte(log.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	bug := Details("bug", "1.2.3", "27.2", path, testRedactor)
-	if !strings.Contains(bug, "1.2.3") || !strings.Contains(bug, "27.2") || !strings.Contains(bug, "the last with") {
+	bug := Details("bug", "1.2.3", "macOS 27.2", path, testRedactor)
+	if !strings.Contains(bug, "1.2.3") || !strings.Contains(bug, "on macOS 27.2") || !strings.Contains(bug, "the last with") {
 		t.Errorf("bug details: %s", bug[:80])
 	}
 	if strings.Contains(bug, "sk-ant") {
@@ -108,7 +108,7 @@ func TestDetails(t *testing.T) {
 	if feature := Details("feature", "1.2.3", "27.2", path, testRedactor); strings.Contains(feature, "line") {
 		t.Errorf("a request shouldn't include the log: %s", feature)
 	}
-	if none := Details("bug", "1.2.3", "27.2", filepath.Join(dir, "none"), testRedactor); !strings.Contains(none, "No daemon log") {
+	if none := Details("bug", "1.2.3", "", filepath.Join(dir, "none"), testRedactor); !strings.Contains(none, "No daemon log") || !strings.Contains(none, "on an unknown OS") {
 		t.Errorf("missing log: %s", none)
 	}
 }

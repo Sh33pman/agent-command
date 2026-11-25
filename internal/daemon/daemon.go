@@ -126,7 +126,8 @@ type Config struct {
 	OpenEditor func(ctx context.Context, r ipc.EditorOpen) error
 	// Init sets acmd up as `acmd init` does (the init op). nil refuses.
 	Init func(ctx context.Context) (ipc.InitResult, error)
-	// OSVersion is the OS's version, for reports ("" when unknown).
+	// OSVersion is the OS and its version, for reports, such as "macOS 27.2"
+	// ("" when unknown).
 	OSVersion func(ctx context.Context) string
 	// Speaker is the speech engine for the settings given (default: the
 	// speech helper, internal/speech).

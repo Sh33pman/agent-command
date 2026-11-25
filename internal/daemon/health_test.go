@@ -173,7 +173,7 @@ func TestInitAndReportOps(t *testing.T) {
 	p := settingsPaths(t)
 	must(t, os.MkdirAll(filepath.Dir(p.DaemonLog()), 0o700))
 	start(t, p, withConfig(p, func(c *Config) {
-		c.OSVersion = func(context.Context) string { return "26.1" }
+		c.OSVersion = func(context.Context) string { return "macOS 26.1" }
 	}))
 	c := dial(t, p)
 	if err := c.Call(ipc.OpInit, nil, nil); err == nil || !strings.Contains(err.Error(), "acmd init on the host") {
@@ -181,7 +181,7 @@ func TestInitAndReportOps(t *testing.T) {
 	}
 	var d ipc.ReportDetails
 	must(t, c.Call(ipc.OpReportDetails, ipc.ReportRequest{Kind: "feature"}, &d))
-	if !strings.Contains(d.Details, testVersion) || !strings.Contains(d.Details, "26.1") {
+	if !strings.Contains(d.Details, testVersion) || !strings.Contains(d.Details, "on macOS 26.1") {
 		t.Errorf("details = %q", d.Details)
 	}
 	var page ipc.ReportPage

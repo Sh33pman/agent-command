@@ -1,12 +1,10 @@
 package cli
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -50,7 +48,7 @@ func newReportDetailsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), report.Details(kind, version.Get().Version, macOSVersion(cmd.Context()), p.DaemonLog(), report.NewRedactor()))
+			fmt.Fprint(cmd.OutOrStdout(), report.Details(kind, version.Get().Version, report.OS(cmd.Context()), p.DaemonLog(), report.NewRedactor()))
 			return nil
 		},
 	}
@@ -94,12 +92,4 @@ func newReportPageCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kind, "kind", "bug", "bug or feature")
 	cmd.Flags().StringVar(&title, "title", "", "the issue's title")
 	return cmd
-}
-
-func macOSVersion(ctx context.Context) string {
-	out, err := exec.CommandContext(ctx, "/usr/bin/sw_vers", "-productVersion").Output()
-	if err != nil {
-		return "unknown"
-	}
-	return strings.TrimSpace(string(out))
 }

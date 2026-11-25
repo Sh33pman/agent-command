@@ -316,3 +316,22 @@ func TestWakeLooksForTheRuleNowAndThen(t *testing.T) {
 		t.Errorf("asked again: %v", took)
 	}
 }
+
+func TestAHostThatCantWakeRefusesAJobThatWakes(t *testing.T) {
+	d, _, _, _ := jobDaemon(t)
+	d.cfg.Waker = nil
+	j := folderJob(t.TempDir())
+	j.Wake = true
+	if check := d.checkJob(context.Background(), &j); !strings.Contains(check.Errors["wake"], "can't wake") {
+		t.Errorf("check: %v", check.Errors)
+	}
+	if _, err := d.saveJob(context.Background(), j); err == nil || !strings.Contains(err.Error(), "The host can't wake") {
+		t.Errorf("saved a job that wakes a host that can't: %v", err)
+	}
+	j.Wake = false
+	mustSave(t, d, j)
+
+	d.cfg.Waker = &fakeWaker{}
+	j.Wake = true
+	mustSave(t, d, j) // waking off for now, but the host can
+}

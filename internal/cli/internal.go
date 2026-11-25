@@ -387,7 +387,7 @@ func localSessions(cfg *daemon.Config, p paths.Paths, logger *log.Logger) {
 	cfg.OpenEditor = func(ctx context.Context, r ipc.EditorOpen) error {
 		return openInEditor(ctx, r.In, r.Path, r.Line, r.Column)
 	}
-	cfg.OSVersion = macOSVersion
+	cfg.OSVersion = report.OS
 	if claude, env, err := claudeCommand(p); err == nil {
 		cli := claudecli.New(claude, env)
 		cfg.Agents = cli

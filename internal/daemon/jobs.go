@@ -26,7 +26,7 @@ import (
 // never logged.
 
 // lateAfter is how late a run can start and still count as on time. Later than
-// that, the Mac was asleep or acmd wasn't running: the run is missed, or runs
+// that, the host was asleep or acmd wasn't running: the run is missed, or runs
 // late if the job says so.
 const lateAfter = 2 * time.Minute
 
@@ -101,9 +101,9 @@ func (d *Daemon) runDueJobs(ctx context.Context) int {
 
 func missedDetail(n int) string {
 	if n > 1 {
-		return fmt.Sprintf("The Mac was asleep or acmd wasn't running (%d runs).", n)
+		return fmt.Sprintf("The host was asleep or acmd wasn't running (%d runs).", n)
 	}
-	return "The Mac was asleep or acmd wasn't running."
+	return "The host was asleep or acmd wasn't running."
 }
 
 // dueRun is the latest run of j that's due by now (zero: none), and how many
@@ -438,6 +438,10 @@ func (d *Daemon) checkJob(ctx context.Context, j *core.Job) ipc.JobCheck {
 	}
 	j.Settings = tidySettings(j.Settings)
 
+	if j.Wake && d.cfg.Waker == nil {
+		errs["wake"] = "The host can't wake for scheduled jobs: turn off waking for this job."
+	}
+
 	if j.GroupID != "" {
 		d.mu.Lock()
 		g, err := d.store.Group(ctx, j.GroupID)
@@ -597,7 +601,7 @@ func (d *Daemon) saveJob(ctx context.Context, j core.Job) (*core.Job, error) {
 
 // firstError is the errors in a fixed order, as one message.
 func firstError(errs map[string]string) string {
-	order := []string{"name", "harness", "schedule", "prompt", "where", "cwd", "session", "settings", "group"}
+	order := []string{"name", "harness", "schedule", "prompt", "where", "cwd", "session", "settings", "wake", "group"}
 	keys := make([]string, 0, len(errs))
 	for k := range errs {
 		keys = append(keys, k)

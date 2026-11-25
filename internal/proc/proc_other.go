@@ -9,8 +9,7 @@ import (
 	"strings"
 )
 
-// Lookup reads /proc where available (Linux support is a non-goal for
-// v1; this keeps the package building elsewhere).
+// Lookup reads /proc: Linux's, and any other OS's with one.
 func Lookup(pid int) (Proc, error) {
 	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {

@@ -34,9 +34,13 @@ func Label(kind string) string {
 
 // Details is the part of a report about this install, which the person sees before
 // it's sent. A bug report has the log's end, cleaned; a request only the version.
-func Details(kind, version, macOS, logPath string, r Redactor) string {
+// osName is the OS and its version, as OS gives it ("" if unknown).
+func Details(kind, version, osName, logPath string, r Redactor) string {
+	if osName == "" {
+		osName = "an unknown OS"
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "**Agent Command** %s on macOS %s (%s)\n", version, macOS, runtime.GOARCH)
+	fmt.Fprintf(&b, "**Agent Command** %s on %s (%s)\n", version, osName, runtime.GOARCH)
 	if kind == "feature" {
 		return b.String()
 	}

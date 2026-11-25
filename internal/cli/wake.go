@@ -85,7 +85,7 @@ func newWakeStatusCmd() *cobra.Command {
 func writeWake(out io.Writer, snap snapshot) {
 	w := snap.Wake
 	if w == nil {
-		fmt.Fprintln(out, "This acmd can't wake the Mac.")
+		fmt.Fprintln(out, "The host can't wake for scheduled jobs.")
 		return
 	}
 	if !w.Allowed {
@@ -182,10 +182,11 @@ func wakeFlag(cmd *cobra.Command, val bool, current *bool) {
 	}
 }
 
-// wakeHint says, after saving a job that wakes the Mac, if waking is off.
+// wakeHint says, after saving a job that wakes the host, if waking is off. A
+// host that can't wake at all refuses the job, so it never gets here.
 func wakeHint(out io.Writer, snap snapshot, wakes bool) {
-	if wakes && (snap.Wake == nil || !snap.Wake.Allowed) {
-		fmt.Fprintln(out, "It can't wake the Mac yet: turn that on with `acmd schedule wake on`.")
+	if wakes && snap.Wake != nil && !snap.Wake.Allowed {
+		fmt.Fprintln(out, "It can't wake the host yet: turn that on with `acmd schedule wake on`.")
 	}
 }
 

@@ -77,7 +77,7 @@ type Job struct {
 const (
 	RunStarted = "started" // its session started (or the prompt was sent)
 	RunSkipped = "skipped" // the last run, or the session, was still busy
-	RunMissed  = "missed"  // the Mac was asleep or acmd wasn't running
+	RunMissed  = "missed"  // the host was asleep or acmd wasn't running
 	RunFailed  = "failed"  // it couldn't start: Detail says why
 )
 

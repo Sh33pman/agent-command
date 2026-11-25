@@ -97,7 +97,7 @@ func TestWakeOnAndOff(t *testing.T) {
 		t.Errorf("off: %q", out)
 	}
 	out := mustRun(t, "schedule", "add", "Brief", "--cron", "0 8 * * *", "--prompt", "p", "--wake")
-	if !strings.Contains(out, "can't wake the Mac yet") {
+	if !strings.Contains(out, "can't wake the host yet") {
 		t.Errorf("hint: %q", out)
 	}
 	if out := mustRun(t, "schedule", "show", "Brief"); !strings.Contains(out, "Wakes the Mac") {
@@ -175,11 +175,16 @@ func TestWakeOnFailures(t *testing.T) {
 	}
 }
 
-func TestWakeStatusWithoutAWaker(t *testing.T) {
+func TestWakeWithoutAWaker(t *testing.T) {
 	env(t)
-	if out := mustRun(t, "schedule", "wake", "status"); !strings.Contains(out, "can't wake the Mac") {
+	t.Chdir(t.TempDir())
+	if out := mustRun(t, "schedule", "wake", "status"); !strings.Contains(out, "The host can't wake for scheduled jobs") {
 		t.Errorf("%q", out)
 	}
+	if _, err := acmd(t, "schedule", "add", "Brief", "--cron", "0 8 * * *", "--prompt", "p", "--wake"); err == nil || !strings.Contains(err.Error(), "The host can't wake") {
+		t.Errorf("a job that wakes a host that can't: %v", err)
+	}
+	mustRun(t, "schedule", "add", "Brief", "--cron", "0 8 * * *", "--prompt", "p")
 }
 
 func TestUninstallRemovesTheWakeRule(t *testing.T) {

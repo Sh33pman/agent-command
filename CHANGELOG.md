@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.94.3](https://github.com/brettmostert/agent-command/compare/v0.94.2...v0.94.3) (2026-11-25)
+
+
+### Bug Fixes
+
+* an acmd on other folders runs its own daemon, not the installed service ([#204](https://github.com/brettmostert/agent-command/issues/204)) ([d331c44](https://github.com/brettmostert/agent-command/commit/d331c443bb001885b0de924b73cf6a861ef20e69))
+* text that shows on any OS says "the host", not "the Mac" ([#203](https://github.com/brettmostert/agent-command/issues/203)) ([d6bfe4e](https://github.com/brettmostert/agent-command/commit/d6bfe4edb9f98601e68fe18a673a77c50ffb9361))
+
 ## [0.94.2](https://github.com/brettmostert/agent-command/compare/v0.94.1...v0.94.2) (2026-11-25)
 
 

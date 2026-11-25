@@ -11,6 +11,20 @@ import (
 	"runtime"
 )
 
+// Overrides are the variables that point acmd at other folders.
+var Overrides = []string{"ACMD_STATE_DIR", "ACMD_RUNTIME_DIR", "ACMD_CONFIG_DIR"}
+
+// Overridden says whether any of Overrides is set, so acmd isn't on its
+// default folders.
+func Overridden() bool {
+	for _, k := range Overrides {
+		if os.Getenv(k) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // maxSunPath is macOS's limit for unix socket paths (sun_path, incl. NUL).
 const maxSunPath = 104
 

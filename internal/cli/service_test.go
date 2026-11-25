@@ -393,3 +393,31 @@ func TestUnsupportedServiceCommands(t *testing.T) {
 		t.Error("status without a home")
 	}
 }
+
+func TestAnAcmdOnOtherFoldersLeavesTheServiceAlone(t *testing.T) {
+	shortPaths(t)
+	f := withService(t, "linux")
+	if _, err := f.Env().Install(context.Background(), "/bin/acmd", service.InstallOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	orig := onDefaultFolders
+	onDefaultFolders = func() bool { return !paths.Overridden() }
+	t.Cleanup(func() { onDefaultFolders = orig })
+	before := len(f.Calls())
+
+	// The service runs the default folders: this acmd's are others.
+	out, err := run(t, "acmd", "daemon", "stop")
+	if err != nil || !strings.Contains(out, "wasn't running") {
+		t.Errorf("stop: %v %q", err, out)
+	}
+	if calls := f.Calls()[before:]; len(calls) != 0 {
+		t.Errorf("stopping this acmd's daemon reached the service: %q", calls)
+	}
+
+	for _, k := range paths.Overrides {
+		t.Setenv(k, "")
+	}
+	if _, ok := installedService(); !ok {
+		t.Error("on the default folders, the service is this acmd's")
+	}
+}

@@ -128,3 +128,20 @@ func TestWindowsDefault(t *testing.T) {
 		t.Error("no LOCALAPPDATA: want an error")
 	}
 }
+
+func TestOverridden(t *testing.T) {
+	for _, k := range Overrides {
+		t.Setenv(k, "")
+	}
+	if Overridden() {
+		t.Error("overridden with none set")
+	}
+	for _, k := range Overrides {
+		t.Run(k, func(t *testing.T) {
+			t.Setenv(k, t.TempDir())
+			if !Overridden() {
+				t.Errorf("%s set, but not overridden", k)
+			}
+		})
+	}
+}

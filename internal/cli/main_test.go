@@ -40,6 +40,8 @@ func TestMain(m *testing.M) {
 		return errors.New("tests don't run anything as root")
 	}
 	ruleInstalled = func() bool { return false }
+	// The sandbox stands in for the default folders, which a service runs.
+	onDefaultFolders = func() bool { return true }
 	// No service manager, unless a test brings a fake one (withService).
 	localService = func() (service.Env, error) {
 		return servicetest.New("plan9", os.Getenv("HOME")).Env(), nil

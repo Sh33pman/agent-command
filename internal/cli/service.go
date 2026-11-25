@@ -39,8 +39,19 @@ var endDaemon struct {
 	fn func()
 }
 
-// installedService is the service when it's installed here.
+// onDefaultFolders says whether this acmd uses the default folders, which are
+// the ones the service's daemon runs on; swappable in tests, whose sandbox
+// stands in for them.
+var onDefaultFolders = func() bool { return !paths.Overridden() }
+
+// installedService is the service when it's installed here and its daemon is
+// this acmd's. The service runs the default folders, so an acmd pointed at
+// others (paths.Overrides) has none: it starts, stops and restarts its own
+// daemon.
 func installedService() (service.Env, bool) {
+	if !onDefaultFolders() {
+		return service.Env{}, false
+	}
 	svc, err := localService()
 	if err != nil || !svc.Installed() {
 		return service.Env{}, false

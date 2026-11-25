@@ -71,11 +71,10 @@ type uiApp struct {
 }
 
 func (u *uiApp) idle(fn func()) {
-	var cb glib.SourceFunc
-	cb = func(_ uintptr) bool {
+	cb := glib.SourceFunc(func(_ uintptr) bool {
 		fn()
 		return false
-	}
+	})
 	u.mu.Lock()
 	u.cbs = append(u.cbs, &cb)
 	u.mu.Unlock()
@@ -159,13 +158,15 @@ func Run(opts Options) int {
 		cancel()
 	}))
 
-	return int(adwApp.Run(int32(len(os.Args)), os.Args))
+	return int(adwApp.Run(int32(min(len(os.Args), 1<<16)), os.Args)) // #nosec G115 -- bounded to 1<<16
 }
 
 func (u *uiApp) buildWindow(ctx context.Context) {
 	u.win = adw.NewApplicationWindow(&u.app.Application)
 	u.win.SetTitle("Agent Command")
-	u.win.SetDefaultSize(int32(u.winState.Width), int32(u.winState.Height))
+	w := min(max(u.winState.Width, 320), 16384)
+	h := min(max(u.winState.Height, 240), 16384)
+	u.win.SetDefaultSize(int32(w), int32(h)) // #nosec G115 -- clamped to 320..16384
 	if u.winState.Maximized {
 		u.win.Maximize()
 	}
@@ -788,7 +789,7 @@ func (u *uiApp) handleKey(ctx context.Context, keyval uint32, state gdk.Modifier
 	if vt := u.activeTerminal(); vt != nil {
 		shift := state&gdk.ShiftMaskValue != 0
 		ctrl := state&gdk.ControlMaskValue != 0
-		if shift && !ctrl && (int32(keyval) == gdk.KEY_Return || int32(keyval) == gdk.KEY_KP_Enter) {
+		if shift && !ctrl && (keyval == uint32(gdk.KEY_Return) || keyval == uint32(gdk.KEY_KP_Enter)) {
 			vt.FeedChild([]byte("\x1b[13;2u"))
 			return true
 		}
@@ -958,11 +959,11 @@ func (u *uiApp) saveWindowState() {
 	if u.win == nil || u.winPath == "" {
 		return
 	}
-	max := u.win.IsMaximized()
+	maximized := u.win.IsMaximized()
 	u.mu.Lock()
 	ws := u.winState
-	ws.Maximized = max
-	if !max {
+	ws.Maximized = maximized
+	if !maximized {
 		if w := int(u.win.GetWidth()); w > 0 {
 			ws.Width = w
 		}
